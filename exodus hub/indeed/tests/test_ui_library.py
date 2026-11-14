@@ -229,7 +229,7 @@ local border=select.Root:FindFirstChildOfClass('UIStroke');local popupBorder=men
 assert(border.Color==popupBorder.Color and border.Thickness==popupBorder.Thickness)
 assert(border:FindFirstChildOfClass('UIGradient') and popupBorder:FindFirstChildOfClass('UIGradient'))
 assert(trigger.Text=='' and findDescendant(trigger,'Selected').Text=='Deflect')
-assert(findDescendant(trigger,'Icon_chevron'):IsA('TextLabel') and findDescendant(trigger,'Icon_chevron').Text=='▾')
+assert(findDescendant(trigger,'Icon_chevron'):IsA('ImageLabel'))
 select.Root.AbsolutePosition=Vector2.new(140,600);select.Root.AbsoluteSize=Vector2.new(110,32)
 trigger.AbsolutePosition=Vector2.new(145,614.5);trigger.AbsoluteSize=Vector2.new(100,14)
 game:GetService('RunService').Heartbeat:Fire(0.016)
@@ -301,27 +301,26 @@ assert(border.Transparency==1)
 _G.ExodusUICleanup();finishTweens();assert(listenerCount()==0 and activeTweenCount()==0)
 ''')
 
-    def test_original_symbols_do_not_load_images_or_write_files(self):
-        self.run_lua("""
-writefile=function() error('Unexpected asset write') end
-getcustomasset=function() error('Unexpected custom asset') end
-for name,symbol in pairs({settings='⚙',chevron='▾',minimize='—'}) do
- local icon=uiicons.create(panel,name)
- assert(icon:IsA('TextLabel') and icon.Text==symbol)
-end
+    def test_embedded_png_icons_load_once_without_network(self):
+        expected = (ROOT / 'assets/ui/settings.png').read_bytes()
+        literal = '"' + ''.join(f'\\{byte:03d}' for byte in expected) + '"'
+        revision = re.search(r'VERSION = "([^"]+)"', module_path('uiicons').read_text())[1]
+        self.run_lua('''
+local files, writes={},0
+makefolder=function() end;isfolder=function() return true end
+writefile=function(path,content) files[path]=content;writes=writes+1 end
+getcustomasset=function(path) return 'rbxasset://test/'..path end
+local icon=uiicons.create(panel,'settings')
+assert(icon:IsA('ImageLabel') and icon.Image:find('rbxasset://test/',1,true)==1)
+assert(files['ExodusUIAssets/''' + revision + '''-settings.png']==''' + literal + ''')
+uiicons.create(panel,'settings');assert(writes==1,'icon bytes were written more than once')
 panel:Destroy()
-""")
+''')
 
-    def test_navigation_keeps_the_original_symbols(self):
-        self.run_lua("""
-assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
-local root=playerGui:FindFirstChild('ExodusUISystem')
-assert(findDescendant(root,'MinimizePanel').Text=='—')
-assert(findDescendant(root,'HubSettingsButton').Text=='⚙')
-assert(findDescendant(root,'PreviousPage').Text=='‹')
-assert(findDescendant(root,'NextPage').Text=='›')
-_G.ExodusUICleanup();finishTweens()
-""")
+    def test_hub_has_no_font_icons_or_emojis(self):
+        sources = '\n'.join(p.read_text() for p in (ROOT / 'modules/front').rglob('*.luau'))
+        self.assertNotRegex(sources, '[\\U0001F300-\\U0001FAFF\\u2600-\\u27FF\\uFE0F]')
+        self.assertNotIn('▾', sources)
 
     def test_universal_settings_are_session_only_and_legacy_data_is_removed(self):
         source = (ROOT / 'modules/logic/aux/utils.luau').read_text()
