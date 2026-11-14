@@ -95,54 +95,72 @@ function Controller.create(context)
     twPlay(context.refs.miniGui, "feedback", { Size = UDim2.fromOffset(width, height) })
     if context.refs.miniGui.Visible then twPlay(context.refs.miniGui, "feedback", { Position = UDim2.fromOffset(x, y) }) end
   end
-  local function showMini(v)
+  local function showMini(v, instant)
     if UIState.desktop then v = false end
-    if not context.refs.miniGui or not context.refs.miniGui.Parent then return end
-    local config = Utils.getConfig(); local miniX, miniY, _, _, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
-    local hiddenPosition = UDim2.new(0, screenWidth + 30, 0, miniY); UIState.miniGeneration += 1
-    local generation = UIState.miniGeneration; safeCancel(UIState.miniTween)
+    local mini = context.refs.miniGui
+    if not mini or not mini.Parent then return end
+    local config = Utils.getConfig()
+    local miniX, miniY, width, height, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
+    local targetPosition = UDim2.fromOffset(miniX, miniY)
+    local hiddenPosition = UDim2.fromOffset(screenWidth + 30, miniY)
+    UIState.miniGeneration += 1
+    local generation = UIState.miniGeneration
+    safeCancel(UIState.miniTween); safeCancel(UIState.miniFadeTween)
+    UIState.miniTween, UIState.miniFadeTween = nil, nil
+    if instant then
+      mini.Size = UDim2.fromOffset(width, height)
+      mini.Position = v and targetPosition or hiddenPosition
+      mini.GroupTransparency = v and 0 or 1
+      mini.Visible = v
+      return
+    end
     if v then
-      if not context.refs.miniGui.Visible then
-        context.refs.miniGui.Position = hiddenPosition; context.refs.miniGui.GroupTransparency = 1
-        context.refs.miniGui.Visible = true
+      if not mini.Visible then
+        mini.Position = hiddenPosition; mini.GroupTransparency = 1
+        mini.Visible = true
       end
-      UIState.miniTween = twPlay(context.refs.miniGui, "control", {
-        Position = UDim2.new(0, miniX, 0, miniY),
-        GroupTransparency = 0,
-      })
-      return UIState.miniTween
+      UIState.miniTween = twPlay(mini, "control", { Position = targetPosition })
+      UIState.miniFadeTween = twPlay(mini, "control", { GroupTransparency = 0 })
+      return UIState.miniTween or UIState.miniFadeTween
     end
     if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
-    if not context.refs.miniGui.Visible then return end
-    local tween = twPlay(context.refs.miniGui, "control", {
-      Position = hiddenPosition,
-      GroupTransparency = 1,
-    })
-    UIState.miniTween = tween
-    if tween then
+    if not mini.Visible then return end
+    UIState.miniTween = twPlay(mini, "control", { Position = hiddenPosition })
+    local fade = twPlay(mini, "control", { GroupTransparency = 1 })
+    UIState.miniFadeTween = fade
+    if fade then
       local connection
-      connection = trackConn(tween.Completed:Connect(function(playbackState)
+      connection = trackConn(fade.Completed:Connect(function(playbackState)
         safeDisconnect(connection); untrackConn(connection)
-        if playbackState == Enum.PlaybackState.Completed and generation == UIState.miniGeneration and context.refs.miniGui and context.refs.miniGui.Parent then context.refs.miniGui.Visible = false end
+        if playbackState == Enum.PlaybackState.Completed and generation == UIState.miniGeneration and mini.Parent then mini.Visible = false end
       end))
     else
-      context.refs.miniGui.Visible = false
+      mini.Visible = false
     end
-    return tween
+    return fade or UIState.miniTween
   end
-  setSpam = function(v)
-    UIState.spamOn = v; Utils.setManualSpamActive(v)
+  setSpam = function(v, silent)
+    v = v == true
+    local changed = UIState.spamOn ~= v
+    UIState.spamOn = v
+    if Utils.isManualSpamActive() ~= v then Utils.setManualSpamActive(v) end
     local spamButton = context.refs.miniGui and context.refs.miniGui:FindFirstChild("SpamButton")
-    if spamButton then
-      spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, "control", { BackgroundColor3 = v and C.green or C.red })
-      local shrink = twPlay(spamButton, "press", { Size = UDim2.new(1, -14, 0.78, -12) })
-      if shrink then
-        local connection
-        connection = trackConn(shrink.Completed:Connect(function(playbackState)
-          safeDisconnect(connection); untrackConn(connection)
-          if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, "feedback", { Size = UDim2.new(1, -12, 0.78, -8) }) end
-        end))
-      end
+    if not spamButton then return end
+    spamButton.Text = v and "ON" or "OFF"
+    local color = v and C.green or C.red
+    if silent or not changed then
+      spamButton.BackgroundColor3 = color
+      spamButton.Size = UDim2.new(1, -12, 0.78, -8)
+      return
+    end
+    twPlay(spamButton, "control", { BackgroundColor3 = color })
+    local shrink = twPlay(spamButton, "press", { Size = UDim2.new(1, -14, 0.78, -12) })
+    if shrink then
+      local connection
+      connection = trackConn(shrink.Completed:Connect(function(playbackState)
+        safeDisconnect(connection); untrackConn(connection)
+        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, "feedback", { Size = UDim2.new(1, -12, 0.78, -8) }) end
+      end))
     end
   end
   context.refs.floatingButton = inst("TextButton", {
@@ -413,7 +431,7 @@ function Controller.create(context)
   if not UIState.desktop and config.DarkBallVisible then twPlay(context.refs.darkBall, "control", { Position = UDim2.new(0, darkX, 0, darkY) }) end
   if not UIState.desktop and config.JumpBallVisible then twPlay(context.refs.jumpBall, "control", { Position = UDim2.new(0, jumpX, 0, jumpY) }) end
   if not UIState.desktop and config.UpDashBallVisible then twPlay(context.refs.upDashBall, "control", { Position = UDim2.new(0, upDashX, 0, upDashY) }) end
-  showMini(config.MiniSpamVisible == true); setSpam(Utils.isManualSpamActive(), true)
+  showMini(config.MiniSpamVisible == true, true); setSpam(Utils.isManualSpamActive(), true)
   return {
     setSpam = setSpam,
     showMini = showMini,
