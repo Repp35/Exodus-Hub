@@ -83,9 +83,8 @@ local function sync()
           local delta = math.max(0, time - previous); previous = time
           if allowed() then
             credit += mode == "CPF" and rate or clicksPerSecond * delta; local count = math.floor(credit)
-            credit = credit - count
+            credit -= count
             for _ = 1, count do
-              if not allowed() then break end
               request(boundUtils, boundRemote, token, allowed)
             end
           else
