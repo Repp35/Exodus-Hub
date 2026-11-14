@@ -299,11 +299,8 @@ local function observeTarget(target, time)
     state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.cycle += 1
     state.returnAt, state.returnCycle = validReturn and time or nil, validReturn and state.cycle or nil; state.awayAt, state.awayTarget = nil, nil
   elseif target == me and previous ~= me then
-    -- A direct server target update may skip the brief away state in rendered snapshots.
-    -- A new target assignment still starts a fresh defensive cycle.
-    state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false, false
-    state.nextAttemptAt = 0; state.cycle += 1
-    state.returnAt, state.returnCycle = nil, nil
+    state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false, false; state.nextAttemptAt = 0
+    state.cycle += 1; state.returnAt, state.returnCycle = nil, nil
   end
   state.target, state.targetKnown = target, true
 end
