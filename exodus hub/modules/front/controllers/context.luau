@@ -10,7 +10,7 @@ local CONFIG = {}
 function Context.setup() return true end
 
 -- context
-function Context.create(deps)
+function Context.create(deps, deviceDesktop)
   local CONFIG = deps.Theme.tokens; local C, GRAD = CONFIG.COLORS, CONFIG.GRADIENT
   local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H; local UIS, RunService, Players = game:GetService("UserInputService"), game:GetService("RunService"), game:GetService("Players")
   local TweenService = game:GetService("TweenService"); local Camera = workspace.CurrentCamera
@@ -35,7 +35,9 @@ function Context.create(deps)
 
   local context = { deps = deps, theme = CONFIG, state = UIState, refs = {}, outlines = outlineGradients }; context.services = { UIS = UIS, RunService = RunService, Players = Players }
   context.scope = deps.Runtime.scope(); context.motion = deps.Runtime.motion(context.scope)
-  UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
+  if type(deviceDesktop) ~= "boolean" then deviceDesktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled end
+  UIState.deviceDesktop = deviceDesktop
+  UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or deviceDesktop
   local function trackConn(connection) return context.scope.add(connection) end
   local function untrackConn(connection) context.scope.forget(connection) end
   local function safeDisconnect(connection)
