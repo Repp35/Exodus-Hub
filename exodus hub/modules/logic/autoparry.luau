@@ -454,7 +454,10 @@ local function tick(character, root, generation)
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
   if not geometry then return end
   if state.retryReady then
-    geometry.effectiveWindow = geometry.deflectWindow * math.min(activeWindowFactor(time), CONFIG.RETRY_WINDOW_FACTOR) + state.ping + CONFIG.FRAME_BASE + state.frameAllowance
+    geometry.effectiveWindow = geometry.deflectWindow * math.min(activeWindowFactor(time), CONFIG.RETRY_WINDOW_FACTOR)
+      + state.ping
+      + CONFIG.FRAME_BASE
+      + state.frameAllowance
     geometry.triggerPadding = 0
   end
   local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); state.speed, state.distance, state.approaching = speed, distance, closing > 0
@@ -590,8 +593,7 @@ function AutoParry.onBallSync(data)
     local current = gameInfo.getSyncSequence()
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
-  state.teleported, state.teleportSequence = false, nil
-  observeTarget(tonumber(data.TargetPlayerID), clock())
+  state.teleported, state.teleportSequence = false, nil; observeTarget(tonumber(data.TargetPlayerID), clock())
   if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true
 end
