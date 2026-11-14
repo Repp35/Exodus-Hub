@@ -238,11 +238,11 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
-  state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil
-  state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
-  state.activatedAt = time; state.targetReturnSpeed = snapshotSpeed(snapshot)
-  state.protectionSpeed = snapshotSpeed(snapshot); state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
-  state.reason = reason; lastActivationReason, lastActivationAt = reason, time
+  state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; state.dashSwitchPartner, state.dashSwitchAt = nil, nil
+  state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot); state.activatedAt = time
+  state.targetReturnSpeed = snapshotSpeed(snapshot); state.protectionSpeed = snapshotSpeed(snapshot)
+  state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime; state.reason = reason
+  lastActivationReason, lastActivationAt = reason, time
   if watchOpponent then watchOpponent(state, partner) end
   utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
   return true
@@ -411,27 +411,30 @@ local function safeToReset(state, time)
   state.pendingReset, state.stoppedPartner, state.pending, state.dashSwitchPartner = false, nil, nil, nil
 end
 local function observeKillRadius(state, snapshot, time)
-  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.targetUncertain == true
-    or snapshot.teleported or snapshot.locked or not state.root.Parent then
-    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil
-    return nil
+  if
+    not snapshot
+    or not gameInfo.isSnapshotValid(snapshot)
+    or snapshot.targetUncertain == true
+    or snapshot.teleported
+    or snapshot.locked
+    or not state.root.Parent
+  then
+    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; return nil
   end
-  if state.killRadiusBall ~= snapshot.ball then
-    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, snapshot.ball
-  end
+  if state.killRadiusBall ~= snapshot.ball then state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, snapshot.ball end
   local physics = gameInfo.getDefensePhysics(); local radius = physics and physics.killRadius
   if not finite(radius) or radius <= 0 then state.killRadiusInside, state.killRadiusFirstAt = nil, nil; return nil end
-  local inside = (snapshot.position - state.root.Position).Magnitude <= radius
-  local entered = inside and not state.killRadiusInside
+  local inside = (snapshot.position - state.root.Position).Magnitude <= radius; local entered = inside and not state.killRadiusInside
   state.killRadiusInside = inside
   if not entered or snapshot.targetId ~= localPlayer.UserId then return nil end
-  local first = state.killRadiusFirstAt
-  state.killRadiusFirstAt = time
+  local first = state.killRadiusFirstAt; state.killRadiusFirstAt = time
   if not first or time < first or time - first > CONFIG.ACTIVATION.KILL_RADIUS_INTERVAL then return nil end
-  state.killRadiusFirstAt = nil
-  local context = gameInfo.getClashContext()
-  return state.exchangePartner or state.departedTo or (context and context.partnerId)
-    or (clashStats and not clashStats.frozen and clashStats.partnerId) or state.stoppedPartner
+  state.killRadiusFirstAt = nil; local context = gameInfo.getClashContext()
+  return state.exchangePartner
+    or state.departedTo
+    or (context and context.partnerId)
+    or (clashStats and not clashStats.frozen and clashStats.partnerId)
+    or state.stoppedPartner
 end
 local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoEnabled)
   if current ~= state or not state.root.Parent then return end
@@ -452,8 +455,7 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if gameInfo.getBallFrozen() == true then
     if state.active then deactivate(state, "ball_frozen", time) end
     resetExchange(state); state.target = nil
-    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil
-    return
+    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; return
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time); local snapshotFresh = snapshot
     and gameInfo.isSnapshotValid(snapshot)
@@ -686,8 +688,7 @@ function AutoSpam.onBallSync(data)
   if data.Teleported == true then
     state.timeoutBlocked, state.timeoutBlockedTarget = false, nil; state.target, state.stoppedPartner = nil, nil
     resetExchange(state); state.haunterPartner, state.haunterUntil = nil, nil
-    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil
-    return
+    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; return
   end
   local autoEnabled = utils.getConfigValue("AutoSpam") == true; local manualEnabled = utils.isManualSpamActive()
   local context = gameInfo.getClashContext()
