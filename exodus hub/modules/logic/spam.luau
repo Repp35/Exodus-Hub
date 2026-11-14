@@ -6,15 +6,12 @@ local utils, remote, gameInfo, autoSpam, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
-local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 local samples, sampleIndex = {}, 0
 
 -- configuration
 local CONFIG = {
-  POLL_INTERVAL = 0.01,
   ERROR_RETRY_INTERVAL = 0.03,
-  REQUESTS_PER_YIELD = 32,
 }
 
 -- helpers
@@ -41,13 +38,13 @@ local function cancel(reason)
 end
 
 -- dispatch
-local function request(boundUtils, boundRemote, token, guard, minimum)
+local function request(boundUtils, boundRemote, token, guard)
   if inFlight then return end
   local requestToken = {}; inFlight = requestToken
   local requestedAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
   if inFlight == requestToken then inFlight = false end
   if token ~= generation or utils ~= boundUtils then return end
-  status.lastRequestAt = requestedAt; nextAllowedAt = os.clock() + minimum
+  status.lastRequestAt = requestedAt
   sampleIndex = sampleIndex % 256 + 1; local sample = samples[sampleIndex]
   if not sample then sample = {}; samples[sampleIndex] = sample end
   sample.at, sample.accepted = status.lastRequestAt, ok and result == true
@@ -89,23 +86,16 @@ local function sync()
             credit = credit - count
             for _ = 1, count do
               if not allowed() then break end
-              request(boundUtils, boundRemote, token, allowed, 0)
-              if _ % CONFIG.REQUESTS_PER_YIELD == 0 then task.wait() end
+              request(boundUtils, boundRemote, token, allowed)
             end
           else
             credit = 0
           end
         else
-          local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval()
-          if type(minimum) ~= "number" or minimum ~= minimum or minimum < 0 or minimum == math.huge then minimum = CONFIG.POLL_INTERVAL end
-          local gameDelay = boundGameInfo.getAutoSpamDelay()
-          if inFlight or not allowed() or gameDelay == nil then
-            task.wait(CONFIG.POLL_INTERVAL)
-          else
-            local readyAt = math.max(nextAllowedAt, time)
-            if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
-            if time >= readyAt then request(boundUtils, boundRemote, token, allowed, minimum) else task.wait(math.min(readyAt - time, CONFIG.POLL_INTERVAL)) end
-          end
+          -- Auto mode sends once per scheduler cycle without artificial rate gates.
+          -- Yielding remains necessary to keep the Roblox scheduler responsive.
+          task.wait()
+          if allowed() and not inFlight then request(boundUtils, boundRemote, token, allowed) end
         end
       end
     end, traceback)
@@ -155,7 +145,7 @@ function Spam.setup(deps)
   sync(); return true
 end
 function Spam.resetState()
-  cancel("reset"); nextAllowedAt = 0
+  cancel("reset")
   status.lastError, status.lastErrorAt = nil, -math.huge; table.clear(samples)
   sampleIndex = 0; local token = generation
   task.defer(function()
@@ -163,7 +153,7 @@ function Spam.resetState()
   end)
 end
 function Spam.teardown()
-  cancel("teardown"); nextAllowedAt = 0
+  cancel("teardown")
   table.clear(samples); sampleIndex = 0
   if utils then
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
