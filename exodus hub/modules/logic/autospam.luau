@@ -79,11 +79,8 @@ local function targetReturnTimeout(snapshot, state, time)
   local speed = fresh and snapshotSpeed(snapshot) or nil
   if finite(speed) and speed > 0 then state.targetReturnSpeed = speed else speed = state.targetReturnSpeed end
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local progress = 0
-  if finite(speed) and finite(minimum) and finite(maximum) and maximum > minimum then
-    progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-  end
-  local slow, fast = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MIN_SPEED, CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MAX_SPEED
-  return slow + (fast - slow) * progress
+  if finite(speed) and finite(minimum) and finite(maximum) and maximum > minimum then progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1) end
+  local slow, fast = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MIN_SPEED, CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MAX_SPEED; return slow + (fast - slow) * progress
 end
 local function listen(state, signal, callback)
   local connection = signal:Connect(callback); state.connections[#state.connections + 1] = connection
@@ -231,8 +228,9 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
-  state.activatedAt = time; state.targetReturnSpeed = snapshotSpeed(snapshot); state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
-  state.reason = reason; lastActivationReason, lastActivationAt = reason, time
+  state.activatedAt = time; state.targetReturnSpeed = snapshotSpeed(snapshot)
+  state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime; state.reason = reason
+  lastActivationReason, lastActivationAt = reason, time
   if watchOpponent then watchOpponent(state, partner) end
   utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
   return true
