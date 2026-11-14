@@ -12,11 +12,9 @@ local minimumSpeed, maximumSpeed, speedAt
 local errors = {}
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
 local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
-local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
-local targetFrame, targetFrameConnection = 0, nil
 local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
 local trainingEventConnection, trainingEventRemote
-local trainingZone, targetHighlight, targetHighlightCharacter
+local trainingZone
 local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
 local trainingObservers = {}
 local trainingParryAt
@@ -47,8 +45,6 @@ local CONFIG = {
   AP_WINDOW_HIGH_SPEED = 0.25,
   PING_SAMPLE_INTERVAL = 0.25,
   PING_SAMPLE_COUNT = 8,
-  TARGET_CONFIRM_INTERVAL = 1 / 60,
-  TARGET_HOLD_TIME = 0.1,
   SNAPSHOT_CACHE_INTERVAL = 1 / 240,
   DASH_STATE_CACHE_INTERVAL = 1 / 120,
   GAME_IDS = {
@@ -170,81 +166,8 @@ local function syncData(provider)
 end
 
 -- targeting
-local function targetNumber(value)
-  if typeof(value) == "Instance" and value:IsA("Player") then return value.UserId end
-  if type(value) == "string" then value = tonumber(value) end
-  return finite(value) and value > 0 and value % 1 == 0 and value or nil
-end
 function GameInfo.getBallTargetAttribute() return world:GetAttribute("GameBallTarget") end
-local function targetId(data, currentBall)
-  local time = os.clock(); local player = players and players.LocalPlayer
-  local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil; local attribute = targetNumber(GameInfo.getBallTargetAttribute())
-  local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil; local character = player and player.Character
-  if character ~= targetHighlightCharacter then targetHighlightCharacter, targetHighlight = character, nil end
-  if character and (not targetHighlight or targetHighlight.Parent ~= character) then targetHighlight = character:FindFirstChild("PlayerBallHighlight") end
-  local visual = targetHighlight; local visualTargeted = visual ~= nil and visual.Enabled == true
-  local color = currentBall and currentBall.Color
-  local redBall = typeof(color) == "Color3" and color.R >= 0.65 and color.R > color.G * 1.5 and color.R > color.B * 1.5 or false
-  targetEvidence.primary, targetEvidence.attribute, targetEvidence.highlight = primary, attribute, highlight; targetEvidence.visualTargeted, targetEvidence.redBall = visualTargeted, redBall
-  if type(data) == "table" and data.Teleported == true then
-    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = nil, nil, nil, nil, nil
-  end
-  local rawTarget = type(data) == "table" and data.TargetPlayerID or nil
-  local numericTarget = type(rawTarget) == "number" and rawTarget or (type(rawTarget) == "string" and tonumber(rawTarget) or nil)
-  if finite(numericTarget) and numericTarget <= 0 then
-    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = nil, nil, nil, nil, nil
-    targetEvidence.source, targetEvidence.uncertain = "target_none", true; return -1
-  end
-  local strong = primary
-  if strong then
-    if strong == targetEvidence.stable or strong == attribute then
-      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
-        strong, nil, nil, nil, time
-      targetEvidence.source, targetEvidence.uncertain = strong == attribute and "target_attribute" or "target", false; return strong
-    end
-    if targetEvidence.pending ~= strong then
-      targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = strong, time, targetFrame
-    elseif
-      (targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
-      or (not targetFrameConnection and time - targetEvidence.pendingAt >= CONFIG.TARGET_CONFIRM_INTERVAL)
-    then
-      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
-        strong, nil, nil, nil, time
-      targetEvidence.source, targetEvidence.uncertain = "target_confirmed", false; return strong
-    end
-    targetEvidence.source, targetEvidence.uncertain = "target_pending", true; return targetEvidence.stable or -1
-  end
-  local candidate = highlight or attribute; local source = highlight and "highlight" or (attribute and "attribute" or nil)
-  if highlight and attribute and highlight ~= attribute then
-    targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil; targetEvidence.source, targetEvidence.uncertain = "conflicting_signals", true
-    return -1
-  end
-  if highlight and attribute and highlight == attribute then
-    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
-      highlight, nil, nil, nil, time
-    targetEvidence.source, targetEvidence.uncertain = "highlight_attribute", false; return highlight
-  end
-  if not candidate and player and (visualTargeted or (type(data) == "table" and data.Targeted == true)) then
-    candidate, source = player.UserId, visualTargeted and (redBall and "visual_color" or "visual") or "targeted"
-  end
-  if candidate then
-    if candidate == targetEvidence.stable then
-      targetEvidence.observedAt, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = time, nil, nil, nil; targetEvidence.source, targetEvidence.uncertain = source, false
-    elseif candidate ~= targetEvidence.pending then
-      targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = candidate, time, targetFrame; targetEvidence.uncertain = true
-    elseif
-      (targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
-      or (not targetFrameConnection and targetEvidence.pendingAt and time - targetEvidence.pendingAt >= CONFIG.TARGET_CONFIRM_INTERVAL)
-    then
-      targetEvidence.stable, targetEvidence.observedAt = candidate, time; targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.source = nil, nil, nil, source
-      targetEvidence.uncertain = false
-    end
-  else
-    targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil; targetEvidence.uncertain = true
-  end
-  if targetEvidence.stable and targetEvidence.observedAt and time - targetEvidence.observedAt <= CONFIG.TARGET_HOLD_TIME then return targetEvidence.stable end
-  targetEvidence.stable, targetEvidence.source, targetEvidence.uncertain = nil, nil, true; return -1
-end
+local function targetId(data) return data and data.TargetPlayerID or -1 end
 local function findBall()
   local candidate = world:FindFirstChild("GameBall") or world:FindFirstChild("GameBall", true)
   if candidate and candidate:IsA("BasePart") then return candidate end
@@ -400,10 +323,6 @@ function GameInfo.stopMaintenance()
   disconnect(trainingConnection); disconnect(trainingEventConnection)
   trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil; trainingEventConnection, trainingEventRemote = nil, nil
   resetTrainingBall(false)
-  if targetFrameConnection then
-    if utils then utils.untrackGlobal(targetFrameConnection) end
-    targetFrameConnection:Disconnect(); targetFrameConnection = nil
-  end
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
@@ -413,17 +332,9 @@ function GameInfo.setup(deps)
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
-  trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil; snapshotCache, snapshotCacheAt = nil, -math.huge
+  trainingZone = nil; snapshotCache, snapshotCacheAt = nil, -math.huge
   table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
   errors = {}; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
-  targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0
-  local service = utils.getRunService()
-  if service and service.Heartbeat then
-    targetFrameConnection = service.Heartbeat:Connect(function()
-      targetFrame += 1
-    end)
-    utils.trackGlobal(targetFrameConnection)
-  end
   return true
 end
 function GameInfo.getBall() return getBall() end
@@ -705,7 +616,7 @@ function GameInfo.decodeBallPacket(value)
     MaxSpeed = decoded.maxSpeed,
   }
 end
-function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
+function GameInfo.getTargetId() return targetId(syncData()) end
 
 -- snapshots
 local function snapshot(time)
@@ -763,7 +674,7 @@ local function snapshot(time)
     sampledPosition, sampledAt = position, time
   end
   if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-  local target = targetId(sync, currentBall)
+  local target = targetId(sync)
   local result = {
     schema = 2,
     generatedAt = time,
@@ -780,15 +691,8 @@ local function snapshot(time)
     syncMaxSpeed = sync and sync.MaxSpeed or nil,
     targetId = target,
     targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
-    targetSource = targetEvidence.source,
-    targetUncertain = targetEvidence.uncertain == true,
-    targetSignals = {
-      primary = targetEvidence.primary,
-      attribute = targetEvidence.attribute,
-      highlight = targetEvidence.highlight,
-      visualTargeted = targetEvidence.visualTargeted,
-      redBall = targetEvidence.redBall,
-    },
+    targetSource = "sync",
+    targetUncertain = false,
     teleported = sync and sync.Teleported == true or false,
     locked = sync and sync.Locked == true or false,
     ballCanMove = not (sync and sync.Locked == true),

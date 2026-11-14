@@ -47,9 +47,6 @@ local state = {
   awayAt = nil,
   awayTarget = nil,
   targetChangedAt = nil,
-  directTargetId = nil,
-  directTargetAt = nil,
-  directTargetSequence = nil,
   trainingRound = nil,
   trainingBall = nil,
   trainingLastValidAt = 0,
@@ -73,7 +70,7 @@ local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
   ADAPTIVE_MAX_WINDOW_FACTOR = 0.9,
-  DIRECT_TARGET_MAX_AGE = 0.08,
+  RETURN_DIRECTION_MAX_AGE = 0.08,
   MATCH_RETRY_DELAY_MAX = 0.5,
   SNAPSHOT_MAX_AGE = 0.5,
   FIERCE_DURATION = 5,
@@ -126,11 +123,11 @@ local function resetTracking()
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge; state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
   state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
-  state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
-  state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
-  table.clear(state.clicks); table.clear(state.returns)
+  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil; state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil
+  state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -236,18 +233,6 @@ local function adaptiveLead(geometry, entry, closing)
   local selected = factor + (maxFactor - factor) * urgency * urgency; local network = math.max(0, baseline - window * factor)
   local lead = math.max(baseline, math.min(window + network, window * selected + network)); return lead, selected
 end
-local function directTargetConfirmed(snapshot, time)
-  if not state.player or state.directTargetId ~= state.player.UserId then return false end
-  if not finite(state.directTargetAt) or time < state.directTargetAt or time - state.directTargetAt > CONFIG.DIRECT_TARGET_MAX_AGE then return false end
-  local sequence = snapshot.syncSequence
-  if state.directTargetSequence ~= nil and sequence ~= nil then
-    local delta = (sequence - state.directTargetSequence) % CONFIG.TARGET_SEQUENCE_MODULUS
-    if delta >= CONFIG.TARGET_SEQUENCE_HALF or (delta > 0 and snapshot.targetId ~= state.player.UserId) then return false end
-  end
-  local signals = snapshot.targetSignals
-  if type(signals) == "table" and finite(signals.primary) and signals.primary > 0 and signals.primary ~= state.player.UserId then return false end
-  return true
-end
 
 -- target-sync
 local function sequenceOrder(incoming)
@@ -278,8 +263,6 @@ local function observeTarget(target, time)
   state.target, state.targetKnown = target, true
 end
 local function observeSnapshot(snapshot, time)
-  local confirmedDirect = snapshot.targetUncertain == true and directTargetConfirmed(snapshot, time)
-  if snapshot.targetUncertain == true and not confirmedDirect then return false end
   local mode = snapshot.mode == "training" and "training" or "match"
   local newTrainingBall = mode == "training" and (snapshot.trainingRound ~= state.trainingRound or snapshot.ball ~= state.trainingBall)
   local newMatchBall = mode == "match" and state.lastBall ~= nil and state.lastBall ~= snapshot.ball
@@ -294,12 +277,11 @@ local function observeSnapshot(snapshot, time)
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
     state.resetPending = newMatchBall; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
     state.targetChangedAt = nil
-    if newMatchBall or mode == "training" then state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; confirmedDirect = false end
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
   if order == "new" then state.sequence = snapshot.syncSequence end
-  observeTarget(confirmedDirect and state.directTargetId or snapshot.targetId, time); return true
+  observeTarget(snapshot.targetId, time); return true
 end
 
 -- parry
@@ -314,13 +296,13 @@ local function fierceActive(time, cooldown)
   state.fierceUntil, state.fierceStartedAt, state.fierceCycle = 0, 0, nil; return false
 end
 local function request(reason)
-  local now = clock(); local redirectReturn = reason == "redirect_return"
+  local now = clock()
   if
     now < state.nextAttemptAt
     or fierceActive(now, safeCooldown())
     or state.fired
     or not state.player
-    or (not redirectReturn and (not state.targetKnown or state.target ~= state.player.UserId))
+    or (not state.targetKnown or state.target ~= state.player.UserId)
   then
     return false
   end
@@ -336,7 +318,7 @@ local function request(reason)
       and state.bound
       and state.fired
       and state.player ~= nil
-      and (redirectReturn or (state.targetKnown and state.target == state.player.UserId))
+      and (state.targetKnown and state.target == state.player.UserId)
   end
   local function allowed()
     return sameCycle()
@@ -430,7 +412,7 @@ local function tickTraining(value, root, time)
 end
 local function resolveVelocity(value, position, speed, time)
   local velocity = vector(value.velocity) and value.velocity or Vector3.zero; local direction = value.syncDirection
-  local freshReturn = finite(state.targetChangedAt) and time >= state.targetChangedAt and time - state.targetChangedAt <= CONFIG.DIRECT_TARGET_MAX_AGE
+  local freshReturn = finite(state.targetChangedAt) and time >= state.targetChangedAt and time - state.targetChangedAt <= CONFIG.RETURN_DIRECTION_MAX_AGE
   if freshReturn and finite(speed) and speed > 0 and vector(direction) and direction.Magnitude > 0.01 then
     local synced = direction.Unit * speed
     if velocity.Magnitude < 0.1 or velocity:Dot(synced) < 0 then return synced end
@@ -504,9 +486,7 @@ local function tick(character, root, generation)
     state.resetPending = false
   end
   local velocity = resolveVelocity(value, position, speed, time); state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
-  local direct = value.targetUncertain == true and directTargetConfirmed(value, time)
-  if value.targetUncertain == true and not direct then phase("waiting", "target_uncertain"); return end
-  if not state.player or (value.targetId ~= state.player.UserId and not direct) then phase("waiting", "not_target"); return end
+  if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
   if not geometry then return end
   if state.retryReady then
@@ -607,6 +587,7 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   if not gameInfo.isSnapshotValid(value) or value.teleported or value.locked then return false end
   local time = clock()
   if not observeSnapshot(value, time) then return false end
+  if state.target ~= state.player.UserId then return false end
   if state.fired and finite(redirectAt) and state.lastFireAt >= redirectAt then return true end
   local position, velocity = value.position, value.velocity; local own = gameInfo.getRootPosition(state.root)
   if not vector(position) or not vector(own) then return false end
@@ -639,21 +620,21 @@ function AutoParry.onBallSync(data)
   if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
-    state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.teleported, state.teleportSequence = true, sequence
-    state.lastBall = nil; state.cycle += 1
-    state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
-    state.resetPending = true; state.speed, state.distance, state.approaching = 0, 0, false
-    state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.nextAttemptAt = 0
-    state.lastPosition, state.lastSampleAt = nil, 0; state.awayAt, state.awayTarget = nil, nil
-    table.clear(state.clicks); table.clear(state.returns)
-    phase("waiting", "teleport_lock"); return true
+    state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
+    state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
+    state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.resetPending = true
+    state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
+    state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+    state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
+    table.clear(state.returns); phase("waiting", "teleport_lock")
+    return true
   end
   if state.teleported and state.teleportSequence then
     local current = gameInfo.getSyncSequence()
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
   state.teleported, state.teleportSequence = false, nil; local now, target = clock(), tonumber(data.TargetPlayerID)
-  if finite(target) then state.directTargetId, state.directTargetAt, state.directTargetSequence = target, now, sequence; observeTarget(target, now) end
+  observeTarget(target or -1, now)
   if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true
 end
