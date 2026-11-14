@@ -13,7 +13,7 @@ function Context.setup() return true end
 function Context.create(deps, deviceDesktop)
   local CONFIG = deps.Theme.tokens; local C, GRAD = CONFIG.COLORS, CONFIG.GRADIENT
   local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H; local UIS, RunService, Players = game:GetService("UserInputService"), game:GetService("RunService"), game:GetService("Players")
-  local TweenService = game:GetService("TweenService"); local Camera = workspace.CurrentCamera
+  local TweenService = game:GetService("TweenService")
   local Utils = deps.Utils; local outlineGradients = setmetatable({}, { __mode = "k" })
   local UIState = {
     connections = {},
@@ -45,6 +45,8 @@ function Context.create(deps, deviceDesktop)
   local pulseButton
   local function inst(cls, props, parent)
     local o = Instance.new(cls)
+    if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
+    if o:IsA("GuiButton") then o.AutoButtonColor = false end
     if props then
       for k, v in pairs(props) do
         o[k] = v
@@ -93,13 +95,13 @@ function Context.create(deps, deviceDesktop)
     return tween
   end
   local function safeCancel(t)
-    if t then t:Cancel() end
+    if t then context.motion.cancel(t) end
   end
   local function setTextIfChanged(label, text)
     if label.Text ~= text then label.Text = text end
   end
   local function viewport()
-    local currentCamera = workspace.CurrentCamera or workspace.CurrentCamera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
+    local currentCamera = workspace.CurrentCamera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
   end
   local function setConfigValue(key, value) return Utils.setConfig({ [key] = value }) end
   pulseButton = function(button)
@@ -145,7 +147,9 @@ function Context.create(deps, deviceDesktop)
     local THRESH_SQ = CONFIG.DRAG_THRESHOLD_SQ
     trackConn(handle.InputBegan:Connect(function(input)
       if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-      if disableOnMobile and UIS.TouchEnabled then return end
+      if not UIState.panelOpen and target == context.refs.configPanel then return end
+      if UIState.closing or not deps.Runtime.isVisible(handle) then return end
+      if disableOnMobile and not UIState.desktop then return end
       if state ~= "Idle" then return end
       state, wasDragged, dragInput = "Pressed", false, input; local abs = target.AbsolutePosition
       local anchor = target.AnchorPoint; dragOffX, dragOffY = input.Position.X - abs.X - target.AbsoluteSize.X * anchor.X, input.Position.Y - abs.Y - target.AbsoluteSize.Y * anchor.Y
@@ -153,6 +157,7 @@ function Context.create(deps, deviceDesktop)
     end))
     trackConn(UIS.InputChanged:Connect(function(input)
       if state == "Idle" or not dragInput then return end
+      if UIState.closing or not deps.Runtime.isVisible(handle) then state, dragInput, wasDragged = "Idle", nil, false; return end
       local isMouseDrag = dragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
       local isTouchDrag = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
       if not isMouseDrag and not isTouchDrag then return end
@@ -161,22 +166,30 @@ function Context.create(deps, deviceDesktop)
       if state == "Dragging" then
         local vp, sz = viewport(), target.AbsoluteSize; local scale = coordinateScale and coordinateScale() or (context.refs.responsiveScale and context.refs.responsiveScale.Scale or 1)
         scale = math.max(scale, 0.01)
-        target.Position = UDim2.new(
-          0,
-          math.clamp((input.Position.X - dragOffX) / scale, 0, math.max(0, (vp.X - sz.X) / scale)),
-          0,
-          math.clamp((input.Position.Y - dragOffY) / scale, 0, math.max(0, (vp.Y - sz.Y) / scale))
+        local parent = target.Parent
+        local origin = parent and parent:IsA("GuiObject") and parent.AbsolutePosition or Vector2.zero
+        local anchor = target.AnchorPoint
+        target.Position = UDim2.fromOffset(
+          (math.clamp(input.Position.X - dragOffX - sz.X * anchor.X, 0, math.max(0, vp.X - sz.X)) + sz.X * anchor.X - origin.X) / scale,
+          (math.clamp(input.Position.Y - dragOffY - sz.Y * anchor.Y, 0, math.max(0, vp.Y - sz.Y)) + sz.Y * anchor.Y - origin.Y) / scale
         )
         if onDragMove then onDragMove() end
       end
     end))
-    trackConn(UIS.InputEnded:Connect(function(input)
-      if input ~= dragInput or state == "Idle" then return end
+    local function releaseDrag()
+      if state == "Idle" then return end
       state, dragInput = "Idle", nil
       if wasDragged and onDragEnd then onDragEnd() end
       task.defer(function()
         if state == "Idle" then wasDragged = false end
       end)
+    end
+    trackConn(UIS.InputEnded:Connect(function(input)
+      if input == dragInput then releaseDrag() end
+    end))
+    trackConn(UIS.WindowFocusReleased:Connect(releaseDrag))
+    trackConn(handle:GetPropertyChangedSignal("Visible"):Connect(function()
+      if not handle.Visible then releaseDrag() end
     end))
     return function() return state == "Dragging" or wasDragged end
   end
@@ -185,9 +198,12 @@ function Context.create(deps, deviceDesktop)
     trackConn(RunService.Heartbeat:Connect(function(dt)
       elapsed += dt
       if elapsed < 0.05 then return end
-      elapsed = 0; local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
+      elapsed %= 0.05
+      if UIState.closing then return end
+      local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
       for gradient in pairs(outlineGradients) do
-        if gradient.Parent then gradient.Offset = offset else outlineGradients[gradient] = nil end
+        if not gradient.Parent then outlineGradients[gradient] = nil
+        elseif deps.Runtime.isVisible(gradient) then gradient.Offset = offset end
       end
     end))
   end
@@ -236,10 +252,30 @@ function Context.create(deps, deviceDesktop)
   animateOutlines(); context.refs.responsiveScale = inst("UIScale", { Scale = 1, Parent = context.refs.screenGui })
   local function updateResponsiveScale()
     local size = viewport(); context.refs.responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
-    if context.refs.miniGui and context.refs.miniGui.Visible then context.floating.applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
+    local scale = context.refs.responsiveScale.Scale
+    for _, name in ipairs({ "configPanel", "floatingButton", "clashBall", "parryBall", "darkBall", "jumpBall", "upDashBall" }) do
+      local object = context.refs[name]
+      if object and object.Parent and object.Visible then
+        -- Balls parked offscreen stay parked until explicitly shown.
+        local pos, dimensions = object.AbsolutePosition, object.AbsoluteSize
+        if name == "configPanel" or name == "floatingButton" or pos.X + dimensions.X > 0 then
+          local x = math.clamp(pos.X, 0, math.max(0, size.X - dimensions.X))
+          local y = math.clamp(pos.Y, 0, math.max(0, size.Y - dimensions.Y))
+          if x ~= pos.X or y ~= pos.Y then object.Position = UDim2.fromOffset(x / scale, y / scale) end
+        end
+      end
+    end
+    if context.floating and context.refs.miniGui and context.refs.miniGui.Visible then context.floating.applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
   end
-  updateResponsiveScale(); local currentCamera = workspace.CurrentCamera or Camera
-  if currentCamera then trackConn(currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) end
+  local cameraConnection
+  local function bindCamera()
+    if cameraConnection then safeDisconnect(cameraConnection); untrackConn(cameraConnection) end
+    local camera = workspace.CurrentCamera
+    cameraConnection = camera and trackConn(camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) or nil
+    updateResponsiveScale()
+  end
+  trackConn(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)); bindCamera()
+  context.updateResponsiveScale = updateResponsiveScale
   function context.destroy()
     if not context.scope.alive then return end
     if UIState.manualHoldInput then Utils.setManualSpamActive(false) end

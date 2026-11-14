@@ -44,7 +44,8 @@ function Runtime.scope()
     scope.alive = false; local pending = resources
     resources = {}
     for _, cleanup in pairs(pending) do
-      cleanup()
+      local ok, reason = pcall(cleanup)
+      if not ok then warn("[Exodus UI] Cleanup failed: " .. tostring(reason)) end
     end
   end
   return scope
@@ -128,6 +129,7 @@ end
 function Runtime.isVisible(object)
   while object do
     if object:IsA("GuiObject") and not object.Visible then return false end
+    if object:IsA("LayerCollector") and not object.Enabled then return false end
     object = object.Parent
   end
   return true

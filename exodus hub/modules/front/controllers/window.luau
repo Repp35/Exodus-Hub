@@ -18,7 +18,7 @@ function Controller.create(context)
   local BTN_SIZE = context.theme.BTN_SIZE; local PARTICLE_COLORS = context.theme.PARTICLE_COLORS
   local inst = context.inst; local corner = context.corner
   local stroke = context.stroke; local twPlay = context.twPlay
-  local safeCancel = context.safeCancel; local setConfigValue = context.setConfigValue
+  local safeCancel = context.safeCancel
   local trackConn = context.trackConn; local untrackConn = context.untrackConn
   local safeDisconnect = context.safeDisconnect; local makeDraggable = context.makeDraggable
   local makeBtn = context.makeBtn; local _wait = task.wait
@@ -41,11 +41,12 @@ function Controller.create(context)
       Parent = context.refs.particleLayer,
     })
     corner(dot, 999); local dur = isFar and math.random(5, 9) or math.random(3, 5)
-    local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1); twPlay(dot, "panel", { BackgroundTransparency = math.max(startTrans - 0.1, 0.05) })
+    local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1)
     local travel = twPlay(dot, dur, {
       Position = UDim2.new(endX, 0, -0.1, 0),
       BackgroundTransparency = 1,
     })
+    if not travel then dot:Destroy(); return end
     if travel then
       local connection
       connection = trackConn(travel.Completed:Connect(function()
@@ -55,14 +56,15 @@ function Controller.create(context)
     end
   end
   local function togglePanel()
-    if not context.refs.configPanel or not context.refs.configPanel.Parent or not context.refs.floatingButton or not context.refs.floatingButton.Parent then return end
+    if UIState.closing or not context.refs.configPanel or not context.refs.configPanel.Parent or not context.refs.floatingButton or not context.refs.floatingButton.Parent then return end
     UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
     safeCancel(UIState.btnTween)
     if context.kit then context.kit.dismiss() end
     if context.pages then context.pages.suspend() end
     if UIState.panelOpen then
       if not context.refs.configPanel.Visible then context.refs.configPanel.GroupTransparency = 1; context.refs.configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
-      context.refs.configPanel.Visible = true; UIState.panelTween = twPlay(context.refs.configPanel, "panel", { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 })
+      context.refs.configPanel.Visible = true; context.updateResponsiveScale()
+      UIState.panelTween = twPlay(context.refs.configPanel, "panel", { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 })
       UIState.btnTween = twPlay(context.refs.floatingButton, "control", { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) })
     else
       UIState.panelTween = twPlay(context.refs.configPanel, "panel", { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 })
@@ -106,9 +108,9 @@ function Controller.create(context)
   })
   local particlePanel = context.refs.configPanel
   _spawn(function()
-    while context.refs.configPanel == particlePanel and particlePanel.Parent do
+    while context.scope.alive and context.refs.configPanel == particlePanel and particlePanel.Parent do
       _wait(math.random() * 0.6 + 0.15)
-      if context.refs.configPanel == particlePanel and particlePanel.Parent and particlePanel.Visible then spawnParticle() end
+      if context.refs.configPanel == particlePanel and particlePanel.Parent and particlePanel.Visible and not UIState.closing then spawnParticle() end
     end
   end)
   context.refs.titleBar = inst("Frame", {
@@ -120,7 +122,7 @@ function Controller.create(context)
   })
   corner(context.refs.titleBar, 16)
   makeDraggable(context.refs.titleBar, context.refs.configPanel, function()
-    setConfigValue("PanelX", context.refs.configPanel.Position.X.Offset); setConfigValue("PanelY", context.refs.configPanel.Position.Y.Offset)
+    Utils.setConfig({ PanelX = context.refs.configPanel.Position.X.Offset, PanelY = context.refs.configPanel.Position.Y.Offset })
   end)
   local titleGroup = inst("Frame", {
     Size = UDim2.new(1, -CONFIG.TITLE_SIDE_MARGIN * 2, 1, 0),

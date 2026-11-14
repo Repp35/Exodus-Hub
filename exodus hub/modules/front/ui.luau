@@ -55,6 +55,7 @@ function ExodusUI.setup(deps, preview)
   local function cleanup()
     context.destroy()
     if _G.ExodusUICleanup == cleanup then
+      if active == context then active = nil end
       _G.ExodusUICleanup, _G.ExodusUIFadeOut, _G.ExodusUIRestore = nil, nil, nil; _G.ExodusShowPersistentNotification, _G.ExodusClearPersistentNotification = nil, nil
     end
   end
@@ -90,7 +91,8 @@ function ExodusUI.setup(deps, preview)
     abilitiesEnabled = deps.GameInfo.areAbilitiesEnabled,
     onNavigate = context.window.updateNavigation,
   })
-  context.floating.refreshAbilities(); deps.Input.create(context)
+  context.floating.refreshAbilities(); context.updateResponsiveScale()
+  deps.Input.create(context)
   if preview and preview.snapshot then context.pages.restore(preview.snapshot) end
   context.scope.add(deps.Utils.observeSpam(function()
     local manual = deps.Utils.isManualSpamActive()

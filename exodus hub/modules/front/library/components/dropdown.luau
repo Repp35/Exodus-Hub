@@ -95,7 +95,8 @@ function Components.install(context)
       }, menu)
       menuMotion = kit.createMotion(openScope)
       openScope.add(portal, function() portal:Destroy() end)
-      local ensureRoom = true
+      local ensureRoom = true; local lastGeometry
+      local items = {}
       local function position()
         if not trigger.Parent or not Runtime.isVisible(trigger) then close(); return end
         local camera = workspace.CurrentCamera; local view = camera and camera.ViewportSize or Vector2.new(1920, 1080)
@@ -112,25 +113,38 @@ function Components.install(context)
           end
           ancestor = ancestor.Parent
         end
+        local rootPosition, rootSize = handle.Root.AbsolutePosition, handle.Root.AbsoluteSize
+        local geometry = { pos.X, pos.Y, size.X, size.Y, view.X, view.Y, rootPosition.Y, rootSize.Y }
+        local unchanged = lastGeometry ~= nil
+        for index, coordinate in ipairs(geometry) do
+          if not lastGeometry or lastGeometry[index] ~= coordinate then unchanged = false; break end
+        end
+        if unchanged and not ensureRoom then return end
+        lastGeometry = geometry
         local layout = Theme.DROPDOWN; local scale = math.max(0.1, size.Y / 28)
         local row, gap, pad = layout.rowHeight * scale, layout.rowGap * scale, layout.padding * scale
-        local desired = math.min(#choices, definition.maxVisible or CONFIG.DROPDOWN_ROWS) * (row + gap) + pad * 2
+        local visibleRows = math.clamp(tonumber(definition.maxVisible) or CONFIG.DROPDOWN_ROWS, 1, #choices)
+        local desired = visibleRows * (row + gap) + pad * 2
         local bottom = math.max(pos.Y + size.Y, handle.Root.AbsolutePosition.Y + handle.Root.AbsoluteSize.Y); local margin, spacing = layout.margin, layout.gap * scale
         local below = math.max(0, view.Y - bottom - spacing - margin); local moved = false
         if ensureRoom and scroll and below < desired then
           local room = math.max(0, handle.Root.AbsolutePosition.Y - scroll.AbsolutePosition.Y - pad); local shift = math.min(desired - below, room)
           if shift > 0 then scroll.CanvasPosition = Vector2.new(scroll.CanvasPosition.X, scroll.CanvasPosition.Y + shift / scale); moved = true end
         end
-        ensureRoom = false; local height = math.min(desired, below)
-        if height <= 0 and not moved then close(); return end
+        ensureRoom = false
+        if moved then lastGeometry = nil; return end
+        local above = math.max(0, pos.Y - spacing - margin)
+        local upward = below < desired and above > below
+        local height = math.min(desired, upward and above or below)
+        if height <= 0 then close(); return end
         local width = math.min(size.X, math.max(1, view.X - margin * 2)); menu.AnchorPoint = Vector2.zero
-        menu.Size = UDim2.fromOffset(width, height); menu.Position = UDim2.fromOffset(math.clamp(pos.X, margin, math.max(margin, view.X - width - margin)), bottom + spacing)
+        menu.Size = UDim2.fromOffset(width, height)
+        menu.Position = UDim2.fromOffset(math.clamp(pos.X, margin, math.max(margin, view.X - width - margin)), upward and pos.Y - spacing - height or bottom + spacing)
         list.CanvasSize = UDim2.fromOffset(0, #choices * (row + gap) + pad * 2)
-        for index, item in ipairs(list:GetChildren()) do
-          if item:IsA("TextButton") then
-            item.Size = UDim2.new(1, -pad * 2 - Theme.SCROLLBAR, 0, row); item.Position = UDim2.fromOffset(pad, pad + (item.LayoutOrder - 1) * (row + gap))
-            item.TextSize = math.max(10, TEXT.body * scale)
-          end
+        for index, item in ipairs(items) do
+          item.Size = UDim2.new(1, -pad * 2 - Theme.SCROLLBAR, 0, row)
+          item.Position = UDim2.fromOffset(pad, pad + (index - 1) * (row + gap))
+          item.TextSize = math.max(10, TEXT.body * scale)
         end
       end
       local activeItem, resetActive
@@ -143,6 +157,7 @@ function Components.install(context)
           TextColor3 = selected and C.text or C.subtext,
           ZIndex = 3,
         })
+        items[#items + 1] = item
         local border = kit.stroke(item); border.Transparency = 1
         local reset
         local refresh

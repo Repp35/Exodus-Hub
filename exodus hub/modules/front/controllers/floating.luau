@@ -54,7 +54,8 @@ function Controller.create(context)
   end
   local function paintClashBall() paintBall(context.refs.clashBall, UIState.clashBallOn, "ON", "OFF", C.green, C.red, 18, 16) end
   local function setClashBall(v, silent)
-    UIState.clashBallOn = v; setConfigValue("AutoSpam", v)
+    if setConfigValue("AutoSpam", v) == false then return end
+    UIState.clashBallOn = v
     if silent then return end
     paintClashBall(); pulseBall(context.refs.clashBall)
     if context.notifications.toast then context.notifications.toast("Auto Spam " .. (v and "On" or "Off")) end
@@ -381,21 +382,20 @@ function Controller.create(context)
   end))
   context.refs.miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
   local function saveMiniPosition() Utils.setConfig({ MiniX = context.refs.miniGui.Position.X.Offset, MiniY = context.refs.miniGui.Position.Y.Offset }) end
-  makeDraggable(miniTitleBar, context.refs.miniGui, saveMiniPosition, false, miniScreenScale, saveMiniPosition)
+  makeDraggable(miniTitleBar, context.refs.miniGui, saveMiniPosition, false, miniScreenScale)
+  local visibility = {
+    ParryBallVisible = showParryBall,
+    ClashBallVisible = showClashBall,
+    DarkBallVisible = showDarkBall,
+    JumpBallVisible = showJumpBall,
+    UpDashBallVisible = showUpDashBall,
+    MiniSpamVisible = showMini,
+  }
   local function sync(changes)
     if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall() end
     if changes.AutoParry ~= nil then paintParryBall(changes.AutoParry == true) end
     if changes.AutoDark ~= nil then paintDarkBall(changes.AutoDark == true) end
     if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
-    local visibility = {
-      ParryBallVisible = showParryBall,
-      ClashBallVisible = showClashBall,
-      DarkBallVisible = showDarkBall,
-      JumpBallVisible = showJumpBall,
-      UpDashBallVisible = showUpDashBall,
-      MiniSpamVisible = showMini,
-    }
-
     for key, show in pairs(visibility) do
       if changes[key] ~= nil then show(changes[key] == true) end
     end
