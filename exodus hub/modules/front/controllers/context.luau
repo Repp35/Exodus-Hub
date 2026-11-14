@@ -36,8 +36,7 @@ function Context.create(deps, deviceDesktop)
   local context = { deps = deps, theme = CONFIG, state = UIState, refs = {}, outlines = outlineGradients }; context.services = { UIS = UIS, RunService = RunService, Players = Players }
   context.scope = deps.Runtime.scope(); context.motion = deps.Runtime.motion(context.scope)
   if type(deviceDesktop) ~= "boolean" then deviceDesktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled end
-  UIState.deviceDesktop = deviceDesktop
-  UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or deviceDesktop
+  UIState.deviceDesktop = deviceDesktop; UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or deviceDesktop
   local function trackConn(connection) return context.scope.add(connection) end
   local function untrackConn(connection) context.scope.forget(connection) end
   local function safeDisconnect(connection)
