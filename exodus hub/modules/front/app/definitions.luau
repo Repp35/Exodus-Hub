@@ -16,12 +16,6 @@ local CONFIG = {
           column = 1,
           components = {
             { kind = "toggle", title = "Auto Parry", key = "AutoParry", shortcutKey = "ParryKeybind" },
-            {
-              kind = "toggle",
-              title = "Delta AP Mode",
-              key = "AutoParryDeltaMode",
-              description = "Delta-style radius and target-return timing. Disable to use the original Exodus AutoParry.",
-            },
             { kind = "toggle", title = "Auto Spam", key = "AutoSpam", shortcutKey = "ClashKeybind" },
             {
               kind = "toggle",
@@ -373,7 +367,6 @@ local CONFIG = {
       DesktopShortcutNotifications = "boolean",
       ForcePCUI = "boolean",
       AutoParry = "boolean",
-      AutoParryDeltaMode = "boolean",
       AutoParryWindowFactor = "rate",
       AutoParryFactor08Applied = "boolean",
       AutoParryFactor03Applied = "boolean",
@@ -433,7 +426,6 @@ local CONFIG = {
       DesktopShortcutNotifications = true,
       ForcePCUI = false,
       AutoParry = true,
-      AutoParryDeltaMode = false,
       AutoParryWindowFactor = 0.3,
       AutoParryFactor08Applied = true,
       AutoParryFactor03Applied = true,
