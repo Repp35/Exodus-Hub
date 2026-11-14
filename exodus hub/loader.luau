@@ -699,6 +699,45 @@ local function waitForLocalPlayer(timeout)
   until os.clock() >= deadline
   return false, "LocalPlayer indisponível após esperar " .. timeout .. "s"
 end
+local function clashInProgress(loaded)
+  if type(loaded) ~= "table" or type(loaded.utils) ~= "table" or loaded.utils.isActive() ~= true then return false end
+  local player = game:GetService("Players").LocalPlayer
+  local character = player and player.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  if humanoid and humanoid.Health <= 0 then return false end
+  if type(loaded.gameinfo) == "table" then
+    if type(loaded.gameinfo.getDefensePhysics) == "function" then
+      local ok, physics = pcall(loaded.gameinfo.getDefensePhysics)
+      if ok and type(physics) == "table" and physics.inClash == true then return true end
+    end
+    if type(loaded.gameinfo.getClashContext) == "function" then
+      local ok, context = pcall(loaded.gameinfo.getClashContext)
+      if ok and type(context) == "table" and type(context.age) == "number" and context.age >= 0 and context.age <= 0.8 then return true end
+    end
+  end
+  if type(loaded.autospam) == "table" and type(loaded.autospam.getActivationContext) == "function" then
+    local ok, state = pcall(loaded.autospam.getActivationContext)
+    if ok and type(state) == "table" and state.active == true then return true end
+  end
+  return false
+end
+local function waitForClashToEnd(onWaiting)
+  local loaded = Exodus.Context
+  if type(loaded) ~= "table" or type(loaded.utils) ~= "table" then return true end
+  local waiting, clearSince = false, nil
+  while loaded.utils.isActive() and Exodus.Context == loaded do
+    if clashInProgress(loaded) then
+      if not waiting and type(onWaiting) == "function" then onWaiting() end
+      waiting, clearSince = true, nil
+    else
+      if not waiting then return true end
+      clearSince = clearSince or os.clock()
+      if os.clock() - clearSince >= 0.4 then return true end
+    end
+    task.wait(0.06)
+  end
+  return false
+end
 local reloadInFlight = false
 local function reloadLatest(onFailure, requestedRevision, automatic)
   local function fail(message)
@@ -736,6 +775,13 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       )
     then
       clearPersistent("update"); reloadInFlight = false
+      return
+    end
+    if not waitForClashToEnd(function()
+      if automatic then notifyPersistent("Update queued: waiting for clash to end", "update", "info") end
+    end) then
+      if automatic then clearPersistent("update") end
+      reloadInFlight = false
       return
     end
     if automatic and type(_G.ExodusUIFadeOut) == "function" then
@@ -808,6 +854,11 @@ local function startInternal()
     end,
     onClose = function() utils.stop() end,
     onReload = reloadLatest,
+    waitForSafeShutdown = function()
+      local ready = waitForClashToEnd(function() notifyPersistent("Waiting for clash to end before closing", "shutdown", "info") end)
+      clearPersistent("shutdown")
+      return ready
+    end,
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
