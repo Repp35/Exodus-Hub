@@ -63,7 +63,7 @@ local state = {
 
 -- configuration
 local CONFIG = {
-  DEFAULT_WINDOW_FACTOR = 0.45,
+  DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
   MATCH_RETRY_DELAY_MAX = 0.5,
   FIERCE_DURATION = 5,
@@ -453,7 +453,10 @@ local function tick(character, root, generation)
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
   if not geometry then return end
-  if state.retryReady then geometry.effectiveWindow = math.min(geometry.effectiveWindow, geometry.deflectWindow * CONFIG.RETRY_WINDOW_FACTOR); geometry.triggerPadding = 0 end
+  if state.retryReady then
+    geometry.effectiveWindow = geometry.deflectWindow * math.min(activeWindowFactor(time), CONFIG.RETRY_WINDOW_FACTOR) + state.ping + CONFIG.FRAME_BASE + state.frameAllowance
+    geometry.triggerPadding = 0
+  end
   local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); state.speed, state.distance, state.approaching = speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold
   if closing > 0 and distance <= threshold then request("parry_requested") end
@@ -588,6 +591,7 @@ function AutoParry.onBallSync(data)
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
   state.teleported, state.teleportSequence = false, nil
+  observeTarget(tonumber(data.TargetPlayerID), clock())
   if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true
 end
