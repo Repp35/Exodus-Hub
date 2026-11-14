@@ -1,0 +1,74 @@
+name: Apagar branches exceto main
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: delete-branches
+  cancel-in-progress: false
+
+jobs:
+  delete-branches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Apagar todas as branches exceto main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keep = 'main';
+            const { owner, repo } = context.repo;
+
+            if (context.ref !== `refs/heads/${keep}`) {
+              core.setFailed('Execute esta Action selecionando a branch main.');
+              return;
+            }
+
+            const { data: repository } = await github.rest.repos.get({ owner, repo });
+            if (repository.default_branch !== keep) {
+              core.setFailed('A branch padrão precisa ser main antes da limpeza.');
+              return;
+            }
+
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const deleted = [];
+            const missing = [];
+            const failed = [];
+
+            for (const branch of branches) {
+              if (branch.name === keep) continue;
+              try {
+                await github.rest.git.deleteRef({
+                  owner, repo, ref: `heads/${branch.name}`,
+                });
+                deleted.push(branch.name);
+                core.info(`Apagada: ${branch.name}`);
+              } catch (error) {
+                if (error.status === 404) {
+                  missing.push(branch.name);
+                  continue;
+                }
+                failed.push(branch.name);
+                core.warning(`Não foi possível apagar ${branch.name}: ${error.message}`);
+              }
+            }
+
+            core.summary.addHeading('Limpeza de branches');
+            core.summary.addRaw('Branch preservada: main\n\n');
+            core.summary.addHeading(`Apagadas: ${deleted.length}`, 2);
+            if (deleted.length) core.summary.addList(deleted);
+            if (missing.length) {
+              core.summary.addHeading('Já removidas durante a execução', 2).addList(missing);
+            }
+            if (failed.length) {
+              core.summary.addHeading('Não removidas; confira os logs e as proteções', 2).addList(failed);
+            }
+            await core.summary.write();
+            if (failed.length) {
+              core.setFailed(`${failed.length} branch(es) não puderam ser apagadas. Nenhuma proteção foi alterada.`);
+            }
