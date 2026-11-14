@@ -44,8 +44,8 @@ local function request(boundUtils, boundRemote, token, guard)
   local requestedAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
   if inFlight == requestToken then inFlight = false end
   if token ~= generation or utils ~= boundUtils then return end
-  status.lastRequestAt = requestedAt
-  sampleIndex = sampleIndex % 256 + 1; local sample = samples[sampleIndex]
+  status.lastRequestAt = requestedAt; sampleIndex = sampleIndex % 256 + 1
+  local sample = samples[sampleIndex]
   if not sample then sample = {}; samples[sampleIndex] = sample end
   sample.at, sample.accepted = status.lastRequestAt, ok and result == true
   if not ok then error(result, 0) end
@@ -92,8 +92,6 @@ local function sync()
             credit = 0
           end
         else
-          -- Auto mode sends once per scheduler cycle without artificial rate gates.
-          -- Yielding remains necessary to keep the Roblox scheduler responsive.
           task.wait()
           if allowed() and not inFlight then request(boundUtils, boundRemote, token, allowed) end
         end
@@ -145,16 +143,16 @@ function Spam.setup(deps)
   sync(); return true
 end
 function Spam.resetState()
-  cancel("reset")
-  status.lastError, status.lastErrorAt = nil, -math.huge; table.clear(samples)
-  sampleIndex = 0; local token = generation
+  cancel("reset"); status.lastError, status.lastErrorAt = nil, -math.huge
+  table.clear(samples); sampleIndex = 0
+  local token = generation
   task.defer(function()
     if token == generation then sync() end
   end)
 end
 function Spam.teardown()
-  cancel("teardown")
-  table.clear(samples); sampleIndex = 0
+  cancel("teardown"); table.clear(samples)
+  sampleIndex = 0
   if utils then
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
     if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
