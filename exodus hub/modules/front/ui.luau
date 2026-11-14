@@ -48,7 +48,7 @@ function ExodusUI.setup(deps, preview)
     local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"); local old = playerGui:FindFirstChild("ExodusUISystem")
     if old then old:Destroy() end
   end
-  local context = deps.Context.create(deps); active = context
+  local context = deps.Context.create(deps, preview and preview.deviceDesktop); active = context
   context.notifications = deps.Notifications.create(context); context.notifications.layer()
   context.floating = deps.Floating.create(context); context.window = deps.Window.create(context)
   deps.Telemetry.create(context); context.lifecycle = deps.Lifecycle.create(context)
@@ -67,7 +67,7 @@ function ExodusUI.setup(deps, preview)
     local wasOpen, snapshot = context.state.panelOpen, context.pages.snapshot()
     task.defer(function()
       if not context.scope.alive or not owner.Parent or context.state.closing then return end
-      local ok, reason = ExodusUI.setup(deps, { snapshot = not reset and snapshot or nil, open = wasOpen })
+      local ok, reason = ExodusUI.setup(deps, { snapshot = not reset and snapshot or nil, open = wasOpen, deviceDesktop = context.state.deviceDesktop })
       if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
     end)
   end
@@ -101,13 +101,6 @@ function ExodusUI.setup(deps, preview)
     context.floating.sync(changes); context.actions.refreshManual()
     if changes.ForcePCUI ~= nil then rebuild() end
   end))
-  local function refreshDevice()
-    local input = context.services.UIS; local desktop = deps.Utils.getConfigValue("ForcePCUI") == true or input.KeyboardEnabled or input.MouseEnabled or not input.TouchEnabled
-    if desktop ~= context.state.desktop and not context.state.closing then rebuild() end
-  end
-  for _, property in ipairs({ "KeyboardEnabled", "MouseEnabled", "TouchEnabled" }) do
-    context.scope.connect(context.services.UIS:GetPropertyChangedSignal(property), refreshDevice)
-  end
   _G.ExodusUIReturnAfterUpdate = nil
   if preview and preview.open then context.window.toggle() end
   return true
