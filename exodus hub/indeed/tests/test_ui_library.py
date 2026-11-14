@@ -322,6 +322,40 @@ panel:Destroy()
         self.assertNotRegex(sources, '[\\U0001F300-\\U0001FAFF\\u2600-\\u27FF\\uFE0F]')
         self.assertNotIn('▾', sources)
 
+    def test_universal_settings_are_session_only_and_legacy_data_is_removed(self):
+        source = (ROOT / 'modules/logic/aux/utils.luau').read_text()
+        persistence = source[source.index('local function isPersistentConfigKey('):source.index('local function saveConfig(')]
+        setter = source[source.index('function Utils.setConfig(patch)'):source.index('function Utils.resetConfig()')]
+        self.run_lua('''
+local CONFIG={SESSION_ONLY_PREFIX='Universal'}
+local http={JSONEncode=function(_,value) return value end}
+local configModule={validatePatch=function() return true end,normalizePatch=function(value) return value end}
+local function warn() end
+''' + persistence + '''
+local config={UniversalFly=true,UniversalFlySpeed=4,UniversalSpeedEnabled=true,UniversalSpeed=50,
+ UniversalGravityEnabled=true,UniversalGravity=90,UniversalInvisicam=true,UniversalNoclip=true,UniversalInfiniteJump=true,
+ AutoParry=true,FlyKeybind=Enum.KeyCode.F,DesktopNotifications=true}
+local saved=serializeConfig(config)
+for key in pairs(config) do
+ if key:sub(1,9)=='Universal' then assert(saved[key]==nil,'session setting persisted: '..key) end
+end
+assert(saved.AutoParry and saved.FlyKeybind.keyCode=='F' and saved.DesktopNotifications)
+local patch,migrated=migrateConfig({UniversalFly=true,UniversalFlySpeed=4,UniversalSpeedEnabled=true,
+ AutoParry=true,FlyKeybind={keyCode='F'},AutoParryFactor08Applied=true,AutoParryFactor03Applied=true})
+assert(migrated and patch.UniversalFly==nil and patch.UniversalFlySpeed==nil and patch.UniversalSpeedEnabled==nil)
+assert(patch.AutoParry and patch.FlyKeybind==Enum.KeyCode.F)
+local state={config={}};local Utils={};local saves=0;local observed
+local configObservers,spamObservers={},{}
+local function snapshot(x) return x end
+local function notify(_,value) observed=value end
+local function refreshNamespace() end
+local function queueSave() saves=saves+1 end
+''' + setter + '''
+assert(Utils.setConfig({UniversalFly=true,UniversalFlySpeed=3}))
+assert(state.config.UniversalFly and state.config.UniversalFlySpeed==3 and saves==0 and observed.UniversalFly)
+assert(Utils.setConfig({AutoParry=true,UniversalFly=false}));assert(saves==1 and not state.config.UniversalFly)
+''')
+
     def test_dropdown_press_is_preview_and_selection_remains_visible_before_fade(self):
         self.run_lua('''
 local kit=newKit();local select=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct'}})

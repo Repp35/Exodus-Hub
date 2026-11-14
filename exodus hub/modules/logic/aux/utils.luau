@@ -39,6 +39,7 @@ local CONFIG = {
   AUTHOR = "deltapolinha_2915",
   FOLDER = "Exodus Hub",
   HISTORY_LIMIT = 32,
+  SESSION_ONLY_PREFIX = "Universal",
 }
 
 -- helpers
@@ -224,10 +225,13 @@ function Utils.appendClashLog(log, value)
   if type(appendfile) == "function" and log.content == nil then appendfile(log.path, value) else log.content = (log.content or "") .. value; writefile(log.path, log.content) end
   return true
 end
+local function isPersistentConfigKey(key) return type(key) == "string" and key:sub(1, #CONFIG.SESSION_ONLY_PREFIX) ~= CONFIG.SESSION_ONLY_PREFIX end
 local function serializeConfig(config)
   local data = {}
   for key, value in pairs(config) do
-    if typeof(value) == "EnumItem" then data[key] = value.EnumType == Enum.KeyCode and { keyCode = value.Name } or { mouseButton = value.Name } else data[key] = value end
+    if isPersistentConfigKey(key) then
+      if typeof(value) == "EnumItem" then data[key] = value.EnumType == Enum.KeyCode and { keyCode = value.Name } or { mouseButton = value.Name } else data[key] = value end
+    end
   end
   return http:JSONEncode(data)
 end
@@ -266,7 +270,9 @@ local function migrateConfig(data)
   if data.ClickMethod == "Game" then data.ClickMethod, migrated = "Deflect", true end
   local patch = {}
   for key, value in pairs(data) do
-    if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
+    if not isPersistentConfigKey(key) then
+      migrated = true
+    elseif key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
       value = decodeKeyCode(value)
       if value ~= nil then
         local valid, reason = configModule.validatePatch({ [key] = value })
@@ -411,14 +417,18 @@ function Utils.setConfig(patch)
   else
     normalized = snapshot(patch)
   end
-  local changes = {}
+  local changes, persistentChanged = {}, false
   for key, value in pairs(normalized) do
-    if state.config[key] ~= value then state.config[key], changes[key] = value, value end
+    if state.config[key] ~= value then
+      state.config[key], changes[key] = value, value
+      if isPersistentConfigKey(key) then persistentChanged = true end
+    end
   end
   if next(changes) == nil then return true end
   notify(configObservers, changes)
   if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil or changes.MS ~= nil then notify(spamObservers) end
-  refreshNamespace(); queueSave()
+  refreshNamespace()
+  if persistentChanged then queueSave() end
   return true
 end
 function Utils.resetConfig()
