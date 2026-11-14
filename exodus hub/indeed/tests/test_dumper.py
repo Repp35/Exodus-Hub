@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 class DumperTests(unittest.TestCase):
-    def test_collects_scripts_without_per_instance_or_retry_delays(self):
+    def test_collects_game_data_and_retries_failed_scripts(self):
         source = (Path(__file__).resolve().parents[2] / 'modules/logic/extras/universal/dumper.luau').read_text()
         source = re.sub(r'\b([A-Za-z_]\w*)\s*([+-])=\s*1\b', r'\1 = \1 \2 1', source)
         lua = r'''
@@ -39,22 +39,31 @@ class DumperTests(unittest.TestCase):
           end
         end
         getnilinstances = function() return {detached, direct} end
-        decompile = function() calls = calls + 1; return 'failed to decompile' end
+        decompile = function()
+          calls = calls + 1
+          if calls >= 2 then
+            local hasTree = false
+            for path in pairs(files) do if path:find('/tree.txt', 1, true) then hasTree = true end end
+            assert(hasTree, 'game data should be saved before retries')
+          end
+          if calls == 3 then return 'return 789' end
+          return 'failed to decompile'
+        end
         local module = (function()
         ''' + source + r'''
         end)()
         assert(module.start({onComplete=function(result) finished=result end,
           onError=function(err) error(err) end}))
-        assert(finished and finished.total == 3 and finished.saved == 2 and finished.failed == 1)
-        assert(calls == 1, 'failed scripts should not be retried repeatedly')
-        assert(waits <= 3, 'discovery should not pause for every small group of instances')
+        assert(finished and finished.total == 3 and finished.saved == 3 and finished.failed == 0)
+        assert(calls == 3, 'failed scripts should be retried until recovered')
+        assert(waits <= 5, 'discovery and metadata should run in large batches')
         local scriptFiles, tree = 0, nil
         for path, contents in pairs(files) do
           if path:find('/scripts/', 1, true) then scriptFiles=scriptFiles+1 end
           if path:find('/tree.txt', 1, true) then tree=contents end
         end
-        assert(scriptFiles == 2 and tree and tree:find('Remote', 1, true))
-        assert(not tree:find('[Part]', 1, true), 'irrelevant objects should not be catalogued')
+        assert(scriptFiles == 3 and tree and tree:find('Remote', 1, true))
+        assert(tree:find('[Part]', 1, true), 'all instances should be catalogued')
         '''
         lib = ctypes.CDLL('liblua5.4.so.0')
         lib.luaL_newstate.restype = ctypes.c_void_p

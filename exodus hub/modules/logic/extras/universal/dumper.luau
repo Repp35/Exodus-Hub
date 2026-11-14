@@ -19,7 +19,7 @@ local status = {
 local CONFIG = {
   PREFIX = "SrcDump",
   PROGRESS_EVERY = 25,
-  MAX_SOURCE_ATTEMPTS = 1,
+  MAX_SOURCE_ATTEMPTS = 5,
   INSTANCE_BATCH = 5000,
   SCRIPT_BATCH = 25,
   SAVE_BYTECODE = true,
@@ -192,7 +192,7 @@ local function nextFolder()
     index += 1; candidate = base .. "_" .. index
   end
 end
-local function addDiscovery(api, catalog, candidates, seen, errors, token)
+local function addDiscovery(api, add, errors, token)
   local ok, values = pcall(api)
   if not ok or type(values) ~= "table" then errors[#errors + 1] = "discovery failed: " .. errorText(values); return end
   local processed = 0
@@ -200,10 +200,7 @@ local function addDiscovery(api, catalog, candidates, seen, errors, token)
     if token.cancelled then return end
     processed += 1
     if processed % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
-    if not seen[object] and isInstance(object) and SCRIPT_CLASSES[objectClass(object)] and allowed(object, CONFIG.INCLUDE_NIL_INSTANCES) then
-      seen[object] = true; local item = { instance = object, path = objectPath(object), origin = "executor" }
-      catalog[#catalog + 1] = item; candidates[#candidates + 1] = item
-    end
+    add(object, "executor", CONFIG.INCLUDE_NIL_INSTANCES)
   end
 end
 
@@ -229,12 +226,9 @@ local function run(token, callbacks)
   emit(callbacks, "onStatus", "Finding scripts..."); local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
   local function add(object, origin, detached)
     if seen[object] or not isInstance(object) then return end
-    local class = objectClass(object)
-    if not SCRIPT_CLASSES[class] and not REMOTE_CLASSES[class] then return end
-    if not allowed(object, detached) then return end
-    seen[object] = true; local item = { instance = object, path = objectPath(object), origin = origin }
-    catalog[#catalog + 1] = item
-    if SCRIPT_CLASSES[class] then candidates[#candidates + 1] = item end
+    seen[object] = true; local class = objectClass(object)
+    local item = { instance = object, origin = origin, detached = detached }; catalog[#catalog + 1] = item
+    if SCRIPT_CLASSES[class] and allowed(object, detached) then item.path = objectPath(object); candidates[#candidates + 1] = item end
   end
   add(game, "game", false)
   local ok, descendants = pcall(function() return game:GetDescendants() end)
@@ -247,9 +241,9 @@ local function run(token, callbacks)
   else
     discoveryErrors[#discoveryErrors + 1] = "game:GetDescendants: " .. errorText(descendants)
   end
-  for _, name in ipairs({ "getscripts", "getnilinstances", "getloadedmodules" }) do
+  for _, name in ipairs({ "getscripts", "getnilinstances", "getloadedmodules", "getinstances" }) do
     local api = lookup(name)
-    if api then addDiscovery(api, catalog, candidates, seen, discoveryErrors, token) end
+    if api then addDiscovery(api, add, discoveryErrors, token) end
   end
   status.total = #candidates; emit(callbacks, "onProgress", 0, #candidates)
   local decompiler, disassembler = lookup("decompile"), lookup("disassemble"); local closureReaders, readers = {}, {}
@@ -297,7 +291,7 @@ local function run(token, callbacks)
       end
       attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"; return value
     end
-    for round = 1, CONFIG.MAX_SOURCE_ATTEMPTS do
+    for round = 1, 1 do
       if token.cancelled then return nil, "Dump canceled" end
       attempts[#attempts + 1] = "source attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS
       local sourceOk, directSource = pcall(function() return object.Source end)
@@ -341,12 +335,6 @@ local function run(token, callbacks)
       local byteOk, byteError = saveFile(base .. "/bytecode/" .. stem .. ".bin", bytecode)
       if byteOk then bytecodes += 1 else attempts[#attempts + 1] = "save bytecode: " .. tostring(byteError) end
     end
-    if not source and CONFIG.SAVE_DISASSEMBLY and disassembler then
-      local assembly = attempt("disassemble(instance)", disassembler, object, true)
-      if not assembly and bytecode then assembly = attempt("disassemble(bytecode)", disassembler, bytecode, true) end
-      if not assembly and closure then assembly = attempt("disassemble(closure)", disassembler, closure, true) end
-      if assembly then saveFile(base .. "/disassembly/" .. stem .. ".txt", assembly .. "\n") end
-    end
     local context = line(safeProperty(object, "RunContext", "unavailable"))
     local header = table.concat({
       "-- SrcDump",
@@ -364,65 +352,36 @@ local function run(token, callbacks)
       if savedOk then manifest[#manifest + 1] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
       else manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | write failed" end
     else
-      unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, attempts = attempts, context = context }; manifest[index] = "[PENDING] " .. line(item.path)
-      failed += 1
+      unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, closure = closure, attempts = attempts, context = context }
+      manifest[index] = "[PENDING] " .. line(item.path); failed += 1
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
     if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
     if index % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
   end
-  for _, entry in ipairs(unresolved) do
-    if token.cancelled then return nil, "Dump canceled" end
-    local recovered = entry.bytecode and sourceCache[entry.bytecode]
-    if recovered then
-      local header = table.concat({
-        "-- SrcDump",
-        "-- index: " .. entry.index,
-        "-- class: " .. objectClass(entry.item.instance),
-        "-- path: " .. line(entry.item.path),
-        "-- discovered_by: " .. entry.item.origin,
-        "-- run_context: " .. entry.context,
-        "-- method: cached bytecode (later match)",
-        "",
-      }, "\n")
-      local ok, err = saveFile(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
-      if ok then
-        saved += 1; failed -= 1
-        cacheHits += 1; manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | cached bytecode (later match) | scripts/" .. entry.stem .. ".lua"
-      else
-        errors[#errors + 1] = "[WRITE_ERROR] " .. line(entry.item.path) .. " | " .. tostring(err); manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | write failed"
-      end
-    else
-      local category = entry.bytecode and "bytecode available; source unavailable" or "bytecode unavailable to client"; errors[#errors + 1] = "[SOURCE_ERROR] "
-        .. line(entry.item.path)
-        .. " | "
-        .. objectClass(entry.item.instance)
-        .. " | "
-        .. category
-        .. "\n  "
-        .. table.concat(entry.attempts, "\n  ")
-      manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | " .. category
-    end
-  end
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
-  local tree = { "SrcDump - scripts and remotes", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
-  local remoteCount = 0
+  emit(callbacks, "onStatus", "Saving game data..."); local tree = { "SrcDump - instances", "", "" }
+  local remotes = { "SrcDump - remotes and bindables", "" }; local remoteCount, instanceCount = 0, 0
   for index, item in ipairs(catalog) do
     if token.cancelled then return nil, "Dump canceled" end
     local object = item.instance
-    local detail = ("[%s] %s | discovered=%s | attributes=%s | tags=%s"):format(
-      objectClass(object),
-      line(item.path),
-      item.origin,
-      attributes(object),
-      tags(object, collection)
-    )
-    tree[#tree + 1] = detail
-    if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
+    if allowed(object, item.detached) then
+      local class = objectClass(object)
+      local detail = ("[%s] %s | discovered=%s | attributes=%s | tags=%s"):format(
+        class,
+        line(item.path or objectPath(object)),
+        item.origin,
+        attributes(object),
+        tags(object, collection)
+      )
+      instanceCount += 1; tree[#tree + 1] = detail
+      if REMOTE_CLASSES[class] then remoteCount += 1; remotes[#remotes + 1] = detail end
+    end
     if index % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
   end
-  remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
+  tree[2] = "total=" .. instanceCount; remotes[2] = "total=" .. remoteCount
+  local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
   local remoteOk, remoteError = saveFile(base .. "/remotes/remotes.txt", table.concat(remotes, "\n") .. "\n")
   if not remoteOk then return nil, "cannot save remotes.txt: " .. tostring(remoteError) end
@@ -435,7 +394,7 @@ local function run(token, callbacks)
     "creator_id=" .. tostring(game.CreatorId),
     "creator_type=" .. tostring(game.CreatorType),
     "place_version=" .. tostring(game.PlaceVersion),
-    "scripts_and_remotes=" .. #catalog,
+    "instances=" .. instanceCount,
     "scripts=" .. #candidates,
     "remotes=" .. remoteCount,
   }
@@ -444,6 +403,91 @@ local function run(token, callbacks)
   info[#info + 1] = "product_name=" .. (productOk and type(product) == "table" and line(product.Name) or "unavailable")
   local infoOk, infoError = saveFile(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
   if not infoOk then return nil, "cannot save game_info.txt: " .. tostring(infoError) end
+  if #unresolved > 0 then emit(callbacks, "onStatus", "Retrying failed scripts...") end
+  for retryIndex, entry in ipairs(unresolved) do
+    if token.cancelled then return nil, "Dump canceled" end
+    local recovered = entry.bytecode and sourceCache[entry.bytecode]; local recoveredMethod = recovered and "cached bytecode (later match)" or nil
+    if recovered then cacheHits += 1 end
+    for round = 2, CONFIG.MAX_SOURCE_ATTEMPTS do
+      if recovered or token.cancelled then break end
+      entry.attempts[#entry.attempts + 1] = "source attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS; local object = entry.item.instance
+      local sourceOk, source = pcall(function() return object.Source end)
+      if sourceOk and type(source) == "string" and source:match("%S") and not sourceError(source) then recovered, recoveredMethod = source, "Source (retry)" end
+      if not entry.bytecode then
+        for _, reader in ipairs(readers) do
+          local ok, value = pcall(reader.fn, object)
+          if ok and type(value) == "string" and #value > 0 then
+            entry.bytecode = value
+            if CONFIG.SAVE_BYTECODE then
+              local byteOk, byteError = saveFile(base .. "/bytecode/" .. entry.stem .. ".bin", value)
+              if byteOk then bytecodes += 1 else entry.attempts[#entry.attempts + 1] = "save bytecode: " .. tostring(byteError) end
+            end
+            break
+          end
+        end
+      end
+      if not recovered and entry.bytecode and sourceCache[entry.bytecode] then recovered, recoveredMethod = sourceCache[entry.bytecode], "cached bytecode (retry)"; cacheHits += 1 end
+      local function tryDecompile(argument, label)
+        if recovered or not decompiler or token.cancelled then return end
+        local ok, value = pcall(decompiler, argument)
+        if ok and type(value) == "string" and #value > 0 and not sourceError(value) then recovered, recoveredMethod = value, label .. " (retry)"
+        else entry.attempts[#entry.attempts + 1] = label .. ": " .. (ok and errorText(value) or "error: " .. errorText(value)) end
+      end
+      tryDecompile(object, "decompile(instance)")
+      if entry.bytecode then tryDecompile(entry.bytecode, "decompile(bytecode)") end
+      if not recovered then
+        for _, reader in ipairs(closureReaders) do
+          local ok, closure = pcall(reader.fn, object)
+          if ok and type(closure) == "function" then tryDecompile(closure, "decompile(" .. reader.name .. ")") end
+          if recovered or token.cancelled then break end
+        end
+      end
+      if recovered and entry.bytecode then sourceCache[entry.bytecode] = recovered end
+    end
+    if token.cancelled then return nil, "Dump canceled" end
+    if recovered then
+      local header = table.concat({
+        "-- SrcDump",
+        "-- index: " .. entry.index,
+        "-- class: " .. objectClass(entry.item.instance),
+        "-- path: " .. line(entry.item.path),
+        "-- discovered_by: " .. entry.item.origin,
+        "-- run_context: " .. entry.context,
+        "-- method: " .. recoveredMethod,
+        "",
+      }, "\n")
+      local ok, err = saveFile(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
+      if ok then
+        saved += 1; failed -= 1
+        manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | " .. recoveredMethod .. " | scripts/" .. entry.stem .. ".lua"
+      else
+        errors[#errors + 1] = "[WRITE_ERROR] " .. line(entry.item.path) .. " | " .. tostring(err); manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | write failed"
+      end
+    else
+      if CONFIG.SAVE_DISASSEMBLY and disassembler then
+        local function disassemble(argument)
+          local ok, value = pcall(disassembler, argument)
+          if ok and type(value) == "string" and #value > 0 and not sourceError(value) then return value end
+          return nil
+        end
+        local assembly = disassemble(entry.item.instance)
+        if not assembly and entry.bytecode then assembly = disassemble(entry.bytecode) end
+        if not assembly and entry.closure then assembly = disassemble(entry.closure) end
+        if assembly then saveFile(base .. "/disassembly/" .. entry.stem .. ".txt", assembly .. "\n") end
+      end
+      local category = entry.bytecode and "bytecode available; source unavailable" or "bytecode unavailable to client"; errors[#errors + 1] = "[SOURCE_ERROR] "
+        .. line(entry.item.path)
+        .. " | "
+        .. objectClass(entry.item.instance)
+        .. " | "
+        .. category
+        .. "\n  "
+        .. table.concat(entry.attempts, "\n  ")
+      manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | " .. category
+    end
+    status.saved, status.failed, status.bytecode = saved, failed, bytecodes
+    if retryIndex % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
+  end
   status.saved, status.failed = saved, failed; saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
   saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
   saveFile(
@@ -456,7 +500,7 @@ local function run(token, callbacks)
       "failed=" .. failed,
       "bytecode_saved=" .. bytecodes,
       "source_cache_hits=" .. cacheHits,
-      "scripts_and_remotes=" .. #catalog,
+      "instances=" .. instanceCount,
       "remotes=" .. remoteCount,
       "note=Only content accessible to the client environment can be captured.",
       "",
