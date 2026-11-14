@@ -6,7 +6,6 @@ local gameInfo, utils
 
 -- configuration
 local CONFIG = {
-  PARRY_METHOD = "Deflect",
   DARK_METHOD = "SendEvent",
   FIERCE_METHOD = "ActivateAndBlock",
   DASH_METHOD = "Dash",
@@ -31,23 +30,6 @@ end
 local function allowed(guard)
   if type(guard) ~= "function" then return true end
   local result = guard(); return result ~= nil and result ~= false
-end
-local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
-local function fireDeflect(ability)
-  local clicks = ability.ClickInstances; local beforeClick = type(clicks) == "table" and clicks[#clicks] or nil
-  local before = type(clicks) ~= "table" and gameInfo.getLastDeflectPressAt() or nil; local sent, detail = send(ability, CONFIG.PARRY_METHOD)
-  if not sent then return false, detail end
-  clicks = ability.ClickInstances
-  if type(clicks) == "table" then
-    if clicks[#clicks] ~= nil and clicks[#clicks] ~= beforeClick then
-      if ability.did == nil and _G.did2 == nil then return false, "Remote de Deflect indisponível" end
-      return true, detail
-    end
-    return false, "Deflect não aceito pelo cliente"
-  end
-  local after = gameInfo.getLastDeflectPressAt()
-  if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then return false, "Deflect não aceito pelo cliente" end
-  return true, detail
 end
 local directSequence = math.random(0, 65535)
 local function directRemote()
@@ -121,7 +103,7 @@ end
 function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
   local method = utils.getConfigValue("ClickMethod")
-  if method == "Input" then
+  if method == "Input" or method == "Deflect" or method == nil then
     if not allowed(guard) then return false, "Deflect cancelado" end
     return fireInput()
   end
@@ -131,9 +113,7 @@ function Remote.fireParry(_flag, guard)
   end
   if not allowed(guard) then return false, "Deflect cancelado" end
   if method == "Direct" then return fireDirect() end
-  local ability = gameInfo.getDeflectAbility()
-  if not ability then return false, "Deflect indisponível" end
-  return fireDeflect(ability)
+  return fireInput()
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
@@ -151,8 +131,6 @@ Remote.__contract = {
     GameInfo = {
       "isTrainingArea",
       "fireTrainingParry",
-      "getDeflectAbility",
-      "getLastDeflectPressAt",
       "getDarkSealAbility",
       "getFierceDeflectAbility",
       "getDashAbility",
