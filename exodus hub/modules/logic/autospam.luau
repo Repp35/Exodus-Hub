@@ -198,9 +198,8 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     or state.active
     or not utils.isActive()
     or utils.getConfigValue("AutoSpam") ~= true
-    or not partner
-    or partner == localPlayer.UserId
-    or not playerIsAlive(partner)
+    or (reason ~= "kill_radius" and not partner)
+    or (partner ~= nil and (partner == localPlayer.UserId or not playerIsAlive(partner)))
     or state.timeoutBlocked == true
     or (state.lastDeactivatedAt and time - state.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
   then
@@ -236,7 +235,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   local toward = state.root.Position - snapshot.position
   if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
-  if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
+  if partner and clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; state.dashSwitchPartner, state.dashSwitchAt = nil, nil
   state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot); state.activatedAt = time
@@ -355,6 +354,10 @@ end
 local function targetChanged(state, target, time, snapshot, serverTime)
   if not target or target == state.target then return end
   local previous, ownId = state.target, localPlayer.UserId; local switchedToMe = target == ownId and previous and previous ~= ownId
+  if state.active and not state.partner and previous == ownId and target ~= ownId and playerIsAlive(target) then
+    state.partner = target
+    if watchOpponent then watchOpponent(state, target) end
+  end
   local exchangeReady
   if
     previous
@@ -429,12 +432,7 @@ local function observeKillRadius(state, snapshot, time)
   if not entered or snapshot.targetId ~= localPlayer.UserId then return nil end
   local first = state.killRadiusFirstAt; state.killRadiusFirstAt = time
   if not first or time < first or time - first > CONFIG.ACTIVATION.KILL_RADIUS_INTERVAL then return nil end
-  state.killRadiusFirstAt = nil; local context = gameInfo.getClashContext()
-  return state.exchangePartner
-    or state.departedTo
-    or (context and context.partnerId)
-    or (clashStats and not clashStats.frozen and clashStats.partnerId)
-    or state.stoppedPartner
+  state.killRadiusFirstAt = nil; return true
 end
 local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoEnabled)
   if current ~= state or not state.root.Parent then return end
@@ -474,8 +472,8 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
   if not autoEnabled or blocked or state.active then return end
-  local killPartner = snapshotFresh and observeKillRadius(state, snapshot, time) or nil
-  if killPartner and activate(state, "kill_radius", killPartner, time, serverTime or snapshot.serverTime, snapshot) then return end
+  local killReady = snapshotFresh and observeKillRadius(state, snapshot, time)
+  if killReady and activate(state, "kill_radius", nil, time, serverTime or snapshot.serverTime, snapshot) then return end
   if not state.active and not blocked and canActivateReturn(state, snapshot, time) then activate(state, "return_target", state.pending.partner, time, serverTime or snapshot.serverTime, snapshot) end
 end
 local function watchCharacter(state, player, character)
