@@ -24,7 +24,7 @@ Não há promessa de ganho de FPS medido. As melhorias de desempenho são estrut
 | --- | --- |
 | `library/theme.luau` | Tokens visuais e perfis de movimento |
 | `library/runtime.luau` | Escopos, cancelamento de tweens e posse de ponteiro |
-| `library/icons.luau` | PNGs locais com cache; alternativas nativas quando o executor não suporta assets locais |
+| `library/icons.luau` | Símbolos de texto originais, sem arquivos de imagem |
 | `library/core.luau` | Primitivos e componentes; independente dos recursos do jogo |
 | `library/pages.luau` | Validação de modelos, seções, colunas, navegação e expansão de filhos |
 | `app/definitions.luau` | Definição declarativa das seis páginas e schema de configurações existente |
@@ -181,13 +181,9 @@ Ainda é necessário conferir no Roblox: renderização, recorte e métricas de 
 
 Na revisão ampliada, `cooldown_context_regression.py` e `fierce_grace_regression.py` também passam. Três harnesses antigos falham tanto nesta branch quanto no commit base `56e175c`: `parry_runtime_regression.py` e `spam_timer_regression.py` não fornecem `Utils` para `Remote.setup`; `update_channel_regression.py` não fornece `CONFIG` ao trecho extraído. Essas falhas foram reproduzidas numa cópia limpa do commit base. A CI desta alteração executa os contratos, os testes comportamentais e a regressão de transições da UI.
 
-## Ícones sem glifos ou emojis
+## Símbolos originais
 
-`kit.icon(parent, name, properties?)` cria um ImageLabel. `settings`, `chevron` e `minimize` são PNGs embarcados em `library/icons.luau`; a navegação reutiliza o chevron com rotação. Não há dependência de fonte para desenhar os ícones.
-
-O PNG/SVG de configurações vem de [CHORUS-HUB---demo/assets/tabs](https://github.com/Repp35/CHORUS-HUB---demo/tree/main/assets/tabs), com a licença ISC preservada em `exodus hub/assets/ui/LUCIDE_LICENSE.txt`. Os PNGs e SVGs de origem ficam em `exodus hub/assets/ui`. Quando disponíveis, `writefile` e `getcustomasset`/`getsynasset` carregam os bytes locais, sem download em runtime; em ambientes sem esse suporte, o adaptador usa imagens nativas do Roblox.
-
-Depois de editar um PNG, execute `python3 "exodus hub/indeed/build_ui_icons.py"` e o formatter. O gerador atualiza os bytes embarcados e a versão do caminho de cache, impedindo que uma textura antiga seja reutilizada. A CI executa o gerador com `--check` para detectar divergências.
+Os botões usam os símbolos originais: `⚙` (configurações), `—` (minimizar), `‹` e `›` (navegação) e `▾` (dropdown). `kit.icon(parent, name, properties?)` cria um TextLabel. Não são carregados PNGs nem gravados arquivos de ícones.
 
 ## Atalhos e notificações
 

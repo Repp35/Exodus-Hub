@@ -70,7 +70,6 @@ local PROFILE = {
   TransparentWater = true,
   TerrainDecoration = true,
   FlatMaterials = false,
-  LowDetailMeshes = true,
   HideTaggedDecorations = false,
   LowestGraphics = true,
   MaintainEffects = true,
@@ -182,7 +181,6 @@ local function createOptimizer(services, initialConfig)
       if options.Shadows then target.CastShadow = false end
       if not isCharacterObject(object) then
         if options.FlatMaterials then target.Material = Enum.Material.SmoothPlastic; target.MaterialVariant, target.Reflectance = "", 0 end
-        if options.LowDetailMeshes and object:IsA("MeshPart") then target.RenderFidelity = Enum.RenderFidelity.Performance end
         if options.HideTaggedDecorations and CollectionService:HasTag(object, "AntiLagDecoration") then target.LocalTransparencyModifier = 1 end
       end
     end
@@ -610,7 +608,7 @@ local function applyGamePolicy(object, target, watch, options)
     local ancestor = object
     while ancestor do
       if ancestor.Name == "GameBall" or ancestor.Name == "TrainingBall" then
-        target.Material, target.MaterialVariant, target.Reflectance = nil, nil, nil; target.RenderFidelity, target.LocalTransparencyModifier = nil, nil
+        target.Material, target.MaterialVariant, target.Reflectance = nil, nil, nil; target.LocalTransparencyModifier = nil
         break
       end
       ancestor = ancestor.Parent

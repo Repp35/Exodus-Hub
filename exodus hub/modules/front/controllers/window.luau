@@ -177,7 +177,7 @@ function Controller.create(context)
     ZIndex = 7,
     Parent = context.refs.titleBar,
   })
-  corner(context.refs.minimizeButton, 8); context.kit.icon(context.refs.minimizeButton, "minimize")
+  corner(context.refs.minimizeButton, 8); context.refs.minimizeButton.Text = "—"
   trackConn(context.refs.minimizeButton.MouseEnter:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0 }) end))
   trackConn(context.refs.minimizeButton.MouseLeave:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0.3 }) end))
   trackConn(context.refs.minimizeButton.Activated:Connect(function()
@@ -196,7 +196,7 @@ function Controller.create(context)
     ZIndex = 9,
     Parent = context.refs.titleBar,
   })
-  corner(settingsButton, 8); context.kit.icon(settingsButton, "settings")
+  corner(settingsButton, 8); settingsButton.Text = "⚙"
   context.refs.killBtn = inst("TextButton", {
     Size = UDim2.new(0, 124, 0, 26),
     Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
@@ -251,13 +251,13 @@ function Controller.create(context)
     Parent = context.refs.configPanel,
   })
   corner(previous, 6); corner(nextPage, 6)
-  local previousIcon = context.kit.icon(previous, "chevron", { Rotation = 90 }); local nextIcon = context.kit.icon(nextPage, "chevron", { Rotation = -90 })
+  previous.Text, nextPage.Text = "‹", "›"
   local function updateNavigation(state)
     pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title; previous.Visible = not state.utility
     nextPage.Visible = not state.utility; previous.Active = state.index ~= nil and state.index > 1
     previous.Selectable = previous.Active; nextPage.Active = state.index ~= nil and state.index < state.count
-    nextPage.Selectable = nextPage.Active; previousIcon.ImageTransparency = previous.Active and 0 or 0.7
-    nextIcon.ImageTransparency = nextPage.Active and 0 or 0.7; settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
+    nextPage.Selectable = nextPage.Active; previous.TextTransparency = previous.Active and 0 or 0.7
+    nextPage.TextTransparency = nextPage.Active and 0 or 0.7; settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
   end
   trackConn(settingsButton.Activated:Connect(function() context.pages.toggle("config") end))
   trackConn(previous.Activated:Connect(function() context.pages.step(-1) end))
