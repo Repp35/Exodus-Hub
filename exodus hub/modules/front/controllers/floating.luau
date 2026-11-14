@@ -99,19 +99,14 @@ function Controller.create(context)
     if UIState.desktop then v = false end
     local mini = context.refs.miniGui
     if not mini or not mini.Parent then return end
-    local config = Utils.getConfig()
-    local miniX, miniY, width, height, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
-    local targetPosition = UDim2.fromOffset(miniX, miniY)
-    local hiddenPosition = UDim2.fromOffset(screenWidth + 30, miniY)
-    UIState.miniGeneration += 1
-    local generation = UIState.miniGeneration
+    local config = Utils.getConfig(); local miniX, miniY, width, height, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
+    local targetPosition = UDim2.fromOffset(miniX, miniY); local hiddenPosition = UDim2.fromOffset(screenWidth + 30, miniY)
+    UIState.miniGeneration += 1; local generation = UIState.miniGeneration
     safeCancel(UIState.miniTween); safeCancel(UIState.miniFadeTween)
     UIState.miniTween, UIState.miniFadeTween = nil, nil
     if instant then
-      mini.Size = UDim2.fromOffset(width, height)
-      mini.Position = v and targetPosition or hiddenPosition
-      mini.GroupTransparency = v and 0 or 1
-      mini.Visible = v
+      mini.Size = UDim2.fromOffset(width, height); mini.Position = v and targetPosition or hiddenPosition
+      mini.GroupTransparency = v and 0 or 1; mini.Visible = v
       return
     end
     if v then
@@ -119,14 +114,12 @@ function Controller.create(context)
         mini.Position = hiddenPosition; mini.GroupTransparency = 1
         mini.Visible = true
       end
-      UIState.miniTween = twPlay(mini, "control", { Position = targetPosition })
-      UIState.miniFadeTween = twPlay(mini, "control", { GroupTransparency = 0 })
+      UIState.miniTween = twPlay(mini, "control", { Position = targetPosition }); UIState.miniFadeTween = twPlay(mini, "control", { GroupTransparency = 0 })
       return UIState.miniTween or UIState.miniFadeTween
     end
     if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
     if not mini.Visible then return end
-    UIState.miniTween = twPlay(mini, "control", { Position = hiddenPosition })
-    local fade = twPlay(mini, "control", { GroupTransparency = 1 })
+    UIState.miniTween = twPlay(mini, "control", { Position = hiddenPosition }); local fade = twPlay(mini, "control", { GroupTransparency = 1 })
     UIState.miniFadeTween = fade
     if fade then
       local connection
@@ -140,21 +133,17 @@ function Controller.create(context)
     return fade or UIState.miniTween
   end
   setSpam = function(v, silent)
-    v = v == true
-    local changed = UIState.spamOn ~= v
+    v = v == true; local changed = UIState.spamOn ~= v
     UIState.spamOn = v
     if Utils.isManualSpamActive() ~= v then Utils.setManualSpamActive(v) end
     local spamButton = context.refs.miniGui and context.refs.miniGui:FindFirstChild("SpamButton")
     if not spamButton then return end
-    spamButton.Text = v and "ON" or "OFF"
-    local color = v and C.green or C.red
+    spamButton.Text = v and "ON" or "OFF"; local color = v and C.green or C.red
     if silent or not changed then
       spamButton.BackgroundColor3 = color
-      spamButton.Size = UDim2.new(1, -12, 0.78, -8)
-      return
+      spamButton.Size = UDim2.new(1, -12, 0.78, -8); return
     end
-    twPlay(spamButton, "control", { BackgroundColor3 = color })
-    local shrink = twPlay(spamButton, "press", { Size = UDim2.new(1, -14, 0.78, -12) })
+    twPlay(spamButton, "control", { BackgroundColor3 = color }); local shrink = twPlay(spamButton, "press", { Size = UDim2.new(1, -14, 0.78, -12) })
     if shrink then
       local connection
       connection = trackConn(shrink.Completed:Connect(function(playbackState)

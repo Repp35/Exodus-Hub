@@ -97,9 +97,10 @@ function Controller.create(context)
       context.motion.cancelAll(function(object) return preserveUpdate ~= false and object:GetAttribute("ExodusNotificationKey") == "update" end)
     end
     fadeEvent = Instance.new("BindableEvent"); safeCancel(UIState.panelTween)
-    safeCancel(UIState.btnTween); safeCancel(UIState.miniTween); safeCancel(UIState.miniFadeTween)
-    safeCancel(UIState.toastTween); local tweens = {}
-    fadeGuiTree(context.refs.screenGui, tweens, "panel"); fadeGuiTree(context.refs.informationGui, tweens, "panel")
+    safeCancel(UIState.btnTween); safeCancel(UIState.miniTween)
+    safeCancel(UIState.miniFadeTween); safeCancel(UIState.toastTween)
+    local tweens = {}; fadeGuiTree(context.refs.screenGui, tweens, "panel")
+    fadeGuiTree(context.refs.informationGui, tweens, "panel")
     if state.layer and state.layer.Parent then
       for _, card in ipairs(state.layer:GetChildren()) do
         local key = card:GetAttribute("ExodusNotificationKey")
