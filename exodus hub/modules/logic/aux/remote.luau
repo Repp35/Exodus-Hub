@@ -73,10 +73,8 @@ local function fireDirect()
   buffer.writef32(packet, 1, pos.X); buffer.writef32(packet, 5, pos.Y)
   buffer.writef32(packet, 9, pos.Z); buffer.writef32(packet, 13, look.X)
   buffer.writef32(packet, 17, look.Y); buffer.writef32(packet, 21, look.Z)
-  directSequence = (directSequence + 1) % 65536
-  buffer.writeu16(packet, 25, directSequence)
-  buffer.writef64(packet, 27, workspace:GetServerTimeNow())
-  remote:FireServer(packet)
+  directSequence = (directSequence + 1) % 65536; buffer.writeu16(packet, 25, directSequence)
+  buffer.writef64(packet, 27, workspace:GetServerTimeNow()); remote:FireServer(packet)
   if unreliable and unreliable:IsA("UnreliableRemoteEvent") then
     unreliable:FireServer(packet)
     task.delay(0.03, function()
