@@ -435,8 +435,8 @@ function Utils.loadConfig()
     if not readable or type(raw) ~= "string" then warn("Não foi possível ler a configuração salva; salvamento suspenso para preservar o arquivo: " .. tostring(raw)); return true end
     local decoded, data = pcall(function() return http:JSONDecode(raw) end)
     if not decoded or type(data) ~= "table" then
-      warn("Configuração inválida; usando padrões. A configuração será substituída quando for alterada.")
-      persistenceReady = true; return true
+      warn("Configuração inválida; usando padrões. A configuração será substituída quando for alterada."); persistenceReady = true
+      return true
     end
     local patch
     patch, migrated = migrateConfig(data); Utils.setConfig(patch)

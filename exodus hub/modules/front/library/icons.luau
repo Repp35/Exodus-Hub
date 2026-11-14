@@ -30,8 +30,7 @@ end
 
 -- assets
 local function resolve(name)
-  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name))
-  return definition.fallback
+  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name)); return definition.fallback
 end
 
 -- public-api
