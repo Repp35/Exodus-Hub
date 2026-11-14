@@ -25,8 +25,9 @@ local CONFIG = {
   DEACTIVATION = {
     RETURN_TIMEOUT_MIN_SPEED = 0.4,
     RETURN_TIMEOUT_MAX_SPEED = 0.2,
-    DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.225,
-    DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.1,
+    DEFLECT_COOLDOWN_TIMEOUT = 0.09,
+    CLASH_GRACE_PERIOD = 0.15,
+    TARGET_RETURN_TIMEOUT = 0.15,
     COOLDOWN_PROTECTION_RADIUS = 14,
   },
   SHARED = {
@@ -70,17 +71,6 @@ local function returnTimeout(snapshot, state, time)
   local progress = 0
   if finite(speed) and finite(minimum) and finite(maximum) and maximum > minimum then progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1) end
   local ping = gameInfo.getAveragePing(); return slow + (fast - slow) * progress + (finite(ping) and math.max(0, ping) or 0)
-end
-local function cooldownTimeout(snapshot, state, time)
-  local fresh = snapshot
-    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
-  local speed = fresh and snapshotSpeed(snapshot) or nil
-  if finite(speed) and speed > 0 then state.cooldownSpeed = speed else speed = state.cooldownSpeed end
-  local slow, fast = CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT_BASE, CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED
-  if not finite(speed) or speed <= 0 then return slow end
-  local minimum, maximum = gameInfo.getBallSpeedLimits()
-  if not finite(minimum) or not finite(maximum) or maximum <= minimum then return slow end
-  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return slow + (fast - slow) * progress
 end
 local function listen(state, signal, callback)
   local connection = signal:Connect(callback); state.connections[#state.connections + 1] = connection
@@ -259,7 +249,7 @@ local function deactivationReason(state, snapshot, time)
   else
     state.deflectCooldownSince = nil
   end
-  local cooldownLimit = state.deflectCooldownSince and cooldownTimeout(snapshot, state, time) or nil
+  local cooldownLimit = CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
   if
     state.activatedAt
     and state.deflectCooldownSince
@@ -268,6 +258,22 @@ local function deactivationReason(state, snapshot, time)
     and cooldownOpponentOutside(state)
   then
     return "deflect_cooldown_timeout"
+  end
+  if state.activatedAt and time - state.activatedAt >= CONFIG.DEACTIVATION.CLASH_GRACE_PERIOD
+    and state.target == state.partner and state.departedAt
+    and time - state.departedAt >= CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT then
+    return "target_return_timeout"
+  end
+  if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true
+    and not snapshot.teleported and not snapshot.locked
+    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
+    local target = userId(snapshot.targetId)
+    if target and target ~= localPlayer.UserId and target ~= state.partner then
+      local position = gameInfo.getPlayerMotion(target); local value = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
+      if typeof(position) == "Vector3" and value and (position - state.root.Position).Magnitude > value.fullRadius then
+        return "target_outside_window"
+      end
+    end
   end
 end
 local function checkDeactivation(state, snapshot, time)
@@ -399,6 +405,7 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
     and not snapshot.teleported
     and not snapshot.locked
     and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
+  if state.active and not blocked and checkDeactivation(state, snapshot, time) then blocked = true end
   if snapshotFresh then
     local target = userId(snapshot.targetId)
     if target then targetChanged(state, target, time, snapshot, fresh and serverTime or nil) end
@@ -638,8 +645,8 @@ function AutoSpam.onBallSync(data)
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
   local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
-  if state.active and target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then targetChanged(state, target, time, snapshot, serverTime) end
   local blocked = state.active and checkDeactivation(state, snapshot, time) or false
+  if state.active and target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then targetChanged(state, target, time, snapshot, serverTime) end
   if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then targetChanged(state, target, time, snapshot, serverTime) end
   evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end
