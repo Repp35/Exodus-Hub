@@ -179,8 +179,7 @@ local function opponentOutside(state, radius, snapshot, time)
   if finite(speed) and speed > 0 then state.protectionSpeed = speed else speed = state.protectionSpeed end
   local minimum, maximum = gameInfo.getBallSpeedLimits()
   if not finite(speed) or not finite(minimum) or not finite(maximum) or maximum <= minimum then return false end
-  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-  radius = radius + (CONFIG.DEACTIVATION.MAX_SPEED_PROTECTION_RADIUS - radius) * progress
+  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); radius = radius + (CONFIG.DEACTIVATION.MAX_SPEED_PROTECTION_RADIUS - radius) * progress
   if not state.partner or not state.root or not state.root.Parent then return false end
   local position = gameInfo.getPlayerMotion(state.partner)
   if typeof(position) ~= "Vector3" then
@@ -238,9 +237,9 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
-  state.activatedAt = time; state.targetReturnSpeed = snapshotSpeed(snapshot); state.protectionSpeed = snapshotSpeed(snapshot)
-  state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime; state.reason = reason
-  lastActivationReason, lastActivationAt = reason, time
+  state.activatedAt = time; state.targetReturnSpeed = snapshotSpeed(snapshot)
+  state.protectionSpeed = snapshotSpeed(snapshot); state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
+  state.reason = reason; lastActivationReason, lastActivationAt = reason, time
   if watchOpponent then watchOpponent(state, partner) end
   utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
   return true
