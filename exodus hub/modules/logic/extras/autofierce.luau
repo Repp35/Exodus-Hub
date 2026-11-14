@@ -95,7 +95,14 @@ local function update()
       local currentSnapshot = validTargetSnapshot(os.clock())
       if not currentSnapshot or currentSnapshot.ball ~= ball then return false end
       local current = cooldownInfo.getDeflectCooldownState()
-      if not current or current.episode ~= episode or not missedDeflect(current, currentSnapshot, os.clock()) or not incomingInWindow(currentSnapshot, os.clock()) then return false end
+      if
+        not current
+        or current.episode ~= episode
+        or not missedDeflect(current, currentSnapshot, os.clock())
+        or not incomingInWindow(currentSnapshot, os.clock())
+      then
+        return false
+      end
       token = autoParry.beginFierce(); return true
     end)
   end)
