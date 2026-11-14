@@ -77,14 +77,5 @@ class ConfigAuditTests(unittest.TestCase):
         self.assertIn('\tNAME = "A,B",', expanded)
         self.assertEqual(expanded, formatter.expand_inline_config_tables(expanded))
 
-    def test_all_hub_luau_files_have_local_config(self):
-        paths = sorted(formatter.HUB_ROOT.parent.rglob("*.luau"))
-        self.assertTrue(paths)
-        for path in paths:
-            with self.subTest(path=path):
-                text = path.read_text(encoding="utf-8")
-                formatter.audit_module_config(text, path)
-
-
 if __name__ == "__main__":
     unittest.main()

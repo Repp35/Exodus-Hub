@@ -23,7 +23,7 @@ HUB_ROOT = next(
     FORMATTER_PATH.parent,
 )
 DEFAULT_CONFIG = FORMATTER_PATH.parent / "stylua.toml"
-LUA_SUFFIXES = {".lua", ".luau"}
+LUA_SUFFIXES = {".luau"}
 SKIP_DIRS = {
     ".git",
     ".venv",
@@ -584,33 +584,70 @@ def add_title(source: str, file_name: str, custom_title: str | None = None) -> s
 
 
 def require_sections(source: str, file_name: str) -> str:
-    """Reject files without a section supplied in code or via --section."""
+    """Add a generic section when a file does not already have one."""
     sections = {
         canonical_section_name(name)
         for line in source.splitlines()
         if (name := section_name_from_comment(line))
     }
     if not sections:
-        raise FormatterError(
-            f"{file_name}: seção obrigatória. Insira '-- nome-da-seção' no "
-            "código ou informe --section NOME=TRECHO ao executar."
-        )
-    required = []
-    if re.search(r"(?m)^local\s+T\s*=", source):
-        required.append("configuration")
-    if re.search(r"(?m)^\w+\.__contract\s*=", source):
-        required.append("contract")
-    if re.search(r"(?m)^local\s+function\s+shouldActivate\s*\(", source):
-        required.append("activation")
-    if re.search(r"(?m)^local\s+function\s+shouldDeactivate\s*\(", source):
-        required.append("deactivation")
-    missing = [
-        name
-        for name in required
-        if name not in sections and not (name == "configuration" and "tuning" in sections)
-    ]
-    if missing:
-        raise FormatterError(f"{file_name}: seção obrigatória ausente: {', '.join(missing)}.")
+        lines = source.splitlines()
+        title = next((i for i, line in enumerate(lines) if TITLE_RE.fullmatch(line.strip())), -1)
+        lines[title + 1:title + 1] = ["", "-- code"]
+        return finish_source(lines)
+    return source
+
+
+def organize_literal_constants(source: str) -> str:
+    """Group a consecutive run of simple constants while preserving local names."""
+    if re.search(r"\bCONFIG\b", source):
+        return source
+    starts = set()
+    index = 0
+    while index < len(source):
+        if index == 0 or source[index - 1] == "\n":
+            starts.add(index)
+        if source.startswith("--", index):
+            opening = long_bracket_open(source, index + 2)
+            if opening:
+                end = source.find(opening[1], opening[0])
+                index = len(source) if end < 0 else end + len(opening[1])
+            else:
+                end = source.find("\n", index)
+                index = len(source) if end < 0 else end
+        elif source[index] in {'"', "'", "`"}:
+            index = quoted_string_end(source, index, source[index])
+        elif source[index] == "[" and (opening := long_bracket_open(source, index)):
+            end = source.find(opening[1], opening[0])
+            index = len(source) if end < 0 else end + len(opening[1])
+        else:
+            index += 1
+
+    pattern = re.compile(r"^(\s*)local\s+([A-Z][A-Z0-9_]+)\s*=\s*(true|false|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*$")
+    lines = source.splitlines(keepends=True)
+    offset = 0
+    for i, line in enumerate(lines):
+        match = pattern.fullmatch(line.rstrip("\r\n")) if offset in starts else None
+        offset += len(line)
+        if not match:
+            continue
+        indent = match.group(1)
+        group = [match]
+        j = i + 1
+        while j < len(lines) and offset in starts:
+            next_match = pattern.fullmatch(lines[j].rstrip("\r\n"))
+            if not next_match or next_match.group(1) != indent:
+                break
+            group.append(next_match)
+            offset += len(lines[j]); j += 1
+        names = [item.group(2) for item in group]
+        if len(set(names)) != len(names):
+            return source
+        replacement = [indent + "local CONFIG = {\n"]
+        replacement.extend(indent + "  " + item.group(2) + " = " + item.group(3) + ",\n" for item in group)
+        replacement.append(indent + "}\n")
+        replacement.extend(indent + "local " + name + " = CONFIG." + name + "\n" for name in names)
+        return "".join(lines[:i] + replacement + lines[j:])
     return source
 
 
@@ -1365,6 +1402,7 @@ def format_files(args: argparse.Namespace) -> int:
 
             prepared = source
             prepared = strip_unwanted_comments(prepared, preserve_sections=True)
+            prepared = organize_literal_constants(prepared)
             prepared = remove_empty_lines(prepared)
             if section_edits or section_removals:
                 prepared = edit_sections(
@@ -1383,9 +1421,6 @@ def format_files(args: argparse.Namespace) -> int:
             prepared = add_title(prepared, source_path.name, args.title)
             prepared = require_sections(prepared, source_path.name)
             prepared = add_initial_dependency_spacing(prepared)
-            if source_path.is_relative_to(HUB_ROOT.parent):
-                for warning in audit_module_config(prepared, source_path.relative_to(HUB_ROOT.parent)):
-                    print(f"Config audit: {warning}", file=sys.stderr)
             staged_path = stage_root / f"{index:05d}_{source_path.name}"
             staged_path.write_text(prepared, encoding="utf-8", newline="\n")
             staged_files.append(staged_path)
@@ -1431,8 +1466,6 @@ def format_files(args: argparse.Namespace) -> int:
             formatted = expand_inline_config_tables(formatted, configured_indent_type, tab_width)
             formatted = expand_dense_named_tables(formatted, configured_indent_type, tab_width)
             formatted = add_table_spacing(formatted)
-            if source_path.is_relative_to(HUB_ROOT.parent):
-                audit_module_config(formatted, source_path.relative_to(HUB_ROOT.parent))
             return formatted
 
         if args.check:

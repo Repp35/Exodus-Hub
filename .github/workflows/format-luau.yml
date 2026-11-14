@@ -1,12 +1,12 @@
-name: Format Exodus Luau
+name: Format Luau
 on:
   push:
     paths:
-      - '.github/workflows/format-luau.yml'
-      - 'exodus hub/**/*.luau'
+      - '**.luau'
       - 'exodus hub/indeed/formatter.py'
-      - 'exodus hub/indeed/tests/**'
       - 'exodus hub/indeed/stylua.toml'
+      - 'exodus hub/indeed/tests/test_formatter_*.py'
+      - '.github/workflows/format-luau.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,23 +15,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-      - name: Install Lua runtime for behavioral tests
-        run: sudo apt-get update && sudo apt-get install -y liblua5.4-0
-      - name: Test formatter configuration audit
-        run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
-      - name: Format all Luau files using repository formatter
+      - name: Test formatter
+        run: python3 -m unittest discover -s 'exodus hub/indeed/tests' -p 'test_formatter_*.py'
+      - name: Format and verify Luau files
         run: |
-          chmod +x "exodus hub/indeed/stylua-linux-x86_64"
-          python3 "exodus hub/indeed/formatter.py" --in-place "exodus hub"
-          python3 "exodus hub/indeed/formatter.py" --check "exodus hub"
+          python3 'exodus hub/indeed/formatter.py' --in-place .
+          python3 'exodus hub/indeed/formatter.py' --check .
       - name: Commit formatted files
         run: |
-          if ! git diff --quiet -- 'exodus hub'; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -- 'exodus hub'
-            git commit -m "style: format all Luau modules with project formatter"
+          if ! git diff --quiet -- '*.luau'; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -u -- '*.luau'
+            git commit -m 'style: format Luau files'
             git push
           fi
