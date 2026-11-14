@@ -131,8 +131,15 @@ function Controller.create(context)
       _wait(); completed:Destroy()
     end)
   end
+  local closePending = false
   local function animateClose(action)
-    if UIState.closing then return end
+    if UIState.closing or closePending then return end
+    closePending = true
+    if type(Controls.waitForSafeShutdown) == "function" then
+      local ready = Controls.waitForSafeShutdown()
+      if ready == false then closePending = false; return end
+    end
+    if not context.scope.alive or UIState.closing then closePending = false; return end
     _G.ExodusShutdownReason = action == "close" and "close" or "reload"
     if action == "reload" and context.notifications.persistent then context.notifications.persistent("Updating...", "update", "info") end
     if type(print) == "function" then print("[Exodus] Closing...") end
