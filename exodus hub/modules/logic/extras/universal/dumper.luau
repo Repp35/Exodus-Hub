@@ -19,10 +19,9 @@ local status = {
 local CONFIG = {
   PREFIX = "SrcDump",
   PROGRESS_EVERY = 25,
-  MAX_SOURCE_ATTEMPTS = 5,
-  INSTANCE_BATCH = 100,
-  SCRIPT_PAUSE = 0.05,
-  RETRY_PAUSE = 0.2,
+  MAX_SOURCE_ATTEMPTS = 1,
+  INSTANCE_BATCH = 5000,
+  SCRIPT_BATCH = 25,
   SAVE_BYTECODE = true,
   SAVE_DISASSEMBLY = true,
   INCLUDE_NIL_INSTANCES = true,
@@ -201,10 +200,9 @@ local function addDiscovery(api, catalog, candidates, seen, errors, token)
     if token.cancelled then return end
     processed += 1
     if processed % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
-    if allowed(object, CONFIG.INCLUDE_NIL_INSTANCES) and not seen[object] then
+    if not seen[object] and isInstance(object) and SCRIPT_CLASSES[objectClass(object)] and allowed(object, CONFIG.INCLUDE_NIL_INSTANCES) then
       seen[object] = true; local item = { instance = object, path = objectPath(object), origin = "executor" }
-      catalog[#catalog + 1] = item
-      if SCRIPT_CLASSES[objectClass(object)] then candidates[#candidates + 1] = item end
+      catalog[#catalog + 1] = item; candidates[#candidates + 1] = item
     end
   end
 end
@@ -228,12 +226,15 @@ local function run(token, callbacks)
     if not ok then return nil, "cannot create disassembly folder: " .. tostring(err) end
     createdFolders[base .. "/disassembly"] = true
   end
-  emit(callbacks, "onStatus", "Collecting instances..."); local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
+  emit(callbacks, "onStatus", "Finding scripts..."); local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
   local function add(object, origin, detached)
-    if not allowed(object, detached) or seen[object] then return end
+    if seen[object] or not isInstance(object) then return end
+    local class = objectClass(object)
+    if not SCRIPT_CLASSES[class] and not REMOTE_CLASSES[class] then return end
+    if not allowed(object, detached) then return end
     seen[object] = true; local item = { instance = object, path = objectPath(object), origin = origin }
     catalog[#catalog + 1] = item
-    if SCRIPT_CLASSES[objectClass(object)] then candidates[#candidates + 1] = item end
+    if SCRIPT_CLASSES[class] then candidates[#candidates + 1] = item end
   end
   add(game, "game", false)
   local ok, descendants = pcall(function() return game:GetDescendants() end)
@@ -246,51 +247,11 @@ local function run(token, callbacks)
   else
     discoveryErrors[#discoveryErrors + 1] = "game:GetDescendants: " .. errorText(descendants)
   end
-  for _, name in ipairs({ "getinstances", "getnilinstances", "getloadedmodules" }) do
+  for _, name in ipairs({ "getscripts", "getnilinstances", "getloadedmodules" }) do
     local api = lookup(name)
     if api then addDiscovery(api, catalog, candidates, seen, discoveryErrors, token) end
   end
   status.total = #candidates; emit(callbacks, "onProgress", 0, #candidates)
-  local collection
-  pcall(function() collection = game:GetService("CollectionService") end)
-  local tree = { "SrcDump - instances", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
-  local remoteCount = 0
-  for index, item in ipairs(catalog) do
-    if token.cancelled then return nil, "Dump canceled" end
-    local object = item.instance
-    local detail = ("[%s] %s | discovered=%s | attributes=%s | tags=%s"):format(
-      objectClass(object),
-      line(item.path),
-      item.origin,
-      attributes(object),
-      tags(object, collection)
-    )
-    tree[#tree + 1] = detail
-    if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
-    if index % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
-  end
-  remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
-  if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
-  local remoteOk, remoteError = saveFile(base .. "/remotes/remotes.txt", table.concat(remotes, "\n") .. "\n")
-  if not remoteOk then return nil, "cannot save remotes.txt: " .. tostring(remoteError) end
-  local info = {
-    "SrcDump - game information",
-    "place_id=" .. tostring(game.PlaceId),
-    "game_id=" .. tostring(game.GameId),
-    "job_id=" .. tostring(game.JobId),
-    "game_name=" .. line(game.Name),
-    "creator_id=" .. tostring(game.CreatorId),
-    "creator_type=" .. tostring(game.CreatorType),
-    "place_version=" .. tostring(game.PlaceVersion),
-    "instances=" .. #catalog,
-    "scripts=" .. #candidates,
-    "remotes=" .. remoteCount,
-  }
-
-  local productOk, product = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
-  info[#info + 1] = "product_name=" .. (productOk and type(product) == "table" and line(product.Name) or "unavailable")
-  local infoOk, infoError = saveFile(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
-  if not infoOk then return nil, "cannot save game_info.txt: " .. tostring(infoError) end
   local decompiler, disassembler = lookup("decompile"), lookup("disassemble"); local closureReaders, readers = {}, {}
   for _, name in ipairs({ "getscriptclosure", "getscriptfunction" }) do
     local fn = lookup(name)
@@ -326,8 +287,6 @@ local function run(token, callbacks)
     local object, attempts = item.instance, {}
     local source, method, bytecode, closure
     local function attempt(label, fn, argument, validateSource)
-      if token.cancelled then return nil end
-      task.wait()
       if token.cancelled then return nil end
       local success, value = pcall(fn, argument)
       if not success then attempts[#attempts + 1] = label .. ": error: " .. errorText(value); return nil end
@@ -372,7 +331,6 @@ local function run(token, callbacks)
         end
       end
       if source then break end
-      if round < CONFIG.MAX_SOURCE_ATTEMPTS then task.wait(CONFIG.RETRY_PAUSE) end
     end
     if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
@@ -411,11 +369,11 @@ local function run(token, callbacks)
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
     if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
-    task.wait(CONFIG.SCRIPT_PAUSE)
+    if index % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
   end
   for _, entry in ipairs(unresolved) do
     if token.cancelled then return nil, "Dump canceled" end
-    task.wait(CONFIG.SCRIPT_PAUSE); local recovered = entry.bytecode and sourceCache[entry.bytecode]
+    local recovered = entry.bytecode and sourceCache[entry.bytecode]
     if recovered then
       local header = table.concat({
         "-- SrcDump",
@@ -446,6 +404,46 @@ local function run(token, callbacks)
       manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | " .. category
     end
   end
+  local collection
+  pcall(function() collection = game:GetService("CollectionService") end)
+  local tree = { "SrcDump - scripts and remotes", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
+  local remoteCount = 0
+  for index, item in ipairs(catalog) do
+    if token.cancelled then return nil, "Dump canceled" end
+    local object = item.instance
+    local detail = ("[%s] %s | discovered=%s | attributes=%s | tags=%s"):format(
+      objectClass(object),
+      line(item.path),
+      item.origin,
+      attributes(object),
+      tags(object, collection)
+    )
+    tree[#tree + 1] = detail
+    if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
+    if index % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
+  end
+  remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
+  if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
+  local remoteOk, remoteError = saveFile(base .. "/remotes/remotes.txt", table.concat(remotes, "\n") .. "\n")
+  if not remoteOk then return nil, "cannot save remotes.txt: " .. tostring(remoteError) end
+  local info = {
+    "SrcDump - game information",
+    "place_id=" .. tostring(game.PlaceId),
+    "game_id=" .. tostring(game.GameId),
+    "job_id=" .. tostring(game.JobId),
+    "game_name=" .. line(game.Name),
+    "creator_id=" .. tostring(game.CreatorId),
+    "creator_type=" .. tostring(game.CreatorType),
+    "place_version=" .. tostring(game.PlaceVersion),
+    "scripts_and_remotes=" .. #catalog,
+    "scripts=" .. #candidates,
+    "remotes=" .. remoteCount,
+  }
+
+  local productOk, product = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
+  info[#info + 1] = "product_name=" .. (productOk and type(product) == "table" and line(product.Name) or "unavailable")
+  local infoOk, infoError = saveFile(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
+  if not infoOk then return nil, "cannot save game_info.txt: " .. tostring(infoError) end
   status.saved, status.failed = saved, failed; saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
   saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
   saveFile(
@@ -458,7 +456,7 @@ local function run(token, callbacks)
       "failed=" .. failed,
       "bytecode_saved=" .. bytecodes,
       "source_cache_hits=" .. cacheHits,
-      "instances=" .. #catalog,
+      "scripts_and_remotes=" .. #catalog,
       "remotes=" .. remoteCount,
       "note=Only content accessible to the client environment can be captured.",
       "",
