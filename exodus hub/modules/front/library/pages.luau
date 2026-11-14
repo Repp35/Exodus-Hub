@@ -130,10 +130,6 @@ function Pages.create(kit, parent, definitions, context)
           ZIndex = 6,
         }, owner.Root)
         owner.childContent = stack(owner.children, "Content"); local layout = owner.childContent:FindFirstChildOfClass("UIListLayout")
-        inst("UIPadding", {
-          PaddingTop = UDim.new(0, T.CHILD_VERTICAL_PADDING),
-          PaddingBottom = UDim.new(0, T.CHILD_VERTICAL_PADDING),
-        }, owner.childContent)
         lifetime.connect(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
           if refreshDisclosure then refreshDisclosure(entry.parentKey, owner) end
         end)
@@ -226,7 +222,7 @@ function Pages.create(kit, parent, definitions, context)
       end
       ancestor = ancestor.Parent
     end
-    local height = expanded and (layout.AbsoluteContentSize.Y / math.max(scale, 0.001) + T.CHILD_VERTICAL_PADDING * 2) or 0
+    local height = expanded and (layout.AbsoluteContentSize.Y / math.max(scale, 0.001)) or 0
     if not immediate and owner.expanded == expanded and owner.targetHeight == height then return end
     owner.expanded, owner.targetHeight = expanded, height; owner.revision = (owner.revision or 0) + 1
     local revision = owner.revision
