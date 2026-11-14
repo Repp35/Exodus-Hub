@@ -130,12 +130,12 @@ local function resetTracking()
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge; state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
   state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
-  state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil
-  state.directDirection, state.directSpeed = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
-  state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
-  table.clear(state.clicks); table.clear(state.returns)
+  state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.directDirection, state.directSpeed = nil, nil
+  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil; state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil
+  state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -236,14 +236,10 @@ local function adaptiveLead(geometry, entry, closing)
   local window = geometry.deflectWindow
   if not finite(window) or window <= 0 or not finite(baseline) then return baseline, factor end
   factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR
-  local network = finite(geometry.networkLead) and math.max(0, geometry.networkLead) or math.max(0, baseline - window * factor)
-  local selected = math.max(factor, CONFIG.DELTA_WINDOW_FACTOR)
+  local network = finite(geometry.networkLead) and math.max(0, geometry.networkLead) or math.max(0, baseline - window * factor); local selected = math.max(factor, CONFIG.DELTA_WINDOW_FACTOR)
   local elapsed = state.targetChangedAt and clock() - state.targetChangedAt
-  if finite(elapsed) and elapsed >= 0 and elapsed <= CONFIG.DELTA_RETURN_MAX_AGE and entry <= window * 0.35 then
-    selected = math.max(selected, CONFIG.DELTA_RETURN_FACTOR)
-  end
-  local lead = math.clamp(window * selected + network, baseline, window + network)
-  return lead, selected
+  if finite(elapsed) and elapsed >= 0 and elapsed <= CONFIG.DELTA_RETURN_MAX_AGE and entry <= window * 0.35 then selected = math.max(selected, CONFIG.DELTA_RETURN_FACTOR) end
+  local lead = math.clamp(window * selected + network, baseline, window + network); return lead, selected
 end
 local function freshSyncTarget(snapshot, time)
   if not finite(state.directTargetId) or not finite(state.directTargetSequence) then return nil end
@@ -256,9 +252,7 @@ local function freshSyncTarget(snapshot, time)
   end
   return state.directTargetId
 end
-local function directTargetConfirmed(snapshot, time)
-  return state.player ~= nil and freshSyncTarget(snapshot, time) == state.player.UserId
-end
+local function directTargetConfirmed(snapshot, time) return state.player ~= nil and freshSyncTarget(snapshot, time) == state.player.UserId end
 
 -- target-sync
 local function sequenceOrder(incoming)
@@ -306,8 +300,7 @@ local function observeSnapshot(snapshot, time)
     state.resetPending = newMatchBall; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
     state.targetChangedAt = nil
     if newMatchBall or mode == "training" then
-      state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil
-      state.directDirection, state.directSpeed = nil, nil
+      state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.directDirection, state.directSpeed = nil, nil
       freshTarget = nil
     end
   end
@@ -661,16 +654,15 @@ function AutoParry.onBallSync(data)
   if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
-    state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil
-    state.directDirection, state.directSpeed = nil, nil
-    state.teleported, state.teleportSequence = true, sequence
-    state.lastBall = nil; state.cycle += 1
-    state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
-    state.resetPending = true; state.speed, state.distance, state.approaching = 0, 0, false
-    state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.nextAttemptAt = 0
-    state.lastPosition, state.lastSampleAt = nil, 0; state.awayAt, state.awayTarget = nil, nil
-    table.clear(state.clicks); table.clear(state.returns)
-    phase("waiting", "teleport_lock"); return true
+    state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.directDirection, state.directSpeed = nil, nil
+    state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
+    state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
+    state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.resetPending = true
+    state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
+    state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+    state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
+    table.clear(state.returns); phase("waiting", "teleport_lock")
+    return true
   end
   if state.teleported and state.teleportSequence then
     local current = gameInfo.getSyncSequence()
@@ -678,10 +670,8 @@ function AutoParry.onBallSync(data)
   end
   state.teleported, state.teleportSequence = false, nil; local now, target = clock(), tonumber(data.TargetPlayerID)
   if finite(target) then
-    state.directTargetId, state.directTargetAt, state.directTargetSequence = target, now, sequence
-    state.directDirection = vector(data.ForcedDirection) and data.ForcedDirection or nil
-    local speed = tonumber(data.Speed)
-    state.directSpeed = finite(speed) and speed > 0 and speed or nil
+    state.directTargetId, state.directTargetAt, state.directTargetSequence = target, now, sequence; state.directDirection = vector(data.ForcedDirection) and data.ForcedDirection or nil
+    local speed = tonumber(data.Speed); state.directSpeed = finite(speed) and speed > 0 and speed or nil
     observeTarget(target, now)
   end
   if state.character and state.root then tick(state.character, state.root, state.generation) end
