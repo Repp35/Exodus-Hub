@@ -72,7 +72,8 @@ local state = {
 local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
-  ADAPTIVE_MAX_WINDOW_FACTOR = 0.9,
+  INTERCEPT_WINDOW_SHARE = 0.65,
+  INTERCEPT_FRAME_MARGIN = 0.75,
   DIRECT_TARGET_MAX_AGE = 0.08,
   MATCH_RETRY_DELAY_MAX = 0.5,
   SNAPSHOT_MAX_AGE = 0.5,
@@ -226,15 +227,19 @@ local function trajectory(position, velocity, rootPosition, nominalSpeed, geomet
   return distance, closing, threshold, entry
 end
 local function adaptiveLead(geometry, entry, closing)
-  local baseline = geometry.effectiveWindow
-  local factor = geometry.windowFactor
+  local baseline, factor = geometry.effectiveWindow, geometry.windowFactor
   if geometry.training or state.retryReady or not finite(entry) or closing <= 0 then return baseline, factor end
   local window = geometry.deflectWindow
   if not finite(window) or window <= 0 or not finite(baseline) then return baseline, factor end
-  factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR; local maxFactor = math.max(factor, CONFIG.ADAPTIVE_MAX_WINDOW_FACTOR)
-  local arrival = math.max(0, entry); local urgency = window / (window + arrival)
-  local selected = factor + (maxFactor - factor) * urgency * urgency; local network = math.max(0, baseline - window * factor)
-  local lead = math.max(baseline, math.min(window + network, window * selected + network)); return lead, selected
+  factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR
+  local network = finite(geometry.networkLead) and math.max(0, geometry.networkLead) or math.max(0, baseline - window * factor)
+  local frame = CONFIG.FRAME_BASE + state.frameAllowance
+  local margin = math.min(window * 0.08, frame * CONFIG.INTERCEPT_FRAME_MARGIN)
+  -- Use relative trajectory for entry; keep the lead near transport + processing time.
+  -- The server's deflect window caps anticipation, rather than forcing a premature click.
+  local targetLead = math.max(network + margin, window * factor * CONFIG.INTERCEPT_WINDOW_SHARE)
+  local lead = math.clamp(targetLead, 0, window + network)
+  return lead, math.clamp((lead - network) / window, 0, 1)
 end
 local function directTargetConfirmed(snapshot, time)
   if not state.player or state.directTargetId ~= state.player.UserId then return false end
@@ -245,7 +250,12 @@ local function directTargetConfirmed(snapshot, time)
     if delta >= CONFIG.TARGET_SEQUENCE_HALF or (delta > 0 and snapshot.targetId ~= state.player.UserId) then return false end
   end
   local signals = snapshot.targetSignals
-  if type(signals) == "table" and finite(signals.primary) and signals.primary > 0 and signals.primary ~= state.player.UserId then return false end
+  if type(signals) == "table" then
+    for _, source in ipairs({ "primary", "attribute" }) do
+      local other = signals[source]
+      if finite(other) and other > 0 and other ~= state.player.UserId then return false end
+    end
+  end
   return true
 end
 
@@ -873,7 +883,7 @@ function AutoParry.getStatus()
       baseWindow = geometry.deflectWindow,
       defaultWindowFactor = CONFIG.DEFAULT_WINDOW_FACTOR,
       windowFactorRange = { min = 0, max = CONFIG.MAX_WINDOW_FACTOR },
-      adaptiveMaxWindowFactor = CONFIG.ADAPTIVE_MAX_WINDOW_FACTOR,
+      interceptWindowShare = CONFIG.INTERCEPT_WINDOW_SHARE,
       minBallSpeed = CONFIG.MIN_PARRY_SPEED,
     },
     timestamp = clock(),
