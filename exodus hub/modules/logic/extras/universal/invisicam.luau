@@ -6,7 +6,7 @@ local Utils
 -- configuration
 local CONFIG = {
   schema = { UniversalInvisicam = "boolean" },
-  defaults = { UniversalInvisicam = false },
+  defaults = { UniversalInvisicam = true },
 }
 
 local savedOcclusion, savedOcclusionMode = nil, false

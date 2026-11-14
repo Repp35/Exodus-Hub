@@ -5,11 +5,11 @@ local Camera = {}
 local utils
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
-local sensitivity = 1
+local sensitivity = 1.5
 
 -- configuration
 local CONFIG = {
-  DEFAULT_SENSITIVITY = 1,
+  DEFAULT_SENSITIVITY = 1.5,
   MODULE_SEARCH_RETRY = 0.5,
 }
 

@@ -17,7 +17,7 @@ local CONFIG = {
   },
   defaults = {
     AntiLagEnabled = false,
-    AntiLagRenderDistance = 650,
+    AntiLagRenderDistance = 350,
     AntiLagRemoveLighting = true,
     AntiLagRemoveSwordSounds = true,
     AntiLagHideLobby = true,
@@ -38,7 +38,7 @@ local PROFILE = {
   CullVerticalMargin = 20,
   HideLobbyInMatch = true,
   GameSwordSounds = false,
-  CullDistance = 650,
+  CullDistance = 350,
   CullRestoreMargin = 90,
   CullKeepNear = 220,
   CullViewPadding = 150,
@@ -772,7 +772,7 @@ local function createSpatialController(services, getOption)
     local aspect = camera.ViewportSize.X / math.max(camera.ViewportSize.Y, 1); local vertical = math.rad(camera.FieldOfView * 0.5)
     local horizontal = math.atan(math.tan(vertical) * aspect); local halfAngle = math.min(math.rad(130), math.max(vertical, horizontal) + math.rad(option("CullViewDegrees", 35)))
     return {
-      CullDistance = option("CullDistance", 650),
+      CullDistance = option("CullDistance", PROFILE.CullDistance),
       CullRestoreMargin = option("CullRestoreMargin", 90),
       CullKeepNear = option("CullKeepNear", 220),
       CullView = option("CullView", true),
@@ -929,8 +929,8 @@ local function setting(key)
   return value
 end
 local function requestedProfile()
-  local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or 650
-  if distance ~= distance then distance = 650 end
+  local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or CONFIG.defaults.AntiLagRenderDistance
+  if distance ~= distance then distance = CONFIG.defaults.AntiLagRenderDistance end
   profile.CullDistance = math.clamp(distance, 350, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
   profile.Lights, profile.Shadows, profile.FlatLighting = not lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
   profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.NoFog, profile.Atmosphere = not fog, not fog

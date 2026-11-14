@@ -50,3 +50,14 @@ O loader passa a baixar com oito workers, com timeout total de 60 segundos, e ve
 ## Limite da revisão
 
 Foi feita leitura do código e revisão manual dos diffs. Por solicitação do usuário, nenhum teste, benchmark, execução no Roblox ou validação automática de comportamento foi executado. Não há medição de ganho de FPS ou garantia de ausência de regressões.
+
+## Padrões escolhidos pelo usuário
+
+- Auto Dash durante clash e Auto Fierce: ligados.
+- Spam: CPF 10, CPS 200, intervalo MS 10; modo inicial CPF.
+- Método: Standard (valor interno `Deflect`).
+- Sensibilidade: 1,5×.
+- Distância do anti-lag: mínimo do slider, 350 studs.
+- Invisicam e Anti-AFK: ligados.
+
+Anti-AFK agora possui configuração própria, inicia automaticamente e acompanha alterações e reset. Os demais valores salvos continuam tendo prioridade sobre os defaults; os recursos Universal continuam sendo de sessão.
