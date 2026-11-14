@@ -232,14 +232,9 @@ local function adaptiveLead(geometry, entry, closing)
   local window = geometry.deflectWindow
   if not finite(window) or window <= 0 or not finite(baseline) then return baseline, factor end
   factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR
-  local network = finite(geometry.networkLead) and math.max(0, geometry.networkLead) or math.max(0, baseline - window * factor)
-  local frame = CONFIG.FRAME_BASE + state.frameAllowance
-  local margin = math.min(window * 0.08, frame * CONFIG.INTERCEPT_FRAME_MARGIN)
-  -- Use relative trajectory for entry; keep the lead near transport + processing time.
-  -- The server's deflect window caps anticipation, rather than forcing a premature click.
-  local targetLead = math.max(network + margin, window * factor * CONFIG.INTERCEPT_WINDOW_SHARE)
-  local lead = math.clamp(targetLead, 0, window + network)
-  return lead, math.clamp((lead - network) / window, 0, 1)
+  local network = finite(geometry.networkLead) and math.max(0, geometry.networkLead) or math.max(0, baseline - window * factor); local frame = CONFIG.FRAME_BASE + state.frameAllowance
+  local margin = math.min(window * 0.08, frame * CONFIG.INTERCEPT_FRAME_MARGIN); local targetLead = math.max(network + margin, window * factor * CONFIG.INTERCEPT_WINDOW_SHARE)
+  local lead = math.clamp(targetLead, 0, window + network); return lead, math.clamp((lead - network) / window, 0, 1)
 end
 local function directTargetConfirmed(snapshot, time)
   if not state.player or state.directTargetId ~= state.player.UserId then return false end
