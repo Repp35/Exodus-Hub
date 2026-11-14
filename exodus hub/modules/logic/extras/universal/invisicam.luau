@@ -17,8 +17,7 @@ local function stopInvisicam()
     local ok, reason = pcall(function() player.DevCameraOcclusionMode = savedOcclusion end)
     if not ok then warn("[Invisicam] Camera restore unavailable: " .. tostring(reason)) end
   end
-  savedOcclusion, savedOcclusionMode = nil, false
-  enabledState = false
+  savedOcclusion, savedOcclusionMode = nil, false; enabledState = false
   return true
 end
 local function startInvisicam()
@@ -26,14 +25,10 @@ local function startInvisicam()
   if not player then return false, "LocalPlayer unavailable" end
   local readOk, previous = pcall(function() return player.DevCameraOcclusionMode end)
   if not readOk then return false, "Camera occlusion property unavailable" end
-  if previous == Enum.DevCameraOcclusionMode.Invisicam then
-    savedOcclusion, savedOcclusionMode = nil, false
-    return true
-  end
+  if previous == Enum.DevCameraOcclusionMode.Invisicam then savedOcclusion, savedOcclusionMode = nil, false; return true end
   local ok, reason = pcall(function() player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam end)
   if not ok then return false, tostring(reason) end
-  savedOcclusion, savedOcclusionMode = previous, true
-  return true
+  savedOcclusion, savedOcclusionMode = previous, true; return true
 end
 function Invisicam.setEnabled(enabled)
   if not Utils then return false, "feature unavailable" end
@@ -43,23 +38,18 @@ function Invisicam.setEnabled(enabled)
   if not value then return stopInvisicam() end
   local ok, reason = startInvisicam()
   if not ok then
-    stopInvisicam()
-    Utils.setConfig({ UniversalInvisicam = false })
-    warn("[Invisicam] Disabled: " .. tostring(reason))
-    return true
+    stopInvisicam(); Utils.setConfig({ UniversalInvisicam = false })
+    warn("[Invisicam] Disabled: " .. tostring(reason)); return true
   end
-  enabledState = true
-  return true
+  enabledState = true; return true
 end
 function Invisicam.teardown()
-  stopInvisicam()
-  Utils = nil
+  stopInvisicam(); Utils = nil
   return true
 end
 function Invisicam.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "missing dependency: Utils" end
-  Invisicam.teardown()
-  Utils = deps.Utils
+  Invisicam.teardown(); Utils = deps.Utils
   if Utils.getConfigValue("UniversalInvisicam") == true then return Invisicam.setEnabled(true) end
   return true
 end
