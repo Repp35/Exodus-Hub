@@ -810,6 +810,11 @@ local function startInternal()
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
   startupPerformed = true; printStartup("Exodus: Initializing...")
+  if wasStarted then
+    local safe = waitForClashToEnd(function() notifyPersistent("Restart queued: waiting for clash to end", "shutdown", "info") end)
+    clearPersistent("shutdown")
+    if not safe then return false, "Loader", "runtime stopped while waiting for clash" end
+  end
   _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
   _G.ExodusShutdownReason = nil; clearRegistry()
