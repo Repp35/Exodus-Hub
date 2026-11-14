@@ -505,6 +505,9 @@ local function deltaMatchTick(value, root, time)
     or workspace:GetAttribute("GameBallTarget") == me
     or (state.character and state.character:FindFirstChild("Highlight") ~= nil))
   if not target then phase("waiting", "delta_not_target"); return end
+  if state.player and (not state.targetKnown or state.target ~= me) then
+    observeTarget(me, time)
+  end
   if state.fired then phase("waiting", "delta_processed"); return end
   if not approaching or speed <= 5 or distance > radiusDelta or impact > 0.35 + ping then
     phase("waiting", "delta_outside_window")
@@ -522,7 +525,8 @@ local function tick(character, root, generation)
   if generation ~= state.generation or not state.bound or not state.alive then return end
   if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then phase("waiting", "snapshot_stale"); return end
-  if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
+  local deltaMode = value.mode ~= "training" and utils.getConfigValue("AutoParryDeltaMode") == true
+  if not observeSnapshot(value, time) and not deltaMode then phase("waiting", "stale_snapshot"); return end
   if value.mode ~= "training" and utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
     state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "teleport_lock")
@@ -531,7 +535,7 @@ local function tick(character, root, generation)
   local cooldown = safeCooldown()
   if fierceActive(time, cooldown) then phase("waiting", "fierce_active"); return end
   if value.mode == "training" then tickTraining(value, root, time); return end
-  if utils.getConfigValue("AutoParryDeltaMode") == true then
+  if deltaMode then
     deltaMatchTick(value, root, time)
     return
   end
