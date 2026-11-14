@@ -451,9 +451,7 @@ function Utils.loadConfig()
   if not checked then warn("Não foi possível verificar a configuração: " .. tostring(exists)); return true end
   if exists then
     local readable, raw = pcall(readfile, path)
-    if not readable or type(raw) ~= "string" then
-      warn("Não foi possível ler a configuração salva; salvamento suspenso para preservar o arquivo: " .. tostring(raw)); return true
-    end
+    if not readable or type(raw) ~= "string" then warn("Não foi possível ler a configuração salva; salvamento suspenso para preservar o arquivo: " .. tostring(raw)); return true end
     local decoded, data = pcall(function() return http:JSONDecode(raw) end)
     if not decoded or type(data) ~= "table" then
       local backup = folder .. "/config_invalid_" .. os.date("!%Y%m%d_%H%M%S") .. ".json"; local index = 0
@@ -464,8 +462,8 @@ function Utils.loadConfig()
         writefile(backup, raw)
       end)
       if not backedUp then warn("Configuração inválida; salvamento suspenso porque o backup falhou: " .. tostring(backupError)); return true end
-      warn("Configuração inválida preservada em " .. backup .. "; recriando com padrões")
-      persistenceReady = true; queueSave(); return true
+      warn("Configuração inválida preservada em " .. backup .. "; recriando com padrões"); persistenceReady = true
+      queueSave(); return true
     end
     local patch
     patch, migrated = migrateConfig(data); Utils.setConfig(patch)
