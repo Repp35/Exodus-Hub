@@ -24,6 +24,7 @@ function Context.create(deps, deviceDesktop)
     panelTween = nil,
     btnTween = nil,
     miniTween = nil,
+    miniFadeTween = nil,
     miniGeneration = 0,
     desktop = false,
     closing = false,
