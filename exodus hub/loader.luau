@@ -701,8 +701,7 @@ local function waitForLocalPlayer(timeout)
 end
 local function clashInProgress(loaded)
   if type(loaded) ~= "table" or type(loaded.utils) ~= "table" or loaded.utils.isActive() ~= true then return false end
-  local player = game:GetService("Players").LocalPlayer
-  local character = player and player.Character
+  local player = game:GetService("Players").LocalPlayer; local character = player and player.Character
   local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   if humanoid and humanoid.Health <= 0 then return false end
   if type(loaded.gameinfo) == "table" then
@@ -777,12 +776,13 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       clearPersistent("update"); reloadInFlight = false
       return
     end
-    if not waitForClashToEnd(function()
-      if automatic then notifyPersistent("Update queued: waiting for clash to end", "update", "info") end
-    end) then
+    if
+      not waitForClashToEnd(function()
+        if automatic then notifyPersistent("Update queued: waiting for clash to end", "update", "info") end
+      end)
+    then
       if automatic then clearPersistent("update") end
-      reloadInFlight = false
-      return
+      reloadInFlight = false; return
     end
     if automatic and type(_G.ExodusUIFadeOut) == "function" then
       local faded, fadeError = pcall(_G.ExodusUIFadeOut)
@@ -856,8 +856,7 @@ local function startInternal()
     onReload = reloadLatest,
     waitForSafeShutdown = function()
       local ready = waitForClashToEnd(function() notifyPersistent("Waiting for clash to end before closing", "shutdown", "info") end)
-      clearPersistent("shutdown")
-      return ready
+      clearPersistent("shutdown"); return ready
     end,
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
