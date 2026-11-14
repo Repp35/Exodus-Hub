@@ -6,6 +6,7 @@ local gameInfo, utils
 
 -- configuration
 local CONFIG = {
+  PARRY_METHOD = "Deflect",
   DARK_METHOD = "SendEvent",
   FIERCE_METHOD = "ActivateAndBlock",
   DASH_METHOD = "Dash",
@@ -103,7 +104,7 @@ end
 function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
   local method = utils.getConfigValue("ClickMethod")
-  if method == "Input" or method == "Deflect" or method == nil then
+  if method == "Input" then
     if not allowed(guard) then return false, "Deflect cancelado" end
     return fireInput()
   end
@@ -113,7 +114,7 @@ function Remote.fireParry(_flag, guard)
   end
   if not allowed(guard) then return false, "Deflect cancelado" end
   if method == "Direct" then return fireDirect() end
-  return fireInput()
+  return send(gameInfo.getDeflectAbility(), CONFIG.PARRY_METHOD)
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
@@ -131,6 +132,7 @@ Remote.__contract = {
     GameInfo = {
       "isTrainingArea",
       "fireTrainingParry",
+      "getDeflectAbility",
       "getDarkSealAbility",
       "getFierceDeflectAbility",
       "getDashAbility",
