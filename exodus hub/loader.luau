@@ -288,7 +288,9 @@ local function stopPreviousRuntime()
   local clean = true; closeUpdateChannel()
   local function attempt(name, action)
     local ok, result = cleanupCall(name, action)
-    if not ok then clean = false end
+    -- Older Invisicam builds may throw when restoring a restricted camera property.
+    -- The camera mode is owned by Roblox; this cleanup failure does not prevent unloading other modules.
+    if not ok and name ~= "invisicam" then clean = false end
     return ok, result
   end
   if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
