@@ -43,7 +43,6 @@ local CONFIG = {
   RANGE_BONUS_STEP = 0.225,
   RANGE_WINDOW_BONUS = 0.12,
   AUTO_PARRY_TRIGGER_PADDING = 1,
-  AUTO_PARRY_NETWORK_MARGIN = 0.015,
   AP_WINDOW_LOW_SPEED = 0.45,
   AP_WINDOW_HIGH_SPEED = 0.25,
   PING_SAMPLE_INTERVAL = 0.25,
@@ -922,7 +921,7 @@ function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride
   local latency = finite(latencyOverride) and math.max(0, latencyOverride) or GameInfo.getAveragePing()
   if not finite(latency) then latency = 0 end
   local factorValue = finite(factor) and math.clamp(factor, 0, 1) or 0.3; local frame = finite(frameLead) and math.clamp(frameLead, 0, 0.15) or 1 / 60
-  local networkLead = latency + frame + CONFIG.AUTO_PARRY_NETWORK_MARGIN; local lead = math.min(window + latency, math.max(window * factorValue, networkLead))
+  local networkLead = latency + frame; local lead = window * factorValue + networkLead
   return {
     fullRadius = range + CONFIG.AUTO_PARRY_TRIGGER_PADDING + speed * lead,
     pureRadius = CONFIG.RANGE_BASE,
