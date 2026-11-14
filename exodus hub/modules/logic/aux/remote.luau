@@ -68,6 +68,16 @@ local function fireDirect()
 end
 local keybindObject
 local function configuredInput()
+  local ability = gameInfo.getDeflectAbility()
+  if ability and type(ability.GetKeybindBySlotID) == "function" then
+    local binding = ability:GetKeybindBySlotID()
+    if binding then
+      for index = 1, 2 do
+        local value = index == 1 and binding.Key or binding.AlternateKey
+        if typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode and value ~= Enum.KeyCode.Unknown then return value end
+      end
+    end
+  end
   if not keybindObject then
     local storage = game:GetService("ReplicatedStorage"); local shared = storage:FindFirstChild("Shared") or storage:FindFirstChild("TS")
     local core = shared and shared:FindFirstChild("Core"); local module = core and core:FindFirstChild("KeybindObject")
@@ -79,24 +89,20 @@ local function configuredInput()
   if keybindObject then
     local binding = keybindObject:Get("Blocking")
     if binding then
-      for _, value in ipairs({ binding.Key, binding.AlternateKey }) do
+      for index = 1, 2 do
+        local value = index == 1 and binding.Key or binding.AlternateKey
         if typeof(value) == "EnumItem" and value ~= Enum.KeyCode.Unknown then
           if value.EnumType == Enum.KeyCode then return value end
-          if value == Enum.UserInputType.MouseButton2 or value == Enum.UserInputType.MouseButton3 then return value end
         end
       end
     end
   end
-  return Enum.UserInputType.MouseButton1
+  return Enum.KeyCode.F
 end
 local function fireInput()
   local input = configuredInput(); local vim = game:GetService("VirtualInputManager")
-  if input.EnumType == Enum.KeyCode then
-    vim:SendKeyEvent(true, input, false, game); vim:SendKeyEvent(false, input, false, game)
-  else
-    local mouse = game:GetService("UserInputService"):GetMouseLocation(); local button = input == Enum.UserInputType.MouseButton2 and 1 or (input == Enum.UserInputType.MouseButton3 and 2 or 0)
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, button, true, game, 0); vim:SendMouseButtonEvent(mouse.X, mouse.Y, button, false, game, 0)
-  end
+  vim:SendKeyEvent(true, input, false, game)
+  task.defer(function() vim:SendKeyEvent(false, input, false, game) end)
   return true
 end
 
