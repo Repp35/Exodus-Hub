@@ -30,7 +30,8 @@ local speedHumanoid, speedRestore, speedApplied
 local applyingSpeed = false
 local function writeSpeed(humanoid, value)
   if humanoid.WalkSpeed == value then return end
-  applyingSpeed = true; humanoid.WalkSpeed = value; applyingSpeed = false
+  applyingSpeed = true; humanoid.WalkSpeed = value
+  applyingSpeed = false
 end
 local function currentHumanoid()
   local player = Utils.getLocalPlayer(); local character = player and player.Character
