@@ -301,19 +301,14 @@ assert(border.Transparency==1)
 _G.ExodusUICleanup();finishTweens();assert(listenerCount()==0 and activeTweenCount()==0)
 ''')
 
-    def test_embedded_png_icons_load_once_without_network(self):
-        expected = (ROOT / 'assets/ui/settings.png').read_bytes()
-        literal = '"' + ''.join(f'\\{byte:03d}' for byte in expected) + '"'
-        revision = re.search(r'VERSION = "([^"]+)"', module_path('uiicons').read_text())[1]
+    def test_icons_use_native_assets_without_writing_files(self):
         self.run_lua('''
-local files, writes={},0
-makefolder=function() end;isfolder=function() return true end
-writefile=function(path,content) files[path]=content;writes=writes+1 end
-getcustomasset=function(path) return 'rbxasset://test/'..path end
+local writes=0
+writefile=function() writes=writes+1 end
+getcustomasset=function() error('custom asset must not be used') end
 local icon=uiicons.create(panel,'settings')
-assert(icon:IsA('ImageLabel') and icon.Image:find('rbxasset://test/',1,true)==1)
-assert(files['ExodusUIAssets/''' + revision + '''-settings.png']==''' + literal + ''')
-uiicons.create(panel,'settings');assert(writes==1,'icon bytes were written more than once')
+assert(icon:IsA('ImageLabel') and icon.Image:find('rbxasset://',1,true)==1)
+uiicons.create(panel,'settings');assert(writes==0,'icons must not write files')
 panel:Destroy()
 ''')
 

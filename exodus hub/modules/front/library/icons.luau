@@ -3,12 +3,9 @@
 -- module
 local Icons = {}
 local Theme
-local cache = {}
 
 -- configuration
 local CONFIG = {
-  ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
-  DIRECTORY = "ExodusUIAssets",
   VERSION = "156617de5cbf",
   IMAGES = {
     settings = {
@@ -32,34 +29,9 @@ function Icons.setup(deps)
 end
 
 -- assets
-local function decode(encoded)
-  local output, buffer, bits = {}, 0, 0
-  for index = 1, #encoded do
-    local digit = CONFIG.ALPHABET:find(encoded:sub(index, index), 1, true)
-    if digit then
-      buffer = buffer * 64 + digit - 1; bits += 6
-      if bits >= 8 then
-        bits -= 8; local divisor = 2 ^ bits
-        output[#output + 1] = string.char(math.floor(buffer / divisor))
-        buffer = buffer % divisor
-      end
-    end
-  end
-  return table.concat(output)
-end
 local function resolve(name)
-  if cache[name] then return cache[name] end
-  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name)); local asset = getcustomasset or getsynasset
-  local path = definition.fallback
-  if type(asset) == "function" and type(writefile) == "function" and type(makefolder) == "function" then
-    local ok, result = pcall(function()
-      if type(isfolder) ~= "function" or not isfolder(CONFIG.DIRECTORY) then makefolder(CONFIG.DIRECTORY) end
-      local file = CONFIG.DIRECTORY .. "/" .. CONFIG.VERSION .. "-" .. name .. ".png"; writefile(file, decode(definition.png))
-      return asset(file)
-    end)
-    if ok and type(result) == "string" and result ~= "" then path = result end
-  end
-  cache[name] = path; return path
+  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name))
+  return definition.fallback
 end
 
 -- public-api

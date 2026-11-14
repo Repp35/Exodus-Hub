@@ -59,33 +59,7 @@ function ClashStats.finish(reason, time)
   if not stats or stats.frozen then return end
   stats.frozen, stats.waitingForClash = true, false; stats.duration = math.max(0, time - stats.startedAt)
   stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
-  if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return end
-  local opponent = players:GetPlayerByUserId(stats.partnerId)
-  local ok, result = pcall(function()
-    local log = utils.createClashLog(stats.partnerId, stats.startedDate)
-    utils.appendClashLog(
-      log,
-      string.format(
-        "Opponent: %s\nWinner: %s\nDuration: %.3f s\nAverage CPS: %.2f\nTarget time until death: %s\nPrevious target: %s\n\n%s\n%s",
-        opponent and opponent.Name or tostring(stats.partnerId),
-        reason == "jogador morreu" and (opponent and opponent.Name or tostring(stats.partnerId)) or localPlayer.Name,
-        stats.duration,
-        stats.cps,
-        stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "unavailable",
-        stats.penultimateTravelTime
-            and string.format(
-              "%s — %.3f s (%.0f ms)",
-              stats.penultimateTarget == localPlayer.UserId and localPlayer.Name or (opponent and opponent.Name or tostring(stats.partnerId)),
-              stats.penultimateTravelTime,
-              stats.penultimateTravelTime * 1000
-            )
-          or "unavailable",
-        formatSample("START", stats.startSample),
-        formatSample("FIM", stats.endSample)
-      )
-    )
-  end)
-  if not ok then utils.recordError("ClashLog", tostring(result)) end
+
 end
 function ClashStats.begin(partner, time)
   if stats and not stats.frozen then ClashStats.finish("novo clash", stats.lastObserved) end
@@ -183,7 +157,7 @@ function ClashStats.get() return stats end
 ClashStats.__contract = {
   requires = { Utils = "utils", GameInfo = "gameinfo" },
   requiresMethods = {
-    Utils = { "getLocalPlayer", "getPlayers", "createClashLog", "appendClashLog", "recordError", "now" },
+    Utils = { "getLocalPlayer", "getPlayers", "now" },
     GameInfo = { "getClashContext", "getPlayerMotion" },
   },
   provides = { "setup", "teardown", "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },

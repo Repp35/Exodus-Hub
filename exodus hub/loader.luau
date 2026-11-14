@@ -247,7 +247,6 @@ local function request(url, headers)
   local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message, lastMeta
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
-local SIGNATURE_ROOT = "Exodus Hub/Signatures"
 local releaseSignatures
 local function fingerprint(source)
   local a, b = 1, 0
@@ -258,25 +257,6 @@ local function fingerprint(source)
 end
 local function signatureFor(path) return type(releaseSignatures) == "table" and releaseSignatures["exodus hub/" .. path] or nil end
 local function signatureValid(value) return type(value) == "string" and #value == 8 and value:match("^[%x]+$") ~= nil end
-local function storedSource(signature, relativePath)
-  if not signatureValid(signature) or type(isfile) ~= "function" or type(readfile) ~= "function" then return nil end
-  local path = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
-  local ok, source = pcall(function() return isfile(path) and readfile(path) or nil end)
-  return ok and type(source) == "string" and fingerprint(source) == signature and source or nil
-end
-local function storeSource(signature, relativePath, source)
-  if type(writefile) ~= "function" or type(makefolder) ~= "function" or type(isfolder) ~= "function" then return end
-  if fingerprint(source) ~= signature then return end
-  pcall(function()
-    local root = ""; local fullPath = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
-    local directory = fullPath:match("^(.*)/[^/]+$")
-    for part in directory:gmatch("[^/]+") do
-      root = root == "" and part or (root .. "/" .. part)
-      if not isfolder(root) then makefolder(root) end
-    end
-    writefile(fullPath, source)
-  end)
-end
 
 -- registry
 local function register(name, module)
@@ -381,11 +361,6 @@ end
 local function loadModule(name, relativePath, url)
   local signature = signatureFor(relativePath)
   if not signatureValid(signature) then return nil, "assinatura inválida: " .. relativePath end
-  local saved = storedSource(signature, relativePath)
-  if saved then
-    local cachedChunk = compile(name .. " [verified]", saved)
-    if cachedChunk then return cachedChunk, nil, "verified" end
-  end
   local source, fetchError
   if url then source, fetchError = request(url) end
   local sourceKind = "delivery"
@@ -398,7 +373,7 @@ local function loadModule(name, relativePath, url)
   end
   if source then
     local chunk, compileError = compile(name, source)
-    if chunk and fingerprint(source) == signature then storeSource(signature, relativePath, source); return chunk, nil, sourceKind end
+    if chunk and fingerprint(source) == signature then return chunk, nil, sourceKind end
     if chunk then return nil, "assinatura divergente: " .. relativePath end
     fetchError = compileError
   end

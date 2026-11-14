@@ -206,25 +206,6 @@ function Utils.ensureDataFolder()
   if not isfolder(CONFIG.FOLDER) then makefolder(CONFIG.FOLDER) end
   return true, CONFIG.FOLDER
 end
-function Utils.createClashLog(partnerId, startedDate)
-  if type(writefile) ~= "function" or type(isfile) ~= "function" then error("APIs externas ausentes: writefile/isfile", 2) end
-  local _, folder = Utils.ensureDataFolder(); local directory = folder .. "/Clashes"
-  if not isfolder(directory) then makefolder(directory) end
-  local stamp = os.date("!%Y%m%d_%H%M%S"); local prefix = directory .. "/clash_" .. stamp .. "_" .. tostring(partnerId)
-  local index, path = 1, prefix .. ".txt"
-  while isfile(path) do
-    index += 1; path = prefix .. "_" .. index .. ".txt"
-  end
-  local header = "EXODUS - CLASH\nData (UTC): " .. (startedDate or os.date("!%Y-%m-%d %H:%M:%S")) .. "\n"; writefile(path, header)
-  local content
-  if type(appendfile) ~= "function" then content = header end
-  return { path = path, content = content }
-end
-function Utils.appendClashLog(log, value)
-  if type(log) ~= "table" or type(log.path) ~= "string" or type(value) ~= "string" then error("Dados inválidos para o registro de clash", 2) end
-  if type(appendfile) == "function" and log.content == nil then appendfile(log.path, value) else log.content = (log.content or "") .. value; writefile(log.path, log.content) end
-  return true
-end
 local function isPersistentConfigKey(key) return type(key) == "string" and key:sub(1, #CONFIG.SESSION_ONLY_PREFIX) ~= CONFIG.SESSION_ONLY_PREFIX end
 local function serializeConfig(config)
   local data = {}
@@ -454,16 +435,8 @@ function Utils.loadConfig()
     if not readable or type(raw) ~= "string" then warn("Não foi possível ler a configuração salva; salvamento suspenso para preservar o arquivo: " .. tostring(raw)); return true end
     local decoded, data = pcall(function() return http:JSONDecode(raw) end)
     if not decoded or type(data) ~= "table" then
-      local backup = folder .. "/config_invalid_" .. os.date("!%Y%m%d_%H%M%S") .. ".json"; local index = 0
-      local backedUp, backupError = pcall(function()
-        while isfile(backup) do
-          index += 1; backup = folder .. "/config_invalid_" .. os.date("!%Y%m%d_%H%M%S") .. "_" .. index .. ".json"
-        end
-        writefile(backup, raw)
-      end)
-      if not backedUp then warn("Configuração inválida; salvamento suspenso porque o backup falhou: " .. tostring(backupError)); return true end
-      warn("Configuração inválida preservada em " .. backup .. "; recriando com padrões"); persistenceReady = true
-      queueSave(); return true
+      warn("Configuração inválida; usando padrões. A configuração será substituída quando for alterada.")
+      persistenceReady = true; return true
     end
     local patch
     patch, migrated = migrateConfig(data); Utils.setConfig(patch)
@@ -524,8 +497,6 @@ Utils.__contract = {
     "getModuleURLsSnapshot",
     "getPlayers",
     "getLocalPlayer",
-    "createClashLog",
-    "appendClashLog",
     "getRunService",
     "getReplicatedStorage",
     "getWorkspace",

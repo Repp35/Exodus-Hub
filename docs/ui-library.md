@@ -183,11 +183,7 @@ Na revisão ampliada, `cooldown_context_regression.py` e `fierce_grace_regressio
 
 ## Ícones sem glifos ou emojis
 
-`kit.icon(parent, name, properties?)` cria um ImageLabel. `settings`, `chevron` e `minimize` são PNGs embarcados em `library/icons.luau`; a navegação reutiliza o chevron com rotação. Não há dependência de fonte para desenhar os ícones.
-
-O PNG/SVG de configurações vem de [CHORUS-HUB---demo/assets/tabs](https://github.com/Repp35/CHORUS-HUB---demo/tree/main/assets/tabs), com a licença ISC preservada em `exodus hub/assets/ui/LUCIDE_LICENSE.txt`. Os PNGs e SVGs de origem ficam em `exodus hub/assets/ui`. Quando disponíveis, `writefile` e `getcustomasset`/`getsynasset` carregam os bytes locais, sem download em runtime; em ambientes sem esse suporte, o adaptador usa imagens nativas do Roblox.
-
-Depois de editar um PNG, execute `python3 "exodus hub/indeed/build_ui_icons.py"` e o formatter. O gerador atualiza os bytes embarcados e a versão do caminho de cache, impedindo que uma textura antiga seja reutilizada. A CI executa o gerador com `--check` para detectar divergências.
+Os ícones usam imagens nativas do Roblox, sem gravação local. A navegação reutiliza o chevron com rotação.
 
 ## Atalhos e notificações
 
