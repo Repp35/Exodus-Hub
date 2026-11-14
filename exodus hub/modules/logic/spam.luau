@@ -92,6 +92,7 @@ local function sync()
             credit = 0
           end
         else
+          task.wait()
           if allowed() and not inFlight then request(boundUtils, boundRemote, token, allowed) end
         end
       end
