@@ -63,7 +63,7 @@ local state = {
 
 -- configuration
 local CONFIG = {
-  DEFAULT_WINDOW_FACTOR = 0.3,
+  DEFAULT_WINDOW_FACTOR = 0.45,
   MAX_WINDOW_FACTOR = 0.35,
   MATCH_RETRY_DELAY_MAX = 0.5,
   FIERCE_DURATION = 5,
