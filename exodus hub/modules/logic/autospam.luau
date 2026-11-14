@@ -31,7 +31,8 @@ local CONFIG = {
     TARGET_RETURN_TIMEOUT_MAX_SPEED = 0.22,
     COOLDOWN_PROTECTION_RADIUS = 16,
     RETURN_PROTECTION_RADIUS = 10,
-    MAX_SPEED_PROTECTION_RADIUS = 40,
+    COOLDOWN_PROTECTION_MAX_SPEED_RADIUS = 40,
+    RETURN_PROTECTION_MAX_SPEED_RADIUS = 25,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -172,14 +173,14 @@ local function activationGeometry(state, snapshot, partner, time) return geometr
 
 -- protection
 local watchOpponent
-local function opponentOutside(state, radius, snapshot, time)
+local function opponentOutside(state, radius, maxRadius, snapshot, time)
   local fresh = snapshot
     and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
   local speed = fresh and snapshotSpeed(snapshot) or nil
   if finite(speed) and speed > 0 then state.protectionSpeed = speed else speed = state.protectionSpeed end
   local minimum, maximum = gameInfo.getBallSpeedLimits()
   if not finite(speed) or not finite(minimum) or not finite(maximum) or maximum <= minimum then return false end
-  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); radius = radius + (CONFIG.DEACTIVATION.MAX_SPEED_PROTECTION_RADIUS - radius) * progress
+  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); radius = radius + (maxRadius - radius) * progress
   if not state.partner or not state.root or not state.root.Parent then return false end
   local position = gameInfo.getPlayerMotion(state.partner)
   if typeof(position) ~= "Vector3" then
@@ -275,7 +276,7 @@ local function deactivationReason(state, snapshot, time)
     and state.deflectCooldownSince
     and time - state.activatedAt >= cooldownLimit
     and time - state.deflectCooldownSince >= cooldownLimit
-    and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, snapshot, time)
+    and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
   then
     return "deflect_cooldown_timeout"
   end
@@ -285,7 +286,7 @@ local function deactivationReason(state, snapshot, time)
     and state.target == state.partner
     and state.departedAt
     and time - state.departedAt >= targetReturnTimeout(snapshot, state, time)
-    and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, snapshot, time)
+    and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.RETURN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
   then
     return "target_return_timeout"
   end
