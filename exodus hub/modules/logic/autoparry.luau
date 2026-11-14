@@ -195,18 +195,14 @@ end
 local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
   local delta = rootPosition - position; local distance = delta.Magnitude
   local ballVelocity = velocity
-  if finite(nominalSpeed) and nominalSpeed > 0 and ballVelocity.Magnitude > nominalSpeed * 1.1 then
-    ballVelocity = ballVelocity.Unit * nominalSpeed * 1.1
-  end
+  if finite(nominalSpeed) and nominalSpeed > 0 and ballVelocity.Magnitude > nominalSpeed * 1.1 then ballVelocity = ballVelocity.Unit * nominalSpeed * 1.1 end
   local rootVelocity = state.root and state.root.Parent and state.root.AssemblyLinearVelocity or Vector3.zero
   if not vector(rootVelocity) then rootVelocity = Vector3.zero end
-  local relative = ballVelocity - rootVelocity
-  local closing = distance > 0 and relative:Dot(delta) / distance or 0
+  local relative = ballVelocity - rootVelocity; local closing = distance > 0 and relative:Dot(delta) / distance or 0
   if not finite(closing) then closing = 0 end
-  local padding = finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0
-  local range = geometry.noWindowParryRadius + padding
-  local threshold = range + math.max(0, closing) * geometry.effectiveWindow
-  local entry = math.huge; local c = delta:Dot(delta) - range * range
+  local padding = finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0; local range = geometry.noWindowParryRadius + padding
+  local threshold = range + math.max(0, closing) * geometry.effectiveWindow; local entry = math.huge
+  local c = delta:Dot(delta) - range * range
   if c <= 0 then
     entry = 0
   else
@@ -671,8 +667,7 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
   local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local delta = root - position
-  local distanceToRadius = distance - geometry.fullRadius
-  local timeToTrigger = math.max(entry - geometry.effectiveWindow, 0)
+  local distanceToRadius = distance - geometry.fullRadius; local timeToTrigger = math.max(entry - geometry.effectiveWindow, 0)
   return {
     distance = distance,
     speed = speed,
