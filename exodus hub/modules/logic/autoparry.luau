@@ -194,14 +194,29 @@ local function appendRecent(list, item)
 end
 local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
   local delta = rootPosition - position; local distance = delta.Magnitude
-  local magnitude = velocity.Magnitude; local closing = 0
-  if distance > 0 and magnitude > 0 then
-    closing = velocity:Dot(delta) / distance
-    if finite(nominalSpeed) and nominalSpeed > 0 then closing = math.min(closing, nominalSpeed * 1.1) end
+  local ballVelocity = velocity
+  if finite(nominalSpeed) and nominalSpeed > 0 and ballVelocity.Magnitude > nominalSpeed * 1.1 then
+    ballVelocity = ballVelocity.Unit * nominalSpeed * 1.1
   end
+  local rootVelocity = state.root and state.root.Parent and state.root.AssemblyLinearVelocity or Vector3.zero
+  if not vector(rootVelocity) then rootVelocity = Vector3.zero end
+  local relative = ballVelocity - rootVelocity
+  local closing = distance > 0 and relative:Dot(delta) / distance or 0
   if not finite(closing) then closing = 0 end
-  local threshold = gameInfo.getProjectedDeflectRadius(geometry, closing) or geometry.noWindowParryRadius; threshold += finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0
-  return distance, closing, threshold
+  local padding = finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0
+  local range = geometry.noWindowParryRadius + padding
+  local threshold = range + math.max(0, closing) * geometry.effectiveWindow
+  local entry = math.huge; local c = delta:Dot(delta) - range * range
+  if c <= 0 then
+    entry = 0
+  else
+    local a = relative:Dot(relative); local b = delta:Dot(relative)
+    if a > 0.000001 and b > 0 then
+      local discriminant = b * b - a * c
+      if discriminant >= 0 then entry = c / (b + math.sqrt(discriminant)) end
+    end
+  end
+  return distance, closing, threshold, entry
 end
 
 -- target-sync
@@ -460,9 +475,9 @@ local function tick(character, root, generation)
       + state.frameAllowance
     geometry.triggerPadding = 0
   end
-  local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); state.speed, state.distance, state.approaching = speed, distance, closing > 0
+  local distance, closing, threshold, entry = trajectory(position, velocity, rootPosition, speed, geometry); state.speed, state.distance, state.approaching = speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold
-  if closing > 0 and distance <= threshold then request("parry_requested") end
+  if closing > 0 and entry <= geometry.effectiveWindow then request("parry_requested") end
 end
 
 -- public-api
@@ -557,9 +572,9 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   if not finite(speed) or speed <= 0 then speed = vector(velocity) and velocity.Magnitude or 0 end
   velocity = resolveVelocity(value, position, speed, time); local g = radius(speed, activeWindowFactor(time))
   if not g then return false end
-  local distance, closing, threshold = trajectory(position, velocity, own, speed, g); state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+  local distance, closing, threshold, entry = trajectory(position, velocity, own, speed, g); state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold; state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
-  if closing <= 0 or distance > threshold then return false end
+  if closing <= 0 or entry > g.effectiveWindow then return false end
   if state.fired then return false end
   return request("redirect_return")
 end
@@ -655,9 +670,9 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   if not finite(speed) or speed < 0 then return nil end
   local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
-  local distance, closing, triggerDistance = trajectory(position, velocity, root, speed, geometry); local delta = root - position
-  local distanceToRadius = distance - geometry.fullRadius; local timeToRange = closing > 0 and math.max(distance - geometry.noWindowParryRadius, 0) / closing or math.huge
-  local timeToTrigger = closing > 0 and math.max(distance - triggerDistance, 0) / closing or math.huge
+  local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local delta = root - position
+  local distanceToRadius = distance - geometry.fullRadius
+  local timeToTrigger = math.max(entry - geometry.effectiveWindow, 0)
   return {
     distance = distance,
     speed = speed,
@@ -674,7 +689,7 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
     windowFactor = geometry.windowFactor,
     triggerPadding = geometry.triggerPadding,
     distanceToParryRadius = distanceToRadius,
-    timeToRange = timeToRange,
+    timeToRange = entry,
     triggerDistance = triggerDistance,
     timeToTrigger = timeToTrigger,
     tti = timeToTrigger,
