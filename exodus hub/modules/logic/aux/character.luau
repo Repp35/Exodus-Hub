@@ -74,8 +74,14 @@ local function startWorker()
   workerRunning = true
   task.spawn(function()
     local life = currentLife
-    if life then bindLife(life) end
+    local ok, reason = xpcall(function()
+      if life then bindLife(life) end
+    end, function(message) return debug.traceback(tostring(message), 2) end)
     workerRunning = false
+    if not ok and currentLife == life and utils then
+      utils.recordError("Character", reason); deactivate(life, "bind_error")
+      setPhase("invalid", "bind_error")
+    end
     if currentLife and not currentLife.attempted then startWorker() end
   end)
 end

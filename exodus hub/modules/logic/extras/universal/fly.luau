@@ -15,7 +15,8 @@ local RunService = game:GetService("RunService")
 local states = { Fly = false }
 local flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro
 local flyPlatformStand, flyAutoRotate
-local playerControls
+local playerControls, playerControlsModule
+local pressedKeys = {}
 local controls = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
 local bindings = {
   [Enum.KeyCode.W] = { "Forward", 1 },
@@ -51,6 +52,7 @@ local function destroy(object)
   if object then pcall(object.Destroy, object) end
 end
 local function clearControls()
+  table.clear(pressedKeys)
   for key in pairs(controls) do
     controls[key] = 0
   end
@@ -74,7 +76,7 @@ local function flyCharacterReady()
   local player = Utils.getLocalPlayer(); local character = player and player.Character
   local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not character or not humanoid or humanoid.Health <= 0 or not root then detachFly(); return nil end
-  if flyCharacter ~= character then
+  if flyCharacter ~= character or flyHumanoid ~= humanoid or flyRoot ~= root then
     detachFly(); flyCharacter, flyHumanoid, flyRoot = character, humanoid, root
     flyPlatformStand, flyAutoRotate = humanoid.PlatformStand, humanoid.AutoRotate
   end
@@ -91,14 +93,14 @@ local function flyCharacterReady()
   return humanoid
 end
 local function getPlayerControls()
-  if playerControls then return playerControls end
+  if playerControls and playerControlsModule and playerControlsModule.Parent then return playerControls end
   local player = Utils.getLocalPlayer(); local scripts = player and player:FindFirstChild("PlayerScripts")
   local module = scripts and scripts:FindFirstChild("PlayerModule")
   if not module then return nil end
   local ok, value = pcall(require, module)
   if ok and type(value) == "table" and type(value.GetControls) == "function" then
     local ready, result = pcall(value.GetControls, value)
-    if ready and result and type(result.GetMoveVector) == "function" then playerControls = result end
+    if ready and result and type(result.GetMoveVector) == "function" then playerControls, playerControlsModule = result, module end
   end
   return playerControls
 end
@@ -107,7 +109,8 @@ local function updateFly()
   local humanoid = flyCharacterReady(); local camera = Workspace.CurrentCamera
   if not humanoid or not camera then return end
   local direction
-  if UIS.TouchEnabled then
+  if UIS:GetFocusedTextBox() then clearControls() end
+  if UIS.TouchEnabled and UIS:GetLastInputType() == Enum.UserInputType.Touch then
     local controller = getPlayerControls()
     if controller then local movement = controller:GetMoveVector(); direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
     else direction = humanoid.MoveDirection end
@@ -127,13 +130,17 @@ local function startFly()
     if processed then return end
     local binding = bindings[input.KeyCode]
     if binding then
-      controls[binding[1]] = binding[2]
+      pressedKeys[input.KeyCode] = true; controls[binding[1]] = binding[2]
     end
   end)
   connect("FlyEnded", UIS.InputEnded, function(input)
     local binding = bindings[input.KeyCode]
     if binding then
-      controls[binding[1]] = 0
+      pressedKeys[input.KeyCode] = nil; controls[binding[1]] = 0
+      for key in pairs(pressedKeys) do
+        local held = bindings[key]
+        if held and held[1] == binding[1] then controls[held[1]] = held[2]; break end
+      end
     end
   end)
   connect("FlyFocus", UIS.WindowFocusReleased, clearControls); local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
@@ -143,7 +150,7 @@ local function startFly()
 end
 local function stopFly()
   disconnectPrefix("Fly"); clearControls()
-  detachFly(); playerControls = nil
+  detachFly(); playerControls, playerControlsModule = nil, nil
   return true
 end
 function Fly.setEnabled(enabled)
@@ -151,10 +158,12 @@ function Fly.setEnabled(enabled)
   local value = enabled == true
   if not Utils.setConfig({ UniversalFly = value }) then return false, "configuração rejeitada" end
   if states.Fly == value then return true end
-  states.Fly = value; local ok, result = pcall(value and startFly or stopFly)
+  states.Fly = value; local ok, result, detail = pcall(value and startFly or stopFly)
   if not ok or result == false then
-    states.Fly = not value; Utils.setConfig({ UniversalFly = not value })
-    return false, tostring(result)
+    -- Startup can fail after allocating objects or registering callbacks.
+    pcall(stopFly); states.Fly = false
+    Utils.setConfig({ UniversalFly = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
@@ -167,7 +176,7 @@ function Fly.setValue(value)
   return true
 end
 function Fly.teardown()
-  if states.Fly then stopFly() end
+  stopFly()
   states.Fly = false; Utils = nil
   return true
 end

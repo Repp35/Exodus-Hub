@@ -7,6 +7,8 @@ local connections = {}
 local lastFierceEpisode, localUserId
 local missPressAt, missReadyAt
 local hookedAbility, hookedRaw, hookedWrapper
+local epoch = 0
+local errorAt = -math.huge
 
 -- configuration
 local CONFIG = {
@@ -89,6 +91,7 @@ local function update()
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if not missedDeflect(cooldown, snapshot, now) or not cooldown.episode or cooldown.episode <= lastFierceEpisode or not incomingInWindow(snapshot, now) then return end
   local episode, ball, token = cooldown and cooldown.episode, snapshot.ball, nil
+  local owner = epoch
   local ok, sent = pcall(function()
     return remote.fireFierce(function()
       if not enabled() or not fierceReady() then return false end
@@ -106,12 +109,13 @@ local function update()
       token = autoParry.beginFierce(); return true
     end)
   end)
+  if owner ~= epoch then return end
   if ok and sent == true then
     if episode then lastFierceEpisode = math.max(lastFierceEpisode, episode) end
   else
     autoParry.cancelFierce(token)
   end
-  if not ok then error(sent, 0) end
+  if not ok and os.clock() - errorAt >= 1 then errorAt = os.clock(); warn("[AutoFierce] " .. tostring(sent)) end
 end
 
 -- lifecycle
@@ -137,6 +141,7 @@ function AutoFierce.setup(deps)
   return true
 end
 function AutoFierce.teardown()
+  epoch += 1; errorAt = -math.huge
   unhookManualFierce()
   for _, connection in ipairs(connections) do
     if utils then utils.untrackGlobal(connection) end

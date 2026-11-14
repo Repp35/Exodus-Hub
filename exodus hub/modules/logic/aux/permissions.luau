@@ -67,10 +67,10 @@ local function validate(name, module)
     if not uses[alias] then error(name .. ": requiresData sem dependência: " .. tostring(alias), 2) end
   end
   for alias, minimum in pairs(versions) do
-    if not uses[alias] or type(minimum) ~= "number" or minimum < 0 or minimum ~= minimum then error(name .. ": versão de dependência inválida: " .. tostring(alias), 2) end
+    if not uses[alias] or type(minimum) ~= "number" or minimum < 0 or minimum ~= minimum or minimum == math.huge then error(name .. ": versão de dependência inválida: " .. tostring(alias), 2) end
     uses[alias].minimum = minimum
   end
-  if contract.version ~= nil and (type(contract.version) ~= "number" or contract.version < 0 or contract.version ~= contract.version) then error(name .. ": versão do contrato inválida", 2) end
+  if contract.version ~= nil and (type(contract.version) ~= "number" or contract.version < 0 or contract.version ~= contract.version or contract.version == math.huge) then error(name .. ": versão do contrato inválida", 2) end
   registry[name] = { module = module, provides = provides, data = data, uses = uses, version = contract.version }; return true
 end
 local function readonly(value, visited)

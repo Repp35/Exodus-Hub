@@ -3,6 +3,10 @@
 -- module
 local Remote = {}
 local gameInfo, utils
+local epoch = 0
+local keybindObject
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 -- configuration
 local CONFIG = {
@@ -16,7 +20,7 @@ local CONFIG = {
 function Remote.setup(deps)
   if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
   if type(deps.Utils) ~= "table" then return false, "dependência inválida: Utils" end
-  gameInfo, utils = deps.GameInfo, deps.Utils; return true
+  Remote.teardown(); gameInfo, utils = deps.GameInfo, deps.Utils; return true
 end
 
 -- dispatch
@@ -41,7 +45,7 @@ local function directRemote()
     if typeof(unreliable) ~= "Instance" or not unreliable:IsA("UnreliableRemoteEvent") or unreliable.Parent ~= remote then unreliable = remote:FindFirstChild("u") end
     return remote, unreliable
   end
-  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes"); local player = game:GetService("Players").LocalPlayer
+  local remotes = ReplicatedStorage:FindFirstChild("Remotes"); local player = Players.LocalPlayer
   remote = remotes and player and (remotes:FindFirstChild("pu_" .. player.UserId) or remotes:FindFirstChild(""))
   if remote and remote:IsA("RemoteEvent") then return remote, remote:FindFirstChild("u") end
 end
@@ -60,13 +64,13 @@ local function fireDirect()
   buffer.writef64(packet, 27, workspace:GetServerTimeNow()); remote:FireServer(packet)
   if unreliable and unreliable:IsA("UnreliableRemoteEvent") then
     unreliable:FireServer(packet)
+    local owner = epoch
     task.delay(0.03, function()
-      if unreliable.Parent == remote and remote.Parent ~= nil then unreliable:FireServer(packet) end
+      if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil then unreliable:FireServer(packet) end
     end)
   end
   return true
 end
-local keybindObject
 local function configuredInput()
   local ability = gameInfo.getDeflectAbility()
   if ability and type(ability.GetKeybindBySlotID) == "function" then
@@ -79,14 +83,14 @@ local function configuredInput()
     end
   end
   if not keybindObject then
-    local storage = game:GetService("ReplicatedStorage"); local shared = storage:FindFirstChild("Shared") or storage:FindFirstChild("TS")
+    local storage = ReplicatedStorage; local shared = storage:FindFirstChild("Shared") or storage:FindFirstChild("TS")
     local core = shared and shared:FindFirstChild("Core"); local module = core and core:FindFirstChild("KeybindObject")
-    if module then
+    if module and module:IsA("ModuleScript") then
       local ok, value = pcall(require, module)
       if ok and type(value) == "table" and type(value.KeybindObject) == "table" then keybindObject = value.KeybindObject end
     end
   end
-  if keybindObject then
+  if keybindObject and type(keybindObject.Get) == "function" then
     local binding = keybindObject:Get("Blocking")
     if binding then
       for index = 1, 2 do
@@ -130,6 +134,11 @@ function Remote.fireFierce(guard)
 end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end
 
+function Remote.teardown()
+  epoch += 1; keybindObject, gameInfo, utils = nil, nil, nil
+  return true
+end
+
 -- contract
 Remote.__contract = {
   requires = { GameInfo = "gameinfo", Utils = "utils" },
@@ -146,6 +155,7 @@ Remote.__contract = {
   },
   provides = {
     "setup",
+    "teardown",
     "fireParry",
     "fireDark",
     "fireFierce",

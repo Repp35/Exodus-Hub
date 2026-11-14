@@ -14,7 +14,11 @@ local CONFIG = {
 local function performDash(direction, upward)
   if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end
   if not gameInfo.areAbilitiesEnabled() then return false, upward and "Habilidades indisponíveis nesta partida" or "Habilidades indisponíveis" end
-  if not upward and (typeof(direction) ~= "Vector3" or direction.Magnitude <= CONFIG.MIN_DIRECTION_MAGNITUDE) then return false, "Direção indisponível" end
+  if not upward then
+    if typeof(direction) ~= "Vector3" then return false, "Direção indisponível" end
+    local magnitude = direction.Magnitude
+    if magnitude ~= magnitude or magnitude == math.huge or magnitude <= CONFIG.MIN_DIRECTION_MAGNITUDE then return false, "Direção indisponível" end
+  end
   local ability = gameInfo.getDashAbility()
   if not ability then return false, upward and "Dash não está equipada ou ainda não carregou" or "Dash indisponível" end
   if ability.Dashing then return false, upward and "Dash já está em andamento" or "Dash indisponível" end

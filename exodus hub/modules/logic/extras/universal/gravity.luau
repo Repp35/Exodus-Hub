@@ -11,7 +11,7 @@ local CONFIG = {
 
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local gravityDefault, gravityValue
+local gravityValue
 local enabledState = false
 local connection, gravityRoot, attachment, force
 local function clearGravity()
@@ -31,7 +31,10 @@ local function updateGravity()
     force.RelativeTo = Enum.ActuatorRelativeTo.World; force.ApplyAtCenterOfMass = true
     force.Parent = root
   end
-  force.Force = Vector3.new(0, root.AssemblyMass * (Workspace.Gravity - gravityValue), 0)
+  local mass = root.AssemblyMass
+  local compensation = (not root.Anchored and mass == mass and mass < math.huge) and mass * (Workspace.Gravity - gravityValue) or 0
+  local desired = Vector3.new(0, compensation, 0)
+  if force.Force ~= desired then force.Force = desired end
 end
 local function startGravity()
   local signal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
@@ -54,31 +57,34 @@ function Gravity.setEnabled(enabled)
     if value then updateGravity() end
     return true
   end
-  enabledState = value; local ok, result = pcall(value and startGravity or stopGravity)
+  enabledState = value; local ok, result, detail = pcall(value and startGravity or stopGravity)
   if not ok or result == false then
-    enabledState = not value; Utils.setConfig({ UniversalGravityEnabled = not value })
-    return false, tostring(result)
+    -- Startup can fail after allocating objects or registering callbacks.
+    pcall(stopGravity); enabledState = false
+    Utils.setConfig({ UniversalGravityEnabled = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function Gravity.setValue(value)
   if not Utils then return false, "controle inválido" end
   local number = tonumber(value)
-  if not number or number ~= number then return false, "valor inválido" end
-  gravityValue = math.clamp(number, 0, 400)
-  if not Utils.setConfig({ UniversalGravity = gravityValue }) then return false end
+  if not number or number ~= number or math.abs(number) == math.huge then return false, "valor inválido" end
+  number = math.clamp(number, 0, 400)
+  if not Utils.setConfig({ UniversalGravity = number }) then return false end
+  gravityValue = number
   if not enabledState then return Gravity.setEnabled(true) end
   updateGravity(); return true
 end
 function Gravity.teardown()
-  if enabledState then stopGravity() end
+  stopGravity()
   enabledState = false; Utils = nil
   return true
 end
 function Gravity.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Gravity.teardown(); Utils = deps.Utils
-  gravityDefault = Workspace.Gravity; gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or gravityDefault
+  gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or Workspace.Gravity
   if Utils.getConfigValue("UniversalGravityEnabled") == true then return Gravity.setEnabled(true) end
   return true
 end

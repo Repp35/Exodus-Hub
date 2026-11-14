@@ -27,7 +27,7 @@ local state = {
 local configModule, modules, persistenceReady = nil, {}, false
 local connectionIndexes = { global = {}, character = {} }
 local observerIndexes = { spam = {}, config = {} }
-local savePending, saveToken, saveDirty = false, 0, false
+local savePending, saveToken, saveDirty, saveRevision = false, 0, false, 0
 local refreshPending, refreshing = false, false
 local spamObservers, configObservers = {}, {}
 
@@ -106,12 +106,11 @@ local function untrack(list, indexMap, connection)
   return true
 end
 local function disconnectAll(list, indexMap)
-  for i = #list, 1, -1 do
-    local connection = list[i]; list[i] = nil
-    if connection then
-      indexMap[connection] = nil; local ok, err = pcall(connection.Disconnect, connection)
-      if not ok and type(warn) == "function" then warn("Falha ao desconectar: " .. tostring(err)) end
-    end
+  while #list > 0 do
+    local connection = list[#list]
+    untrack(list, indexMap, connection)
+    local ok, err = pcall(connection.Disconnect, connection)
+    if not ok and type(warn) == "function" then warn("Falha ao desconectar: " .. tostring(err)) end
   end
 end
 
@@ -286,8 +285,9 @@ local function backupAtStartup(folder, body)
   end
   return writeVerified(backupPath(folder, 1), body)
 end
-local function saveConfig()
+local function writeConfig()
   if not persistenceReady or not saveDirty then return end
+  local revision = saveRevision
   local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"
   local body = serializeConfig(state.config)
   local decoded, data = pcall(function() return http:JSONDecode(body) end)
@@ -302,11 +302,21 @@ local function saveConfig()
     if not recovery and not writeVerified(folder .. "/config_recovery.json", body) then warn("Falha ao criar proteção inicial; salvamento suspenso"); return end
   end
   if not writeVerified(path, body) then warn("Falha ao salvar configuração; cópia anterior preservada"); return end
-  saveDirty = false
+  if saveRevision == revision then saveDirty = false end
 end
-local function queueSave()
+local saveRunning = false
+local queueSave
+local function saveConfig()
+  if saveRunning then return end
+  saveRunning = true; local revision = saveRevision
+  local ok, reason = pcall(writeConfig)
+  saveRunning = false
+  if not ok then warn("Falha ao salvar configuração: " .. tostring(reason)) end
+  if saveDirty and saveRevision ~= revision and persistenceReady then queueSave() end
+end
+queueSave = function()
   if not persistenceReady then return end
-  saveDirty = true
+  saveDirty = true; saveRevision += 1
   if savePending then return end
   savePending = true; saveToken += 1
   local token = saveToken
@@ -390,6 +400,11 @@ function Utils.setLifecyclePhase(value)
 end
 function Utils.recordTransition(source, fromState, toState, reason) recordTransition(source, fromState, toState, reason) end
 function Utils.recordError(source, message)
+  source, message = tostring(source or "Unknown"), tostring(message or "")
+  local previous = state.diagnostics.lastError
+  if previous and previous.source == source and previous.message == message and os.clock() - previous.at < 1 then
+    previous.count = (previous.count or 1) + 1; return true
+  end
   local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }; state.diagnostics.lastError = item
   append(state.diagnostics.errors, item); warn(("[%s] %s"):format(item.source, item.message))
   refreshNamespace(); return true

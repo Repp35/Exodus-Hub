@@ -66,6 +66,7 @@ local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
   MATCH_RETRY_DELAY_MAX = 0.5,
+  SNAPSHOT_MAX_AGE = 0.5,
   FIERCE_DURATION = 5,
   FIERCE_END_MARGIN = 0.05,
   RETRY_WINDOW_FACTOR = 0.12,
@@ -91,7 +92,7 @@ local CONFIG = {
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
-local function vector(value) return typeof(value) == "Vector3" end
+local function vector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 local function clock() return os.clock() end
 local function phase(value, reason)
   if state.phase == value and state.reason == reason then return end
@@ -409,6 +410,9 @@ local function tick(character, root, generation)
   local time = clock(); local value = gameInfo.getSnapshotAt(time)
   if generation ~= state.generation or not state.bound or not state.alive then return end
   if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
+  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then
+    phase("waiting", "snapshot_stale"); return
+  end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
   if value.mode ~= "training" and utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
@@ -623,6 +627,7 @@ function AutoParry.getTargetStatus()
   }
 end
 function AutoParry.getDefenseState(value)
+  if not utils or not gameInfo then return nil end
   samplePing(); local cooldown = safeCooldown()
   local time = clock(); local speed = value and (tonumber(value.syncSpeed) or tonumber(value.speed))
   local geometry = finite(speed) and radius(speed, activeWindowFactor(time)) or nil
@@ -651,10 +656,10 @@ local function rootPosition()
   return root and root.Parent and gameInfo.getRootPosition(root) or nil
 end
 function AutoParry.getTiming(value, time, root, factor, baseWindow)
-  if type(value) ~= "table" then return nil end
+  if type(value) ~= "table" or not gameInfo then return nil end
   root = vector(root) and root or rootPosition(); local position, velocity = value.position, value.velocity
   if gameInfo and typeof(value.ball) == "Instance" and value.ball.Parent and value.ball:IsA("BasePart") then
-    if value.mode == "training" or not vector(position) then position = gameInfo.getBallPosition(value.ball) end
+    if not vector(position) then position = gameInfo.getBallPosition(value.ball) end
     if value.ball == state.lastBall then
       local current = gameInfo.getBallVelocity(value.ball)
       if vector(current) and current.Magnitude > 0.1 then velocity = current end
@@ -662,11 +667,13 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
     if not vector(velocity) then velocity = gameInfo.getBallVelocity(value.ball) end
   end
   if not vector(position) or not vector(root) then return nil end
-  velocity = vector(velocity) and velocity or Vector3.zero; local speed = velocity.Magnitude > 0.1 and velocity.Magnitude or tonumber(value.speed) or 0
+  velocity = vector(velocity) and velocity or Vector3.zero
+  local speed = tonumber(value.syncSpeed)
+  if not finite(speed) or speed <= 0 then speed = velocity.Magnitude > 0.1 and velocity.Magnitude or tonumber(value.speed) or 0 end
   if not finite(speed) or speed < 0 then return nil end
   local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
-  local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local delta = root - position
+  local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry)
   local distanceToRadius = distance - geometry.fullRadius; local timeToTrigger = math.max(entry - geometry.effectiveWindow, 0)
   return {
     distance = distance,
@@ -693,10 +700,13 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   }
 end
 function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
+  if not gameInfo then return nil end
   if mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
   local speed = tonumber(speedOverride)
   if not finite(speed) or speed < 0 then speed = state.speed end
-  local result = radius(speed, factor, baseWindow); local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
+  local result = radius(speed, factor, baseWindow)
+  if not result then return nil end
+  local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
   result.mode, result.speed, result.distance, result.tti, result.resilience = mode, speed, state.distance, tti, resilience()
   result.value = mode == "tti" and tti or (mode == "speed_distance" and { speed = speed, distance = state.distance } or result.fullRadius); return result
 end
@@ -743,7 +753,9 @@ function AutoParry.getPressure()
   }
 end
 function AutoParry.getStatus()
-  local geometry = AutoParry.getRadius("geometry", utils and activeWindowFactor(clock()) or CONFIG.DEFAULT_WINDOW_FACTOR); local target = AutoParry.getTargetStatus()
+  local geometry = AutoParry.getRadius("geometry", utils and activeWindowFactor(clock()) or CONFIG.DEFAULT_WINDOW_FACTOR)
+  if not geometry then return { available = false, lifecycle = { phase = state.phase, bound = state.bound, alive = state.alive } } end
+  local target = AutoParry.getTargetStatus()
   return {
     schema = utils and utils.apiVersion() or nil,
     api = {

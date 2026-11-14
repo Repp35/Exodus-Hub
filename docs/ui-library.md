@@ -34,7 +34,7 @@ Não há promessa de ganho de FPS medido. As melhorias de desempenho são estrut
 | `app/notification-policy.luau` | Regras de notificações por plataforma e origem |
 | `ui.luau` | Composição e integração com o loader |
 
-O loader registra os módulos da biblioteca e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. As rotinas de combate e movimento não foram modificadas.
+O loader registra os módulos da biblioteca e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. A revisão posterior dos módulos de combate, movimento e utilitários está em [Revisão dos módulos](rework-modulos.md).
 
 ## Criar uma biblioteca
 

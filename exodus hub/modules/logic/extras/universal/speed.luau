@@ -11,7 +11,7 @@ local CONFIG = {
 
 local RunService = game:GetService("RunService")
 local states = { Speed = false }
-local speedDefault, speedValue
+local speedValue
 local connections = {}
 local function disconnect(name)
   local connection = connections[name]; connections[name] = nil
@@ -40,7 +40,11 @@ end
 local function applySpeed()
   local humanoid = currentHumanoid()
   if humanoid ~= speedHumanoid then
-    disconnect("SpeedChanged"); speedHumanoid, speedApplied = humanoid, nil
+    disconnect("SpeedChanged")
+    if speedHumanoid and speedHumanoid.Parent and speedApplied ~= nil and speedHumanoid.WalkSpeed == speedApplied and speedRestore ~= nil then
+      writeSpeed(speedHumanoid, speedRestore)
+    end
+    speedHumanoid, speedApplied = humanoid, nil
     speedRestore = humanoid and humanoid.WalkSpeed or nil
     if humanoid then
       connect("SpeedChanged", humanoid:GetPropertyChangedSignal("WalkSpeed"), function()
@@ -84,31 +88,34 @@ function Speed.setEnabled(enabled)
     if value then applySpeed() end
     return true
   end
-  states.Speed = value; local ok, result = pcall(value and startSpeed or stopSpeed)
+  states.Speed = value; local ok, result, detail = pcall(value and startSpeed or stopSpeed)
   if not ok or result == false then
-    states.Speed = not value; Utils.setConfig({ UniversalSpeedEnabled = not value })
-    return false, tostring(result)
+    -- Startup can fail after allocating objects or registering callbacks.
+    pcall(stopSpeed); states.Speed = false
+    Utils.setConfig({ UniversalSpeedEnabled = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function Speed.setValue(value)
   if not Utils then return false, "controle inválido" end
   local number = tonumber(value)
-  if not number or number ~= number then return false, "valor inválido" end
-  speedValue = math.clamp(number, 0, 200)
-  if not Utils.setConfig({ UniversalSpeed = speedValue, UniversalSpeedEnabled = true }) then return false end
+  if not number or number ~= number or math.abs(number) == math.huge then return false, "valor inválido" end
+  number = math.clamp(number, 0, 200)
+  if not Utils.setConfig({ UniversalSpeed = number, UniversalSpeedEnabled = true }) then return false end
+  speedValue = number
   if not states.Speed then return Speed.setEnabled(true) end
   return applySpeed()
 end
 function Speed.teardown()
-  if states.Speed then stopSpeed() end
+  stopSpeed()
   states.Speed = false; Utils = nil
   return true
 end
 function Speed.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Speed.teardown(); Utils = deps.Utils
-  speedDefault = 40; speedValue = tonumber(Utils.getConfigValue("UniversalSpeed")) or speedDefault
+  speedValue = tonumber(Utils.getConfigValue("UniversalSpeed")) or CONFIG.defaults.UniversalSpeed
   if Utils.getConfigValue("UniversalSpeedEnabled") == true then return Speed.setEnabled(true) end
   return true
 end

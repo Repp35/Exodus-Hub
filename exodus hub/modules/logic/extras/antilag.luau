@@ -372,6 +372,7 @@ local function createOptimizer(services, initialConfig)
   function controller:SetOption(key, value)
     if not alive or destroying or options[key] == nil then return false end
     if typeof(value) ~= typeof(options[key]) then return false end
+    if type(value) == "number" and (value ~= value or math.abs(value) == math.huge) then return false end
     if key == "BudgetMs" then value = math.clamp(value, 0.25, 4) end
     if key == "MaxItemsPerFrame" then value = math.floor(math.clamp(value, 8, 1000)) end
     if key == "ReapplyInterval" then value = math.clamp(value, 0.1, 2) end
@@ -491,7 +492,9 @@ local function createGameAdapter(services, getOption)
     local id = moduleName .. "." .. key; local object = modules[moduleName]
     local wanted = active and getOption("GameGenerators") and type(object) == "table"
     if not wanted then removePatch(id); return end
-    if patches[id] then return end
+    local existing = patches[id]
+    if existing and existing.object == object and object[key] == existing.wrapper then return end
+    if existing then removePatch(id) end
     local original = object[key]
     if type(original) ~= "function" then return end
     local wrapper = function(...)
@@ -550,6 +553,12 @@ local function createGameAdapter(services, getOption)
   end
   function adapter:SetModule(name, value)
     if not alive or type(value) ~= "table" then return false end
+    if modules[name] ~= value then
+      local prefix = name .. "."
+      for id in pairs(patches) do
+        if id:sub(1, #prefix) == prefix then removePatch(id) end
+      end
+    end
     modules[name] = value
     if active then refresh() end
     return true
@@ -923,7 +932,7 @@ local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or 650
   if distance ~= distance then distance = 650 end
   profile.CullDistance = math.clamp(distance, 350, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
-  profile.Lights, profile.Shadows, profile.FlatLighting = lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
+  profile.Lights, profile.Shadows, profile.FlatLighting = not lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
   profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.NoFog, profile.Atmosphere = not fog, not fog
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = not effects, not effects, not effects; profile.PostEffects, profile.Clouds, profile.FlatSky = not effects, not effects, not effects
   profile.GameNoVFX, profile.GameReducedUI = not effects, not effects; return profile
@@ -987,7 +996,11 @@ local function startSession()
     end,
   }, owner.profile)
   local function getOption(key) return owner.engine:GetOption(key) end
-  if owner.compatible then owner.adapter = createGameAdapter({ Workspace = workspace, Player = player, PlayerScripts = player:WaitForChild("PlayerScripts") }, getOption) end
+  if owner.compatible then
+    local scripts = player:FindFirstChild("PlayerScripts") or player:WaitForChild("PlayerScripts", 10)
+    assert(scripts, "PlayerScripts indisponível")
+    owner.adapter = createGameAdapter({ Workspace = workspace, Player = player, PlayerScripts = scripts }, getOption)
+  end
   owner.spatial = createSpatialController({
     Workspace = workspace,
     Player = player,

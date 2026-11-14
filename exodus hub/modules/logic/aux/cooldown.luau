@@ -23,7 +23,8 @@ local CONFIG = {
 }
 
 -- helpers
-local nextTrainingAt = 0
+local nextTrainingAt, nextParriedAt = 0, 0
+local updateErrorAt = -math.huge
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function disconnect(connection)
@@ -99,6 +100,7 @@ function Cooldown.recordDeflectAttempt(pressedAt)
   deflectAttempt = { pressedAt = pressedAt, missed = false }
 end
 function Cooldown.getDeflectCooldownState()
+  if not cooldown or not utils or not gameInfo then return nil end
   local time = os.clock()
   if cooldownConnection and cooldownConnection.Connected == false then
     disconnect(cooldownConnection); cooldownConnection = nil
@@ -121,7 +123,8 @@ function Cooldown.getDeflectCooldownState()
       if time - missingAt >= 3 and time >= warningAt then warningAt = time + 10; report("DeflectCooldown", "evento de cooldown do servidor indisponível") end
     end
   end
-  if not parriedConnection then
+  if not parriedConnection and time >= nextParriedAt then
+    nextParriedAt = time + CONFIG.COOLDOWN_RETRY
     local signals = Cooldown.getDeflectServerEvents()
     if signals and signals.parried then
       parriedConnection = signals.parried:Connect(function()
@@ -184,13 +187,14 @@ function Cooldown.setup(deps)
   Cooldown.teardown(); utils, gameInfo = deps.Utils, deps.GameInfo
   cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge, lastParriedAt = -math.huge }; signalAt, heldAt, missingAt, warningAt, nextTrainingAt = 0, 0, nil, 0, 0
   deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, 0
+  nextParriedAt, updateErrorAt = 0, -math.huge
   trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil = nil, nil, nil, nil; local service = utils.getRunService()
   if not service or not service.Heartbeat then return false, "Heartbeat indisponível" end
   heartbeatConnection = service.Heartbeat:Connect(function()
     local ok, err = pcall(function()
       bindTraining(os.clock()); Cooldown.getDeflectCooldownState()
     end)
-    if not ok then report("update", err) end
+    if not ok and os.clock() - updateErrorAt >= 1 then updateErrorAt = os.clock(); report("update", err) end
   end)
   utils.trackGlobal(heartbeatConnection); bindTraining(os.clock())
   Cooldown.getDeflectCooldownState(); return true

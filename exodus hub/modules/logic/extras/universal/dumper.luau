@@ -62,7 +62,8 @@ end
 local function line(value) return tostring(value):gsub("[\r\n]", " ") end
 local function safeProperty(object, key, fallback)
   local ok, value = pcall(function() return object[key] end)
-  return ok and value ~= nil and value or fallback
+  if ok and value ~= nil then return value end
+  return fallback
 end
 local function objectName(object) return tostring(safeProperty(object, "Name", "Unnamed")) end
 local function objectClass(object) return tostring(safeProperty(object, "ClassName", "Unknown")) end
@@ -107,8 +108,7 @@ local function ensureFolder(path)
   end
   return false, tostring(err)
 end
-local createdFolders = {}
-local function saveFile(path, content)
+local function saveFile(path, content, createdFolders)
   if type(writefile) ~= "function" then return false, "writefile is unavailable" end
   local directory = path:match("^(.*)/[^/]+$")
   if directory and not createdFolders[directory] then
@@ -207,7 +207,13 @@ end
 -- dump
 local function run(token, callbacks)
   if type(writefile) ~= "function" or type(makefolder) ~= "function" then return nil, "writefile and makefolder are required" end
-  table.clear(createdFolders); local base = nextFolder()
+  local createdFolders = {}; local base = nextFolder()
+  local status = token.status
+  local function save(path, content)
+    if token.cancelled then return false, "Dump canceled" end
+    return saveFile(path, content, createdFolders)
+  end
+  status.folder = base
   for _, path in ipairs({ base, base .. "/scripts", base .. "/remotes" }) do
     local ok, err = ensureFolder(path)
     if not ok then return nil, "cannot create " .. path .. ": " .. tostring(err) end
@@ -283,6 +289,7 @@ local function run(token, callbacks)
     local function attempt(label, fn, argument, validateSource)
       if token.cancelled then return nil end
       local success, value = pcall(fn, argument)
+      if token.cancelled then return nil end
       if not success then attempts[#attempts + 1] = label .. ": error: " .. errorText(value); return nil end
       if type(value) ~= "string" or #value == 0 then attempts[#attempts + 1] = label .. ": empty or invalid return (" .. type(value) .. ")"; return nil end
       if validateSource then
@@ -291,9 +298,9 @@ local function run(token, callbacks)
       end
       attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"; return value
     end
-    for round = 1, 1 do
+    do
       if token.cancelled then return nil, "Dump canceled" end
-      attempts[#attempts + 1] = "source attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS
+      attempts[#attempts + 1] = "source attempt 1/" .. CONFIG.MAX_SOURCE_ATTEMPTS
       local sourceOk, directSource = pcall(function() return object.Source end)
       if sourceOk and type(directSource) == "string" and directSource:match("%S") then source, method = directSource, "Source"; attempts[#attempts + 1] = "Source: available"
       else attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource)) end
@@ -324,7 +331,6 @@ local function run(token, callbacks)
           end
         end
       end
-      if source then break end
     end
     if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
@@ -332,7 +338,7 @@ local function run(token, callbacks)
     local folder = folderFor(object); local filename = ("%s__%s_%04d"):format(safeFilename(objectName(object)), objectClass(object), index)
     local stem = folder ~= "" and folder .. "/" .. filename or filename
     if bytecode and CONFIG.SAVE_BYTECODE then
-      local byteOk, byteError = saveFile(base .. "/bytecode/" .. stem .. ".bin", bytecode)
+      local byteOk, byteError = save(base .. "/bytecode/" .. stem .. ".bin", bytecode)
       if byteOk then bytecodes += 1 else attempts[#attempts + 1] = "save bytecode: " .. tostring(byteError) end
     end
     local context = line(safeProperty(object, "RunContext", "unavailable"))
@@ -347,10 +353,10 @@ local function run(token, callbacks)
       "",
     }, "\n")
     if source then
-      local savedOk, saveError = saveFile(base .. "/scripts/" .. stem .. ".lua", header .. source .. "\n")
+      local savedOk, saveError = save(base .. "/scripts/" .. stem .. ".lua", header .. source .. "\n")
       if savedOk then saved += 1 else failed += 1; errors[#errors + 1] = "[WRITE_ERROR] " .. line(item.path) .. " | " .. tostring(saveError) end
-      if savedOk then manifest[#manifest + 1] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
-      else manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | write failed" end
+      if savedOk then manifest[index] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
+      else manifest[index] = "[ERROR] " .. line(item.path) .. " | write failed" end
     else
       unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, closure = closure, attempts = attempts, context = context }
       manifest[index] = "[PENDING] " .. line(item.path); failed += 1
@@ -381,9 +387,9 @@ local function run(token, callbacks)
     if index % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
   end
   tree[2] = "total=" .. instanceCount; remotes[2] = "total=" .. remoteCount
-  local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
+  local treeOk, treeError = save(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
-  local remoteOk, remoteError = saveFile(base .. "/remotes/remotes.txt", table.concat(remotes, "\n") .. "\n")
+  local remoteOk, remoteError = save(base .. "/remotes/remotes.txt", table.concat(remotes, "\n") .. "\n")
   if not remoteOk then return nil, "cannot save remotes.txt: " .. tostring(remoteError) end
   local info = {
     "SrcDump - game information",
@@ -401,7 +407,7 @@ local function run(token, callbacks)
 
   local productOk, product = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
   info[#info + 1] = "product_name=" .. (productOk and type(product) == "table" and line(product.Name) or "unavailable")
-  local infoOk, infoError = saveFile(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
+  local infoOk, infoError = save(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
   if not infoOk then return nil, "cannot save game_info.txt: " .. tostring(infoError) end
   if #unresolved > 0 then emit(callbacks, "onStatus", "Retrying failed scripts...") end
   for retryIndex, entry in ipairs(unresolved) do
@@ -419,7 +425,7 @@ local function run(token, callbacks)
           if ok and type(value) == "string" and #value > 0 then
             entry.bytecode = value
             if CONFIG.SAVE_BYTECODE then
-              local byteOk, byteError = saveFile(base .. "/bytecode/" .. entry.stem .. ".bin", value)
+              local byteOk, byteError = save(base .. "/bytecode/" .. entry.stem .. ".bin", value)
               if byteOk then bytecodes += 1 else entry.attempts[#entry.attempts + 1] = "save bytecode: " .. tostring(byteError) end
             end
             break
@@ -456,7 +462,7 @@ local function run(token, callbacks)
         "-- method: " .. recoveredMethod,
         "",
       }, "\n")
-      local ok, err = saveFile(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
+      local ok, err = save(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
       if ok then
         saved += 1; failed -= 1
         manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | " .. recoveredMethod .. " | scripts/" .. entry.stem .. ".lua"
@@ -473,7 +479,7 @@ local function run(token, callbacks)
         local assembly = disassemble(entry.item.instance)
         if not assembly and entry.bytecode then assembly = disassemble(entry.bytecode) end
         if not assembly and entry.closure then assembly = disassemble(entry.closure) end
-        if assembly then saveFile(base .. "/disassembly/" .. entry.stem .. ".txt", assembly .. "\n") end
+        if assembly then save(base .. "/disassembly/" .. entry.stem .. ".txt", assembly .. "\n") end
       end
       local category = entry.bytecode and "bytecode available; source unavailable" or "bytecode unavailable to client"; errors[#errors + 1] = "[SOURCE_ERROR] "
         .. line(entry.item.path)
@@ -488,9 +494,13 @@ local function run(token, callbacks)
     status.saved, status.failed, status.bytecode = saved, failed, bytecodes
     if retryIndex % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
   end
-  status.saved, status.failed = saved, failed; saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
-  saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
-  saveFile(
+  if token.cancelled then return nil, "Dump canceled" end
+  status.saved, status.failed = saved, failed
+  local manifestOk, manifestError = save(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
+  if not manifestOk then return nil, "cannot save manifest.txt: " .. tostring(manifestError) end
+  local errorsOk, errorsError = save(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
+  if not errorsOk then return nil, "cannot save errors.txt: " .. tostring(errorsError) end
+  local summaryOk, summaryError = save(
     base .. "/summary.txt",
     table.concat({
       "SrcDump",
@@ -506,6 +516,7 @@ local function run(token, callbacks)
       "",
     }, "\n")
   )
+  if not summaryOk then return nil, "cannot save summary.txt: " .. tostring(summaryError) end
   log(("Finished: %d saved, %d failed. Folder: %s"):format(saved, failed, base)); return { folder = base, total = #candidates, saved = saved, failed = failed, bytecode = bytecodes }
 end
 
@@ -528,6 +539,7 @@ function Dumper.start(callbacks)
     bytecode = 0,
   }
 
+  token.status = status
   task.spawn(function()
     local ok, result, reason = xpcall(
       function() return run(token, callbacks) end,
