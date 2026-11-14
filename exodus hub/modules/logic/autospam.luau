@@ -30,6 +30,7 @@ local CONFIG = {
     TARGET_RETURN_TIMEOUT_MIN_SPEED = 0.15,
     TARGET_RETURN_TIMEOUT_MAX_SPEED = 0.22,
     COOLDOWN_PROTECTION_RADIUS = 16,
+    RETURN_PROTECTION_RADIUS = 10,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -170,7 +171,7 @@ local function activationGeometry(state, snapshot, partner, time) return geometr
 
 -- protection
 local watchOpponent
-local function cooldownOpponentOutside(state)
+local function opponentOutside(state, radius)
   if not state.partner or not state.root or not state.root.Parent then return false end
   local position = gameInfo.getPlayerMotion(state.partner)
   if typeof(position) ~= "Vector3" then
@@ -178,7 +179,7 @@ local function cooldownOpponentOutside(state)
     if root and root:IsA("BasePart") and root.Parent then position = root.Position end
   end
   if typeof(position) ~= "Vector3" then return false end
-  return (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS
+  return (position - state.root.Position).Magnitude > radius
 end
 local function activate(state, reason, partner, time, serverTime, snapshot)
   if reason ~= "return_target" and reason ~= "haunter" and reason ~= "haunter_self" then return false end
@@ -266,7 +267,7 @@ local function deactivationReason(state, snapshot, time)
     and state.deflectCooldownSince
     and time - state.activatedAt >= cooldownLimit
     and time - state.deflectCooldownSince >= cooldownLimit
-    and cooldownOpponentOutside(state)
+    and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS)
   then
     return "deflect_cooldown_timeout"
   end
@@ -276,6 +277,7 @@ local function deactivationReason(state, snapshot, time)
     and state.target == state.partner
     and state.departedAt
     and time - state.departedAt >= targetReturnTimeout(snapshot, state, time)
+    and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS)
   then
     return "target_return_timeout"
   end
