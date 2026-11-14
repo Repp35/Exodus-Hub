@@ -147,6 +147,35 @@ local CONFIG = {
       },
     },
     {
+      id = "antilag",
+      title = "Anti Lag",
+      columns = 1,
+      width = 360,
+      sections = {
+        {
+          title = "Anti Lag",
+          components = {
+            { kind = "toggle", title = "Ativar Anti Lag", key = "AntiLagEnabled" },
+            {
+              kind = "slider",
+              title = "Distância de renderização",
+              key = "AntiLagRenderDistance",
+              parentKey = "AntiLagEnabled",
+              min = 350,
+              max = 1200,
+              increment = 50,
+              valueName = "studs",
+            },
+            { kind = "toggle", title = "Iluminação", key = "AntiLagLighting", parentKey = "AntiLagEnabled" },
+            { kind = "toggle", title = "Som da espada", key = "AntiLagSwordSounds", parentKey = "AntiLagEnabled" },
+            { kind = "toggle", title = "Lobby visível na partida", key = "AntiLagLobbyVisible", parentKey = "AntiLagEnabled" },
+            { kind = "toggle", title = "Névoa", key = "AntiLagFog", parentKey = "AntiLagEnabled" },
+            { kind = "toggle", title = "Efeitos", key = "AntiLagEffects", parentKey = "AntiLagEnabled" },
+          },
+        },
+      },
+    },
+    {
       id = "automatic",
       title = "Automatic",
       columns = 2,
