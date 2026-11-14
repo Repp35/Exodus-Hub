@@ -1,7 +1,3 @@
-# Exodus v2
+# Lá vem o skiddie
 
-Hub modular em Luau para Roblox.
-
-- [Organização e uso da biblioteca de UI](docs/ui-library.md)
-- [Revisão dos módulos de lógica](docs/rework-modulos.md)
-- [Cuidados obrigatórios ao otimizar extras e universal](exodus%20hub/modules/logic/extras/sped.md)
+A arquitetura, os componentes, os modelos de página e os testes estão documentados em [Biblioteca de UI](docs/ui-library.md).
