@@ -301,16 +301,47 @@ assert(border.Transparency==1)
 _G.ExodusUICleanup();finishTweens();assert(listenerCount()==0 and activeTweenCount()==0)
 ''')
 
-    def test_icons_use_native_assets_without_writing_files(self):
-        self.run_lua('''
-local writes=0
-writefile=function() writes=writes+1 end
-getcustomasset=function() error('custom asset must not be used') end
-local icon=uiicons.create(panel,'settings')
-assert(icon:IsA('ImageLabel') and icon.Image:find('rbxasset://',1,true)==1)
-uiicons.create(panel,'settings');assert(writes==0,'icons must not write files')
+    def test_icons_register_original_pngs_once_without_generic_fallbacks(self):
+        self.run_lua("""
+local writes,removals,registered=0,0,0
+local files={}
+writefile=function(path,bytes)
+ writes=writes+1;files[path]=bytes
+ assert(bytes:sub(1,8)==string.char(137)..'PNG'..string.char(13,10,26,10))
+end
+getcustomasset=function(path)
+ registered=registered+1
+ assert(files[path] and path:find('ui_',1,true))
+ return 'original-png://'..path
+end
+delfile=function(path) removals=removals+1;files[path]=nil end
+local first=uiicons.create(panel,'settings')
+assert(first:IsA('ImageLabel') and first.Image:find('original-png://',1,true)==1)
+assert(uiicons.create(panel,'settings').Image==first.Image)
+uiicons.create(panel,'chevron');uiicons.create(panel,'minimize')
+assert(writes==3 and registered==3 and removals==3 and next(files)==nil)
 panel:Destroy()
-''')
+""")
+
+    def test_decoder_preserves_every_original_png_byte(self):
+        source = module_path('uiicons').read_text()
+        decoder = source[source.index('local alphabet ='):source.index('local function resolve(')]
+        import base64
+        for name in ('settings', 'chevron', 'minimize'):
+            original = (ROOT / 'assets/ui' / f'{name}.png').read_bytes()
+            payload = base64.b64encode(original).decode()
+            result = self.run_lua(decoder + f"\nlocal bytes=decode('{payload}')\n" + "return (bytes:gsub('.',function(c) return string.format('%02x',string.byte(c)) end))")
+            self.assertEqual(bytes.fromhex(result), original, name)
+
+    def test_icon_registration_failure_does_not_substitute_symbols(self):
+        self.run_lua("""
+writefile=function() error('storage unavailable') end
+getcustomasset=function() error('must not register after write failure') end
+local icon=uiicons.create(panel,'chevron')
+assert(icon.Image=='')
+writefile=nil;getcustomasset=nil
+assert(uiicons.create(panel,'settings').Image=='')
+""")
 
     def test_hub_has_no_font_icons_or_emojis(self):
         sources = '\n'.join(p.read_text() for p in (ROOT / 'modules/front').rglob('*.luau'))

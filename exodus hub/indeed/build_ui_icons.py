@@ -13,6 +13,14 @@ NAMES = ('settings', 'chevron', 'minimize')
 
 
 def generated(source: str) -> str:
+    references = set()
+    for module in (ROOT / 'modules/front').rglob('*.luau'):
+        references.update(re.findall(r'\.icon\([^,\n]+,\s*"([^"\n]+)"', module.read_text()))
+    assets = {p.stem for p in (ROOT / 'assets/ui').glob('*.png')}
+    if references != set(NAMES) or assets != set(NAMES):
+        raise ValueError(f'Icon references/assets disagree: references={sorted(references)}, PNGs={sorted(assets)}, bundled={NAMES}')
+    if 'fallback =' in source or 'rbxasset://textures/ui/' in source:
+        raise ValueError('Generic Roblox fallback would replace original Exodus symbols')
     fingerprint = hashlib.sha256()
     for name in NAMES:
         image = (ROOT / 'assets/ui' / f'{name}.png').read_bytes()
