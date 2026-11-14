@@ -16,7 +16,12 @@ local CONFIG = {
           column = 1,
           components = {
             { kind = "toggle", title = "Auto Parry", key = "AutoParry", shortcutKey = "ParryKeybind" },
-            { kind = "toggle", title = "Delta AP Mode", key = "AutoParryDeltaMode", description = "Delta-style radius and target-return timing. Disable to use the original Exodus AutoParry." },
+            {
+              kind = "toggle",
+              title = "Delta AP Mode",
+              key = "AutoParryDeltaMode",
+              description = "Delta-style radius and target-return timing. Disable to use the original Exodus AutoParry.",
+            },
             { kind = "toggle", title = "Auto Spam", key = "AutoSpam", shortcutKey = "ClashKeybind" },
             {
               kind = "toggle",
