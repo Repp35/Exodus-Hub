@@ -351,6 +351,51 @@ assert(state.config.UniversalFly and state.config.UniversalFlySpeed==3 and saves
 assert(Utils.setConfig({AutoParry=true,UniversalFly=false}));assert(saves==1 and not state.config.UniversalFly)
 ''')
 
+    def test_config_backup_recovery_and_write_failure(self):
+        source = (ROOT / 'modules/logic/aux/utils.luau').read_text()
+        helpers = source[source.index('local function readSavedConfig('):source.index('local function queueSave()')]
+        loader = source[source.index('function Utils.loadConfig()'):source.index('function Utils.setConfigModule(')]
+        self.run_lua('''
+local files, failWrite = {}, nil
+local function isfile(path) return files[path] ~= nil end
+local function readfile(path) return files[path] end
+local function writefile(path, body)
+  if path == failWrite then error("write failed") end
+  files[path] = body
+end
+local http = {}
+function http:JSONDecode(raw)
+  if raw == "A" then return {value="A"} end
+  if raw == "B" then return {value="B"} end
+  if raw == "{}" then return {} end
+  error("invalid")
+end
+local state = {config={value="B"}}
+local persistenceReady, saveDirty = false, false
+local Utils = {}
+function Utils.ensureDataFolder() return true, "folder" end
+function Utils.setConfig(patch) state.config=patch end
+local function warn() end
+local function persistenceAvailable() return true end
+local function migrateConfig(data) return data, false end
+local function serializeConfig(data) return data.value end
+local function queueSave() saveDirty=true end
+''' + helpers + loader + '''
+files["folder/config.json"]="A"
+Utils.loadConfig()
+assert(persistenceReady and state.config.value=="A")
+assert(files["folder/config_backup_1.json"]=="A" and files["folder/config_recovery.json"]=="A")
+state.config={value="B"};saveDirty=true;saveConfig()
+assert(files["folder/config.json"]=="B" and files["folder/config_recovery.json"]=="A")
+persistenceReady=false;files["folder/config.json"]=nil
+Utils.loadConfig();assert(state.config.value=="A" and files["folder/config.json"]=="A")
+files["folder/config.json"]="{}";files["folder/config_recovery.json"]="invalid"
+persistenceReady=false;Utils.loadConfig()
+assert(files["folder/config.json"]=="A" and state.config.value=="A")
+state.config={value="B"};saveDirty=true;failWrite="folder/config_recovery.json";saveConfig()
+assert(files["folder/config.json"]=="A" and saveDirty)
+''')
+
     def test_dropdown_press_is_preview_and_selection_remains_visible_before_fade(self):
         self.run_lua('''
 local kit=newKit();local select=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct'}})

@@ -263,11 +263,53 @@ local function migrateConfig(data)
   end
   return patch, migrated
 end
+local function readSavedConfig(path)
+  local checked, exists = pcall(isfile, path)
+  if not checked then return nil, nil, "inaccessible" end
+  if not exists then return nil, nil, "missing" end
+  local readOk, raw = pcall(readfile, path)
+  if not readOk or type(raw) ~= "string" then return nil, nil, "inaccessible" end
+  local decoded, data = pcall(function() return http:JSONDecode(raw) end)
+  if not decoded or type(data) ~= "table" or next(data) == nil then return nil, nil, "invalid" end
+  return raw, data, "valid"
+end
+local function writeVerified(path, body)
+  local ok = pcall(writefile, path, body)
+  if not ok then return false end
+  local raw = readSavedConfig(path)
+  return raw == body
+end
+local function backupPath(folder, index) return folder .. "/config_backup_" .. index .. ".json" end
+local function backupAtStartup(folder, body)
+  for index = 5, 2, -1 do
+    local old = readSavedConfig(backupPath(folder, index - 1))
+    if old and not writeVerified(backupPath(folder, index), old) then return false end
+  end
+  return writeVerified(backupPath(folder, 1), body)
+end
 local function saveConfig()
   if not persistenceReady or not saveDirty then return end
-  if type(writefile) ~= "function" then error("API externa ausente: writefile", 2) end
-  local _, folder = Utils.ensureDataFolder(); local body = serializeConfig(state.config)
-  writefile(folder .. "/config.json", body); saveDirty = false
+  local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"
+  local body = serializeConfig(state.config)
+  local decoded, data = pcall(function() return http:JSONDecode(body) end)
+  if not decoded or type(data) ~= "table" or next(data) == nil then
+    warn("Configuração vazia ou inválida; arquivo anterior preservado"); return
+  end
+  local previous, _, status = readSavedConfig(path)
+  if status == "inaccessible" then warn("Configuração inacessível; salvamento suspenso"); return end
+  if status == "invalid" then warn("Configuração inválida; salvamento suspenso para evitar perda"); return end
+  if previous and not writeVerified(folder .. "/config_recovery.json", previous) then
+    warn("Falha ao proteger configuração anterior; salvamento suspenso"); return
+  end
+  if not previous then
+    local recovery, _, recoveryStatus = readSavedConfig(folder .. "/config_recovery.json")
+    if not recovery and recoveryStatus ~= "missing" then warn("Backup de recuperação inacessível ou inválido; salvamento suspenso"); return end
+    if not recovery and not writeVerified(folder .. "/config_recovery.json", body) then
+      warn("Falha ao criar proteção inicial; salvamento suspenso"); return
+    end
+  end
+  if not writeVerified(path, body) then warn("Falha ao salvar configuração; cópia anterior preservada"); return end
+  saveDirty = false
 end
 local function queueSave()
   if not persistenceReady then return end
@@ -427,20 +469,44 @@ function Utils.loadConfig()
     local _, path = Utils.ensureDataFolder(); return path
   end)
   if not ok then warn("Persistência indisponível: " .. tostring(folder)); return true end
-  local path = folder .. "/config.json"; local migrated = false
-  local checked, exists = pcall(isfile, path)
-  if not checked then warn("Não foi possível verificar a configuração: " .. tostring(exists)); return true end
-  if exists then
-    local readable, raw = pcall(readfile, path)
-    if not readable or type(raw) ~= "string" then warn("Não foi possível ler a configuração salva; salvamento suspenso para preservar o arquivo: " .. tostring(raw)); return true end
-    local decoded, data = pcall(function() return http:JSONDecode(raw) end)
-    if not decoded or type(data) ~= "table" then
-      warn("Configuração inválida; usando padrões. A configuração será substituída quando for alterada."); persistenceReady = true
+  local path = folder .. "/config.json"
+  local raw, data, status = readSavedConfig(path)
+  local recovered, anyStored = false, status ~= "missing"
+  if not raw then
+    for index = 0, 5 do
+      local backup = index == 0 and (folder .. "/config_recovery.json") or backupPath(folder, index)
+      local saved, value, backupStatus = readSavedConfig(backup)
+      if backupStatus ~= "missing" then anyStored = true end
+      if saved then raw, data, recovered = saved, value, true; break end
+    end
+  end
+  if not raw then
+    if anyStored then
+      warn("Nenhuma configuração válida pôde ser recuperada; salvamento suspenso para preservar os arquivos")
       return true
     end
-    local patch
-    patch, migrated = migrateConfig(data); Utils.setConfig(patch)
+    persistenceReady = true; return true
   end
+  if recovered then
+    if status == "inaccessible" then
+      warn("Configuração recuperada em memória; arquivo principal inacessível, salvamento suspenso")
+      local patch = migrateConfig(data); Utils.setConfig(patch); return true
+    end
+    if not writeVerified(path, raw) then
+      warn("Configuração recuperada em memória; falha ao restaurar arquivo, salvamento suspenso")
+      local patch = migrateConfig(data); Utils.setConfig(patch); return true
+    end
+    warn("Configuração restaurada de um backup")
+  end
+  if not backupAtStartup(folder, raw) then
+    warn("Falha ao criar backup de entrada; salvamento suspenso")
+    local patch = migrateConfig(data); Utils.setConfig(patch); return true
+  end
+  if not writeVerified(folder .. "/config_recovery.json", raw) then
+    warn("Falha ao preparar recuperação; salvamento suspenso")
+    local patch = migrateConfig(data); Utils.setConfig(patch); return true
+  end
+  local patch, migrated = migrateConfig(data); Utils.setConfig(patch)
   persistenceReady = true
   if migrated then queueSave() end
   return true
