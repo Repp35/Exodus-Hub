@@ -191,6 +191,7 @@ local function radius(speed, factor, baseWindow)
   if type(gameInfo.getAutoParryGeometry) == "function" then return gameInfo.getAutoParryGeometry(speed, factor, CONFIG.FRAME_BASE + state.frameAllowance, state.ping) end
   return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
+local function guaranteedRadius(geometry, speed, ping) return geometry.noWindowParryRadius + math.max(0, speed) * math.max(0, ping) end
 
 -- telemetry
 local function samplePing()
@@ -406,6 +407,7 @@ local function tickTraining(value, root, time)
   if finite(confirmed) then state.trainingConfirmedAt = confirmed end
   if cooldownInfo.getTrainingCooldownState().blocking then phase("waiting", "training_lockout"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "training_not_target"); return end
+  if distance <= guaranteedRadius(geometry, speed, ping) then request("training_inside_radius"); return end
   if closing < CONFIG.TRAINING_MIN_CLOSING_SPEED then phase("waiting", "training_not_approaching"); return end
   if distance > threshold then phase("waiting", "training_outside_window"); return end
   request("training_parry")
@@ -499,6 +501,7 @@ local function tick(character, root, generation)
   local distance, closing, threshold, entry = trajectory(position, velocity, rootPosition, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
   threshold = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; state.speed, state.distance, state.approaching = speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
+  if distance <= guaranteedRadius(geometry, speed, state.ping) then request("inside_radius"); return end
   if closing > 0 and entry <= lead then request("parry_requested") end
 end
 
@@ -589,6 +592,8 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   if not observeSnapshot(value, time) then return false end
   if state.target ~= state.player.UserId then return false end
   if state.fired and finite(redirectAt) and state.lastFireAt >= redirectAt then return true end
+  local cooldown = safeCooldown()
+  if not cooldown or cooldown.source == "unknown" or cooldown.blocking == true then return false end
   local position, velocity = value.position, value.velocity; local own = gameInfo.getRootPosition(state.root)
   if not vector(position) or not vector(own) then return false end
   samplePing(); local speed = tonumber(value.syncSpeed)
@@ -599,7 +604,7 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   threshold = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * lead; state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold; state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
   state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
-  if closing <= 0 or entry > lead then return false end
+  if distance > guaranteedRadius(g, speed, state.ping) and (closing <= 0 or entry > lead) then return false end
   if state.fired then return false end
   return request("redirect_return")
 end

@@ -45,7 +45,7 @@ local ball={Parent=true,instance=true,IsA=function() return true end}
 local snap={ball=ball,position=v(10),realPosition=v(10),velocity=v(-600),speed=600,syncSpeed=600,targetId=42,syncSequence=1}
 local fires=0; local cd={source='local',blocking=false}
 local u={getLocalPlayer=function() return player end,getRunService=function() return {PostSimulation=signal()} end,isActive=function() return true end,getConfigValue=function(k) if k=='AutoParryWindowFactor' then return 0.3 else return true end end,isSpamActive=function() return false end,trackCharacter=function() end,untrackCharacter=function() end,recordTransition=function() end,recordError=function() end}
-local g={getDeflectAbility=function() return {} end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end,getRootPosition=function() return root.Position end,isTrainingArea=function() return false end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return snap.syncSequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function(speed,factor) return {noWindowParryRadius=8,triggerPadding=1,leadTime=0.08,effectiveWindow=0.08,deflectWindow=0.2,windowFactor=factor,fullRadius=57} end}
+local g={getDeflectAbility=function() return {} end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end,getRootPosition=function() return root.Position end,isTrainingArea=function() return false end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return snap.syncSequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function(speed,factor) return {noWindowParryRadius=8.5,triggerPadding=1,leadTime=0.08,effectiveWindow=0.08,deflectWindow=0.2,windowFactor=factor,fullRadius=57} end}
 local c={getDeflectCooldownState=function() return cd end,recordDeflectAttempt=function(at) cd.pressAt=at end}
 local r={fireParry=function(_,guard) assert(guard()); fires=fires+1; return true end}
 
@@ -141,6 +141,49 @@ packet(-1); packet(42); assert(fires==2,'raw no-target departure did not rearm')
         self.check_ap("""
 snap.position=v(300); packet(42); assert(fires==0)
 snap.position=v(10); frameCb(1/60); assert(fires==1)
+""")
+
+    def test_base_radius_fires_without_incoming_velocity(self):
+        for velocity in ('v(0)', 'v(600)', 'v(0,600)'):
+            with self.subTest(velocity=velocity):
+                self.check_ap("snap.position=v(8.5); snap.velocity=" + velocity + """
+packet(42); assert(fires==1,'base radius incorrectly depends on incoming velocity')
+frameCb(1/60); packet(42); assert(fires==1,'radius check duplicated same cycle')
+""")
+
+    def test_resilience_and_ping_radius_exact_boundary(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0.05,0.05,1 end
+local geometry=g.getAutoParryGeometry
+g.getAutoParryGeometry=function(...)
+  local result=geometry(...); result.noWindowParryRadius=11.5; return result
+end
+snap.velocity=v(0,600); snap.position=v(41.5001)
+packet(42); assert(fires==0,'fired outside base + resilience + speed * ping')
+snap.position=v(41.5); frameCb(1/60)
+assert(fires==1,'did not fire on exact ping/resilience radius boundary')
+""")
+
+    def test_inside_radius_keeps_target_and_cooldown_requirements(self):
+        self.check_ap("""
+snap.position=v(8); snap.velocity=v(0)
+packet(99); assert(fires==0,'radius bypassed target')
+cd.blocking=true; packet(42); assert(fires==0,'radius bypassed cooldown')
+cd.blocking=false; frameCb(1/60); assert(fires==1,'ready radius click delayed')
+""")
+
+    def test_training_base_radius_does_not_require_closing_velocity(self):
+        self.check_ap("""
+snap.mode='training'; snap.trainingRound=1; snap.position=v(8.5); snap.velocity=v(600)
+frameCb(1/60); assert(fires==1,'training base radius still requires incoming velocity')
+""")
+
+    def test_redirect_radius_keeps_cooldown(self):
+        self.check_ap("""
+cd.blocking=true; snap.position=v(8.5); snap.velocity=v(600)
+packet(42); assert(fires==0)
+assert(ap.tryRedirectReturn(snap,tm)==false); assert(fires==0,'redirect radius bypassed cooldown')
+cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 """)
 
 if __name__ == "__main__":
