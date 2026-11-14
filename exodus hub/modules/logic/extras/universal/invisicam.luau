@@ -11,46 +11,55 @@ local CONFIG = {
 
 local savedOcclusion, savedOcclusionMode = nil, false
 local enabledState = false
-local function startInvisicam()
-  local player = Utils.getLocalPlayer()
-  if not player then return false, "LocalPlayer indisponível" end
-  if not savedOcclusionMode then
-    local ok, value = pcall(function() return player.DevCameraOcclusionMode end)
-    if ok then savedOcclusion, savedOcclusionMode = value, true end
-  end
-  local ok, errorMessage = pcall(function() player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam end)
-  return ok, ok and nil or tostring(errorMessage)
-end
 local function stopInvisicam()
   local player = Utils and Utils.getLocalPlayer()
-  if savedOcclusionMode then
-    if not player then return false, "LocalPlayer indisponível para restaurar a câmera" end
+  if savedOcclusionMode and player then
     local ok, reason = pcall(function() player.DevCameraOcclusionMode = savedOcclusion end)
-    if not ok then return false, tostring(reason) end
+    if not ok then warn("[Invisicam] Camera restore unavailable: " .. tostring(reason)) end
   end
-  savedOcclusion, savedOcclusionMode = nil, false; return true
+  savedOcclusion, savedOcclusionMode = nil, false
+  enabledState = false
+  return true
+end
+local function startInvisicam()
+  local player = Utils.getLocalPlayer()
+  if not player then return false, "LocalPlayer unavailable" end
+  local readOk, previous = pcall(function() return player.DevCameraOcclusionMode end)
+  if not readOk then return false, "Camera occlusion property unavailable" end
+  if previous == Enum.DevCameraOcclusionMode.Invisicam then
+    savedOcclusion, savedOcclusionMode = nil, false
+    return true
+  end
+  local ok, reason = pcall(function() player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam end)
+  if not ok then return false, tostring(reason) end
+  savedOcclusion, savedOcclusionMode = previous, true
+  return true
 end
 function Invisicam.setEnabled(enabled)
-  if not Utils then return false, "recurso indisponível" end
+  if not Utils then return false, "feature unavailable" end
   local value = enabled == true
-  if not Utils.setConfig({ UniversalInvisicam = value }) then return false, "configuração rejeitada" end
+  if not Utils.setConfig({ UniversalInvisicam = value }) then return false, "configuration rejected" end
   if enabledState == value then return true end
-  enabledState = value; local ok, result, detail = pcall(value and startInvisicam or stopInvisicam)
-  if not ok or result == false then
-    pcall(stopInvisicam); enabledState = false
-    Utils.setConfig({ UniversalInvisicam = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+  if not value then return stopInvisicam() end
+  local ok, reason = startInvisicam()
+  if not ok then
+    stopInvisicam()
+    Utils.setConfig({ UniversalInvisicam = false })
+    warn("[Invisicam] Disabled: " .. tostring(reason))
+    return true
   end
+  enabledState = true
   return true
 end
 function Invisicam.teardown()
-  local ok, reason = stopInvisicam()
-  if not ok then return false, reason end
-  enabledState = false; Utils = nil
+  stopInvisicam()
+  Utils = nil
   return true
 end
 function Invisicam.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  Invisicam.teardown(); Utils = deps.Utils
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "missing dependency: Utils" end
+  Invisicam.teardown()
+  Utils = deps.Utils
   if Utils.getConfigValue("UniversalInvisicam") == true then return Invisicam.setEnabled(true) end
   return true
 end
