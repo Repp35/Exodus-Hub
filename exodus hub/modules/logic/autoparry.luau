@@ -293,12 +293,16 @@ local function observeTarget(target, time)
     state.awayAt = time; state.awayTarget = target > 0 and target or nil
     state.nextAttemptAt = 0
   elseif target == me and previous ~= me and state.awaySeen then
-    local validReturn = state.awayAt and state.awayTarget == previous and time >= state.awayAt
+    local validReturn = state.awayAt and time >= state.awayAt and (state.awayTarget == previous or state.awayTarget == nil or previous == -1)
     if validReturn then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
     state.fired, state.awaySeen = false, false; state.nextAttemptAt = 0
     state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.cycle += 1
     state.returnAt, state.returnCycle = validReturn and time or nil, validReturn and state.cycle or nil; state.awayAt, state.awayTarget = nil, nil
   elseif target == me and previous ~= me then
+    -- A direct server target update may skip the brief away state in rendered snapshots.
+    -- A new target assignment still starts a fresh defensive cycle.
+    state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false, false
+    state.nextAttemptAt = 0; state.cycle += 1
     state.returnAt, state.returnCycle = nil, nil
   end
   state.target, state.targetKnown = target, true
