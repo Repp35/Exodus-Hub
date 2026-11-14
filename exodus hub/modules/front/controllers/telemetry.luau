@@ -217,7 +217,8 @@ function Controller.create(context)
     elapsed += dt
     if elapsed < CONFIG.UPDATE_INTERVAL then return end
     elapsed %= CONFIG.UPDATE_INTERVAL; updateInformation()
-  end)); return {}
+  end))
+  return {}
 end
 
 -- contract

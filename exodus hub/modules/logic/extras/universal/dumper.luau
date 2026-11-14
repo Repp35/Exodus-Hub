@@ -355,8 +355,7 @@ local function run(token, callbacks)
     if source then
       local savedOk, saveError = save(base .. "/scripts/" .. stem .. ".lua", header .. source .. "\n")
       if savedOk then saved += 1 else failed += 1; errors[#errors + 1] = "[WRITE_ERROR] " .. line(item.path) .. " | " .. tostring(saveError) end
-      if savedOk then manifest[index] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
-      else manifest[index] = "[ERROR] " .. line(item.path) .. " | write failed" end
+      if savedOk then manifest[index] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua" else manifest[index] = "[ERROR] " .. line(item.path) .. " | write failed" end
     else
       unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, closure = closure, attempts = attempts, context = context }
       manifest[index] = "[PENDING] " .. line(item.path); failed += 1
@@ -495,8 +494,7 @@ local function run(token, callbacks)
     if retryIndex % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
   end
   if token.cancelled then return nil, "Dump canceled" end
-  status.saved, status.failed = saved, failed
-  local manifestOk, manifestError = save(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
+  status.saved, status.failed = saved, failed; local manifestOk, manifestError = save(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
   if not manifestOk then return nil, "cannot save manifest.txt: " .. tostring(manifestError) end
   local errorsOk, errorsError = save(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
   if not errorsOk then return nil, "cannot save errors.txt: " .. tostring(errorsError) end

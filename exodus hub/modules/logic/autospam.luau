@@ -709,17 +709,20 @@ function AutoSpam.onBallSync(data)
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
   local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; local blocked = state.active and checkDeactivation(state, snapshot, time) or false
-  if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then
-    targetChanged(state, target, time, snapshot, serverTime)
-  end
+  if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then targetChanged(state, target, time, snapshot, serverTime) end
   evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end
 
 -- public-api
 function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.canSend()
-  return current ~= nil and current.active and current.root.Parent ~= nil and current.character.Parent ~= nil
-    and utils ~= nil and utils.isActive() and utils.getConfigValue("AutoSpam") == true
+  return current ~= nil
+    and current.active
+    and current.root.Parent ~= nil
+    and current.character.Parent ~= nil
+    and utils ~= nil
+    and utils.isActive()
+    and utils.getConfigValue("AutoSpam") == true
 end
 function AutoSpam.stopSpam()
   if current then deactivate(current, "stop_spam", now()) end

@@ -52,16 +52,18 @@ local function applyNoclip()
       local function removePart(part)
         local index = partIndexes[part]
         if not index then return end
-        local last = characterParts[#characterParts]
-        characterParts[index] = last; characterParts[#characterParts] = nil
-        partIndexes[part] = nil
+        local last = characterParts[#characterParts]; characterParts[index] = last
+        characterParts[#characterParts] = nil; partIndexes[part] = nil
         if last and last ~= part then partIndexes[last] = index end
         local original = savedCollision[part]; savedCollision[part] = nil
-        if original ~= nil then pcall(function() part.CanCollide = original end) end
+        if original ~= nil then
+          pcall(function() part.CanCollide = original end)
+        end
       end
-      connect("NoclipAdded", character.DescendantAdded, addPart)
-      connect("NoclipRemoving", character.DescendantRemoving, removePart)
-      for _, part in ipairs(character:GetDescendants()) do addPart(part) end
+      connect("NoclipAdded", character.DescendantAdded, addPart); connect("NoclipRemoving", character.DescendantRemoving, removePart)
+      for _, part in ipairs(character:GetDescendants()) do
+        addPart(part)
+      end
     end
   end
   if not character or not character.Parent then return end
@@ -85,17 +87,14 @@ function Noclip.setEnabled(enabled)
   if enabledState == value then return true end
   enabledState = value; local ok, result, detail = pcall(value and startNoclip or stopNoclip)
   if not ok or result == false then
-    -- Startup can fail after allocating objects or registering callbacks.
     pcall(stopNoclip); enabledState = false
-    Utils.setConfig({ UniversalNoclip = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    Utils.setConfig({ UniversalNoclip = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function Noclip.teardown()
-  stopNoclip()
-  enabledState = false; Utils = nil
-  return true
+  stopNoclip(); enabledState = false
+  Utils = nil; return true
 end
 function Noclip.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end

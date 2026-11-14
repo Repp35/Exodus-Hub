@@ -38,8 +38,7 @@ end
 local function decode(payload)
   local bytes = {}
   for index = 1, #payload, 4 do
-    local a, b, c, d = string.byte(payload, index, index + 3)
-    local value = digits[a] * 262144 + digits[b] * 4096 + (digits[c] or 0) * 64 + (digits[d] or 0)
+    local a, b, c, d = string.byte(payload, index, index + 3); local value = digits[a] * 262144 + digits[b] * 4096 + (digits[c] or 0) * 64 + (digits[d] or 0)
     bytes[#bytes + 1] = string.char(math.floor(value / 65536) % 256)
     if c ~= 61 then bytes[#bytes + 1] = string.char(math.floor(value / 256) % 256) end
     if d ~= 61 then bytes[#bytes + 1] = string.char(value % 256) end
@@ -49,8 +48,7 @@ end
 local function resolve(name)
   local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name))
   if cache[name] then return cache[name] end
-  local image = definition.fallback
-  local asset = getcustomasset or getsynasset
+  local image = definition.fallback; local asset = getcustomasset or getsynasset
   if type(writefile) == "function" and type(asset) == "function" then
     local ok, result = pcall(function()
       local folder = "exodus hub"
@@ -61,7 +59,6 @@ local function resolve(name)
     end)
     if ok and type(result) == "string" and result ~= "" then image = result end
   end
-  -- Keep the file available: some executors read it only when the image renders.
   cache[name] = image; return image
 end
 

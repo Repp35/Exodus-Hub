@@ -90,8 +90,7 @@ local function update()
   if not snapshot or not fierceReady() then return end
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if not missedDeflect(cooldown, snapshot, now) or not cooldown.episode or cooldown.episode <= lastFierceEpisode or not incomingInWindow(snapshot, now) then return end
-  local episode, ball, token = cooldown and cooldown.episode, snapshot.ball, nil
-  local owner = epoch
+  local episode, ball, token = cooldown and cooldown.episode, snapshot.ball, nil; local owner = epoch
   local ok, sent = pcall(function()
     return remote.fireFierce(function()
       if not enabled() or not fierceReady() then return false end

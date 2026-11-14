@@ -37,8 +37,8 @@ local function jumpInAir()
   if now - lastJump < 0.08 then return end
   local power = humanoid.UseJumpPower and humanoid.JumpPower or math.sqrt(math.max(0, 2 * Workspace.Gravity * humanoid.JumpHeight))
   if power ~= power or power <= 0 or power == math.huge or root.Anchored then return end
-  lastJump = now; local velocity = root.AssemblyLinearVelocity; root.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z)
-  humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+  lastJump = now; local velocity = root.AssemblyLinearVelocity
+  root.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z); humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 end
 local function attachJumpButton()
   local player = Utils.getLocalPlayer(); local gui = player and player:FindFirstChildOfClass("PlayerGui")
@@ -74,17 +74,14 @@ function InfiniteJump.setEnabled(enabled)
   if states.InfiniteJump == value then return true end
   states.InfiniteJump = value; local ok, result, detail = pcall(value and startInfiniteJump or stopInfiniteJump)
   if not ok or result == false then
-    -- Startup can fail after allocating objects or registering callbacks.
     pcall(stopInfiniteJump); states.InfiniteJump = false
-    Utils.setConfig({ UniversalInfiniteJump = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    Utils.setConfig({ UniversalInfiniteJump = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function InfiniteJump.teardown()
-  stopInfiniteJump()
-  states.InfiniteJump = false; Utils = nil
-  return true
+  stopInfiniteJump(); states.InfiniteJump = false
+  Utils = nil; return true
 end
 function InfiniteJump.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end

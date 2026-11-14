@@ -391,6 +391,7 @@ function Controller.create(context)
     UpDashBallVisible = showUpDashBall,
     MiniSpamVisible = showMini,
   }
+
   local function sync(changes)
     if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall() end
     if changes.AutoParry ~= nil then paintParryBall(changes.AutoParry == true) end

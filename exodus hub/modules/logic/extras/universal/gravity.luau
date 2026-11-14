@@ -31,8 +31,7 @@ local function updateGravity()
     force.RelativeTo = Enum.ActuatorRelativeTo.World; force.ApplyAtCenterOfMass = true
     force.Parent = root
   end
-  local mass = root.AssemblyMass
-  local compensation = (not root.Anchored and mass == mass and mass < math.huge) and mass * (Workspace.Gravity - gravityValue) or 0
+  local mass = root.AssemblyMass; local compensation = (not root.Anchored and mass == mass and mass < math.huge) and mass * (Workspace.Gravity - gravityValue) or 0
   local desired = Vector3.new(0, compensation, 0)
   if force.Force ~= desired then force.Force = desired end
 end
@@ -59,10 +58,8 @@ function Gravity.setEnabled(enabled)
   end
   enabledState = value; local ok, result, detail = pcall(value and startGravity or stopGravity)
   if not ok or result == false then
-    -- Startup can fail after allocating objects or registering callbacks.
     pcall(stopGravity); enabledState = false
-    Utils.setConfig({ UniversalGravityEnabled = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    Utils.setConfig({ UniversalGravityEnabled = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
@@ -77,9 +74,8 @@ function Gravity.setValue(value)
   updateGravity(); return true
 end
 function Gravity.teardown()
-  stopGravity()
-  enabledState = false; Utils = nil
-  return true
+  stopGravity(); enabledState = false
+  Utils = nil; return true
 end
 function Gravity.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end

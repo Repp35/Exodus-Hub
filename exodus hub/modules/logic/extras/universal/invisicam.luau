@@ -37,10 +37,8 @@ function Invisicam.setEnabled(enabled)
   if enabledState == value then return true end
   enabledState = value; local ok, result, detail = pcall(value and startInvisicam or stopInvisicam)
   if not ok or result == false then
-    -- Startup can fail after allocating objects or registering callbacks.
     pcall(stopInvisicam); enabledState = false
-    Utils.setConfig({ UniversalInvisicam = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    Utils.setConfig({ UniversalInvisicam = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end

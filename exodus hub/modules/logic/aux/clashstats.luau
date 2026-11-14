@@ -57,9 +57,9 @@ end
 -- recording
 function ClashStats.finish(reason, time)
   if not stats or stats.frozen then return end
-  time = finite(time) and time or stats.lastObserved or stats.startedAt
-  stats.frozen, stats.waitingForClash = true, false; stats.duration = math.max(0, time - stats.startedAt)
-  stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
+  time = finite(time) and time or stats.lastObserved or stats.startedAt; stats.frozen, stats.waitingForClash = true, false
+  stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0
+  stats.endReason = reason
 end
 function ClashStats.begin(partner, time)
   if stats and not stats.frozen then ClashStats.finish("novo clash", stats.lastObserved) end

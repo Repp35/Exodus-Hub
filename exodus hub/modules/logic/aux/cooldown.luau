@@ -124,8 +124,7 @@ function Cooldown.getDeflectCooldownState()
     end
   end
   if not parriedConnection and time >= nextParriedAt then
-    nextParriedAt = time + CONFIG.COOLDOWN_RETRY
-    local signals = Cooldown.getDeflectServerEvents()
+    nextParriedAt = time + CONFIG.COOLDOWN_RETRY; local signals = Cooldown.getDeflectServerEvents()
     if signals and signals.parried then
       parriedConnection = signals.parried:Connect(function()
         cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock()
@@ -186,8 +185,7 @@ function Cooldown.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
   Cooldown.teardown(); utils, gameInfo = deps.Utils, deps.GameInfo
   cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge, lastParriedAt = -math.huge }; signalAt, heldAt, missingAt, warningAt, nextTrainingAt = 0, 0, nil, 0, 0
-  deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, 0
-  nextParriedAt, updateErrorAt = 0, -math.huge
+  deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, 0; nextParriedAt, updateErrorAt = 0, -math.huge
   trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil = nil, nil, nil, nil; local service = utils.getRunService()
   if not service or not service.Heartbeat then return false, "Heartbeat indisponível" end
   heartbeatConnection = service.Heartbeat:Connect(function()

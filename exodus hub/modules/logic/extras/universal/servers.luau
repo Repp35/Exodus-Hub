@@ -54,8 +54,8 @@ function Servers.hop(callback)
   local token, err = begin(callback)
   if not token then return false, err end
   local http = game:GetService("HttpService")
-  local best, cursor; local seenCursors = {}
-  report("Buscando servidores com ping informado de até " .. CONFIG.MAX_PING_MS .. " ms...")
+  local best, cursor
+  local seenCursors = {}; report("Buscando servidores com ping informado de até " .. CONFIG.MAX_PING_MS .. " ms...")
   for page = 1, CONFIG.MAX_PAGES do
     if token ~= generation or not utils or not utils.isActive() then return false, "Operação cancelada" end
     local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=%d&excludeFullGames=true"):format(

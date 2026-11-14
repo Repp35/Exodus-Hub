@@ -18,11 +18,10 @@ function Controller.create(context)
   local BTN_SIZE = context.theme.BTN_SIZE; local PARTICLE_COLORS = context.theme.PARTICLE_COLORS
   local inst = context.inst; local corner = context.corner
   local stroke = context.stroke; local twPlay = context.twPlay
-  local safeCancel = context.safeCancel
-  local trackConn = context.trackConn; local untrackConn = context.untrackConn
-  local safeDisconnect = context.safeDisconnect; local makeDraggable = context.makeDraggable
-  local makeBtn = context.makeBtn; local _wait = task.wait
-  local _spawn = task.spawn
+  local safeCancel = context.safeCancel; local trackConn = context.trackConn
+  local untrackConn = context.untrackConn; local safeDisconnect = context.safeDisconnect
+  local makeDraggable = context.makeDraggable; local makeBtn = context.makeBtn
+  local _wait = task.wait; local _spawn = task.spawn
   local function panelPos()
     local config = Utils.getConfig(); local x, y = config.PanelX, config.PanelY
     if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
@@ -56,7 +55,15 @@ function Controller.create(context)
     end
   end
   local function togglePanel()
-    if UIState.closing or not context.refs.configPanel or not context.refs.configPanel.Parent or not context.refs.floatingButton or not context.refs.floatingButton.Parent then return end
+    if
+      UIState.closing
+      or not context.refs.configPanel
+      or not context.refs.configPanel.Parent
+      or not context.refs.floatingButton
+      or not context.refs.floatingButton.Parent
+    then
+      return
+    end
     UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
     safeCancel(UIState.btnTween)
     if context.kit then context.kit.dismiss() end
@@ -121,9 +128,11 @@ function Controller.create(context)
     Parent = context.refs.configPanel,
   })
   corner(context.refs.titleBar, 16)
-  makeDraggable(context.refs.titleBar, context.refs.configPanel, function()
-    Utils.setConfig({ PanelX = context.refs.configPanel.Position.X.Offset, PanelY = context.refs.configPanel.Position.Y.Offset })
-  end)
+  makeDraggable(
+    context.refs.titleBar,
+    context.refs.configPanel,
+    function() Utils.setConfig({ PanelX = context.refs.configPanel.Position.X.Offset, PanelY = context.refs.configPanel.Position.Y.Offset }) end
+  )
   local titleGroup = inst("Frame", {
     Size = UDim2.new(1, -CONFIG.TITLE_SIDE_MARGIN * 2, 1, 0),
     Position = UDim2.new(0, CONFIG.TITLE_SIDE_MARGIN, 0, 0),

@@ -130,16 +130,21 @@ local function startFly()
     if processed then return end
     local binding = bindings[input.KeyCode]
     if binding then
-      pressedKeys[input.KeyCode] = true; controls[binding[1]] = binding[2]
+      pressedKeys[input.KeyCode] = true
+      controls[binding[1]] = binding[2]
     end
   end)
   connect("FlyEnded", UIS.InputEnded, function(input)
     local binding = bindings[input.KeyCode]
     if binding then
-      pressedKeys[input.KeyCode] = nil; controls[binding[1]] = 0
+      pressedKeys[input.KeyCode] = nil
+      controls[binding[1]] = 0
       for key in pairs(pressedKeys) do
         local held = bindings[key]
-        if held and held[1] == binding[1] then controls[held[1]] = held[2]; break end
+        if held and held[1] == binding[1] then
+          controls[held[1]] = held[2]
+          break
+        end
       end
     end
   end)
@@ -160,10 +165,8 @@ function Fly.setEnabled(enabled)
   if states.Fly == value then return true end
   states.Fly = value; local ok, result, detail = pcall(value and startFly or stopFly)
   if not ok or result == false then
-    -- Startup can fail after allocating objects or registering callbacks.
     pcall(stopFly); states.Fly = false
-    Utils.setConfig({ UniversalFly = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    Utils.setConfig({ UniversalFly = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
@@ -176,9 +179,8 @@ function Fly.setValue(value)
   return true
 end
 function Fly.teardown()
-  stopFly()
-  states.Fly = false; Utils = nil
-  return true
+  stopFly(); states.Fly = false
+  Utils = nil; return true
 end
 function Fly.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end

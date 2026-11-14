@@ -13,8 +13,8 @@ function Context.setup() return true end
 function Context.create(deps, deviceDesktop)
   local CONFIG = deps.Theme.tokens; local C, GRAD = CONFIG.COLORS, CONFIG.GRADIENT
   local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H; local UIS, RunService, Players = game:GetService("UserInputService"), game:GetService("RunService"), game:GetService("Players")
-  local TweenService = game:GetService("TweenService")
-  local Utils = deps.Utils; local outlineGradients = setmetatable({}, { __mode = "k" })
+  local TweenService = game:GetService("TweenService"); local Utils = deps.Utils
+  local outlineGradients = setmetatable({}, { __mode = "k" })
   local UIState = {
     connections = {},
     panelOpen = false,
@@ -165,10 +165,8 @@ function Context.create(deps, deviceDesktop)
       if state == "Pressed" and (dx * dx + dy * dy) >= THRESH_SQ then state, wasDragged = "Dragging", true end
       if state == "Dragging" then
         local vp, sz = viewport(), target.AbsoluteSize; local scale = coordinateScale and coordinateScale() or (context.refs.responsiveScale and context.refs.responsiveScale.Scale or 1)
-        scale = math.max(scale, 0.01)
-        local parent = target.Parent
-        local origin = parent and parent:IsA("GuiObject") and parent.AbsolutePosition or Vector2.zero
-        local anchor = target.AnchorPoint
+        scale = math.max(scale, 0.01); local parent = target.Parent
+        local origin = parent and parent:IsA("GuiObject") and parent.AbsolutePosition or Vector2.zero; local anchor = target.AnchorPoint
         target.Position = UDim2.fromOffset(
           (math.clamp(input.Position.X - dragOffX - sz.X * anchor.X, 0, math.max(0, vp.X - sz.X)) + sz.X * anchor.X - origin.X) / scale,
           (math.clamp(input.Position.Y - dragOffY - sz.Y * anchor.Y, 0, math.max(0, vp.Y - sz.Y)) + sz.Y * anchor.Y - origin.Y) / scale
@@ -202,8 +200,7 @@ function Context.create(deps, deviceDesktop)
       if UIState.closing then return end
       local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
       for gradient in pairs(outlineGradients) do
-        if not gradient.Parent then outlineGradients[gradient] = nil
-        elseif deps.Runtime.isVisible(gradient) then gradient.Offset = offset end
+        if not gradient.Parent then outlineGradients[gradient] = nil elseif deps.Runtime.isVisible(gradient) then gradient.Offset = offset end
       end
     end))
   end
@@ -256,11 +253,9 @@ function Context.create(deps, deviceDesktop)
     for _, name in ipairs({ "configPanel", "floatingButton", "clashBall", "parryBall", "darkBall", "jumpBall", "upDashBall" }) do
       local object = context.refs[name]
       if object and object.Parent and object.Visible then
-        -- Balls parked offscreen stay parked until explicitly shown.
         local pos, dimensions = object.AbsolutePosition, object.AbsoluteSize
         if name == "configPanel" or name == "floatingButton" or pos.X + dimensions.X > 0 then
-          local x = math.clamp(pos.X, 0, math.max(0, size.X - dimensions.X))
-          local y = math.clamp(pos.Y, 0, math.max(0, size.Y - dimensions.Y))
+          local x = math.clamp(pos.X, 0, math.max(0, size.X - dimensions.X)); local y = math.clamp(pos.Y, 0, math.max(0, size.Y - dimensions.Y))
           if x ~= pos.X or y ~= pos.Y then object.Position = UDim2.fromOffset(x / scale, y / scale) end
         end
       end
@@ -270,8 +265,7 @@ function Context.create(deps, deviceDesktop)
   local cameraConnection
   local function bindCamera()
     if cameraConnection then safeDisconnect(cameraConnection); untrackConn(cameraConnection) end
-    local camera = workspace.CurrentCamera
-    cameraConnection = camera and trackConn(camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) or nil
+    local camera = workspace.CurrentCamera; cameraConnection = camera and trackConn(camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) or nil
     updateResponsiveScale()
   end
   trackConn(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)); bindCamera()

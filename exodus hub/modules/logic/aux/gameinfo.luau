@@ -69,9 +69,7 @@ minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
-local function finiteVector(value)
-  return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z)
-end
+local function finiteVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 local EMPTY_OPTIONS = {}
 local function invalidateSnapshotCache()
   snapshotCache, snapshotCacheAt = nil, -math.huge
@@ -462,7 +460,6 @@ local MATCH_STATUSES = {
 }
 
 local GAME_MODES = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
-
 function GameInfo.getGameContext()
   local player = players and players.LocalPlayer; local placeId = game.PlaceId
   local matchStatus = world and world:GetAttribute("MatchStatus"); local modeId = world and world:GetAttribute("CurGamemode")
@@ -713,7 +710,15 @@ function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 -- snapshots
 local function snapshot(time)
   time = finite(time) and time or utils.now()
-  if snapshotCache and snapshotCache.ball and snapshotCache.ball.Parent and time >= snapshotCacheAt and time - snapshotCacheAt < CONFIG.SNAPSHOT_CACHE_INTERVAL then return snapshotCache end
+  if
+    snapshotCache
+    and snapshotCache.ball
+    and snapshotCache.ball.Parent
+    and time >= snapshotCacheAt
+    and time - snapshotCacheAt < CONFIG.SNAPSHOT_CACHE_INTERVAL
+  then
+    return snapshotCache
+  end
   if inTrainingArea() then
     local sample = trainingState; local model = child(child(child(world, "Training"), "TrainingClient"), "TrainingBall")
     if not sample or time < sample.receivedAt or time - sample.receivedAt > 0.6 or not model or not model:IsA("BasePart") or not model.Parent then return nil end
@@ -964,8 +969,7 @@ function GameInfo.getDarkSealEventId() return CONFIG.GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
   local root = ts()
   if not root then error("API externa ausente: Shared ou TS", 2) end
-  local folder = root:FindFirstChild("Network") or root:WaitForChild("Network", 10)
-  local network = folder and (folder:FindFirstChild("Network") or folder:WaitForChild("Network", 10))
+  local folder = root:FindFirstChild("Network") or root:WaitForChild("Network", 10); local network = folder and (folder:FindFirstChild("Network") or folder:WaitForChild("Network", 10))
   if not network or not network:IsA("ModuleScript") then error("API externa ausente: Network.Network", 2) end
   return require(network).Network.new()
 end

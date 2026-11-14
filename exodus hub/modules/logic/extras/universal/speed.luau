@@ -41,11 +41,8 @@ local function applySpeed()
   local humanoid = currentHumanoid()
   if humanoid ~= speedHumanoid then
     disconnect("SpeedChanged")
-    if speedHumanoid and speedHumanoid.Parent and speedApplied ~= nil and speedHumanoid.WalkSpeed == speedApplied and speedRestore ~= nil then
-      writeSpeed(speedHumanoid, speedRestore)
-    end
-    speedHumanoid, speedApplied = humanoid, nil
-    speedRestore = humanoid and humanoid.WalkSpeed or nil
+    if speedHumanoid and speedHumanoid.Parent and speedApplied ~= nil and speedHumanoid.WalkSpeed == speedApplied and speedRestore ~= nil then writeSpeed(speedHumanoid, speedRestore) end
+    speedHumanoid, speedApplied = humanoid, nil; speedRestore = humanoid and humanoid.WalkSpeed or nil
     if humanoid then
       connect("SpeedChanged", humanoid:GetPropertyChangedSignal("WalkSpeed"), function()
         if not applyingSpeed and states.Speed and speedHumanoid == humanoid and humanoid.WalkSpeed ~= speedApplied then
@@ -90,10 +87,8 @@ function Speed.setEnabled(enabled)
   end
   states.Speed = value; local ok, result, detail = pcall(value and startSpeed or stopSpeed)
   if not ok or result == false then
-    -- Startup can fail after allocating objects or registering callbacks.
     pcall(stopSpeed); states.Speed = false
-    Utils.setConfig({ UniversalSpeedEnabled = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    Utils.setConfig({ UniversalSpeedEnabled = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
@@ -108,9 +103,8 @@ function Speed.setValue(value)
   return applySpeed()
 end
 function Speed.teardown()
-  stopSpeed()
-  states.Speed = false; Utils = nil
-  return true
+  stopSpeed(); states.Speed = false
+  Utils = nil; return true
 end
 function Speed.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end

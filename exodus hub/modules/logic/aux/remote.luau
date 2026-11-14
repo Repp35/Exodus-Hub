@@ -20,7 +20,8 @@ local CONFIG = {
 function Remote.setup(deps)
   if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
   if type(deps.Utils) ~= "table" then return false, "dependência inválida: Utils" end
-  Remote.teardown(); gameInfo, utils = deps.GameInfo, deps.Utils; return true
+  Remote.teardown(); gameInfo, utils = deps.GameInfo, deps.Utils
+  return true
 end
 
 -- dispatch
@@ -63,8 +64,7 @@ local function fireDirect()
   directSequence = (directSequence + 1) % 65536; buffer.writeu16(packet, 25, directSequence)
   buffer.writef64(packet, 27, workspace:GetServerTimeNow()); remote:FireServer(packet)
   if unreliable and unreliable:IsA("UnreliableRemoteEvent") then
-    unreliable:FireServer(packet)
-    local owner = epoch
+    unreliable:FireServer(packet); local owner = epoch
     task.delay(0.03, function()
       if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil then unreliable:FireServer(packet) end
     end)
@@ -133,7 +133,6 @@ function Remote.fireFierce(guard)
   return send(ability, CONFIG.FIERCE_METHOD)
 end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end
-
 function Remote.teardown()
   epoch += 1; keybindObject, gameInfo, utils = nil, nil, nil
   return true

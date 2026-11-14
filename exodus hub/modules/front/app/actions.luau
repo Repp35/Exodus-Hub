@@ -208,8 +208,7 @@ function Actions.create(context)
   scope.add(Utils.observeConfig(function(changes)
     if changes.AntiAFK ~= nil then callbacks.antiAFK(changes.AntiAFK == true) end
   end))
-  callbacks.antiAFK(Utils.getConfigValue("AntiAFK") == true)
-  return result
+  callbacks.antiAFK(Utils.getConfigValue("AntiAFK") == true); return result
 end
 
 -- contract

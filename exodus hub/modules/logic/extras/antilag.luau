@@ -997,8 +997,7 @@ local function startSession()
   }, owner.profile)
   local function getOption(key) return owner.engine:GetOption(key) end
   if owner.compatible then
-    local scripts = player:FindFirstChild("PlayerScripts") or player:WaitForChild("PlayerScripts", 10)
-    assert(scripts, "PlayerScripts indisponível")
+    local scripts = player:FindFirstChild("PlayerScripts") or player:WaitForChild("PlayerScripts", 10); assert(scripts, "PlayerScripts indisponível")
     owner.adapter = createGameAdapter({ Workspace = workspace, Player = player, PlayerScripts = scripts }, getOption)
   end
   owner.spatial = createSpatialController({

@@ -45,8 +45,7 @@ local function fallbackNotification(message, key, kind, duration)
   if label then label.Text = tostring(message) end
   if duration == nil and key ~= "dumper" then duration = 2.5 end
   card.GroupTransparency = 0; card.Visible = true
-  local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
-  card:SetAttribute("ExodusNotificationGeneration", generation)
+  local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1; card:SetAttribute("ExodusNotificationGeneration", generation)
   if duration and duration > 0 then
     task.delay(duration, function()
       if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then card:Destroy() end
@@ -456,8 +455,7 @@ local function loadModules(urls)
     results[name] = { chunk = chunk, error = loadError }
   end
   if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
-    local pending, nextIndex, cancelled = #MODULE_MANIFEST, 1, false
-    local deadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
+    local pending, nextIndex, cancelled = #MODULE_MANIFEST, 1, false; local deadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
     for _ = 1, math.min(CONFIG.DOWNLOAD_WORKERS, #MODULE_MANIFEST) do
       task.spawn(function()
         while not cancelled do

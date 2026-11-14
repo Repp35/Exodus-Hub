@@ -107,8 +107,7 @@ local function untrack(list, indexMap, connection)
 end
 local function disconnectAll(list, indexMap)
   while #list > 0 do
-    local connection = list[#list]
-    untrack(list, indexMap, connection)
+    local connection = list[#list]; untrack(list, indexMap, connection)
     local ok, err = pcall(connection.Disconnect, connection)
     if not ok and type(warn) == "function" then warn("Falha ao desconectar: " .. tostring(err)) end
   end
@@ -287,9 +286,8 @@ local function backupAtStartup(folder, body)
 end
 local function writeConfig()
   if not persistenceReady or not saveDirty then return end
-  local revision = saveRevision
-  local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"
-  local body = serializeConfig(state.config)
+  local revision = saveRevision; local _, folder = Utils.ensureDataFolder()
+  local path = folder .. "/config.json"; local body = serializeConfig(state.config)
   local decoded, data = pcall(function() return http:JSONDecode(body) end)
   if not decoded or type(data) ~= "table" or next(data) == nil then warn("Configuração vazia ou inválida; arquivo anterior preservado"); return end
   local previous, _, status = readSavedConfig(path)
@@ -309,8 +307,7 @@ local queueSave
 local function saveConfig()
   if saveRunning then return end
   saveRunning = true; local revision = saveRevision
-  local ok, reason = pcall(writeConfig)
-  saveRunning = false
+  local ok, reason = pcall(writeConfig); saveRunning = false
   if not ok then warn("Falha ao salvar configuração: " .. tostring(reason)) end
   if saveDirty and saveRevision ~= revision and persistenceReady then queueSave() end
 end
@@ -402,9 +399,7 @@ function Utils.recordTransition(source, fromState, toState, reason) recordTransi
 function Utils.recordError(source, message)
   source, message = tostring(source or "Unknown"), tostring(message or "")
   local previous = state.diagnostics.lastError
-  if previous and previous.source == source and previous.message == message and os.clock() - previous.at < 1 then
-    previous.count = (previous.count or 1) + 1; return true
-  end
+  if previous and previous.source == source and previous.message == message and os.clock() - previous.at < 1 then previous.count = (previous.count or 1) + 1; return true end
   local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }; state.diagnostics.lastError = item
   append(state.diagnostics.errors, item); warn(("[%s] %s"):format(item.source, item.message))
   refreshNamespace(); return true
