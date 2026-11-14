@@ -18,10 +18,10 @@ class AntiLagTests(unittest.TestCase):
         self.run_ui(ui.module("config") + "local definition={" + CONFIG + "}\n" + """
 assert(config.register('antilag',definition))
 local defaults=config.defaults()
-assert(defaults.AntiLagEnabled==false and defaults.AntiLagSwordSounds==false)
+assert(defaults.AntiLagEnabled==false and defaults.AntiLagRemoveSwordSounds==true)
 assert(defaults.AntiLagRenderDistance==650)
-assert(defaults.AntiLagLighting==false and defaults.AntiLagLobbyVisible==false)
-assert(defaults.AntiLagFog==false and defaults.AntiLagEffects==false)
+assert(defaults.AntiLagRemoveLighting==true and defaults.AntiLagHideLobby==true)
+assert(defaults.AntiLagRemoveFog==true and defaults.AntiLagRemoveEffects==true)
 assert(config.validatePatch({AntiLagEnabled=true,AntiLagRenderDistance=950}))
 assert(not config.validatePatch({AntiLagEnabled='yes'}))
 assert(not config.validatePatch({AntiLagRenderDistance=math.huge}))
@@ -38,11 +38,11 @@ local pages=uipages.create(kit,panel,uiconfig.pages,{desktop=DESKTOP,read=utils.
 pages.select('antilag',false)
 assert(#pages.get('antilag').columns==1)
 local enabled=pages.getControl('AntiLagEnabled')
-local children={'AntiLagRenderDistance','AntiLagLighting','AntiLagSwordSounds','AntiLagLobbyVisible','AntiLagFog','AntiLagEffects'}
+local children={'AntiLagRenderDistance','AntiLagRemoveLighting','AntiLagRemoveSwordSounds','AntiLagHideLobby','AntiLagRemoveFog','AntiLagRemoveEffects'}
 for _,key in ipairs(children) do assert(not uiruntime.isVisible(pages.getControl(key).Root),key) end
 assert(enabled.activate());finishTweens()
 for _,key in ipairs(children) do assert(uiruntime.isVisible(pages.getControl(key).Root),key) end
-assert(config.AntiLagSwordSounds==false)
+assert(config.AntiLagRemoveSwordSounds==true)
 assert(enabled.activate());finishTweens()
 for _,key in ipairs(children) do assert(not uiruntime.isVisible(pages.getControl(key).Root),key) end
 pages.destroy();kit.destroy();finishTweens()

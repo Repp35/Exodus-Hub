@@ -9,20 +9,20 @@ local CONFIG = {
   schema = {
     AntiLagEnabled = "boolean",
     AntiLagRenderDistance = "rate",
-    AntiLagLighting = "boolean",
-    AntiLagSwordSounds = "boolean",
-    AntiLagLobbyVisible = "boolean",
-    AntiLagFog = "boolean",
-    AntiLagEffects = "boolean",
+    AntiLagRemoveLighting = "boolean",
+    AntiLagRemoveSwordSounds = "boolean",
+    AntiLagHideLobby = "boolean",
+    AntiLagRemoveFog = "boolean",
+    AntiLagRemoveEffects = "boolean",
   },
   defaults = {
     AntiLagEnabled = false,
     AntiLagRenderDistance = 650,
-    AntiLagLighting = false,
-    AntiLagSwordSounds = false,
-    AntiLagLobbyVisible = false,
-    AntiLagFog = false,
-    AntiLagEffects = false,
+    AntiLagRemoveLighting = true,
+    AntiLagRemoveSwordSounds = true,
+    AntiLagHideLobby = true,
+    AntiLagRemoveFog = true,
+    AntiLagRemoveEffects = true,
   },
 }
 
@@ -922,9 +922,9 @@ end
 local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or 650
   if distance ~= distance then distance = 650 end
-  profile.CullDistance = math.clamp(distance, 350, 1200); local lighting, effects, fog = setting("AntiLagLighting"), setting("AntiLagEffects"), setting("AntiLagFog")
-  profile.Lights, profile.Shadows, profile.FlatLighting = lighting, not lighting, not lighting; profile.GameSwordSounds = setting("AntiLagSwordSounds")
-  profile.HideLobbyInMatch = not setting("AntiLagLobbyVisible"); profile.NoFog, profile.Atmosphere = not fog, not fog
+  profile.CullDistance = math.clamp(distance, 350, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
+  profile.Lights, profile.Shadows, profile.FlatLighting = lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
+  profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.NoFog, profile.Atmosphere = not fog, not fog
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = not effects, not effects, not effects; profile.PostEffects, profile.Clouds, profile.FlatSky = not effects, not effects, not effects
   profile.GameNoVFX, profile.GameReducedUI = not effects, not effects; return profile
 end
