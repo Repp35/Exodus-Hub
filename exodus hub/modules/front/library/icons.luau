@@ -30,7 +30,42 @@ end
 
 -- assets
 local function resolve(name)
-  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name)); return definition.fallback
+  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name))
+  local write = writefile
+  local asset = getcustomasset or getsynasset
+  if type(write) ~= "function" or type(asset) ~= "function" then
+    warn("Exodus UI: PNG unavailable (writefile/getcustomasset missing): " .. name)
+    return ""
+  end
+
+  local http = game:GetService("HttpService")
+  local decoded, bytes = pcall(function() return http:Base64Decode(definition.png) end)
+  if not decoded or type(bytes) ~= "string" then
+    warn("Exodus UI: invalid PNG payload: " .. name)
+    return ""
+  end
+
+  -- Only a temporary PNG in the existing Exodus folder; never create a cache directory.
+  local folder = "exodus hub"
+  local path = folder .. "/ui_" .. name .. "_" .. CONFIG.VERSION .. ".png"
+  local ok = pcall(function()
+    if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder(folder) then
+      makefolder(folder)
+    end
+    write(path, bytes)
+  end)
+  if not ok then
+    warn("Exodus UI: failed to stage PNG: " .. name)
+    return ""
+  end
+  local loaded, image = pcall(asset, path)
+  -- Remove temporary bytes after registering the asset; never persist PNGs between sessions.
+  if type(delfile) == "function" then pcall(delfile, path) end
+  if not loaded or type(image) ~= "string" then
+    warn("Exodus UI: failed to register PNG: " .. name)
+    return ""
+  end
+  return image
 end
 
 -- public-api
