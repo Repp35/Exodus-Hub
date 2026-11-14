@@ -66,11 +66,6 @@ local state = {
   fierceStartedAt = 0,
   fierceCycle = nil,
   fiercePreviouslyFired = false,
-  deltaLastProcessed = 0,
-  deltaResetAt = -math.huge,
-  deltaLastBallPosition = nil,
-  deltaPing = 0.05,
-  deltaPingSampleAt = 0,
 }
 
 -- configuration
@@ -78,10 +73,6 @@ local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
   ADAPTIVE_MAX_WINDOW_FACTOR = 0.9,
-  DELTA_RESET_JUMP = 50,
-  DELTA_RESET_LOCKOUT = 0.6,
-  DELTA_PROCESS_RESET = 0.4,
-  DELTA_PING_SMOOTH = 0.15,
   DIRECT_TARGET_MAX_AGE = 0.08,
   MATCH_RETRY_DELAY_MAX = 0.5,
   SNAPSHOT_MAX_AGE = 0.5,
@@ -133,13 +124,14 @@ local function resetTracking()
   state.fired, state.awaySeen, state.cycle = false, false, 0; state.target, state.targetKnown, state.lastTargeted = -1, false, false
   state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
-  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge; state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
-  state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
-  state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge
+  state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
+  state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
+  state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil
+  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
   state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
   state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
-  state.deltaLastProcessed, state.deltaResetAt, state.deltaLastBallPosition = 0, -math.huge, nil; state.deltaPing, state.deltaPingSampleAt = 0.05, 0
   table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
@@ -235,17 +227,26 @@ local function trajectory(position, velocity, rootPosition, nominalSpeed, geomet
   end
   return distance, closing, threshold, entry
 end
+
+-- Adaptive anticipation is bounded by the actual deflect window.
+-- Entry is the relative-motion time to reach the defensive sphere, not distance / nominal speed.
 local function adaptiveLead(geometry, entry, closing)
   local baseline = geometry.effectiveWindow
   local factor = geometry.windowFactor
   if geometry.training or state.retryReady or not finite(entry) or closing <= 0 then return baseline, factor end
   local window = geometry.deflectWindow
   if not finite(window) or window <= 0 or not finite(baseline) then return baseline, factor end
-  factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR; local maxFactor = math.max(factor, CONFIG.ADAPTIVE_MAX_WINDOW_FACTOR)
-  local arrival = math.max(0, entry); local urgency = window / (window + arrival)
-  local selected = factor + (maxFactor - factor) * urgency * urgency; local network = math.max(0, baseline - window * factor)
-  local lead = math.max(baseline, math.min(window + network, window * selected + network)); return lead, selected
+  factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR
+  local maxFactor = math.max(factor, CONFIG.ADAPTIVE_MAX_WINDOW_FACTOR)
+  local arrival = math.max(0, entry)
+  -- Short remaining flight -> approach the server's full window; long flight -> retain the configured baseline.
+  local urgency = window / (window + arrival)
+  local selected = factor + (maxFactor - factor) * urgency * urgency
+  local network = math.max(0, baseline - window * factor)
+  local lead = math.max(baseline, math.min(window + network, window * selected + network))
+  return lead, selected
 end
+
 local function directTargetConfirmed(snapshot, time)
   if not state.player or state.directTargetId ~= state.player.UserId then return false end
   if not finite(state.directTargetAt) or time < state.directTargetAt or time - state.directTargetAt > CONFIG.DIRECT_TARGET_MAX_AGE then return false end
@@ -285,9 +286,6 @@ local function observeTarget(target, time)
     state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.cycle += 1
     state.awayAt, state.awayTarget = nil, nil
   end
-  if target == me and previous ~= me and state.awaySeen == false and state.lastTargeted then
-    state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false, false; state.nextAttemptAt = 0
-  end
   state.target, state.targetKnown = target, true
 end
 local function observeSnapshot(snapshot, time)
@@ -307,7 +305,10 @@ local function observeSnapshot(snapshot, time)
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
     state.resetPending = newMatchBall; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
     state.targetChangedAt = nil
-    if newMatchBall or mode == "training" then state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; confirmedDirect = false end
+    if newMatchBall or mode == "training" then
+      state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil
+      confirmedDirect = false
+    end
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
@@ -442,10 +443,12 @@ local function tickTraining(value, root, time)
   request("training_parry")
 end
 local function resolveVelocity(value, position, speed, time)
-  local velocity = vector(value.velocity) and value.velocity or Vector3.zero; local direction = value.syncDirection
+  local velocity = vector(value.velocity) and value.velocity or Vector3.zero
+  local direction = value.syncDirection
   local freshReturn = finite(state.targetChangedAt) and time >= state.targetChangedAt and time - state.targetChangedAt <= CONFIG.DIRECT_TARGET_MAX_AGE
   if freshReturn and finite(speed) and speed > 0 and vector(direction) and direction.Magnitude > 0.01 then
     local synced = direction.Unit * speed
+    -- Immediately after a target reversal, the physical velocity can still describe the previous flight.
     if velocity.Magnitude < 0.1 or velocity:Dot(synced) < 0 then return synced end
   end
   if velocity.Magnitude > 0.1 then return velocity end
@@ -459,52 +462,16 @@ local function resolveVelocity(value, position, speed, time)
   if finite(speed) and speed > 0 and vector(value.syncDirection) and value.syncDirection.Magnitude > 0.01 then return value.syncDirection.Unit * speed end
   return velocity
 end
-local function deltaMatchTick(value, root, time)
-  local position = value.position; local own = gameInfo.getRootPosition(root)
-  if not vector(position) or not vector(own) or not value.ball or not value.ball.Parent then return end
-  local previous = state.deltaLastBallPosition; state.deltaLastBallPosition = position
-  if previous and (position - previous).Magnitude > CONFIG.DELTA_RESET_JUMP then
-    state.deltaResetAt = time; state.deltaLastProcessed = time
-    state.fired = true; phase("waiting", "delta_ball_reset")
-    return
-  end
-  if time - state.deltaResetAt < CONFIG.DELTA_RESET_LOCKOUT then phase("waiting", "delta_reset_lockout"); return end
-  if state.fired and time - state.deltaLastProcessed >= CONFIG.DELTA_PROCESS_RESET then state.fired = false; state.nextAttemptAt = 0 end
-  local velocity = value.ball.AssemblyLinearVelocity
-  if not vector(velocity) or velocity.Magnitude <= 0.1 then velocity = resolveVelocity(value, position, tonumber(value.syncSpeed) or tonumber(value.speed) or 0, time) end
-  local speed = velocity.Magnitude; local distance = (own - position).Magnitude
-  local approaching = velocity:Dot(own - position) > 0; local radiusDelta = math.clamp(speed * 0.40 + 6, 9, 90) + 10
-  local impact = speed > 1 and distance / speed or math.huge
-  if time - state.deltaPingSampleAt >= 2 then
-    state.deltaPingSampleAt = time; samplePing()
-    local measured = finite(state.pingRaw) and state.pingRaw or state.ping
-    if finite(measured) and measured > 0 then state.deltaPing = state.deltaPing * 0.85 + measured * CONFIG.DELTA_PING_SMOOTH end
-  end
-  local ping = math.clamp(state.deltaPing * 1.1 + 0.02, 0.02, 0.25); state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
-  state.speed, state.distance, state.approaching, state.closingSpeed = speed, distance, approaching, approaching and speed or 0
-  state.triggerDistance, state.adaptiveWindow, state.timeToRange = radiusDelta, 0.35 + ping, impact; state.adaptiveFactor = 0
-  local me = state.player and state.player.UserId; local target = me
-    and (
-      state.targetKnown and state.target == me
-      or directTargetConfirmed(value, time)
-      or workspace:GetAttribute("GameBallTarget") == me
-      or (state.character and state.character:FindFirstChild("Highlight") ~= nil)
-    )
-  if not target then phase("waiting", "delta_not_target"); return end
-  if state.player and (not state.targetKnown or state.target ~= me) then observeTarget(me, time) end
-  if state.fired then phase("waiting", "delta_processed"); return end
-  if not approaching or speed <= 5 or distance > radiusDelta or impact > 0.35 + ping then phase("waiting", "delta_outside_window"); return end
-  if request("delta_parry") then state.deltaLastProcessed = time end
-end
 local function tick(character, root, generation)
   if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
   if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
   local time = clock(); local value = gameInfo.getSnapshotAt(time)
   if generation ~= state.generation or not state.bound or not state.alive then return end
   if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
-  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then phase("waiting", "snapshot_stale"); return end
-  local deltaMode = value.mode ~= "training" and utils.getConfigValue("AutoParryDeltaMode") == true
-  if not observeSnapshot(value, time) and not deltaMode then phase("waiting", "stale_snapshot"); return end
+  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then
+    phase("waiting", "snapshot_stale"); return
+  end
+  if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
   if value.mode ~= "training" and utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
     state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "teleport_lock")
@@ -513,7 +480,6 @@ local function tick(character, root, generation)
   local cooldown = safeCooldown()
   if fierceActive(time, cooldown) then phase("waiting", "fierce_active"); return end
   if value.mode == "training" then tickTraining(value, root, time); return end
-  if deltaMode then deltaMatchTick(value, root, time); return end
   if not cooldown or cooldown.source == "unknown" then phase("waiting", "cooldown_unknown"); return end
   local ability = gameInfo.getDeflectAbility(); local manualAt = ability and ability.LastDeflectCallAt
   local accepted = cooldown.predictedReset == true or (finite(cooldown.pressAt) and finite(manualAt) and cooldown.pressAt >= manualAt - 0.05)
@@ -568,9 +534,12 @@ local function tick(character, root, generation)
       + state.frameAllowance
     geometry.triggerPadding = 0
   end
-  local distance, closing, threshold, entry = trajectory(position, velocity, rootPosition, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
-  threshold = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; state.speed, state.distance, state.approaching = speed, distance, closing > 0
-  state.closingSpeed, state.triggerDistance = closing, threshold; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
+  local distance, closing, threshold, entry = trajectory(position, velocity, rootPosition, speed, geometry)
+  local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
+  threshold = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead
+  state.speed, state.distance, state.approaching = speed, distance, closing > 0
+  state.closingSpeed, state.triggerDistance = closing, threshold
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
   if closing > 0 and entry <= lead then request("parry_requested") end
 end
 
@@ -666,8 +635,10 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   if not finite(speed) or speed <= 0 then speed = vector(velocity) and velocity.Magnitude or 0 end
   velocity = resolveVelocity(value, position, speed, time); local g = radius(speed, activeWindowFactor(time))
   if not g then return false end
-  local distance, closing, threshold, entry = trajectory(position, velocity, own, speed, g); local lead, adaptiveFactor = adaptiveLead(g, entry, closing)
-  threshold = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * lead; state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+  local distance, closing, threshold, entry = trajectory(position, velocity, own, speed, g)
+  local lead, adaptiveFactor = adaptiveLead(g, entry, closing)
+  threshold = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * lead
+  state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold; state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
   state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
   if closing <= 0 or entry > lead then return false end
@@ -691,13 +662,13 @@ function AutoParry.onBallSync(data)
   if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
-    state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil; state.teleported, state.teleportSequence = true, sequence
-    state.lastBall = nil; state.cycle += 1
-    state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
-    state.resetPending = true; state.speed, state.distance, state.approaching = 0, 0, false
-    state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.nextAttemptAt = 0
-    state.lastPosition, state.lastSampleAt = nil, 0; state.awayAt, state.awayTarget = nil, nil
-    state.deltaResetAt, state.deltaLastBallPosition, state.deltaLastProcessed = clock(), nil, clock(); table.clear(state.clicks)
+    state.directTargetId, state.directTargetAt, state.directTargetSequence = nil, nil, nil
+    state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
+    state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
+    state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.resetPending = true
+    state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
+    state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+    state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
     table.clear(state.returns); phase("waiting", "teleport_lock")
     return true
   end
@@ -705,20 +676,11 @@ function AutoParry.onBallSync(data)
     local current = gameInfo.getSyncSequence()
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
-  state.teleported, state.teleportSequence = false, nil; local now, target = clock(), tonumber(data.TargetPlayerID)
+  state.teleported, state.teleportSequence = false, nil
+  local now, target = clock(), tonumber(data.TargetPlayerID)
   if finite(target) then
-    local oldTarget = state.target; state.directTargetId, state.directTargetAt, state.directTargetSequence = target, now, sequence
+    state.directTargetId, state.directTargetAt, state.directTargetSequence = target, now, sequence
     observeTarget(target, now)
-    if
-      utils
-      and utils.getConfigValue("AutoParryDeltaMode") == true
-      and state.player
-      and target == state.player.UserId
-      and oldTarget ~= target
-      and oldTarget > 0
-    then
-      state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false, false; state.nextAttemptAt = 0
-    end
   end
   if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true
@@ -745,7 +707,8 @@ function AutoParry.getDefenseState(value)
   local distance, closing, trigger
   if geometry and value and vector(value.position) and vector(value.velocity) and state.root and state.root.Parent then
     local entry
-    distance, closing, trigger, entry = trajectory(value.position, value.velocity, gameInfo.getRootPosition(state.root), speed, geometry); local lead = adaptiveLead(geometry, entry, closing)
+    distance, closing, trigger, entry = trajectory(value.position, value.velocity, gameInfo.getRootPosition(state.root), speed, geometry)
+    local lead = adaptiveLead(geometry, entry, closing)
     trigger = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead
   end
   return {
@@ -780,14 +743,16 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
     if not vector(velocity) then velocity = gameInfo.getBallVelocity(value.ball) end
   end
   if not vector(position) or not vector(root) then return nil end
-  velocity = vector(velocity) and velocity or Vector3.zero; local speed = tonumber(value.syncSpeed)
+  velocity = vector(velocity) and velocity or Vector3.zero
+  local speed = tonumber(value.syncSpeed)
   if not finite(speed) or speed <= 0 then speed = velocity.Magnitude > 0.1 and velocity.Magnitude or tonumber(value.speed) or 0 end
   if not finite(speed) or speed < 0 then return nil end
   local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
-  local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
-  triggerDistance = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; local distanceToRadius = distance - triggerDistance
-  local timeToTrigger = math.max(entry - lead, 0)
+  local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry)
+  local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
+  triggerDistance = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead
+  local distanceToRadius = distance - triggerDistance; local timeToTrigger = math.max(entry - lead, 0)
   return {
     distance = distance,
     speed = speed,
