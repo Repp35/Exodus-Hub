@@ -34,13 +34,11 @@ end
 local function applySpeed()
   local humanoid = currentHumanoid()
   if humanoid ~= speedHumanoid then
-    disconnect("SpeedChanged"); speedHumanoid = humanoid; speedRestore = humanoid and humanoid.WalkSpeed or nil
+    disconnect("SpeedChanged"); speedHumanoid = humanoid
+    speedRestore = humanoid and humanoid.WalkSpeed or nil
     if humanoid then
       connect("SpeedChanged", humanoid:GetPropertyChangedSignal("WalkSpeed"), function()
-        if states.Speed and speedHumanoid == humanoid and humanoid.WalkSpeed ~= speedValue then
-          speedRestore = humanoid.WalkSpeed
-          humanoid.WalkSpeed = speedValue
-        end
+        if states.Speed and speedHumanoid == humanoid and humanoid.WalkSpeed ~= speedValue then speedRestore = humanoid.WalkSpeed; humanoid.WalkSpeed = speedValue end
       end)
     end
   end
@@ -57,7 +55,8 @@ local function startSpeed()
   return applySpeed()
 end
 local function stopSpeed()
-  disconnect("SpeedStep"); disconnect("SpeedFrame"); disconnect("SpeedRender"); disconnect("SpeedChanged")
+  disconnect("SpeedStep"); disconnect("SpeedFrame")
+  disconnect("SpeedRender"); disconnect("SpeedChanged")
   if speedHumanoid and speedHumanoid.Parent and speedHumanoid.WalkSpeed == speedValue and speedRestore ~= nil then speedHumanoid.WalkSpeed = speedRestore end
   speedHumanoid, speedRestore = nil, nil; return true
 end

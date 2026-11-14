@@ -21,24 +21,29 @@ local function clearGravity()
 end
 local function updateGravity()
   local player = Utils.getLocalPlayer(); local character = player and player.Character
-  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-  local root = character and character:FindFirstChild("HumanoidRootPart")
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not humanoid or humanoid.Health <= 0 or not root or not root.Parent then clearGravity(); return end
   if gravityRoot ~= root or not force or not force.Parent or not attachment or not attachment.Parent then
     clearGravity(); gravityRoot = root
-    attachment = Instance.new("Attachment"); attachment.Name = "ExodusGravityAttachment"; attachment.Parent = root
-    force = Instance.new("VectorForce"); force.Name = "ExodusGravityForce"
-    force.Attachment0 = attachment; force.RelativeTo = Enum.ActuatorRelativeTo.World; force.ApplyAtCenterOfMass = true; force.Parent = root
+    attachment = Instance.new("Attachment"); attachment.Name = "ExodusGravityAttachment"
+    attachment.Parent = root; force = Instance.new("VectorForce")
+    force.Name = "ExodusGravityForce"; force.Attachment0 = attachment
+    force.RelativeTo = Enum.ActuatorRelativeTo.World; force.ApplyAtCenterOfMass = true
+    force.Parent = root
   end
   force.Force = Vector3.new(0, root.AssemblyMass * (Workspace.Gravity - gravityValue), 0)
 end
 local function startGravity()
   local signal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
   if not signal then return false end
-  connection = signal:Connect(updateGravity); Utils.trackGlobal(connection); updateGravity(); return true
+  connection = signal:Connect(updateGravity); Utils.trackGlobal(connection)
+  updateGravity(); return true
 end
 local function stopGravity()
-  if connection then Utils.untrackGlobal(connection); connection:Disconnect(); connection = nil end
+  if connection then
+    Utils.untrackGlobal(connection); connection:Disconnect()
+    connection = nil
+  end
   clearGravity(); return true
 end
 function Gravity.setEnabled(enabled)
