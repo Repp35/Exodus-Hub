@@ -57,6 +57,7 @@ end
 -- recording
 function ClashStats.finish(reason, time)
   if not stats or stats.frozen then return end
+  time = finite(time) and time or stats.lastObserved or stats.startedAt
   stats.frozen, stats.waitingForClash = true, false; stats.duration = math.max(0, time - stats.startedAt)
   stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
 end
@@ -82,6 +83,7 @@ function ClashStats.observe(session, snapshot, time, fresh)
     partner = stats.partnerId
   end
   if not partner then
+    if stats and not stats.frozen and time - stats.lastObserved > CONFIG.CLASH_RETENTION_SECONDS then ClashStats.finish("clash encerrado", stats.lastObserved) end
     if stats and stats.frozen then stats.waitingForClash = true end
     return
   end
@@ -125,7 +127,9 @@ function ClashStats.observe(session, snapshot, time, fresh)
   local duration = time - stats.startedAt; stats.cps = duration > 0 and stats.totalSwitches / duration or 0
   local speed = snapshotSpeed(snapshot)
   if finite(speed) and speed >= 0 then stats.speed = speed end
-  local other = gameInfo.getPlayerMotion(partner); local own = session.root.Position
+  local root = session.root
+  if not root or not root.Parent then return end
+  local other = gameInfo.getPlayerMotion(partner); local own = root.Position
   local distance = typeof(other) == "Vector3" and (other - own).Magnitude or nil
   if finite(distance) then stats.distance = distance end
   stats.lastObserved = time; local sample = stats.endSample or {}

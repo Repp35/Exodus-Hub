@@ -28,7 +28,7 @@ local function jumpStep(player)
   if not character or not character.Parent then return end
   local humanoid = jumpHumanoid
   if not humanoid or humanoid.Parent ~= character then humanoid = character:FindFirstChildOfClass("Humanoid"); jumpHumanoid = humanoid end
-  if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then return end
+  if not humanoid or humanoid.Health <= 0 or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then return end
   if humanoid:GetState() ~= CONFIG.JUMPING_STATE then humanoid:ChangeState(CONFIG.JUMPING_STATE) end
 end
 

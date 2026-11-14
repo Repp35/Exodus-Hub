@@ -45,9 +45,11 @@ local function fallbackNotification(message, key, kind, duration)
   if label then label.Text = tostring(message) end
   if duration == nil and key ~= "dumper" then duration = 2.5 end
   card.GroupTransparency = 0; card.Visible = true
+  local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
+  card:SetAttribute("ExodusNotificationGeneration", generation)
   if duration and duration > 0 then
     task.delay(duration, function()
-      if card.Parent then card:Destroy() end
+      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then card:Destroy() end
     end)
   end
 end
@@ -92,6 +94,8 @@ local CONFIG = {
   MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
   UPDATE_POLL_INTERVAL = 5,
   UPDATE_LOOP_INTERVAL = 1,
+  DOWNLOAD_WORKERS = 8,
+  DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
   AUTHORIZATION_PATH = "security/entitlements.luau",
   MODULES = {
@@ -277,9 +281,9 @@ local function clearRegistry()
   Exodus.Started = false; _G.ExodusOnBurst = nil
 end
 local function cleanupCall(name, action)
-  local ok, result = pcall(action)
-  if not ok then printRawError(name, "falha na limpeza: " .. tostring(result)) end
-  return ok, result
+  local ok, result, detail = pcall(action)
+  if not ok or result == false then printRawError(name, "falha na limpeza: " .. tostring(ok and detail or result)) end
+  return ok and result ~= false, result
 end
 local function stopPreviousRuntime()
   local clean = true; closeUpdateChannel()
@@ -313,6 +317,7 @@ local function stopPreviousRuntime()
     "dash",
     "autoparry",
     "cooldown",
+    "remote",
   }) do
     local module = Modules[name]
     if type(module) == "table" then
@@ -372,9 +377,9 @@ local function loadModule(name, relativePath, url)
     end
   end
   if source then
+    if fingerprint(source) ~= signature then return nil, "assinatura divergente: " .. relativePath end
     local chunk, compileError = compile(name, source)
-    if chunk and fingerprint(source) == signature then return chunk, nil, sourceKind end
-    if chunk then return nil, "assinatura divergente: " .. relativePath end
+    if chunk then return chunk, nil, sourceKind end
     fetchError = compileError
   end
   return nil, fetchError or "origem remota indisponível"
@@ -451,17 +456,23 @@ local function loadModules(urls)
     results[name] = { chunk = chunk, error = loadError }
   end
   if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
-    local pending = #MODULE_MANIFEST; local deadline = os.clock() + 30
-    for _, entry in ipairs(MODULE_MANIFEST) do
-      local name = entry.name
+    local pending, nextIndex, cancelled = #MODULE_MANIFEST, 1, false
+    local deadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
+    for _ = 1, math.min(CONFIG.DOWNLOAD_WORKERS, #MODULE_MANIFEST) do
       task.spawn(function()
-        local ok, err = xpcall(function() load(name) end, function(value) return debug.traceback(tostring(value), 2) end)
-        if not ok then results[name] = { error = err } end
-        pending -= 1
+        while not cancelled do
+          local entry = MODULE_MANIFEST[nextIndex]; nextIndex += 1
+          if not entry then return end
+          local name = entry.name
+          local ok, err = xpcall(function() load(name) end, function(value) return debug.traceback(tostring(value), 2) end)
+          if cancelled then return end
+          if not ok then results[name] = { error = err } end
+          pending -= 1
+        end
       end)
     end
     while pending > 0 do
-      if os.clock() >= deadline then return nil, "Loader", "tempo limite ao baixar os módulos" end
+      if os.clock() >= deadline then cancelled = true; return nil, "Loader", "tempo limite ao baixar os módulos" end
       task.wait()
     end
   else
@@ -514,6 +525,14 @@ local function initializeModules(loaded)
       if name == "character" then deps.characterBinds = characterBinds end
       local initialized, setupError = module.setup(deps)
       if initialized ~= true then error(("%s.setup falhou: %s"):format(name, tostring(setupError or initialized)), 2) end
+      if type(module.teardown) == "function" then
+        local cleanup = { Connected = true }
+        function cleanup:Disconnect()
+          if not self.Connected then return end
+          self.Connected = false; cleanupCall(name, module.teardown)
+        end
+        loaded.utils.trackGlobal(cleanup)
+      end
     end
   end
   return true
@@ -828,12 +847,12 @@ function Loader.start()
   startLock = false
   if _G.ExodusLoaderStartToken == startToken then _G.ExodusLoaderStartToken = nil end
   if not ok then
-    rollbackLoaded(activeLoaded); activeLoaded = nil
-    clearRegistry(); return false, "Loader", started
+    if startupPerformed then rollbackLoaded(activeLoaded); clearRegistry() end
+    activeLoaded = nil; return false, "Loader", started
   end
   if started ~= true then
-    rollbackLoaded(activeLoaded); activeLoaded = nil
-    clearRegistry(); return started, moduleName, startError
+    if startupPerformed then rollbackLoaded(activeLoaded); clearRegistry() end
+    activeLoaded = nil; return started, moduleName, startError
   end
   if startupPerformed then
     Exodus.Loader = Loader; Modules.Loader = Loader

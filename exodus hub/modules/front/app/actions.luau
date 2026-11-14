@@ -77,6 +77,7 @@ function Actions.create(context)
   end
   states.antiAFK = function() return antiConnection ~= nil end
   callbacks.antiAFK = function(enabled)
+    if enabled == (antiConnection ~= nil) then return true end
     antiGeneration += 1
     if antiConnection then scope.remove(antiConnection); antiConnection = nil end
     if not enabled then return true end
@@ -204,6 +205,10 @@ function Actions.create(context)
     antiGeneration += 1; spinGeneration += 1
     resetGeneration += 1
   end)
+  scope.add(Utils.observeConfig(function(changes)
+    if changes.AntiAFK ~= nil then callbacks.antiAFK(changes.AntiAFK == true) end
+  end))
+  callbacks.antiAFK(Utils.getConfigValue("AntiAFK") == true)
   return result
 end
 
@@ -212,7 +217,7 @@ Actions.__contract = {
   provides = { "setup", "create" },
   requires = { Utils = "utils", GameInfo = "gameinfo", Dumper = "dumper" },
   requiresMethods = {
-    Utils = { "getConfigValue", "getLocalPlayer", "isActive", "isManualSpamActive", "resetConfig", "recordError" },
+    Utils = { "getConfigValue", "getLocalPlayer", "isActive", "isManualSpamActive", "observeConfig", "resetConfig", "recordError" },
     GameInfo = { "createCrateNetwork", "spinCrate" },
     Dumper = { "start", "isRunning" },
   },

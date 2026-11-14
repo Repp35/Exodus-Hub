@@ -100,12 +100,12 @@ end
 -- character-binding
 function AutoDash.bindCharacter(character)
   AutoDash.detachCharacter(); local newRoot = character and character:FindFirstChild("HumanoidRootPart")
-  if not newRoot or not newRoot:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
+  if not newRoot or not newRoot:IsA("BasePart") or not newRoot.Parent then return false, "HumanoidRootPart indisponível" end
   root, lastTickAt = newRoot, -math.huge
   heartbeat = runService.Heartbeat:Connect(function()
     if not root or not root.Parent then return end
     local time = utils.now()
-    if time - lastTickAt < CONFIG.TICK_INTERVAL then return end
+    if time >= lastTickAt and time - lastTickAt < CONFIG.TICK_INTERVAL then return end
     lastTickAt = time
     if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
     dash.tick(time, true, root.Position, CONFIG.DETECTION_RANGE)

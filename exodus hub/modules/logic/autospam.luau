@@ -326,7 +326,8 @@ local function canActivateReturn(state, snapshot, time)
   then
     return false
   end
-  local toward, distance = state.root.Position - snapshot.position, (state.root.Position - snapshot.position).Magnitude; local value = activationGeometry(state, snapshot, state.pending.partner, time)
+  local toward = state.root.Position - snapshot.position; local distance = toward.Magnitude
+  local value = activationGeometry(state, snapshot, state.pending.partner, time)
   if not value or distance > value.fullRadius then return false end
   if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
   local closingSpeed = snapshot.velocity:Dot(toward) / distance
@@ -382,7 +383,6 @@ local function targetChanged(state, target, time, snapshot, serverTime)
     state.departedAt, state.departedServerAt, state.departedTo = time, serverTime, target
   elseif switchedToMe then
     local matchingReturn = previous == state.departedTo and state.departedAt
-    if state.active and state.departedAt then local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime) end
     if not state.active and matchingReturn then armReturn(state, previous, time, snapshot, serverTime) end
     state.departedAt, state.departedServerAt, state.departedTo = nil, nil, nil
   end
@@ -600,7 +600,11 @@ function AutoSpam.bindCharacter(character)
   connectHaunter(state)
   listen(state, players.PlayerRemoving, function(player)
     if current ~= state then return end
-    if player.UserId == state.watchedId then state.watchedPlayer = nil; watchOpponent(state, nil) end
+    if player.UserId == state.partner or player.UserId == state.watchedId then
+      if clashStats and not clashStats.frozen then clashStatsModule.finish("oponente saiu", now()) end
+      deactivate(state, "opponent_left", now()); state.watchedPlayer = nil
+      watchOpponent(state, nil)
+    end
   end)
   listen(state, runService.Heartbeat, function()
     if current ~= state then return end
@@ -684,6 +688,8 @@ function AutoSpam.onBallSync(data)
   end
   if finite(sequence) then state.sequence = sequence end
   if data.Teleported == true then
+    deactivate(state, "ball_teleported", time)
+    if clashStats and not clashStats.frozen then clashStatsModule.finish("ball_teleported", time) end
     state.timeoutBlocked, state.timeoutBlockedTarget = false, nil; state.target, state.stoppedPartner = nil, nil
     resetExchange(state); state.haunterPartner, state.haunterUntil = nil, nil
     state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; return
@@ -703,14 +709,18 @@ function AutoSpam.onBallSync(data)
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
   local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; local blocked = state.active and checkDeactivation(state, snapshot, time) or false
-  if state.active and target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then targetChanged(state, target, time, snapshot, serverTime) end
-  if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then targetChanged(state, target, time, snapshot, serverTime) end
+  if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then
+    targetChanged(state, target, time, snapshot, serverTime)
+  end
   evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end
 
 -- public-api
 function AutoSpam.isActive() return current ~= nil and current.active end
-function AutoSpam.canSend() return current ~= nil and current.active end
+function AutoSpam.canSend()
+  return current ~= nil and current.active and current.root.Parent ~= nil and current.character.Parent ~= nil
+    and utils ~= nil and utils.isActive() and utils.getConfigValue("AutoSpam") == true
+end
 function AutoSpam.stopSpam()
   if current then deactivate(current, "stop_spam", now()) end
 end

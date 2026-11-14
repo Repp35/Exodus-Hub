@@ -6,7 +6,7 @@ local Utils
 -- configuration
 local CONFIG = {
   schema = { UniversalInvisicam = "boolean" },
-  defaults = { UniversalInvisicam = false },
+  defaults = { UniversalInvisicam = true },
 }
 
 local savedOcclusion, savedOcclusionMode = nil, false
@@ -22,9 +22,11 @@ local function startInvisicam()
   return ok, ok and nil or tostring(errorMessage)
 end
 local function stopInvisicam()
-  local player = Utils.getLocalPlayer()
-  if player and savedOcclusionMode then
-    pcall(function() player.DevCameraOcclusionMode = savedOcclusion end)
+  local player = Utils and Utils.getLocalPlayer()
+  if savedOcclusionMode then
+    if not player then return false, "LocalPlayer indisponível para restaurar a câmera" end
+    local ok, reason = pcall(function() player.DevCameraOcclusionMode = savedOcclusion end)
+    if not ok then return false, tostring(reason) end
   end
   savedOcclusion, savedOcclusionMode = nil, false; return true
 end
@@ -33,15 +35,18 @@ function Invisicam.setEnabled(enabled)
   local value = enabled == true
   if not Utils.setConfig({ UniversalInvisicam = value }) then return false, "configuração rejeitada" end
   if enabledState == value then return true end
-  enabledState = value; local ok, result = pcall(value and startInvisicam or stopInvisicam)
+  enabledState = value; local ok, result, detail = pcall(value and startInvisicam or stopInvisicam)
   if not ok or result == false then
-    enabledState = not value; Utils.setConfig({ UniversalInvisicam = not value })
-    return false, tostring(result)
+    -- Startup can fail after allocating objects or registering callbacks.
+    pcall(stopInvisicam); enabledState = false
+    Utils.setConfig({ UniversalInvisicam = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function Invisicam.teardown()
-  if enabledState then stopInvisicam() end
+  local ok, reason = stopInvisicam()
+  if not ok then return false, reason end
   enabledState = false; Utils = nil
   return true
 end

@@ -29,23 +29,40 @@ function Icons.setup(deps)
 end
 
 -- assets
+local cache = {}
+local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local digits = {}
+for index = 1, #alphabet do
+  digits[string.byte(alphabet, index)] = index - 1
+end
+local function decode(payload)
+  local bytes = {}
+  for index = 1, #payload, 4 do
+    local a, b, c, d = string.byte(payload, index, index + 3)
+    local value = digits[a] * 262144 + digits[b] * 4096 + (digits[c] or 0) * 64 + (digits[d] or 0)
+    bytes[#bytes + 1] = string.char(math.floor(value / 65536) % 256)
+    if c ~= 61 then bytes[#bytes + 1] = string.char(math.floor(value / 256) % 256) end
+    if d ~= 61 then bytes[#bytes + 1] = string.char(value % 256) end
+  end
+  return table.concat(bytes)
+end
 local function resolve(name)
-  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name)); local write = writefile
+  local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name))
+  if cache[name] then return cache[name] end
+  local image = definition.fallback
   local asset = getcustomasset or getsynasset
-  if type(write) ~= "function" or type(asset) ~= "function" then warn("Exodus UI: PNG unavailable (writefile/getcustomasset missing): " .. name); return "" end
-  local http = game:GetService("HttpService")
-  local decoded, bytes = pcall(function() return http:Base64Decode(definition.png) end)
-  if not decoded or type(bytes) ~= "string" then warn("Exodus UI: invalid PNG payload: " .. name); return "" end
-  local folder = "exodus hub"; local path = folder .. "/ui_" .. name .. "_" .. CONFIG.VERSION .. ".png"
-  local ok = pcall(function()
-    if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder(folder) then makefolder(folder) end
-    write(path, bytes)
-  end)
-  if not ok then warn("Exodus UI: failed to stage PNG: " .. name); return "" end
-  local loaded, image = pcall(asset, path)
-  if type(delfile) == "function" then pcall(delfile, path) end
-  if not loaded or type(image) ~= "string" then warn("Exodus UI: failed to register PNG: " .. name); return "" end
-  return image
+  if type(writefile) == "function" and type(asset) == "function" then
+    local ok, result = pcall(function()
+      local folder = "exodus hub"
+      if type(makefolder) == "function" and (type(isfolder) ~= "function" or not isfolder(folder)) then pcall(makefolder, folder) end
+      local path = folder .. "/ui_" .. name .. "_" .. CONFIG.VERSION .. ".png"
+      if type(isfile) ~= "function" or not isfile(path) then writefile(path, decode(definition.png)) end
+      return asset(path)
+    end)
+    if ok and type(result) == "string" and result ~= "" then image = result end
+  end
+  -- Keep the file available: some executors read it only when the image renders.
+  cache[name] = image; return image
 end
 
 -- public-api

@@ -69,6 +69,9 @@ minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+local function finiteVector(value)
+  return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z)
+end
 local EMPTY_OPTIONS = {}
 local function invalidateSnapshotCache()
   snapshotCache, snapshotCacheAt = nil, -math.huge
@@ -172,7 +175,7 @@ end
 local function targetNumber(value)
   if typeof(value) == "Instance" and value:IsA("Player") then return value.UserId end
   if type(value) == "string" then value = tonumber(value) end
-  return finite(value) and value > 0 and value or nil
+  return finite(value) and value > 0 and value % 1 == 0 and value or nil
 end
 function GameInfo.getBallTargetAttribute() return world:GetAttribute("GameBallTarget") end
 local function targetId(data, currentBall)
@@ -308,7 +311,7 @@ function GameInfo.observeTraining(callback)
   trainingObservers[#trainingObservers + 1] = entry; return entry
 end
 local function resetTrainingBall(despawned)
-  trainingRound += 1; trainingState, trainingDespawned, trainingParryAt = nil, despawned, nil
+  trainingRound += 1; trainingState, trainingDespawned, trainingParryAt, trainingServerTime = nil, despawned, nil, nil
   invalidateSnapshotCache()
 end
 local function bindTrainingSync()
@@ -335,7 +338,7 @@ local function bindTrainingSync()
   if training and not trainingConnection then
     trainingRemote = training
     trainingConnection = training.OnClientEvent:Connect(function(position, velocity, serverTime, goal, target, speed)
-      if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then return end
+      if not finiteVector(position) or not finiteVector(velocity) or not finite(serverTime) then return end
       local receivedAt = os.clock()
       if trainingDespawned or (trainingServerTime and serverTime <= trainingServerTime) then return end
       trainingServerTime = serverTime; trainingSequence = (trainingSequence + 1) % 65536
@@ -447,23 +450,24 @@ function GameInfo.getAveragePing()
   end
   return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
 end
+local MATCH_STATUSES = {
+  [-1] = "None",
+  [0] = "WaitingForPlayers",
+  [1] = "Intermission",
+  [2] = "VoteGamemode",
+  [3] = "VoteMap",
+  [4] = "VoteLives",
+  [5] = "Starting",
+  [6] = "InGame",
+}
+
+local GAME_MODES = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
+
 function GameInfo.getGameContext()
   local player = players and players.LocalPlayer; local placeId = game.PlaceId
   local matchStatus = world and world:GetAttribute("MatchStatus"); local modeId = world and world:GetAttribute("CurGamemode")
   local lives = player and player:GetAttribute("Lives"); local playing = player and player:GetAttribute("Playing")
   local afk = player and player:GetAttribute("AFK")
-  local statuses = {
-    [-1] = "None",
-    [0] = "WaitingForPlayers",
-    [1] = "Intermission",
-    [2] = "VoteGamemode",
-    [3] = "VoteMap",
-    [4] = "VoteLives",
-    [5] = "Starting",
-    [6] = "InGame",
-  }
-
-  local modes = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
   local roundActive
   if finite(matchStatus) then roundActive = matchStatus == 6 end
   local inMatch
@@ -482,9 +486,9 @@ function GameInfo.getGameContext()
     lives = lives,
     afkEnabled = afk == true,
     matchStatus = matchStatus,
-    matchStatusName = statuses[matchStatus],
+    matchStatusName = MATCH_STATUSES[matchStatus],
     modeId = modeId,
-    modeName = modes[modeId],
+    modeName = GAME_MODES[modeId],
   }
 end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
@@ -590,7 +594,8 @@ function GameInfo.isPlayerDashing(player)
   local time = os.clock()
   if cached and cached.character == character and time >= cached.at and time - cached.at < CONFIG.DASH_STATE_CACHE_INTERVAL then return cached.value end
   local function finish(value)
-    dashStateCache[player] = { character = character, at = time, value = value }; return value
+    cached = cached or {}; cached.character, cached.at, cached.value = character, time, value
+    dashStateCache[player] = cached; return value
   end
   if not character or not character.Parent then return finish(false) end
   if character:GetAttribute("IsDashing") == true then return finish(true) end
@@ -682,7 +687,9 @@ function GameInfo.decodeBallPacket(value)
   else
     decoded = decodeBallPacketFallback(value)
   end
+  if type(decoded) ~= "table" then decoded = decodeBallPacketFallback(value) end
   if type(decoded) ~= "table" then return nil end
+  if not finiteVector(decoded.position) or not finiteVector(decoded.direction) or not finite(decoded.speed) or decoded.speed < 0 then return nil end
   return {
     Sequence = decoded.seq,
     ServerTime = decoded.serverTime,
@@ -705,8 +712,8 @@ function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
 -- snapshots
 local function snapshot(time)
-  time = type(time) == "number" and time or utils.now()
-  if snapshotCache and time >= snapshotCacheAt and time - snapshotCacheAt < CONFIG.SNAPSHOT_CACHE_INTERVAL then return snapshotCache end
+  time = finite(time) and time or utils.now()
+  if snapshotCache and snapshotCache.ball and snapshotCache.ball.Parent and time >= snapshotCacheAt and time - snapshotCacheAt < CONFIG.SNAPSHOT_CACHE_INTERVAL then return snapshotCache end
   if inTrainingArea() then
     local sample = trainingState; local model = child(child(child(world, "Training"), "TrainingClient"), "TrainingBall")
     if not sample or time < sample.receivedAt or time - sample.receivedAt > 0.6 or not model or not model:IsA("BasePart") or not model.Parent then return nil end
@@ -720,7 +727,7 @@ local function snapshot(time)
       speed = sample.velocity.Magnitude,
       syncSpeed = sample.speed,
       targetId = target,
-      targeted = target == players.LocalPlayer.UserId,
+      targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
       targetUncertain = false,
       teleported = false,
       locked = false,
@@ -797,11 +804,12 @@ function GameInfo.isSnapshotValid(value)
   return type(value) == "table"
     and typeof(value.ball) == "Instance"
     and value.ball:IsA("BasePart")
-    and typeof(value.position) == "Vector3"
-    and typeof(value.velocity) == "Vector3"
+    and value.ball.Parent ~= nil
+    and finiteVector(value.position)
+    and finiteVector(value.velocity)
     and finite(value.speed)
     and value.speed >= 0
-    and type(value.targetId) == "number"
+    and finite(value.targetId)
     and type(value.targeted) == "boolean"
 end
 function GameInfo.applySync(value)
@@ -956,7 +964,10 @@ function GameInfo.getDarkSealEventId() return CONFIG.GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
   local root = ts()
   if not root then error("API externa ausente: Shared ou TS", 2) end
-  local network = root:WaitForChild("Network"):WaitForChild("Network"); return require(network).Network.new()
+  local folder = root:FindFirstChild("Network") or root:WaitForChild("Network", 10)
+  local network = folder and (folder:FindFirstChild("Network") or folder:WaitForChild("Network", 10))
+  if not network or not network:IsA("ModuleScript") then error("API externa ausente: Network.Network", 2) end
+  return require(network).Network.new()
 end
 function GameInfo.spinCrate(network, crate, guard)
   local owned = network:CSendFunction(CONFIG.GAME_IDS.CRATE_CHECK, crate)
@@ -968,7 +979,7 @@ function GameInfo.getClashContext()
   local player = players.LocalPlayer
   if not player then return nil end
   local lastAt, by, target = world:GetAttribute("LastParryAt"), world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
-  if type(lastAt) ~= "number" or type(by) ~= "number" or type(target) ~= "number" then return nil end
+  if not finite(lastAt) or not finite(by) or not finite(target) then return nil end
   local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
   if not partnerId or partnerId <= 0 or partnerId == player.UserId then return nil end
   local age, currentTarget = world:GetServerTimeNow() - lastAt, GameInfo.getBallTargetAttribute()

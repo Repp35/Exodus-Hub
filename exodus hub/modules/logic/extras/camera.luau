@@ -5,13 +5,19 @@ local Camera = {}
 local utils
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
-local sensitivity = 1
+local sensitivity = 1.5
 
 -- configuration
 local CONFIG = {
-  DEFAULT_SENSITIVITY = 1,
+  DEFAULT_SENSITIVITY = 1.5,
   MODULE_SEARCH_RETRY = 0.5,
 }
+
+local function normalizeSensitivity(value)
+  value = tonumber(value)
+  if not value or value ~= value or value < 0 or value == math.huge then return CONFIG.DEFAULT_SENSITIVITY end
+  return value
+end
 
 -- camera-hook
 local function stopCamera()
@@ -33,21 +39,22 @@ local function startCamera()
       local module = scripts and scripts:FindFirstChild("PlayerModule"); local camera = module and module:FindFirstChild("CameraModule")
       local input = camera and camera:FindFirstChild("CameraInput")
       if input and input:IsA("ModuleScript") then
-        local api = require(input)
+        local loaded, api = pcall(require, input)
         if token ~= cameraEpoch or not utils then return end
-        if type(api) ~= "table" or type(api.getRotation) ~= "function" then error("CameraInput.getRotation indisponível") end
-        cameraInput, cameraOriginal = api, api.getRotation; local original, boundUtils = cameraOriginal, utils
-        local wrapped
-        wrapped = function(...)
-          local rotation = original(...)
-          if not boundUtils.isActive() then
-            if api.getRotation == wrapped then api.getRotation = original end
-            return rotation
+        if loaded and type(api) == "table" and type(api.getRotation) == "function" then
+          cameraInput, cameraOriginal = api, api.getRotation; local original, boundUtils = cameraOriginal, utils
+          local wrapped
+          wrapped = function(...)
+            local rotation = original(...)
+            if not boundUtils.isActive() then
+              if api.getRotation == wrapped then api.getRotation = original end
+              return rotation
+            end
+            return rotation * sensitivity
           end
-          return rotation * sensitivity
+          cameraWrapped = wrapped; cameraInput.getRotation = cameraWrapped
+          return
         end
-        cameraWrapped = wrapped; cameraInput.getRotation = cameraWrapped
-        return
       end
       task.wait(CONFIG.MODULE_SEARCH_RETRY)
     end
@@ -58,9 +65,9 @@ end
 function Camera.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Camera.teardown(); utils = deps.Utils
-  sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or CONFIG.DEFAULT_SENSITIVITY; startCamera()
+  sensitivity = normalizeSensitivity(utils.getConfigValue("CameraSensitivity")); startCamera()
   configConnection = utils.observeConfig(function(changes)
-    if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or CONFIG.DEFAULT_SENSITIVITY end
+    if changes.CameraSensitivity ~= nil then sensitivity = normalizeSensitivity(changes.CameraSensitivity) end
   end)
   utils.trackGlobal(configConnection); return true
 end

@@ -4,7 +4,7 @@
 local Controller = {}
 
 -- configuration
-local CONFIG = {}
+local CONFIG = { UPDATE_INTERVAL = 1 / 20 }
 
 -- setup
 function Controller.setup() return true end
@@ -148,7 +148,7 @@ function Controller.create(context)
       setDistanceVisible(false); return
     end
     if gateEnabled and time >= nextGateUpdate then
-      nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
+      nextGateUpdate = time + 0.1; local status = getTelemetry(time)
       local lines = { "AutoSpam: " .. (status and status.active == true and "ACTIVE" or "WAITING") }
       if status and validGate(status.lastGate) then lines[#lines + 1] = "State: " .. status.lastGate end
       if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
@@ -211,7 +211,13 @@ function Controller.create(context)
     end
     setTextIfChanged(distanceLabel, text)
   end
-  trackConn(RunService.Heartbeat:Connect(updateInformation)); return {}
+  local elapsed = 0
+  trackConn(RunService.Heartbeat:Connect(function(dt)
+    if context.state.closing then return end
+    elapsed += dt
+    if elapsed < CONFIG.UPDATE_INTERVAL then return end
+    elapsed %= CONFIG.UPDATE_INTERVAL; updateInformation()
+  end)); return {}
 end
 
 -- contract

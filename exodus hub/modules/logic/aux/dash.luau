@@ -24,6 +24,7 @@ local function rootOf(player, record)
   local cached = record and record.root
   if cached and cached.Parent == character then return cached end
   local root = character:FindFirstChild("HumanoidRootPart")
+  if not root or not root:IsA("BasePart") then return nil end
   if record then record.root = root end
   return root
 end
@@ -125,7 +126,8 @@ end
 function Dash.tick(time, excludeLocal, center, radius)
   if not players then return end
   time = type(time) == "number" and time or now()
-  if time - lastTick < CONFIG.TICK_INTERVAL then return end
+  if time ~= time or math.abs(time) == math.huge then return end
+  if time >= lastTick and time - lastTick < CONFIG.TICK_INTERVAL then return end
   lastTick = time
   if type(center) == "number" then
     local player = players:GetPlayerByUserId(center); local record = player and records[player]

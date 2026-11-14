@@ -14,6 +14,7 @@ local samples, sampleIndex = {}, 0
 local CONFIG = {
   POLL_INTERVAL = 0.01,
   ERROR_RETRY_INTERVAL = 0.03,
+  REQUESTS_PER_YIELD = 32,
 }
 
 -- helpers
@@ -42,9 +43,13 @@ end
 -- dispatch
 local function request(boundUtils, boundRemote, token, guard, minimum)
   if inFlight then return end
-  inFlight = true; status.lastRequestAt = os.clock()
-  local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); nextAllowedAt = os.clock() + minimum
-  inFlight = false; sampleIndex = sampleIndex % 256 + 1
+  local requestToken = {}; inFlight = requestToken
+  local requestedAt = os.clock()
+  local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
+  if inFlight == requestToken then inFlight = false end
+  if token ~= generation or utils ~= boundUtils then return end
+  status.lastRequestAt = requestedAt; nextAllowedAt = os.clock() + minimum
+  sampleIndex = sampleIndex % 256 + 1
   local sample = samples[sampleIndex]
   if not sample then sample = {}; samples[sampleIndex] = sample end
   sample.at, sample.accepted = status.lastRequestAt, ok and result == true
@@ -87,12 +92,14 @@ local function sync()
             for _ = 1, count do
               if not allowed() then break end
               request(boundUtils, boundRemote, token, allowed, 0)
+              if _ % CONFIG.REQUESTS_PER_YIELD == 0 then task.wait() end
             end
           else
             credit = 0
           end
         else
           local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval()
+          if type(minimum) ~= "number" or minimum ~= minimum or minimum < 0 or minimum == math.huge then minimum = CONFIG.POLL_INTERVAL end
           local gameDelay = boundGameInfo.getAutoSpamDelay()
           if inFlight or not allowed() or gameDelay == nil then
             task.wait(CONFIG.POLL_INTERVAL)
@@ -150,7 +157,8 @@ function Spam.setup(deps)
   sync(); return true
 end
 function Spam.resetState()
-  cancel("reset"); status.lastError, status.lastErrorAt = nil, -math.huge
+  cancel("reset"); nextAllowedAt = 0
+  status.lastError, status.lastErrorAt = nil, -math.huge
   table.clear(samples); sampleIndex = 0
   local token = generation
   task.defer(function()
@@ -158,7 +166,8 @@ function Spam.resetState()
   end)
 end
 function Spam.teardown()
-  cancel("teardown"); table.clear(samples)
+  cancel("teardown"); nextAllowedAt = 0
+  table.clear(samples)
   sampleIndex = 0
   if utils then
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end

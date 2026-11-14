@@ -29,14 +29,15 @@ end
 local jumpButton
 local lastJump = 0
 local function jumpInAir()
-  if not states.InfiniteJump then return end
+  if not states.InfiniteJump or UIS:GetFocusedTextBox() then return end
   local player = Utils.getLocalPlayer(); local character = player and player.Character
   local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not humanoid or humanoid.Health <= 0 or humanoid.Sit or not root or humanoid.FloorMaterial ~= Enum.Material.Air then return end
   local now = os.clock()
   if now - lastJump < 0.08 then return end
-  lastJump = now; local power = humanoid.UseJumpPower and humanoid.JumpPower or math.sqrt(math.max(0, 2 * Workspace.Gravity * humanoid.JumpHeight))
-  local velocity = root.AssemblyLinearVelocity; root.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z)
+  local power = humanoid.UseJumpPower and humanoid.JumpPower or math.sqrt(math.max(0, 2 * Workspace.Gravity * humanoid.JumpHeight))
+  if power ~= power or power <= 0 or power == math.huge or root.Anchored then return end
+  lastJump = now; local velocity = root.AssemblyLinearVelocity; root.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z)
   humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 end
 local function attachJumpButton()
@@ -71,15 +72,17 @@ function InfiniteJump.setEnabled(enabled)
   local value = enabled == true
   if not Utils.setConfig({ UniversalInfiniteJump = value }) then return false, "configuração rejeitada" end
   if states.InfiniteJump == value then return true end
-  states.InfiniteJump = value; local ok, result = pcall(value and startInfiniteJump or stopInfiniteJump)
+  states.InfiniteJump = value; local ok, result, detail = pcall(value and startInfiniteJump or stopInfiniteJump)
   if not ok or result == false then
-    states.InfiniteJump = not value; Utils.setConfig({ UniversalInfiniteJump = not value })
-    return false, tostring(result)
+    -- Startup can fail after allocating objects or registering callbacks.
+    pcall(stopInfiniteJump); states.InfiniteJump = false
+    Utils.setConfig({ UniversalInfiniteJump = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function InfiniteJump.teardown()
-  if states.InfiniteJump then stopInfiniteJump() end
+  stopInfiniteJump()
   states.InfiniteJump = false; Utils = nil
   return true
 end

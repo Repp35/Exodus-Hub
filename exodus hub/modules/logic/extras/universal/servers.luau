@@ -23,7 +23,10 @@ local function begin(callback)
   return generation
 end
 local function report(message)
-  if type(reporter) == "function" then reporter(message) end
+  if type(reporter) == "function" then
+    local ok, reason = pcall(reporter, message)
+    if not ok and utils then utils.recordError("Servers.callback", reason) end
+  end
 end
 local function teleport(serverId, token)
   if token ~= generation or not utils or not utils.isActive() then return false, "Operação cancelada" end
@@ -31,7 +34,12 @@ local function teleport(serverId, token)
   if not player then busy = false; return false, "Jogador indisponível" end
   busyUntil = os.clock() + CONFIG.TELEPORT_TIMEOUT
   local ok, err = pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, serverId, player) end)
+  if token ~= generation or not utils then return false, "Operação cancelada" end
   if not ok then busy = false; return false, tostring(err) end
+  task.delay(CONFIG.TELEPORT_TIMEOUT, function()
+    if token ~= generation or not busy or not utils then return end
+    busy = false; report("O teleporte não foi concluído; você pode tentar novamente")
+  end)
   return true
 end
 
@@ -46,7 +54,7 @@ function Servers.hop(callback)
   local token, err = begin(callback)
   if not token then return false, err end
   local http = game:GetService("HttpService")
-  local best, cursor
+  local best, cursor; local seenCursors = {}
   report("Buscando servidores com ping informado de até " .. CONFIG.MAX_PING_MS .. " ms...")
   for page = 1, CONFIG.MAX_PAGES do
     if token ~= generation or not utils or not utils.isActive() then return false, "Operação cancelada" end
@@ -56,6 +64,7 @@ function Servers.hop(callback)
     )
     if cursor then url = url .. "&cursor=" .. http:UrlEncode(cursor) end
     local ok, result = pcall(function() return http:JSONDecode(game:HttpGet(url)) end)
+    if token ~= generation or not utils or not utils.isActive() then return false, "Operação cancelada" end
     if not ok or type(result) ~= "table" or type(result.data) ~= "table" then busy = false; return false, "Falha ao consultar servidores: " .. tostring(result) end
     for _, server in ipairs(result.data) do
       if
@@ -65,16 +74,19 @@ function Servers.hop(callback)
         and server.id ~= game.JobId
         and finite(server.playing)
         and finite(server.maxPlayers)
+        and server.playing >= 0
+        and server.maxPlayers > 0
         and server.playing < server.maxPlayers
         and finite(server.ping)
         and server.ping > 0
         and server.ping <= CONFIG.MAX_PING_MS
       then
-        if not best or server.ping < best.ping then best = server end
+        if not best or server.ping < best.ping or (server.ping == best.ping and server.playing < best.playing) then best = server end
       end
     end
     cursor = result.nextPageCursor
-    if type(cursor) ~= "string" or cursor == "" then break end
+    if type(cursor) ~= "string" or cursor == "" or seenCursors[cursor] then break end
+    seenCursors[cursor] = true
     if page < CONFIG.MAX_PAGES then task.wait(CONFIG.PAGE_DELAY) end
   end
   if token ~= generation or not utils or not utils.isActive() then return false, "Operação cancelada" end

@@ -34,7 +34,7 @@ Não há promessa de ganho de FPS medido. As melhorias de desempenho são estrut
 | `app/notification-policy.luau` | Regras de notificações por plataforma e origem |
 | `ui.luau` | Composição e integração com o loader |
 
-O loader registra os módulos da biblioteca e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. As rotinas de combate e movimento não foram modificadas.
+O loader registra os módulos da biblioteca e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. A revisão posterior dos módulos de combate, movimento e utilitários está em [Revisão dos módulos](rework-modulos.md).
 
 ## Criar uma biblioteca
 
@@ -183,7 +183,7 @@ Na revisão ampliada, `cooldown_context_regression.py` e `fierce_grace_regressio
 
 ## Ícones sem glifos ou emojis
 
-Os ícones usam imagens nativas do Roblox, sem gravação local. A navegação reutiliza o chevron com rotação.
+Os ícones usam os PNGs embutidos, decodificados em Luau sem depender de `HttpService:Base64Decode`. Cada imagem é resolvida uma vez por sessão; o arquivo versionado fica disponível para executores que o leem durante a renderização. Se as APIs de arquivo ou asset não estiverem disponíveis, usa-se a imagem nativa do Roblox. A navegação reutiliza o chevron com rotação.
 
 ## Atalhos e notificações
 
@@ -192,3 +192,13 @@ Os atalhos declarados nas definições são registrados no schema automaticament
 Notificações operacionais críticas e de atualização permanecem visíveis. Notificações de sistema comuns seguem a opção da plataforma; no PC, a opção filha permite avisos para funções alternadas por atalho. Interações normais, Manual Spam e Up Dash não geram avisos repetitivos.
 
 No dropdown, pressionar apenas realça o contorno. A seleção ocorre ao ativar a opção; ela permanece visível por um breve intervalo antes do fade.
+
+## Correções de estabilidade e eficiência
+
+A resolução de ícones, a visibilidade e o cancelamento de tweens continuam centralizados nos módulos existentes. O descarte de um recurso com erro não interrompe a limpeza dos demais. Não foram acrescentados novos módulos.
+
+O arrasto respeita escala, ponto de ancoragem e perda de foco. A janela acompanha substituições de câmera e mudanças de viewport; posições fora da tela são corrigidas ao abrir. As coordenadas X/Y do painel são gravadas juntas, e o mini painel salva sua posição ao terminar o arrasto.
+
+O dropdown só recalcula seu layout quando a geometria muda e pode abrir acima do controle quando faltar espaço abaixo. A telemetria visual é limitada a 20 atualizações por segundo, compartilhando snapshots entre os indicadores; contornos ocultos deixam de receber atualizações. Partículas não são criadas durante o fechamento e não iniciam mais dois tweens disputando a transparência.
+
+Estas alterações receberam revisão de código. Nenhum teste ou benchmark foi executado nesta revisão, conforme solicitado; renderização e comportamento no Roblox continuam sem validação em execução.

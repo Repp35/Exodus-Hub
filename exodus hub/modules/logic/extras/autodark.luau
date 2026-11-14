@@ -4,6 +4,7 @@
 local AutoDark = {}
 local utils, remote, gameInfo, world
 local connection
+local epoch = 0
 
 -- configuration
 local CONFIG = {
@@ -12,6 +13,7 @@ local CONFIG = {
 
 -- connections
 local function disconnect()
+  epoch += 1
   if not connection then return end
   if utils then utils.untrackGlobal(connection) end
   connection:Disconnect(); connection = nil
@@ -23,9 +25,14 @@ function AutoDark.sync()
   if not utils or not remote or not utils.getConfigValue(CONFIG.ENABLED_KEY) then return true end
   local runService = utils.getRunService()
   if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
+  local owner = epoch; local lastErrorAt = -math.huge
   connection = runService.Heartbeat:Connect(function()
+    if owner ~= epoch then return end
     local camera = world.CurrentCamera
-    if camera then remote.fireDark(gameInfo.getDarkSealEventId(), camera.CFrame) end
+    if not camera then return end
+    local ok, reason = pcall(remote.fireDark, gameInfo.getDarkSealEventId(), camera.CFrame)
+    if owner ~= epoch then return end
+    if not ok and os.clock() - lastErrorAt >= 1 then lastErrorAt = os.clock(); warn("[AutoDark] " .. tostring(reason)) end
   end)
   utils.trackGlobal(connection); return true
 end
