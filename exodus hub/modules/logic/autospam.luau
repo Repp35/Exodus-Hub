@@ -234,7 +234,10 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
   local toward = state.root.Position - snapshot.position
   if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
-  if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
+  if not bypassExchange then
+    local blockedBy = distanceGate(state, snapshot, partner)
+    if blockedBy ~= nil and not (reason == "return_target" and blockedBy == "ball_distance") then return false end
+  end
   if partner and clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; state.dashSwitchPartner, state.dashSwitchAt = nil, nil
@@ -328,10 +331,9 @@ local function canActivateReturn(state, snapshot, time)
   end
   local toward = state.root.Position - snapshot.position; local distance = toward.Magnitude
   local value = activationGeometry(state, snapshot, state.pending.partner, time)
-  if not value or distance > value.fullRadius then return false end
-  if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  if not value or distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
   local closingSpeed = snapshot.velocity:Dot(toward) / distance
-  return finite(closingSpeed) and closingSpeed > 0 and math.max(0, distance - value.noWindowParryRadius) / closingSpeed <= value.effectiveWindow
+  return finite(closingSpeed) and closingSpeed > 0 and distance <= value.fullRadius + closingSpeed * value.effectiveWindow * 0.8
 end
 local function armReturn(state, previous, time, snapshot, serverTime)
   if
