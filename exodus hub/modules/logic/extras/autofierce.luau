@@ -6,7 +6,7 @@ local utils, gameInfo, remote, autoParry, cooldownInfo
 local connections = {}
 local lastFierceEpisode, localUserId
 local pendingEpisode
-local timerEpisode, timerStartedAt, timerReadyAt
+local timerEpisode, timerStartedAt, timerReadyAt, clashEpisode
 local hookedAbility, hookedRaw, hookedWrapper
 local epoch = 0
 local errorAt = -math.huge
@@ -15,6 +15,7 @@ local errorAt = -math.huge
 local CONFIG = {
   SYNC_MAX_AGE = 0.25,
   WINDOW_FACTOR = 0.3,
+  SERVER_FRAME_MARGIN = 1 / 60,
 }
 
 -- helpers
@@ -70,12 +71,19 @@ local function sustainedCooldown(cooldown, now)
   local startedAt = cooldown.blockingSince
   if not finite(startedAt) or startedAt <= 0 or startedAt > now then return false end
   if not finite(cooldown.episode) or cooldown.episode <= 0 then return false end
+  local physics = gameInfo.getDefensePhysics()
+  if physics and physics.inClash == true then clashEpisode = cooldown.episode end
+  if clashEpisode == cooldown.episode then return false end
+  local ping = gameInfo.getAveragePing()
+  if not finite(ping) or ping < 0 then return false end
+  local responseMargin = math.min(ping * 2, 1) + CONFIG.SERVER_FRAME_MARGIN
   if timerEpisode ~= cooldown.episode or timerStartedAt ~= startedAt then
-    local window = gameInfo.getDeflectWindow(); local ping = gameInfo.getAveragePing()
-    if not finite(window) or window <= 0 or not finite(ping) or ping < 0 then return false end
-    timerEpisode, timerStartedAt, timerReadyAt = cooldown.episode, startedAt, startedAt + window + ping
+    local window = gameInfo.getDeflectWindow()
+    if not finite(window) or window <= 0 then return false end
+    timerEpisode, timerStartedAt, timerReadyAt = cooldown.episode, startedAt, startedAt + window + responseMargin
   end
-  return now > timerReadyAt
+  if finite(cooldown.missDeadline) then timerReadyAt = math.max(timerReadyAt, cooldown.missDeadline + responseMargin) end
+  return cooldown.predictedReset ~= true and now > timerReadyAt
 end
 local function fierceReady()
   local ability = gameInfo.getFierceDeflectAbility(); return type(ability) == "table" and type(ability.ActivateAndBlock) == "function" and finite(ability.Cooldown) and ability.Cooldown <= 0
@@ -135,7 +143,7 @@ function AutoFierce.setup(deps)
 end
 function AutoFierce.teardown()
   epoch += 1; errorAt = -math.huge
-  unhookManualFierce(); timerEpisode, timerStartedAt, timerReadyAt = nil, nil, nil
+  unhookManualFierce(); timerEpisode, timerStartedAt, timerReadyAt, clashEpisode = nil, nil, nil, nil
   for _, connection in ipairs(connections) do
     if utils then utils.untrackGlobal(connection) end
     connection:Disconnect()
@@ -170,6 +178,7 @@ AutoFierce.__contract = {
       "isSnapshotValid",
       "getBallFrozen",
       "getDeflectWindow",
+      "getDefensePhysics",
       "getAveragePing",
     },
     Cooldown = { "getDeflectCooldownState" },

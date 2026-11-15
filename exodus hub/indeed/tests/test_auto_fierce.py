@@ -20,11 +20,12 @@ local ability={Cooldown=0,ActivateAndBlock=function() manual=manual+1 end}
 local original=ability.ActivateAndBlock
 local approaching,distance=true,10
 local window,ping=0.2,0.05
+local inClash=false
 local beforeGuard,failSend
 local u={getLocalPlayer=function() return player end,isActive=function() return active end,
  getConfigValue=function() return enabled end,getRunService=function() return {Heartbeat={Connect=function(_,fn) heartbeat=fn; return {Disconnect=function() end} end}} end,
  trackGlobal=function() end,untrackGlobal=function() end}
-local g={getDeflectWindow=function() return window end,getAveragePing=function() return ping end,areAbilitiesEnabled=function() return abilities end,getFierceDeflectAbility=function() return ability end,
+local g={getDefensePhysics=function() return {inClash=inClash} end,getDeflectWindow=function() return window end,getAveragePing=function() return ping end,areAbilitiesEnabled=function() return abilities end,getFierceDeflectAbility=function() return ability end,
  getSnapshotAt=function() if fresh then snap.syncAt=tm end; return snap end,
  isSnapshotValid=function() return valid end,getBallFrozen=function() return frozen end}
 local a={getTiming=function() return {approaching=approaching,distance=distance,triggerDistance=20} end,beginFierce=function() begun=begun+1; return {} end,cancelFierce=function(token) if token then cancelled=cancelled+1 end end}
@@ -46,8 +47,8 @@ local function step(time) tm=time; heartbeat() end
 
     def test_waits_for_continuous_threshold_without_miss_or_press_metadata(self):
         self.check('''
-step(10); step(10.249); assert(sent==0)
-step(10.251); assert(sent==1,'sustained cooldown did not fire')
+step(10); step(10.316); assert(sent==0)
+step(10.318); assert(sent==1,'sustained cooldown did not fire')
 step(11); assert(sent==1,'same cooldown episode fired twice')
 ''')
 
@@ -55,18 +56,64 @@ step(11); assert(sent==1,'same cooldown episode fired twice')
         self.check('''
 step(10.1); cd.blocking=false; step(10.2); assert(sent==0)
 cd.blocking=true; cd.blockingSince=10.2; cd.episode=2
-step(10.449); assert(sent==0); step(10.451); assert(sent==1)
-cd.blocking=false; step(10.46)
-cd.blocking=true; cd.blockingSince=10.5; cd.episode=3
-step(10.751); assert(sent==2)
+step(10.516); assert(sent==0); step(10.518); assert(sent==1)
+cd.blocking=false; step(10.52)
+cd.blocking=true; cd.blockingSince=10.6; cd.episode=3
+step(10.918); assert(sent==2)
 ''')
 
-    def test_duration_alone_detects_miss_despite_parry_and_prediction_metadata(self):
+    def test_scheduled_parry_extends_deadline_and_waits_for_server_response(self):
         self.check('''
-cd.phase='reversible'; cd.missDeadline=11; cd.predictedReset=true
+cd.missDeadline=10.8; step(10)
+step(10.5); assert(sent==0,'Fierce spent while scheduled parry could still resolve')
+cd.missDeadline=nil
+step(10.9); assert(sent==0,'lost pending deadline after client cleared it')
+step(10.918); assert(sent==1,'did not fire after pending parry and response margin')
+''')
+
+    def test_later_scheduled_parry_extends_existing_timer(self):
+        self.check('''
+cd.missDeadline=10.4; step(10)
+cd.missDeadline=10.9; step(10.3)
+cd.missDeadline=nil; step(10.8); assert(sent==0)
+step(11.018); assert(sent==1)
+''')
+
+    def test_predicted_reset_blocks_until_confirmation_period_ends(self):
+        self.check('''
+cd.predictedReset=true; step(10.5); assert(sent==0)
+cd.predictedReset=false; step(10.6); assert(sent==1)
+''')
+
+    def test_parry_reset_during_pending_period_prevents_fierce(self):
+        self.check('''
+cd.missDeadline=10.8; step(10)
+cd.blocking=false; cd.lastParriedAt=10.75; step(10.75)
+cd.missDeadline=nil; step(11); assert(sent==0)
+''')
+
+    def test_clash_discards_current_cooldown_even_after_clash_ends(self):
+        self.check('''
+inClash=true; step(10); step(10.6); assert(sent==0,'Fierce spent in clash')
+inClash=false; step(10.7); assert(sent==0,'clash cooldown spent Fierce on exit')
+cd.blocking=false; step(10.8)
+cd.blocking=true; cd.blockingSince=11; cd.episode=2
+step(11); step(11.318); assert(sent==1,'fresh cooldown outside clash was blocked')
+''')
+
+    def test_teardown_clears_clash_episode_for_reexecution(self):
+        self.check('''
+inClash=true; step(10); mod.teardown()
+inClash=false
+assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=c}))
+step(10.5); assert(sent==1,'reexecution retained discarded clash episode')
+''')
+
+    def test_duration_does_not_require_click_or_miss_metadata(self):
+        self.check('''
 cd.lastParriedAt=10.1; cd.pressAt=nil; cd.miss=false
-step(10.249); assert(sent==0)
-step(10.251); assert(sent==1,'parry metadata vetoed sustained cooldown')
+step(10.316); assert(sent==0)
+step(10.318); assert(sent==1)
 ''')
 
     def test_window_and_ping_are_captured_when_cooldown_appears(self):
@@ -74,8 +121,8 @@ step(10.251); assert(sent==1,'parry metadata vetoed sustained cooldown')
 window=0.85; ping=0.1; step(10)
 window=0.2; ping=0
 step(10.4); assert(sent==0,'speed change shortened running timer')
-step(10.949); assert(sent==0)
-step(10.951); assert(sent==1,'slow window plus ping did not expire')
+step(11.066); assert(sent==0)
+step(11.068); assert(sent==1,'slow window plus ping did not expire')
 ''')
 
     def test_invalid_window_or_ping_does_not_activate(self):
@@ -101,7 +148,7 @@ distance=10; step(10.4); assert(sent==1)
                 self.check(invalid + '; step(10.5); assert(sent==0)')
 
     def test_checks_again_immediately_before_send(self):
-        for mutation in ("cd.blocking=false", "cd.episode=2", "snap.targetId=99", "snap.ball={}", "ability.Cooldown=1", "approaching=false", "distance=30", "mod.teardown()"):
+        for mutation in ("cd.blocking=false", "cd.episode=2", "cd.missDeadline=tm+0.5", "cd.predictedReset=true", "inClash=true", "snap.targetId=99", "snap.ball={}", "ability.Cooldown=1", "approaching=false", "distance=30", "mod.teardown()"):
             with self.subTest(mutation=mutation):
                 self.check('beforeGuard=function() ' + mutation + ' end; step(10.5); assert(sent==0)')
 
@@ -115,6 +162,26 @@ step(10.5); assert(sent==1)
         self.check('''
 failSend=true; step(10.5); assert(sent==0 and cancelled==1)
 failSend=false; step(10.6); assert(sent==1)
+''')
+
+    def test_real_cooldown_pending_deadline_survives_client_expiry(self):
+        cooldown_source = (Path(__file__).resolve().parents[2] / 'modules/logic/aux/cooldown.luau').read_text()
+        cooldown_source = re.sub(r'([A-Za-z_][\w.]*) \+= ([^;\n]+?)(?=;|\n| end)', lambda m: f'{m[1]} = {m[1]} + ({m[2]})', cooldown_source)
+        run_lua(PRELUDE + '''
+local deflect={Cooldown=1.45,PendingPressAt=10,PendingPredictUntil=10.8}
+g.getDeflectAbility=function() return deflect end
+u.getReplicatedStorage=function() return nil end
+u.recordError=function(_,message) error(message) end
+local realCooldown=(function()\n''' + cooldown_source + '''\nend)()
+assert(realCooldown.setup({Utils=u,GameInfo=g}))
+local mod=(function()\n''' + SOURCE + '''\nend)()
+assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=realCooldown}))
+heartbeat(); tm=10.5; heartbeat(); assert(sent==0)
+deflect.PendingPredictUntil=nil; deflect.Cooldown=0.65
+ tm=10.8; heartbeat(); assert(sent==0,'client expiry prematurely spent Fierce')
+tm=10.916; heartbeat(); assert(sent==0,'missing server response margin')
+tm=10.918; heartbeat(); assert(sent==1)
+mod.teardown(); realCooldown.teardown()
 ''')
 
     def test_manual_activation_and_hook_cleanup_remain(self):
