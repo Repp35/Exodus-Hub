@@ -5,7 +5,8 @@ local AutoFierce = {}
 local utils, gameInfo, remote, autoParry, cooldownInfo
 local connections = {}
 local lastFierceEpisode, localUserId
-local missPressAt, missReadyAt
+local pendingEpisode
+local timerEpisode, timerStartedAt, timerReadyAt
 local hookedAbility, hookedRaw, hookedWrapper
 local epoch = 0
 local errorAt = -math.huge
@@ -60,55 +61,49 @@ local function validTargetSnapshot(now)
   return snapshot
 end
 local function incomingInWindow(snapshot, now)
-  local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR); return timing and timing.approaching and timing.distance <= timing.triggerDistance
+  local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR)
+  return timing and timing.approaching and finite(timing.distance) and finite(timing.triggerDistance) and timing.distance <= timing.triggerDistance
 end
-local function missedDeflect(cooldown, snapshot, now)
-  if not cooldown or cooldown.blocking ~= true or cooldown.miss ~= true or cooldown.predictedReset == true then return false end
-  local pressedAt = cooldown.pressAt
-  if not finite(pressedAt) or pressedAt <= 0 or pressedAt > now then return false end
-  if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= pressedAt then return false end
-  if missPressAt ~= pressedAt then
-    local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR)
-    if not timing or not finite(timing.deflectWindow) or timing.deflectWindow <= 0 then return false end
+local function sustainedCooldown(cooldown, now)
+  if not cooldown or cooldown.blocking ~= true then return false end
+  if cooldown.source ~= "local" and cooldown.source ~= "server" then return false end
+  local startedAt = cooldown.blockingSince
+  if not finite(startedAt) or startedAt <= 0 or startedAt > now then return false end
+  if not finite(cooldown.episode) or cooldown.episode <= 0 then return false end
+  if timerEpisode ~= cooldown.episode or timerStartedAt ~= startedAt then
+    local window = gameInfo.getDeflectWindow()
     local ping = gameInfo.getAveragePing()
-    if not finite(ping) or ping < 0 then ping = 0 end
-    missPressAt, missReadyAt = pressedAt, pressedAt + timing.deflectWindow + ping
+    if not finite(window) or window <= 0 or not finite(ping) or ping < 0 then return false end
+    timerEpisode, timerStartedAt, timerReadyAt = cooldown.episode, startedAt, startedAt + window + ping
   end
-  if finite(cooldown.missDeadline) then missReadyAt = math.max(missReadyAt, cooldown.missDeadline) end
-  return now >= missReadyAt
+  return now > timerReadyAt
 end
 local function fierceReady()
-  local ability = gameInfo.getFierceDeflectAbility()
-  if not ability then return false end
-  return not finite(ability.Cooldown) or ability.Cooldown <= 0
+  local ability = gameInfo.getFierceDeflectAbility(); return type(ability) == "table" and type(ability.ActivateAndBlock) == "function" and finite(ability.Cooldown) and ability.Cooldown <= 0
 end
 
 -- detection
 local function update()
-  if not enabled() then return end
-  local now = os.clock(); local snapshot = validTargetSnapshot(now)
-  if not snapshot or not fierceReady() then return end
-  local cooldown = cooldownInfo.getDeflectCooldownState()
-  if not missedDeflect(cooldown, snapshot, now) or not cooldown.episode or cooldown.episode <= lastFierceEpisode or not incomingInWindow(snapshot, now) then return end
-  local episode, ball, token = cooldown and cooldown.episode, snapshot.ball, nil; local owner = epoch
+  if pendingEpisode ~= nil then return end
+  local now = os.clock(); local cooldown = cooldownInfo.getDeflectCooldownState()
+  local sustained = sustainedCooldown(cooldown, now)
+  if not enabled() or not sustained or cooldown.episode <= lastFierceEpisode or not fierceReady() then return end
+  local snapshot = validTargetSnapshot(now)
+  if not snapshot or not incomingInWindow(snapshot, now) then return end
+  local episode, ball, token = cooldown.episode, snapshot.ball, nil; local owner = epoch
+  pendingEpisode = episode
   local ok, sent = pcall(function()
     return remote.fireFierce(function()
-      if not enabled() or not fierceReady() then return false end
+      if owner ~= epoch or not enabled() or not fierceReady() then return false end
       local currentSnapshot = validTargetSnapshot(os.clock())
       if not currentSnapshot or currentSnapshot.ball ~= ball then return false end
       local current = cooldownInfo.getDeflectCooldownState()
-      if
-        not current
-        or current.episode ~= episode
-        or not missedDeflect(current, currentSnapshot, os.clock())
-        or not incomingInWindow(currentSnapshot, os.clock())
-      then
-        return false
-      end
+      if not current or current.episode ~= episode or not sustainedCooldown(current, os.clock()) or not incomingInWindow(currentSnapshot, os.clock()) then return false end
       token = autoParry.beginFierce(); return true
     end)
   end)
   if owner ~= epoch then return end
+  pendingEpisode = nil
   if ok and sent == true then
     if episode then lastFierceEpisode = math.max(lastFierceEpisode, episode) end
   else
@@ -130,7 +125,7 @@ function AutoFierce.setup(deps)
     return false, "dependências ausentes: Utils, GameInfo ou Remote"
   end
   AutoFierce.teardown(); utils, gameInfo, remote, autoParry, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry, deps.Cooldown
-  lastFierceEpisode, missPressAt, missReadyAt = 0, nil, nil; local player = utils.getLocalPlayer()
+  lastFierceEpisode, pendingEpisode = 0, nil; local player = utils.getLocalPlayer()
   localUserId = player and player.UserId; local runService = utils.getRunService()
   if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
   bindManualFierce()
@@ -142,11 +137,12 @@ end
 function AutoFierce.teardown()
   epoch += 1; errorAt = -math.huge
   unhookManualFierce()
+  timerEpisode, timerStartedAt, timerReadyAt = nil, nil, nil
   for _, connection in ipairs(connections) do
     if utils then utils.untrackGlobal(connection) end
     connection:Disconnect()
   end
-  connections = {}; lastFierceEpisode, localUserId, missPressAt, missReadyAt = nil, nil, nil, nil
+  connections = {}; lastFierceEpisode, localUserId, pendingEpisode = nil, nil, nil
   utils, gameInfo, remote, autoParry, cooldownInfo = nil, nil, nil, nil, nil
 end
 
@@ -175,6 +171,7 @@ AutoFierce.__contract = {
       "getSnapshotAt",
       "isSnapshotValid",
       "getBallFrozen",
+      "getDeflectWindow",
       "getAveragePing",
     },
     Cooldown = { "getDeflectCooldownState" },
