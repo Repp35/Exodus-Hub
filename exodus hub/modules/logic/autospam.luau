@@ -332,8 +332,7 @@ local function canActivateReturn(state, snapshot, time)
   local toward = state.root.Position - snapshot.position; local distance = toward.Magnitude
   local value = activationGeometry(state, snapshot, state.pending.partner, time)
   if not value or distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
-  local closingSpeed = snapshot.velocity:Dot(toward) / distance
-  return finite(closingSpeed) and closingSpeed > 0 and distance <= value.fullRadius + closingSpeed * value.effectiveWindow * 0.8
+  local closingSpeed = snapshot.velocity:Dot(toward) / distance; return finite(closingSpeed) and closingSpeed > 0 and distance <= value.fullRadius + closingSpeed * value.effectiveWindow * 0.8
 end
 local function armReturn(state, previous, time, snapshot, serverTime)
   if
