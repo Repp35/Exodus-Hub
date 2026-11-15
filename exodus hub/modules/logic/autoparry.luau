@@ -435,12 +435,27 @@ local function resolveVelocity(value, position, speed, time)
   if finite(speed) and speed > 0 and vector(value.syncDirection) and value.syncDirection.Magnitude > 0.01 then return value.syncDirection.Unit * speed end
   return velocity
 end
+local function matchDataReady(value, time)
+  if value.mode == "training" then return true end
+  if value.teleported or value.locked or value.ballValid == false then return false end
+  if not finite(value.syncAt) or value.syncAt <= 0 or time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE then return false end
+  if not finite(value.serverTime) or not finite(value.syncSequence) then return false end
+  if not vector(value.realPosition) or not vector(value.syncDirection) or value.syncDirection.Magnitude <= 0.01 then return false end
+  if not finite(value.syncSpeed) or value.syncSpeed < CONFIG.MIN_PARRY_SPEED then return false end
+  if not finite(value.targetId) or value.targetId <= 0 then return false end
+  if (value.position - value.realPosition).Magnitude > math.max(6, value.syncSpeed * 0.15) then return false end
+  return true
+end
 local function tick(character, root, generation)
   if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
   if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
   local time = clock(); local value = gameInfo.getSnapshotAt(time)
   if generation ~= state.generation or not state.bound or not state.alive then return end
   if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
+  if not matchDataReady(value, time) then
+    state.lastPosition, state.lastSampleAt = nil, 0
+    phase("waiting", "invalid_or_reset_sync"); return
+  end
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then phase("waiting", "snapshot_stale"); return end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
   if value.mode ~= "training" and utils.isSpamActive() then phase("waiting", "spam_active"); return end
@@ -595,6 +610,7 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   if not utils.isActive() or utils.isSpamActive() or utils.getConfigValue("AutoParry") == false then return false end
   if not gameInfo.isSnapshotValid(value) or value.teleported or value.locked then return false end
   local time = clock()
+  if not matchDataReady(value, time) then return false end
   if not observeSnapshot(value, time) then return false end
   if state.target ~= state.player.UserId then return false end
   if state.fired and finite(redirectAt) and state.lastFireAt >= redirectAt then return true end
