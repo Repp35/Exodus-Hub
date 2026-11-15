@@ -11,6 +11,7 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.30,
+    CLOSE_APPROACH_WINDOW_FACTOR = 0.65,
     KILL_RADIUS_INTERVAL = 0.30,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
@@ -192,7 +193,7 @@ local function opponentOutside(state, radius, maxRadius, snapshot, time)
   return (position - state.root.Position).Magnitude > radius
 end
 local function activate(state, reason, partner, time, serverTime, snapshot)
-  if reason ~= "return_target" and reason ~= "kill_radius" and reason ~= "haunter" and reason ~= "haunter_self" then return false end
+  if reason ~= "return_target" and reason ~= "kill_radius" and reason ~= "haunter" and reason ~= "haunter_self" and reason ~= "close_approach" then return false end
   if
     current ~= state
     or state.active
@@ -205,7 +206,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   then
     return false
   end
-  local bypassExchange = reason == "haunter" or reason == "haunter_self" or reason == "kill_radius"
+  local bypassExchange = reason == "haunter" or reason == "haunter_self" or reason == "kill_radius" or reason == "close_approach"
   if
     not bypassExchange
     and (
@@ -332,6 +333,24 @@ local function canActivateReturn(state, snapshot, time)
   if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
   local closingSpeed = snapshot.velocity:Dot(toward) / distance
   return finite(closingSpeed) and closingSpeed > 0 and math.max(0, distance - value.noWindowParryRadius) / closingSpeed <= value.effectiveWindow
+end
+local function closeApproachPartner(state, snapshot, time)
+  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.targetUncertain == true
+    or snapshot.targetId ~= localPlayer.UserId or snapshot.teleported or snapshot.locked
+    or typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return nil end
+  local partner = state.departedTo or state.exchangePartner
+  if not partner or partner == localPlayer.UserId or not playerIsAlive(partner) then return nil end
+  if not state.exchangeAt or time < state.exchangeAt or time - state.exchangeAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME then return nil end
+  if distanceGate(state, snapshot, partner) ~= nil then return nil end
+  local value = activationGeometry(state, snapshot, partner, time)
+  if not value then return nil end
+  local delta = state.root.Position - snapshot.position
+  local distance = delta.Magnitude
+  if distance <= 0.05 or distance > value.fullRadius then return nil end
+  local closingSpeed = snapshot.velocity:Dot(delta) / distance
+  if not finite(closingSpeed) or closingSpeed <= 0 then return nil end
+  local tti = math.max(0, distance - value.noWindowParryRadius) / closingSpeed
+  return tti <= value.effectiveWindow * CONFIG.ACTIVATION.CLOSE_APPROACH_WINDOW_FACTOR and partner or nil
 end
 local function armReturn(state, previous, time, snapshot, serverTime)
   if
@@ -475,6 +494,10 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   local killReady = snapshotFresh and observeKillRadius(state, snapshot, time)
   if killReady and activate(state, "kill_radius", nil, time, serverTime or snapshot.serverTime, snapshot) then return end
   if not state.active and not blocked and canActivateReturn(state, snapshot, time) then activate(state, "return_target", state.pending.partner, time, serverTime or snapshot.serverTime, snapshot) end
+  if not state.active and snapshotFresh then
+    local partner = closeApproachPartner(state, snapshot, time)
+    if partner then activate(state, "close_approach", partner, time, serverTime or snapshot.serverTime, snapshot) end
+  end
 end
 local function watchCharacter(state, player, character)
   if state.watchedDeath then forget(state, state.watchedDeath); state.watchedDeath = nil end
