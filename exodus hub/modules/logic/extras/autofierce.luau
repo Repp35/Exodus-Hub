@@ -71,8 +71,7 @@ local function sustainedCooldown(cooldown, now)
   if not finite(startedAt) or startedAt <= 0 or startedAt > now then return false end
   if not finite(cooldown.episode) or cooldown.episode <= 0 then return false end
   if timerEpisode ~= cooldown.episode or timerStartedAt ~= startedAt then
-    local window = gameInfo.getDeflectWindow()
-    local ping = gameInfo.getAveragePing()
+    local window = gameInfo.getDeflectWindow(); local ping = gameInfo.getAveragePing()
     if not finite(window) or window <= 0 or not finite(ping) or ping < 0 then return false end
     timerEpisode, timerStartedAt, timerReadyAt = cooldown.episode, startedAt, startedAt + window + ping
   end
@@ -136,8 +135,7 @@ function AutoFierce.setup(deps)
 end
 function AutoFierce.teardown()
   epoch += 1; errorAt = -math.huge
-  unhookManualFierce()
-  timerEpisode, timerStartedAt, timerReadyAt = nil, nil, nil
+  unhookManualFierce(); timerEpisode, timerStartedAt, timerReadyAt = nil, nil, nil
   for _, connection in ipairs(connections) do
     if utils then utils.untrackGlobal(connection) end
     connection:Disconnect()
