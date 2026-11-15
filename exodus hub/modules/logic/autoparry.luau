@@ -438,12 +438,12 @@ end
 local function matchDataReady(value, time)
   if value.mode == "training" then return true end
   if value.teleported or value.locked or value.ballValid == false then return false end
-  if not finite(value.syncAt) or value.syncAt <= 0 or time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE then return false end
-  if not finite(value.serverTime) or not finite(value.syncSequence) then return false end
-  if not vector(value.realPosition) or not vector(value.syncDirection) or value.syncDirection.Magnitude <= 0.01 then return false end
-  if not finite(value.syncSpeed) or value.syncSpeed < CONFIG.MIN_PARRY_SPEED then return false end
   if not finite(value.targetId) or value.targetId <= 0 then return false end
-  if (value.position - value.realPosition).Magnitude > math.max(6, value.syncSpeed * 0.15) then return false end
+  local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed
+  if not finite(speed) or speed < CONFIG.MIN_PARRY_SPEED then return false end
+  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then return false end
+  if value.realPosition ~= nil and not vector(value.realPosition) then return false end
+  if value.syncDirection ~= nil and not vector(value.syncDirection) then return false end
   return true
 end
 local function tick(character, root, generation)
