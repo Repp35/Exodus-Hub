@@ -186,5 +186,74 @@ assert(ap.tryRedirectReturn(snap,tm)==false); assert(fires==0,'redirect radius b
 cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 """)
 
+    def test_radius_tti_gate_uses_minimum_and_maximum_speed_windows(self):
+        for speed, window, boundary in ((16, 0.85, 22.9), (600, 0.2, 158.5)):
+            with self.subTest(speed=speed):
+                self.check_ap("""
+g.getAveragePing=function() return 0.05,0.05,1 end
+local geometry=g.getAutoParryGeometry
+g.getAutoParryGeometry=function(speed,factor)
+  local result=geometry(speed,factor)
+  result.deflectWindow=0.85-0.65*math.clamp((speed-16)/(600-16),0,1)
+  return result
+end
+""" + f"""
+snap.syncSpeed={speed}; snap.speed={speed}; snap.velocity=v(-{speed})
+snap.position=v({boundary}+0.001); packet(42)
+assert(fires==0,'full window gate fired before arrival horizon')
+local timing=ap.getTiming(snap)
+assert(math.abs(timing.radiusGateLead-{window})<1e-9)
+assert(math.abs(timing.defenseRadius-(8.5+{speed}*0.05))<1e-9)
+assert(timing.tti>{window})
+snap.position=v({boundary}-0.000001); frameCb(1/60)
+assert(fires==1,'full window TTI gate did not fire')
+""")
+
+    def test_radius_tti_rejects_a_nearby_trajectory_that_misses(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0.05,0.05,1 end
+snap.position=v(100); snap.velocity=v(-600*math.cos(math.rad(30)),600*math.sin(math.rad(30)))
+packet(42); assert(fires==0,'radial approximation accepted a missed trajectory')
+assert(ap.getTiming(snap).tti==math.huge)
+snap.velocity=v(-600*math.cos(math.rad(10)),600*math.sin(math.rad(10)))
+frameCb(1/60); assert(fires==1,'intersecting direction did not activate TTI gate')
+""")
+
+    def test_radius_tti_uses_player_relative_velocity(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0.05,0.05,1 end
+snap.position=v(158.5); root.AssemblyLinearVelocity=v(-100)
+packet(42); assert(fires==0,'gate ignored player retreat')
+assert(math.abs(ap.getTiming(snap).tti-0.24)<1e-9)
+root.AssemblyLinearVelocity=v(100); frameCb(1/60)
+assert(fires==1,'gate ignored player approach')
+""")
+
+    def test_radius_tti_does_not_double_count_ping_and_keeps_cooldown(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0.05,0.05,1 end
+snap.position=v(170); packet(42)
+assert(fires==0,'ping added to both radius and TTI horizon')
+snap.position=v(150); cd.blocking=true; frameCb(1/60)
+assert(fires==0,'TTI gate bypassed cooldown')
+cd.blocking=false; frameCb(1/60); assert(fires==1)
+cd.lastParriedAt=tm+0.001; frameCb(1/60); assert(fires==1,'TTI gate duplicated cycle')
+""")
+
+    def test_defense_radius_is_independent_of_window(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0.05,0.05,1 end
+packet(99); snap.position=v(100)
+local first=ap.getTiming(snap)
+local geometry=g.getAutoParryGeometry
+g.getAutoParryGeometry=function(...)
+  local result=geometry(...); result.deflectWindow=0.85; return result
+end
+local second=ap.getTiming(snap)
+assert(first.defenseRadius==second.defenseRadius)
+assert(first.tti==second.tti,'window changed actual TTI to radius')
+assert(first.radiusGateLead~=second.radiusGateLead)
+""")
+
 if __name__ == "__main__":
     unittest.main()

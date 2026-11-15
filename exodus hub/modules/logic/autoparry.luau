@@ -201,7 +201,7 @@ local function appendRecent(list, item)
   list[#list + 1] = item
   if #list > CONFIG.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
 end
-local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
+local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry, rangeOverride)
   local delta = rootPosition - position; local distance = delta.Magnitude
   local ballVelocity = velocity
   if finite(nominalSpeed) and nominalSpeed > 0 and ballVelocity.Magnitude > nominalSpeed * 1.1 then ballVelocity = ballVelocity.Unit * nominalSpeed * 1.1 end
@@ -209,7 +209,7 @@ local function trajectory(position, velocity, rootPosition, nominalSpeed, geomet
   if not vector(rootVelocity) then rootVelocity = Vector3.zero end
   local relative = ballVelocity - rootVelocity; local closing = distance > 0 and relative:Dot(delta) / distance or 0
   if not finite(closing) then closing = 0 end
-  local padding = finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0; local range = geometry.noWindowParryRadius + padding
+  local padding = finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0; local range = rangeOverride or (geometry.noWindowParryRadius + padding)
   local threshold = range + math.max(0, closing) * geometry.effectiveWindow; local entry = math.huge
   local c = delta:Dot(delta) - range * range
   if c <= 0 then
@@ -222,6 +222,10 @@ local function trajectory(position, velocity, rootPosition, nominalSpeed, geomet
     end
   end
   return distance, closing, threshold, entry
+end
+local function radiusTiming(position, velocity, rootPosition, speed, geometry, ping)
+  local range = guaranteedRadius(geometry, speed, ping); local _, _, _, entry = trajectory(position, velocity, rootPosition, speed, geometry, range)
+  return entry, range, geometry.deflectWindow
 end
 local function adaptiveLead(geometry, entry, closing)
   local baseline = geometry.effectiveWindow
@@ -407,7 +411,8 @@ local function tickTraining(value, root, time)
   if finite(confirmed) then state.trainingConfirmedAt = confirmed end
   if cooldownInfo.getTrainingCooldownState().blocking then phase("waiting", "training_lockout"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "training_not_target"); return end
-  if distance <= guaranteedRadius(geometry, speed, ping) then request("training_inside_radius"); return end
+  local radiusEntry, _, gateLead = radiusTiming(position, velocity, rootPosition, speed, geometry, ping)
+  if radiusEntry <= gateLead then request(radiusEntry == 0 and "training_inside_radius" or "training_radius_tti"); return end
   if closing < CONFIG.TRAINING_MIN_CLOSING_SPEED then phase("waiting", "training_not_approaching"); return end
   if distance > threshold then phase("waiting", "training_outside_window"); return end
   request("training_parry")
@@ -501,7 +506,8 @@ local function tick(character, root, generation)
   local distance, closing, threshold, entry = trajectory(position, velocity, rootPosition, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
   threshold = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; state.speed, state.distance, state.approaching = speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
-  if distance <= guaranteedRadius(geometry, speed, state.ping) then request("inside_radius"); return end
+  local radiusEntry, _, gateLead = radiusTiming(position, velocity, rootPosition, speed, geometry, state.ping)
+  if radiusEntry <= gateLead then request(radiusEntry == 0 and "inside_radius" or "radius_tti"); return end
   if closing > 0 and entry <= lead then request("parry_requested") end
 end
 
@@ -603,8 +609,8 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   local distance, closing, threshold, entry = trajectory(position, velocity, own, speed, g); local lead, adaptiveFactor = adaptiveLead(g, entry, closing)
   threshold = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * lead; state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold; state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
-  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
-  if distance > guaranteedRadius(g, speed, state.ping) and (closing <= 0 or entry > lead) then return false end
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry; local radiusEntry, _, gateLead = radiusTiming(position, velocity, own, speed, g, state.ping)
+  if radiusEntry > gateLead and (closing <= 0 or entry > lead) then return false end
   if state.fired then return false end
   return request("redirect_return")
 end
@@ -703,11 +709,12 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   velocity = vector(velocity) and velocity or Vector3.zero; local speed = tonumber(value.syncSpeed)
   if not finite(speed) or speed <= 0 then speed = velocity.Magnitude > 0.1 and velocity.Magnitude or tonumber(value.speed) or 0 end
   if not finite(speed) or speed < 0 then return nil end
-  local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
+  samplePing(); local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
   local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
   triggerDistance = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; local distanceToRadius = distance - triggerDistance
-  local timeToTrigger = math.max(entry - lead, 0)
+  local radiusEntry, defenseRadius, gateLead = radiusTiming(position, velocity, root, speed, geometry, state.ping)
+  local timeToTrigger = math.min(math.max(entry - lead, 0), math.max(radiusEntry - gateLead, 0))
   return {
     distance = distance,
     speed = speed,
@@ -725,10 +732,13 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
     adaptiveWindowFactor = adaptiveFactor,
     triggerPadding = geometry.triggerPadding,
     distanceToParryRadius = distanceToRadius,
-    timeToRange = entry,
+    timeToRange = radiusEntry,
+    defenseRadius = defenseRadius,
+    radiusGateLead = gateLead,
+    predictionTimeToRange = entry,
     triggerDistance = triggerDistance,
     timeToTrigger = timeToTrigger,
-    tti = timeToTrigger,
+    tti = radiusEntry,
     approaching = closing > 0 and speed >= CONFIG.MIN_PARRY_SPEED,
     targeted = value.targeted == true,
   }
@@ -738,9 +748,13 @@ function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
   if mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
   local speed = tonumber(speedOverride)
   if not finite(speed) or speed < 0 then speed = state.speed end
-  local result = radius(speed, factor, baseWindow)
+  samplePing(); local result = radius(speed, factor, baseWindow)
   if not result then return nil end
-  local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
+  local time = clock(); local value, own = gameInfo.getSnapshotAt(time), rootPosition()
+  local tti = math.huge; result.defenseRadius = guaranteedRadius(result, speed, state.ping)
+  if gameInfo.isSnapshotValid(value) and vector(own) then
+    local velocity = resolveVelocity(value, value.position, speed, time); tti = radiusTiming(value.position, velocity, own, speed, result, state.ping)
+  end
   result.mode, result.speed, result.distance, result.tti, result.resilience = mode, speed, state.distance, tti, resilience()
   result.value = mode == "tti" and tti or (mode == "speed_distance" and { speed = speed, distance = state.distance } or result.fullRadius); return result
 end
@@ -818,7 +832,10 @@ function AutoParry.getStatus()
       distanceToRadius = state.distance - state.triggerDistance,
       triggerDistance = state.triggerDistance,
       closingSpeed = state.closingSpeed,
-      timeToRange = state.timeToRange,
+      timeToRange = geometry.tti,
+      predictionTimeToRange = state.timeToRange,
+      defenseRadius = geometry.defenseRadius,
+      radiusGateLead = geometry.deflectWindow,
       adaptiveWindow = state.adaptiveWindow,
       adaptiveFactor = state.adaptiveFactor,
       frameAllowance = state.frameAllowance,
