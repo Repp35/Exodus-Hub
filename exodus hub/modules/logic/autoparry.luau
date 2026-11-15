@@ -453,8 +453,8 @@ local function tick(character, root, generation)
   if generation ~= state.generation or not state.bound or not state.alive then return end
   if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
   if not matchDataReady(value, time) then
-    state.lastPosition, state.lastSampleAt = nil, 0
-    phase("waiting", "invalid_or_reset_sync"); return
+    state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "invalid_or_reset_sync")
+    return
   end
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then phase("waiting", "snapshot_stale"); return end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
