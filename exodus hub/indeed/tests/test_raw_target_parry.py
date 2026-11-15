@@ -151,19 +151,6 @@ packet(42); assert(fires==1,'base radius incorrectly depends on incoming velocit
 frameCb(1/60); packet(42); assert(fires==1,'radius check duplicated same cycle')
 """)
 
-    def test_resilience_and_ping_radius_exact_boundary(self):
-        self.check_ap("""
-g.getAveragePing=function() return 0.05,0.05,1 end
-local geometry=g.getAutoParryGeometry
-g.getAutoParryGeometry=function(...)
-  local result=geometry(...); result.noWindowParryRadius=11.5; return result
-end
-snap.velocity=v(0,600); snap.position=v(41.5001)
-packet(42); assert(fires==0,'fired outside base + resilience + speed * ping')
-snap.position=v(41.5); frameCb(1/60)
-assert(fires==1,'did not fire on exact ping/resilience radius boundary')
-""")
-
     def test_inside_radius_keeps_target_and_cooldown_requirements(self):
         self.check_ap("""
 snap.position=v(8); snap.velocity=v(0)
@@ -186,58 +173,56 @@ assert(ap.tryRedirectReturn(snap,tm)==false); assert(fires==0,'redirect radius b
 cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 """)
 
-    def test_radius_tti_gate_uses_minimum_and_maximum_speed_windows(self):
-        for speed, window, boundary in ((16, 0.85, 22.9), (600, 0.2, 158.5)):
+    def test_single_window_exact_boundaries_and_speed_limits(self):
+        geometry_source = (ROOT / "aux/gameinfo.luau").read_text()
+        geometry_source = geometry_source[geometry_source.index("function GameInfo.getAutoParryGeometry("):geometry_source.index("function GameInfo.getProjectedDeflectRadius(")]
+        for speed, window in ((16, 0.5), (308, 0.375), (600, 0.25)):
             with self.subTest(speed=speed):
                 self.check_ap("""
+local GameInfo=g
+local CONFIG={RANGE_BASE=8.5,AUTO_PARRY_TRIGGER_PADDING=1}
+local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
+g.getBallSpeedLimits=function() return 16,600 end
+g.getDeflectRange=function() return 11.5 end
 g.getAveragePing=function() return 0.05,0.05,1 end
-local geometry=g.getAutoParryGeometry
-g.getAutoParryGeometry=function(speed,factor)
-  local result=geometry(speed,factor)
-  result.deflectWindow=0.85-0.65*math.clamp((speed-16)/(600-16),0,1)
-  return result
-end
-""" + f"""
-snap.syncSpeed={speed}; snap.speed={speed}; snap.velocity=v(-{speed})
-snap.position=v({boundary}+0.001); packet(42)
-assert(fires==0,'full window gate fired before arrival horizon')
+""" + geometry_source + f"""
+snap.syncSpeed={speed}; snap.speed={speed}; snap.velocity=v({speed})
+local boundary=11.5+1+{speed}*({window}*0.4+0.05+1/60)
+snap.position=v(boundary+0.001); packet(42)
+assert(fires==0,'clicked outside the 0.4 window')
 local timing=ap.getTiming(snap)
-assert(math.abs(timing.radiusGateLead-{window})<1e-9)
-assert(math.abs(timing.defenseRadius-(8.5+{speed}*0.05))<1e-9)
-assert(timing.tti>{window})
-snap.position=v({boundary}-0.000001); frameCb(1/60)
-assert(fires==1,'full window TTI gate did not fire')
+assert(math.abs(timing.deflectWindow-{window})<1e-9)
+assert(timing.windowFactor==0.4,'stored old factor changed match gate')
+assert(math.abs(timing.triggerDistance-boundary)<1e-9)
+snap.position=v(boundary); frameCb(1/60)
+assert(fires==1,'exact distance boundary did not click')
+frameCb(1/60); assert(fires==1,'duplicate click after firing')
 """)
 
-    def test_radius_tti_rejects_a_nearby_trajectory_that_misses(self):
-        self.check_ap("""
-g.getAveragePing=function() return 0.05,0.05,1 end
-snap.position=v(100); snap.velocity=v(-600*math.cos(math.rad(30)),600*math.sin(math.rad(30)))
-packet(42); assert(fires==0,'radial approximation accepted a missed trajectory')
-assert(ap.getTiming(snap).tti==math.huge)
-snap.velocity=v(-600*math.cos(math.rad(10)),600*math.sin(math.rad(10)))
-frameCb(1/60); assert(fires==1,'intersecting direction did not activate TTI gate')
+    def test_window_ignores_trajectory_and_player_velocity(self):
+        for velocity in ('v(0)', 'v(600)', 'v(0,600)', 'v(-600)'):
+            with self.subTest(velocity=velocity):
+                self.check_ap("snap.velocity=" + velocity + """
+snap.position=v(57.001); root.AssemblyLinearVelocity=v(100)
+packet(42); assert(fires==0,'trajectory bypassed distance window')
+snap.position=v(57); root.AssemblyLinearVelocity=v(-100)
+frameCb(1/60); assert(fires==1,'velocity added an extra gate')
 """)
 
-    def test_radius_tti_uses_player_relative_velocity(self):
+    def test_redirect_uses_the_same_window(self):
         self.check_ap("""
-g.getAveragePing=function() return 0.05,0.05,1 end
-snap.position=v(158.5); root.AssemblyLinearVelocity=v(-100)
-packet(42); assert(fires==0,'gate ignored player retreat')
-assert(math.abs(ap.getTiming(snap).tti-0.24)<1e-9)
-root.AssemblyLinearVelocity=v(100); frameCb(1/60)
-assert(fires==1,'gate ignored player approach')
+snap.position=v(57.001); packet(42)
+assert(fires==0); assert(not ap.tryRedirectReturn(snap,tm))
+snap.position=v(57); snap.velocity=v(600)
+assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
+frameCb(1/60); assert(fires==1)
 """)
 
-    def test_radius_tti_does_not_double_count_ping_and_keeps_cooldown(self):
+    def test_miss_retry_uses_the_same_window_after_cooldown(self):
         self.check_ap("""
-g.getAveragePing=function() return 0.05,0.05,1 end
-snap.position=v(170); packet(42)
-assert(fires==0,'ping added to both radius and TTI horizon')
-snap.position=v(150); cd.blocking=true; frameCb(1/60)
-assert(fires==0,'TTI gate bypassed cooldown')
-cd.blocking=false; frameCb(1/60); assert(fires==1)
-cd.lastParriedAt=tm+0.001; frameCb(1/60); assert(fires==1,'TTI gate duplicated cycle')
+packet(42); cd.miss=true; cd.blocking=true
+snap.position=v(57); frameCb(1/60); assert(fires==1)
+cd.blocking=false; frameCb(1/60); assert(fires==2)
 """)
 
     def test_defense_radius_is_independent_of_window(self):

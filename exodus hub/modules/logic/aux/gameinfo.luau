@@ -832,7 +832,10 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
 end
 function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride)
   if not finite(speed) or speed < 0 then return nil end
-  local window = GameInfo.getDeflectWindow(speed, true); local range = GameInfo.getDeflectRange()
+  local low, high = GameInfo.getBallSpeedLimits()
+  if not finite(low) or not finite(high) or high <= low then return nil end
+  local progress = math.clamp((speed - low) / (high - low), 0, 1); local window = 0.5 + (0.25 - 0.5) * progress
+  local range = GameInfo.getDeflectRange()
   if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
   if not finite(window) or window < 0 then return nil end
   local latency = finite(latencyOverride) and math.max(0, latencyOverride) or GameInfo.getAveragePing()

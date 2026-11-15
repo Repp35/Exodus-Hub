@@ -115,7 +115,6 @@ local CONFIG = {
           title = "Parry & Camera",
           column = 1,
           components = {
-            { kind = "number", title = "AP Lead (%)", key = "AutoParryWindowFactor", min = 0, max = 35, displayScale = 100 },
             { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
           },
         },

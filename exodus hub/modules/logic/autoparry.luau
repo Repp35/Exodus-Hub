@@ -68,8 +68,8 @@ local state = {
 -- configuration
 local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.3,
-  MAX_WINDOW_FACTOR = 0.35,
-  ADAPTIVE_MAX_WINDOW_FACTOR = 0.9,
+  MAX_WINDOW_FACTOR = 0.4,
+  MATCH_WINDOW_FACTOR = 0.4,
   RETURN_DIRECTION_MAX_AGE = 0.08,
   MATCH_RETRY_DELAY_MAX = 0.5,
   SNAPSHOT_MAX_AGE = 0.5,
@@ -153,14 +153,15 @@ local function resilience()
   }
 end
 local function configuredFactor()
-  local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR) or CONFIG.DEFAULT_WINDOW_FACTOR
+  local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 0.35) or CONFIG.DEFAULT_WINDOW_FACTOR
 end
 local function activeWindowFactor()
-  state.windowFactor = math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR); return state.windowFactor
+  state.windowFactor = state.mode == "training" and configuredFactor() or CONFIG.MATCH_WINDOW_FACTOR; return state.windowFactor
 end
 local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
-  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR)
+  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt = now
+  activeWindowFactor()
 end
 local function trainingGeometry(speed, factor)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
@@ -227,17 +228,7 @@ local function radiusTiming(position, velocity, rootPosition, speed, geometry, p
   local range = guaranteedRadius(geometry, speed, ping); local _, _, _, entry = trajectory(position, velocity, rootPosition, speed, geometry, range)
   return entry, range, geometry.deflectWindow
 end
-local function adaptiveLead(geometry, entry, closing)
-  local baseline = geometry.effectiveWindow
-  local factor = geometry.windowFactor
-  if geometry.training or state.retryReady or not finite(entry) or closing <= 0 then return baseline, factor end
-  local window = geometry.deflectWindow
-  if not finite(window) or window <= 0 or not finite(baseline) then return baseline, factor end
-  factor = finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR; local maxFactor = math.max(factor, CONFIG.ADAPTIVE_MAX_WINDOW_FACTOR)
-  local arrival = math.max(0, entry); local urgency = window / (window + arrival)
-  local selected = factor + (maxFactor - factor) * urgency * urgency; local network = math.max(0, baseline - window * factor)
-  local lead = math.max(baseline, math.min(window + network, window * selected + network)); return lead, selected
-end
+local function adaptiveLead(geometry) return geometry.effectiveWindow, geometry.windowFactor end
 
 -- target-sync
 local function sequenceOrder(incoming)
@@ -511,19 +502,10 @@ local function tick(character, root, generation)
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
   if not geometry then return end
-  if state.retryReady then
-    geometry.effectiveWindow = geometry.deflectWindow * math.min(activeWindowFactor(time), CONFIG.RETRY_WINDOW_FACTOR)
-      + state.ping
-      + CONFIG.FRAME_BASE
-      + state.frameAllowance
-    geometry.triggerPadding = 0
-  end
-  local distance, closing, threshold, entry = trajectory(position, velocity, rootPosition, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
-  threshold = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; state.speed, state.distance, state.approaching = speed, distance, closing > 0
-  state.closingSpeed, state.triggerDistance = closing, threshold; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry
-  local radiusEntry, _, gateLead = radiusTiming(position, velocity, rootPosition, speed, geometry, state.ping)
-  if radiusEntry <= gateLead then request(radiusEntry == 0 and "inside_radius" or "radius_tti"); return end
-  if closing > 0 and entry <= lead then request("parry_requested") end
+  local distance, closing, _, entry = trajectory(position, velocity, rootPosition, speed, geometry); local threshold = geometry.fullRadius
+  state.speed, state.distance, state.approaching = speed, distance, closing > 0; state.closingSpeed, state.triggerDistance = closing, threshold
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = geometry.effectiveWindow, geometry.windowFactor, entry
+  if distance <= threshold then request("parry_requested") end
 end
 
 -- public-api
@@ -622,11 +604,10 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
   if not finite(speed) or speed <= 0 then speed = vector(velocity) and velocity.Magnitude or 0 end
   velocity = resolveVelocity(value, position, speed, time); local g = radius(speed, activeWindowFactor(time))
   if not g then return false end
-  local distance, closing, threshold, entry = trajectory(position, velocity, own, speed, g); local lead, adaptiveFactor = adaptiveLead(g, entry, closing)
-  threshold = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * lead; state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
-  state.closingSpeed, state.triggerDistance = closing, threshold; state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
-  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = lead, adaptiveFactor, entry; local radiusEntry, _, gateLead = radiusTiming(position, velocity, own, speed, g, state.ping)
-  if radiusEntry > gateLead and (closing <= 0 or entry > lead) then return false end
+  local distance, closing, _, entry = trajectory(position, velocity, own, speed, g); state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+  state.closingSpeed, state.triggerDistance = closing, g.fullRadius; state.lastPosition, state.lastSampleAt = position, time
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = g.effectiveWindow, g.windowFactor, entry
+  if distance > g.fullRadius then return false end
   if state.fired then return false end
   return request("redirect_return")
 end
@@ -688,7 +669,7 @@ function AutoParry.getDefenseState(value)
   if geometry and value and vector(value.position) and vector(value.velocity) and state.root and state.root.Parent then
     local entry
     distance, closing, trigger, entry = trajectory(value.position, value.velocity, gameInfo.getRootPosition(state.root), speed, geometry); local lead = adaptiveLead(geometry, entry, closing)
-    trigger = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead
+    trigger = geometry.training and (geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead) or geometry.fullRadius
   end
   return {
     enabled = state.alive and state.bound and utils.getConfigValue("AutoParry") ~= false,
@@ -728,9 +709,10 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   samplePing(); local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
   local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
-  triggerDistance = geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead; local distanceToRadius = distance - triggerDistance
-  local radiusEntry, defenseRadius, gateLead = radiusTiming(position, velocity, root, speed, geometry, state.ping)
+  triggerDistance = geometry.training and (geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead) or geometry.fullRadius
+  local distanceToRadius = distance - triggerDistance; local radiusEntry, defenseRadius, gateLead = radiusTiming(position, velocity, root, speed, geometry, state.ping)
   local timeToTrigger = math.min(math.max(entry - lead, 0), math.max(radiusEntry - gateLead, 0))
+  if not geometry.training then timeToTrigger = distance <= triggerDistance and 0 or (closing > 0 and (distance - triggerDistance) / closing or math.huge) end
   return {
     distance = distance,
     speed = speed,
@@ -827,7 +809,7 @@ function AutoParry.getStatus()
       version = 13,
       endpoints = { "getRadius", "getTiming", "getStatus", "getTargetStatus" },
       radiusModes = { "geometry", "tti", "speed_distance" },
-      defaultWindowFactor = CONFIG.DEFAULT_WINDOW_FACTOR,
+      defaultWindowFactor = state.mode == "training" and CONFIG.DEFAULT_WINDOW_FACTOR or CONFIG.MATCH_WINDOW_FACTOR,
       windowFactorRange = { min = 0, max = CONFIG.MAX_WINDOW_FACTOR },
     },
     lifecycle = {
@@ -890,9 +872,9 @@ function AutoParry.getStatus()
     config = {
       baseRadius = geometry.pureRadius,
       baseWindow = geometry.deflectWindow,
-      defaultWindowFactor = CONFIG.DEFAULT_WINDOW_FACTOR,
+      defaultWindowFactor = state.mode == "training" and CONFIG.DEFAULT_WINDOW_FACTOR or CONFIG.MATCH_WINDOW_FACTOR,
       windowFactorRange = { min = 0, max = CONFIG.MAX_WINDOW_FACTOR },
-      adaptiveMaxWindowFactor = CONFIG.ADAPTIVE_MAX_WINDOW_FACTOR,
+      adaptiveMaxWindowFactor = CONFIG.MATCH_WINDOW_FACTOR,
       minBallSpeed = CONFIG.MIN_PARRY_SPEED,
     },
     timestamp = clock(),
