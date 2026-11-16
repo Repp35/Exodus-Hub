@@ -1,70 +1,55 @@
 -- [[ invisicam ]]
 
+-- code
 local Invisicam = {}
-
-local Utils
-local configObserver
-
--- configuration
+local Utils, configObserver
 local CONFIG = {
   schema = { UniversalInvisicam = "boolean" },
   defaults = { UniversalInvisicam = false },
 }
 
-local savedOcclusion, savedOcclusionMode = nil, false
-local enabledState = false
-local function stopInvisicam()
+local function applyMode(enabled)
   local player = Utils and Utils.getLocalPlayer()
-  if savedOcclusionMode and player then
-    local ok, reason = pcall(function() player.DevCameraOcclusionMode = savedOcclusion end)
-    if not ok then warn("[Invisicam] Camera restore unavailable: " .. tostring(reason)) end
-  end
-  savedOcclusion, savedOcclusionMode = nil, false; enabledState = false
-  return true
-end
-local function startInvisicam()
-  local player = Utils.getLocalPlayer()
   if not player then return false, "LocalPlayer unavailable" end
-  local readOk, previous = pcall(function() return player.DevCameraOcclusionMode end)
-  if not readOk then return false, "Camera occlusion property unavailable" end
-  if previous == Enum.DevCameraOcclusionMode.Invisicam then savedOcclusion, savedOcclusionMode = Enum.DevCameraOcclusionMode.Zoom, true; return true end
-  local ok, reason = pcall(function() player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam end)
-  if not ok then return false, tostring(reason) end
-  savedOcclusion, savedOcclusionMode = previous, true; return true
+  local mode = enabled and Enum.DevCameraOcclusionMode.Invisicam or Enum.DevCameraOcclusionMode.Zoom
+  local propertyOk, propertyError = pcall(function() player.DevCameraOcclusionMode = mode end)
+  local cameraOk, cameraError = pcall(function()
+    local scripts = player:FindFirstChild("PlayerScripts"); local module = scripts and scripts:FindFirstChild("PlayerModule")
+    if not module then return false end
+    local api = require(module); local cameras = type(api) == "table" and type(api.GetCameras) == "function" and api:GetCameras()
+    if not cameras or type(cameras.ActivateOcclusionModule) ~= "function" then return false end
+    cameras:ActivateOcclusionModule(mode); return true
+  end)
+  if propertyOk or (cameraOk and cameraError == true) then return true end
+  return false, tostring(propertyError or cameraError)
 end
 function Invisicam.setEnabled(enabled)
   if not Utils then return false, "feature unavailable" end
-  local value = enabled == true
-  if not Utils.setConfig({ UniversalInvisicam = value }) then return false, "configuration rejected" end
-  if enabledState == value then return true end
-  if not value then return stopInvisicam() end
-  local ok, reason = startInvisicam()
-  if not ok then
-    stopInvisicam(); Utils.setConfig({ UniversalInvisicam = false })
-    warn("[Invisicam] Disabled: " .. tostring(reason)); return true
-  end
-  enabledState = true; return true
+  local value = enabled == true; local ok, reason = applyMode(value)
+  if not ok then return false, reason end
+  return Utils.setConfig({ UniversalInvisicam = value })
 end
 function Invisicam.teardown()
   if configObserver then configObserver:Disconnect(); configObserver = nil end
-  stopInvisicam(); Utils = nil
-  return true
+  local ok, reason = true, nil
+  if Utils then ok, reason = applyMode(false) end
+  Utils = nil; return ok, reason
 end
 function Invisicam.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "missing dependency: Utils" end
   Invisicam.teardown(); Utils = deps.Utils
   configObserver = Utils.observeConfig(function(changes)
-    if changes.UniversalInvisicam ~= nil then Invisicam.setEnabled(changes.UniversalInvisicam == true) end
+    if changes.UniversalInvisicam ~= nil then
+      local ok, reason = applyMode(changes.UniversalInvisicam == true)
+      if not ok then Utils.recordError("Invisicam", reason) end
+    end
   end)
-  if Utils.getConfigValue("UniversalInvisicam") == true then return Invisicam.setEnabled(true) end
-  return true
+  return applyMode(Utils.getConfigValue("UniversalInvisicam") == true)
 end
 Invisicam.__config = CONFIG
-
--- contract
 Invisicam.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "recordError" } },
   provides = { "setup", "teardown", "setEnabled" },
 }
 
