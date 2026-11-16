@@ -370,11 +370,9 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   local position, own = value.position, gameInfo.getRootPosition(state.root)
   if not vector(position) or not vector(own) then return false end
   if mode == "training" then
-    local velocity = value.velocity
-    local speed = value.syncSpeed ~= nil and value.syncSpeed or (vector(velocity) and velocity.Magnitude or nil)
+    local velocity = value.velocity; local speed = value.syncSpeed ~= nil and value.syncSpeed or (vector(velocity) and velocity.Magnitude or nil)
     if not vector(velocity) or not validBallSpeed(speed) or speed < CONFIG.TRAINING_MIN_SPEED then return false end
-    local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR)
-    local ping = finite(state.ping) and math.clamp(state.ping, 0, CONFIG.TRAINING_MAX_PING) or 0
+    local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR); local ping = finite(state.ping) and math.clamp(state.ping, 0, CONFIG.TRAINING_MAX_PING) or 0
     local entry, _, lead = radiusTiming(position, velocity, own, speed, geometry, ping)
     if entry <= lead then return true end
     local delta = own - position; local distance = delta.Magnitude
