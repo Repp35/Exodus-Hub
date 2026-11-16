@@ -80,7 +80,7 @@ end
 local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
   if reason == "deflect_miss" or reason == "miss" or reason == "parry_miss" then state.lastGate = "miss_ignored"; return false end
-  if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" then
+  if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "cooldown" then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
       state.lastGate = "near_opponent_protected"; return false
@@ -370,6 +370,7 @@ end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
   state.gates = {}; local cd = monitorCooldown(state)
+  if state.active and cd and cd.blocking == true then deactivate(state, "cooldown", time); return end
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
@@ -562,6 +563,7 @@ function AutoSpam.canSend()
   local state = current
   if not state or not state.active then return false end
   local time = now(); local cd = monitorCooldown(state)
+  if cd and cd.blocking == true then deactivate(state, "cooldown", time); return false end
   if not state.active then return false end
   local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd)
   if stop then deactivate(state, stop, time); return false end
