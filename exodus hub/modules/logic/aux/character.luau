@@ -33,8 +33,7 @@ local function clearLife()
     end
   end
   if not utils then return end
-  utils.disconnectCharacterConnections()
-  utils.setAutoSpamActive(false)
+  utils.disconnectCharacterConnections(); utils.setAutoSpamActive(false)
   if spam then spam.resetState() end
 end
 local function deactivate(life, reason)
