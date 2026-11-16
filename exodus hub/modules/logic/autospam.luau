@@ -84,15 +84,9 @@ local function deactivate(state, reason, time)
   lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
   utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
-local function activeMiss(cd) return cd and cd.miss == true and cd.phase ~= "miss_finished" end
 local function monitorCooldown(state)
-  local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
-  if activeMiss(cd) then
-    state.closeArm = nil
-    if utils.isManualSpamActive() then utils.setManualSpamActive(false); utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss") end
-    deactivate(state, "deflect_miss", time)
-  end
-  return cd, activeMiss(cd)
+  -- Miss não desativa AutoSpam ou ManualSpam.
+  return cooldownInfo.getDeflectCooldownState(), false
 end
 local function sampleGate(state, s, time)
   if not utils.isActive() then return "hub_inactive" end
