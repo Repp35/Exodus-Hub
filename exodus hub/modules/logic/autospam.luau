@@ -84,10 +84,7 @@ local function deactivate(state, reason, time)
   lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
   utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
-local function monitorCooldown(state)
-  -- Miss não desativa AutoSpam ou ManualSpam.
-  return cooldownInfo.getDeflectCooldownState(), false
-end
+local function monitorCooldown(state) return cooldownInfo.getDeflectCooldownState(), false end
 local function sampleGate(state, s, time)
   if not utils.isActive() then return "hub_inactive" end
   if not state.root.Parent or not state.character.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
