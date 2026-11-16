@@ -6,11 +6,11 @@ local utils, gameInfo, dash, movement, autoSpam, localPlayer, runService
 local root, heartbeat
 local lastTickAt = -math.huge
 local inFlight, handledSignals = nil, {}
+local exchangePartner, exchangeTarget, exchangeChanges, exchangeAt = nil, nil, 0, nil
 
 -- configuration
 local CONFIG = {
-  DETECTION_RANGE = 70,
-  FALLBACK_RANGE = 35,
+  MAX_EXCHANGE_AGE = 1,
   MAX_EVENT_AGE = 0.2,
   MIN_UP_SPEED = 68,
   MAX_HORIZONTAL_RATIO = 0.65,
@@ -22,8 +22,29 @@ local function finite(value) return type(value) == "number" and value == value a
 local function validVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 
 -- event-filtering
-local function clashPartner()
-  local context = gameInfo.getClashContext(true); return context and context.partnerId or nil
+local function clearExchange()
+  exchangePartner, exchangeTarget, exchangeChanges, exchangeAt = nil, nil, 0, nil
+end
+local function clashPartner(packetTarget)
+  local time = utils.now()
+  local physics = gameInfo.getDefensePhysics()
+  local context = gameInfo.getClashContext(true)
+  local snapshot = gameInfo.getSnapshotAt(time)
+  if not physics or physics.inClash ~= true or not context or not gameInfo.isSnapshotValid(snapshot)
+    or snapshot.targetUncertain or snapshot.teleported or snapshot.locked
+    or (snapshot.syncAt ~= nil and (not finite(snapshot.syncAt) or time < snapshot.syncAt or time - snapshot.syncAt > 0.5)) then
+    clearExchange(); return nil
+  end
+  local partner, target = context.partnerId, packetTarget or snapshot.targetId
+  if not finite(partner) or partner <= 0 or partner == localPlayer.UserId
+    or (target ~= localPlayer.UserId and target ~= partner) then clearExchange(); return nil end
+  if exchangePartner ~= partner or (exchangeAt and (time < exchangeAt or time - exchangeAt > CONFIG.MAX_EXCHANGE_AGE)) then clearExchange(); exchangePartner = partner end
+  if exchangeTarget ~= target then
+    if exchangeTarget ~= nil then exchangeChanges = exchangeChanges + 1 end
+    exchangeTarget, exchangeAt = target, time
+  end
+  if exchangeChanges < 2 then return nil end
+  return partner
 end
 local function relevantOpponent(event) return clashPartner() == event.userId end
 
@@ -62,6 +83,7 @@ local function onDash(event)
   end
   local player = event.player
   if not player or player.UserId ~= event.userId then return end
+  if event.signalActive ~= true or not gameInfo.isPlayerDashing(player) then return end
   local character = player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   local localHumanoid = localRoot.Parent:FindFirstChildOfClass("Humanoid")
   if not humanoid or humanoid.Health <= 0 or not localHumanoid or localHumanoid.Health <= 0 then return end
@@ -96,14 +118,21 @@ function AutoDash.bindCharacter(character)
     local time = utils.now()
     if time >= lastTickAt and time - lastTickAt < CONFIG.TICK_INTERVAL then return end
     lastTickAt = time
-    if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
+    if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then clearExchange(); return end
     local partner = clashPartner()
     if partner then dash.tick(time, true, partner) end
   end)
   utils.trackCharacter(heartbeat); return true
 end
+function AutoDash.onBallSync(data)
+  if not root or not utils or not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true then clearExchange(); return end
+  if type(data) ~= "table" then return end
+  if data.Teleported then clearExchange(); return end
+  clashPartner(data.TargetPlayerID)
+end
 function AutoDash.detachCharacter()
   root, inFlight, lastTickAt = nil, nil, -math.huge; table.clear(handledSignals)
+  clearExchange()
   if heartbeat then
     utils.untrackCharacter(heartbeat); heartbeat:Disconnect()
     heartbeat = nil
@@ -139,14 +168,16 @@ AutoDash.__contract = {
       "getClashContext",
       "getSnapshotAt",
       "isSnapshotValid",
-      "getDeflectGeometry",
+      "getDefensePhysics",
+      "isPlayerDashing",
     },
     Dash = { "setHandler", "tick" },
     Movement = { "upDash" },
     AutoSpam = { "getActivationContext" },
   },
-  provides = { "setup", "bindCharacter", "detachCharacter", "teardown" },
+  provides = { "setup", "bindCharacter", "detachCharacter", "teardown", "onBallSync" },
   bindCharacter = true,
+  onBallSync = true,
 }
 
 return AutoDash
