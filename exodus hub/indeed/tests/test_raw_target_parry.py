@@ -195,6 +195,13 @@ frameCb(1/60); assert(fires==1,'retried during miss cooldown')
 cd.blocking=false; frameCb(1/60); assert(fires==2,'lost cooldown-based miss recovery')
 """)
 
+    def test_finished_miss_recovers_even_without_matching_press_timestamp(self):
+        self.check_ap("""
+packet(42);cd.miss=true;cd.blocking=true;frameCb(1/60);assert(fires==1)
+cd.blocking=false;cd.phase='miss_finished';cd.pressAt=nil
+frameCb(1/60);assert(fires==2,'finished miss left AP armed without recovery')
+""")
+
     def test_training_cooldown_and_miss_recovery_remain(self):
         self.check_ap("""
 snap.mode='training'; snap.trainingRound=1

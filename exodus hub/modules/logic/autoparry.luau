@@ -574,7 +574,11 @@ local function tick(character, root, generation)
   if state.fired and state.retryPending and cooldown then
     if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.lastFireAt then
       state.retryPending = false
-    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05 and cooldown.blocking ~= true then
+    elseif
+      cooldown.miss == true
+      and cooldown.blocking == false
+      and (cooldown.phase == "miss_finished" or (finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05))
+    then
       state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady, state.nextAttemptAt = false, false, false, true, 0
     end
   end

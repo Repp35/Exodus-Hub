@@ -8,7 +8,7 @@ Para uma nova ativação: recurso AutoSpam e hub ligados; personagem local vivo 
 
 Quando existe posição real sincronizada, a divergência permitida da posição usada é `8 + velocidade × (idade da amostra + compensação de rede + 0,15)` studs. Essa verificação evita ativação por posição incoerente, sem impor limites de 0–1000 às coordenadas do mapa. Pacotes duplicados não criam trocas; pacotes antigos e sequências inválidas são ignorados. A sequência aceita a volta de 65535 para 0 e reinicia com uma bola nova.
 
-Uma nova ocorrência de miss desliga auto e manual uma vez. A mesma ocorrência mantida não é um veto contínuo à ativação. `miss_finished` é histórico de um cooldown já encerrado. A classificação do miss continua sendo fornecida pelo módulo Cooldown.
+Uma nova ocorrência de miss desliga auto e manual uma vez. Enquanto o miss estiver em curso, auto e manual permanecem desligados e não podem enviar cliques. `miss_finished` é histórico de um cooldown já encerrado. A classificação do miss continua sendo fornecida pelo módulo Cooldown.
 
 ## Geometria
 
@@ -45,15 +45,15 @@ Miss, terceiro alvo e fuga por dash não recebem proteção por adversário pró
 
 Dados inválidos, antigos, alvo incerto, teleporte, reset, bola travada, Frozen e modo treino impedem novos cliques automáticos enquanto persistirem. Essas pausas não contam como cooldown/retorno expirando. A sessão ativa é preservada durante a pausa, mas o histórico de trocas é limpo no reset/alvo desconhecido. Morte, miss e desligamento continuam sendo monitorados. Uma bola substituída encerra a sessão anterior.
 
-Depois de um desligamento real existe apenas um intervalo global de **20 ms**. Ele não é prolongado por chamadas de desligamento quando já está desligado. Após isso, os gatilhos ainda válidos são reavaliados: mesmo oponente, mesmo dash, mesmo retorno ou mesmo Haunter podem ativar novamente. Não é necessário que o cooldown físico termine para liberar a avaliação.
+Depois de um desligamento real existe apenas um intervalo global de **20 ms**. Ele não é prolongado por chamadas de desligamento quando já está desligado. Após isso, os gatilhos ainda válidos são reavaliados: mesmo oponente, mesmo dash, mesmo retorno ou mesmo Haunter podem ativar novamente. O cooldown comum não veta a avaliação. **Miss é a exceção: a reativação espera o miss terminar**, independentemente do intervalo de 20 ms.
 
-As ações de ligar/desligar são idempotentes: ligar enquanto já está ligado ou desligar enquanto já está desligado não repete a transição. A ativação não consulta o motivo de desligamento nem um histórico de gatilhos usados. Miss, timeout de cooldown, fuga por dash e falta de retorno registram suas próprias ocorrências, sem impedir a ativação. Uma ocorrência é reaplicável quando a condição desaparece e volta, ou quando surge um episódio novo; a mesma ocorrência mantida não fica desligando em todo frame. O histórico serve para evitar ações repetidas, não para vetar uma ativação.
+As ações de ligar/desligar são idempotentes: ligar enquanto já está ligado ou desligar enquanto já está desligado não repete a transição. A ativação não consulta o motivo de desligamento nem um histórico de gatilhos usados. Timeout de cooldown, fuga por dash e falta de retorno registram suas próprias ocorrências, sem impedir a ativação. Miss em curso mantém a espera até terminar. Uma ocorrência é reaplicável quando a condição desaparece e volta, ou quando surge um episódio novo; a mesma ocorrência mantida não fica desligando em todo frame. O histórico de ocorrências serve para evitar ações repetidas. A espera por miss consulta o estado atual do cooldown, não esse histórico.
 
 ## Envio dos cliques
 
 Ao ativar o auto, CPS/CPF/MS enviam o primeiro clique imediatamente, validando a sessão de novo antes do envio; os seguintes seguem a taxa configurada. Auto mantém o intervalo mínimo e o atraso calculado pelo jogo também para o primeiro clique. Taxa zero/inválida impede o agendador. A trava de envio simultâneo, limite de trabalho por frame e método de clique selecionado continuam valendo. Ativação e aceitação de um clique pelo servidor são estados diferentes.
 
-Manual continua independente da distância/retorno/dash: uma nova ocorrência de miss desliga o botão uma vez automaticamente. Personagem indisponível ou hub inativo impede o envio enquanto persistir.
+Manual continua independente da distância/retorno/dash: um miss desliga o botão; tentar religá-lo durante o mesmo miss não permite envio. Personagem indisponível ou hub inativo impede o envio enquanto persistir.
 
 ## Gates removidos
 

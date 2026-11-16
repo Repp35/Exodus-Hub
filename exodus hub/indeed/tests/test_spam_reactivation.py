@@ -10,19 +10,16 @@ end
 '''
 
 class Reactivation(unittest.TestCase):
-    def test_miss_is_one_event_not_a_continuous_activation_veto(self):
-        check(COUNT+'''
-packet(42,0,5);u.setManualSpamActive(true);cd.miss=true;cd.episode=1
-heartbeat(.01);stopped('deflect_miss');assert(not manual and stops('deflect_miss')==1)
-local stopAt=ap.getStatus().lastStopAt
-for i=1,10 do ap.canSend();ap.stopSpam('deflect_miss') end
-heartbeat(.019);assert(not ap.isActive());assert(ap.getStatus().lastStopAt==stopAt)
-heartbeat(.002);assert(ap.isActive(),'held miss blocked reactivation after 20 ms')
-u.setManualSpamActive(true);assert(manual and ap.canSendManual(),'same miss repeatedly disabled manual')
-for i=1,10 do heartbeat(.01);assert(ap.isActive() and manual) end
-assert(stops('deflect_miss')==1)
-cd.episode=2;heartbeat(.01);stopped('deflect_miss');assert(not manual and stops('deflect_miss')==2)
-''')
+    def test_miss_blocks_reactivation_until_finished(self):
+        check(COUNT+"""
+packet(42,0,5);u.setManualSpamActive(true);cd.miss=true;cd.blocking=true;cd.episode=1
+heartbeat(.01);stopped('deflect_miss');local before=clicks
+for i=1,30 do heartbeat(.01);assert(not ap.isActive() and not ap.canSend() and not manual) end
+assert(clicks==before and stops('deflect_miss')==1)
+u.setManualSpamActive(true);assert(not ap.canSendManual() and not manual)
+cd.blocking=false;cd.phase='miss_finished';heartbeat(.01)
+assert(ap.isActive() and clicks>before,'finished miss prevented recovery')
+""")
 
     def test_cooldown_timeout_fires_once_without_waiting_for_cooldown_to_clear(self):
         check(COUNT+'''
@@ -37,16 +34,12 @@ cd.episode=2;cd.blockingSince=tm;heartbeat(.181);stopped('deflect_cooldown_timeo
 assert(stops('deflect_cooldown_timeout')==2)
 ''')
 
-    def test_independent_miss_and_timeout_events(self):
-        check(COUNT+'''
-snap.speed=16;snap.syncSpeed=16;snap.velocity=v(-16);other.root.Position=v(20)
-packet(42,0,12);packet(99,.01);packet(42,.05)
-cd.blocking=true;cd.blockingSince=tm;cd.miss=true;cd.episode=1
-heartbeat(.01);stopped('deflect_miss');heartbeat(.021);assert(ap.isActive())
-heartbeat(.16);stopped('deflect_cooldown_timeout')
-assert(stops('deflect_miss')==1 and stops('deflect_cooldown_timeout')==1)
-heartbeat(.021);assert(ap.isActive(),'one reason suppressed independent activation')
-''')
+    def test_miss_wait_is_independent_of_normal_timeout(self):
+        check(COUNT+"""
+packet(42,0,5);cd.miss=true;cd.blocking=true;cd.episode=1
+heartbeat(.01);heartbeat(.25);assert(not ap.isActive())
+cd.miss=false;cd.blocking=false;heartbeat(.01);assert(ap.isActive())
+""")
 
     def test_old_close_handoff_is_not_a_lock_when_ball_is_near(self):
         check('''
@@ -74,8 +67,8 @@ assert(ap.isActive() and ap.getActivationContext().reason=='haunter','stop consu
     def test_repeated_clicks_do_not_turn_one_cooldown_into_multiple_misses(self):
         check(COUNT+"""
 packet(42,0,5);cd.miss=true;cd.blockingSince=tm;cd.pressAt=tm
-heartbeat(.01);stopped('deflect_miss');heartbeat(.021);assert(ap.isActive())
-for i=1,10 do cd.pressAt=tm;heartbeat(.01);assert(ap.isActive()) end
+heartbeat(.01);stopped('deflect_miss');heartbeat(.021);assert(not ap.isActive())
+for i=1,10 do cd.pressAt=tm;heartbeat(.01);assert(not ap.isActive()) end
 assert(stops('deflect_miss')==1)
 cd.miss=false;heartbeat(.01);cd.miss=true;heartbeat(.01);stopped('deflect_miss')
 assert(stops('deflect_miss')==2,'fresh miss was hidden by prior occurrence')

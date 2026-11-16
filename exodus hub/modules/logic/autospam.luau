@@ -99,12 +99,11 @@ local function monitorCooldown(state)
   else
     state.deflectCooldownSince, state.cooldownToken = nil, nil; eventOnce(state, "deflect_cooldown_timeout", false)
   end
-  local missed = eventOnce(state, "deflect_miss", activeMiss(cd), token)
-  if missed then
+  if activeMiss(cd) then
     if utils.isManualSpamActive() then utils.setManualSpamActive(false); utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss") end
     deactivate(state, "deflect_miss", time)
   end
-  return cd, missed
+  return cd, activeMiss(cd)
 end
 local function sampleGate(state, s, time)
   if not utils.isActive() then return "hub_inactive" end
