@@ -9,6 +9,7 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.36,
+    REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 8,
     CLOSE_OPPONENT_DISTANCE = 16,
     MAX_CLASH_DISTANCE = 35,
@@ -29,7 +30,7 @@ local CONFIG = {
     DASH_ESCAPE_MIN_HORIZONTAL_RATIO = 0.35,
     DASH_ESCAPE_MIN_SEPARATION_GAIN = 2,
     DEFLECT_COOLDOWN_TIMEOUT = 0.18,
-    CLASH_GRACE_PERIOD = 0.25,
+    CLASH_DISTANCE_TIMEOUT = 0.25,
     TARGET_RETURN_TIMEOUT_MIN_SPEED = 0.3,
     TARGET_RETURN_TIMEOUT_MAX_SPEED = 0.4,
     COOLDOWN_PROTECTION_RADIUS = 16,
@@ -72,24 +73,38 @@ end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent = nil, nil
 end
+local function eventOnce(state, reason, condition, token)
+  if not condition then state.stopEvents[reason] = nil; return false end
+  local previous = state.stopEvents[reason]
+  if previous and previous.token == token then return false end
+  state.stopEvents[reason] = { token = token }; return true
+end
 local function deactivate(state, reason, time)
-  if current ~= state then return false end
-  if state.active and reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
-  clearEvidence(state); state.deflectCooldownSince, state.departedAt, state.dashEscapeSince = nil, nil, nil
-  if state.active then
-    state.active, state.reason = false, reason; lastStopReason, lastStopAt = reason, time or now()
-    utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
-  end
-  state.partner, state.lastGate = nil, reason; return true
+  if current ~= state or not state.active then return false end
+  time = time or now()
+  if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
+  state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
+  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
+  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
 local function activeMiss(cd) return cd and cd.miss == true and cd.phase ~= "miss_finished" end
+local function cooldownToken(cd) return cd and (cd.episode or cd.blockingSince) or "unknown" end
 local function monitorCooldown(state)
-  local cd = cooldownInfo.getDeflectCooldownState()
-  if activeMiss(cd) then
-    if utils.isManualSpamActive() then utils.setManualSpamActive(false); utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss") end
-    deactivate(state, "deflect_miss", now())
+  local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
+  local token = cooldownToken(cd)
+  if cd and cd.blocking == true then
+    if state.cooldownToken ~= token or state.deflectCooldownSince == nil then
+      state.cooldownToken = token; state.deflectCooldownSince = math.max(finite(cd.blockingSince) and math.min(cd.blockingSince, time) or time, state.cooldownResumeAt or 0)
+    end
+  else
+    state.deflectCooldownSince, state.cooldownToken = nil, nil; eventOnce(state, "deflect_cooldown_timeout", false)
   end
-  return cd
+  local missed = eventOnce(state, "deflect_miss", activeMiss(cd), token)
+  if missed then
+    if utils.isManualSpamActive() then utils.setManualSpamActive(false); utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss") end
+    deactivate(state, "deflect_miss", time)
+  end
+  return cd, missed
 end
 local function sampleGate(state, s, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -212,6 +227,7 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
     end
     return {
       reason = selfDash and "self_dash_escape" or "opponent_dash_escape",
+      eventToken = sample.observedAt,
       distance = distance,
       projectedDistance = projectedDistance,
       threshold = threshold,
@@ -222,69 +238,57 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if not cooldown or cooldown.blocking ~= true or cooldown.source == "unknown" then tracker.dashEscapeSince = nil; return nil end
   local start = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or tracker.dashEscapeSince or time
-  tracker.dashEscapeSince = math.max(tracker.activatedAt or time, start)
+  tracker.dashEscapeSince = tracker.dashEscapeSince or start
   if time - tracker.dashEscapeSince < CONFIG.DEACTIVATION.DASH_ESCAPE_COOLDOWN then return nil end
   return result
 end
-local function activate(state, reason, partner, time, s, dashAt)
+local function activate(state, reason, partner, time, s)
   if state.active then return false end
-  state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate, state.deflectCooldownSince = reason, nil
-  if dashAt then state.consumedDashes[partner .. ":" .. reason] = dashAt end
-  clearEvidence(state)
-  if s.targetId == partner then state.departedAt = time end
-  state.dashGraceUntil = (reason == "dash_incoming" or reason == "dash_self") and time + 0.25 or nil; lastActivationReason, lastActivationAt = reason, time
-  clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get()
-  utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
-  return true
+  state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
+  if s.targetId == partner then state.departedAt = state.departedAt or time end
+  lastActivationReason, lastActivationAt = reason, time; clashStatsModule.begin(partner, time)
+  clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
+  utils.recordTransition("AutoSpam", "idle", "active", reason); return true
 end
 local function deactivationReason(state, s, time, cd)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  if activeMiss(cd) then return "deflect_miss" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   if state.ball and s and s.ball ~= state.ball then return "ball_replaced" end
   if sampleGate(state, s, time) then
-    state.deflectCooldownSince, state.departedAt = nil, nil; state.activatedAt = time
+    state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil; state.cooldownResumeAt = time
     return nil
   end
-  if s.targetId ~= localPlayer.UserId and s.targetId ~= state.partner then return "third_target" end
-  local opponent = playerPosition(state.partner)
-  if
-    opponent
-    and (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE
-    and (not state.dashGraceUntil or time >= state.dashGraceUntil)
-  then
-    return "clash_distance"
-  end
+  local thirdTarget = eventOnce(state, "third_target", s.targetId ~= localPlayer.UserId and s.targetId ~= state.partner, s.targetId); local opponent = playerPosition(state.partner)
+  if opponent and (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then state.distanceSince = state.distanceSince or time else state.distanceSince = nil end
+  local distanceEvent =
+    eventOnce(state, "clash_distance", state.distanceSince and time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT, state.partner)
   local escape = dashEscapeRisk(state, state, s, time); state.dashEscape = escape
-  if escape then return escape.reason end
-  if cd and cd.blocking == true then
-    local started = finite(cd.blockingSince) and math.min(cd.blockingSince, time) or time; state.deflectCooldownSince = state.deflectCooldownSince or math.max(state.activatedAt, started)
-    if
-      time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-      and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, s, time)
-    then
-      return "deflect_cooldown_timeout"
-    end
-  else
-    state.deflectCooldownSince = nil
-  end
+  local escapeToken = escape and escape.eventToken; local opponentEscape = eventOnce(state, "opponent_dash_escape", escape and escape.reason == "opponent_dash_escape", escapeToken)
+  local selfEscape = eventOnce(state, "self_dash_escape", escape and escape.reason == "self_dash_escape", escapeToken); local cooldownExpired = cd
+    and cd.blocking == true
+    and state.deflectCooldownSince
+    and time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
+    and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, s, time)
+  local cooldownEvent = eventOnce(state, "deflect_cooldown_timeout", cooldownExpired, cooldownToken(cd)); local returnExpired = false
   if s.targetId == state.partner then
     state.departedAt = state.departedAt or time; local minimum, maximum = gameInfo.getBallSpeedLimits()
     local progress = finite(minimum) and finite(maximum) and maximum > minimum and math.clamp((snapshotSpeed(s) - minimum) / (maximum - minimum), 0, 1) or 0
     local timeout = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MIN_SPEED
       + (CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MAX_SPEED - CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MIN_SPEED) * progress
-    if
-      time - state.activatedAt >= CONFIG.DEACTIVATION.CLASH_GRACE_PERIOD
-      and time - state.departedAt >= timeout
+    returnExpired = time - state.departedAt >= timeout
       and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.RETURN_PROTECTION_MAX_SPEED_RADIUS, s, time)
-    then
-      return "target_return_timeout"
-    end
   else
     state.departedAt = nil
   end
+  local returnEvent = eventOnce(state, "target_return_timeout", returnExpired, state.departedAt)
+  if thirdTarget then return "third_target" end
+  if distanceEvent then return "clash_distance" end
+  if opponentEscape then return "opponent_dash_escape" end
+  if selfEscape then return "self_dash_escape" end
+  if cooldownEvent then return "deflect_cooldown_timeout" end
+  if returnEvent then return "target_return_timeout" end
 end
 local function dashPrediction(state, s, time)
   if s.syncAt == nil or time - s.syncAt > CONFIG.ACTIVATION.DASH_MAX_SNAPSHOT_AGE then return nil, "dash_snapshot_stale" end
@@ -307,7 +311,6 @@ local function dashPrediction(state, s, time)
       then
         return nil
       end
-      if state.consumedDashes[partner .. ":" .. reason] == sample.observedAt then return nil end
       local age, magnitude, remaining = time - sample.observedAt, sample.velocity.Magnitude, sample.normalModel.estimatedRemaining; local distance = relative.Magnitude
       if age < 0 or age > 0.2 or magnitude < 70 or magnitude > 140 or not finite(remaining) or remaining <= 0 or distance <= 0.05 then return nil end
       local closing = sample.velocity:Dot(relative) / distance
@@ -353,8 +356,10 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, localPlayer.UserId) then state.gates.returnTarget = "return_ball_outside_window"
     else state.gates.returnTarget = "ready"; return "return_target", pending.partner end
   end
-  local close = state.close; state.gates.close = not close and "close_no_handoff" or "close_expired"
-  if close and time - close.at <= CONFIG.ACTIVATION.RETURN then
+  local closePartner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+    or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+  local close = closePartner and { partner = closePartner } or nil; state.gates.close = not close and "close_no_partner" or "close_ball_distance"
+  if close then
     if not nearPartner(state, close.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE) then state.gates.close = "close_opponent_distance"
     elseif s.targetId ~= localPlayer.UserId then state.gates.close = "close_not_target"
     elseif (s.position - state.root.Position).Magnitude > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then state.gates.close = "close_ball_distance"
@@ -381,11 +386,11 @@ local function observeStats(state, s, time, packet)
 end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
-  state.gates = {}; local cd = monitorCooldown(state)
-  if activeMiss(cd) then state.lastGate = "deflect_miss"; return end
+  state.gates = {}; local cd, missed = monitorCooldown(state)
+  if missed then state.lastGate = "deflect_miss"; return end
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
-    deactivate(state, utils.isActive() and "disabled" or "hub_inactive", time); state.enabled = false
-    resetTargets(state)
+    local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
+    state.lastGate = reason; resetTargets(state)
     if utils.isActive() and utils.isManualSpamActive() then observeStats(state, s, time, packet) end
     return
   end
@@ -398,22 +403,22 @@ local function evaluate(state, s, time, packet)
   if order == "new" then state.sequence = s.syncSequence end
   local gate = sampleGate(state, s, time)
   if gate then
-    state.gates.common, state.lastGate = gate, gate
-    if state.active then state.deflectCooldownSince, state.departedAt = nil, nil; state.activatedAt = time end
+    state.gates.common, state.lastGate = gate, gate; state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil
+    state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
     return
   end
-  state.enabled = true; observeTarget(state, s, time)
-  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
+  observeTarget(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
     if stop then deactivate(state, stop, time); return end
     state.lastGate = "active"; observeStats(state, s, time, packet)
     return
   end
-  local reason, partner, dashAt = chooseActivation(state, s, time)
-  if reason then activate(state, reason, partner, time, s, dashAt) else state.lastGate = "no_activation_evidence" end
+  if state.reactivateAt and time < state.reactivateAt then state.lastGate, state.gates.common = "reactivation_delay", "reactivation_delay"; return end
+  state.reactivateAt = nil; local reason, partner = chooseActivation(state, s, time)
+  if reason then activate(state, reason, partner, time, s) else state.lastGate = "no_activation_evidence" end
   observeStats(state, s, time, packet)
 end
 local function nearestPlayer(position, limit, excluded)
@@ -508,7 +513,7 @@ function AutoSpam.bindCharacter(character)
     reason = "waiting",
     lastGate = "waiting",
     gates = {},
-    consumedDashes = {},
+    stopEvents = {},
     lastRootPosition = root.Position,
     lastTickAt = -math.huge,
   }
@@ -527,8 +532,8 @@ function AutoSpam.bindCharacter(character)
   end)
   listen(state, runService.Heartbeat, function()
     if current ~= state then return end
-    local time = now()
-    if time - state.lastTickAt < CONFIG.SHARED.RUNTIME_TICK_INTERVAL then return end
+    local time = now(); local readyToRearm = not state.active and state.reactivateAt and time >= state.reactivateAt
+    if time - state.lastTickAt < CONFIG.SHARED.RUNTIME_TICK_INTERVAL and not readyToRearm then return end
     state.lastTickAt = time
     if time >= (state.nextHaunterCheck or 0) then state.nextHaunterCheck = time + 0.5; connectHaunter(state) end
     if vector(state.lastRootPosition) and (root.Position - state.lastRootPosition).Magnitude > CONFIG.ACTIVATION.HAUNTER_RANGE then
@@ -569,8 +574,8 @@ function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.canSendManual()
   local state = current
   if not state or not utils or not utils.isManualSpamActive() then return false end
-  local cd = monitorCooldown(state)
-  if activeMiss(cd) then return false end
+  local _, missed = monitorCooldown(state)
+  if missed then return false end
   return utils.isActive() and state.root.Parent ~= nil and state.character.Parent ~= nil and playerIsAlive(localPlayer.UserId)
 end
 function AutoSpam.canSend()
@@ -637,6 +642,7 @@ function AutoSpam.getStatus()
     phase = state and (state.active and "active" or "idle") or "detached",
     active = state ~= nil and state.active,
     lastGate = state and state.lastGate or "detached",
+    reactivationRemaining = state and math.max(0, (state.reactivateAt or 0) - time) or 0,
     ballDistance = distance,
     targetUncertain = sample and sample.targetUncertain == true or false,
     snapshotAge = sample and finite(sample.syncAt) and time - sample.syncAt or nil,

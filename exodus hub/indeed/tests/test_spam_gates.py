@@ -99,10 +99,13 @@ stopped('target_return_timeout')
     def test_hard_stops(self):
         for action,reason in (("enabled=false",'hub_inactive'),("cfg.AutoSpam=false",'disabled'),
                               ("me.hum.Health=0",'player_died'),("other.hum.Health=0",'opponent_left_or_died'),
-                              ("other.root.Position=v(36)",'clash_distance'),("snap.targetId=88",'third_target'),
+                              ("snap.targetId=88",'third_target'),
                               ("snap.ball=instance('BasePart')",'ball_replaced')):
             with self.subTest(reason=reason):
                 check("packet(42,0,8);"+action+";ap.canSend();stopped('"+reason+"')")
+
+    def test_distance_uses_its_own_continuous_timer(self):
+        check("packet(42,0,8);other.root.Position=v(36);ap.canSend();heartbeat(.249);assert(ap.isActive());heartbeat(.002);ap.canSend();stopped('clash_distance')")
 
     def test_invalid_samples_pause_without_restarting_or_clicking(self):
         for mutation in ("snap.syncSpeed=-1","snap.syncSpeed=1001","snap.syncSpeed=math.huge","snap.syncSpeed=0/0",
