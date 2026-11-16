@@ -80,7 +80,8 @@ local function userId(x) return x end
 local function geometry() return {fullRadius=20,noWindowParryRadius=8,effectiveWindow=.02} end
 local function distanceLimit() return 30 end
 local function targetReturnTimeout() return .2 end
-local function opponentOutside() return false end
+local outside=false
+local function opponentOutside() return outside end
 local function snapshotSpeed(s) return s.speed end
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
 local cooldownInfo={getDeflectCooldownState=function() return nil end}
@@ -90,12 +91,14 @@ local s={reason='haunter',activatedAt=10,root={Position=v(0)},partner=99,target=
 local x={targetId=42,position=v(25),speed=600}
 """ + code + """
 assert(deactivationReason(s,x,10.05)==nil)
-assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed')
+assert(deactivationReason(s,x,10.11)==nil,'near opponent lost unconfirmed clash')
+outside=true; assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed'); outside=false
 x.position=v(10); assert(deactivationReason(s,x,10.11)==nil)
 distance=31; assert(deactivationReason(s,x,10.12)=='clash_distance')
 distance=10; x.targetId=99; s.departedAt=10.2
 assert(deactivationReason(s,x,10.29)==nil)
-assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
+assert(deactivationReason(s,x,10.31)==nil,'near opponent lost return clash')
+outside=true; assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
 """)
 
     def test_frozen_stationary_and_teleported_do_not_deactivate_auto(self):
@@ -103,6 +106,8 @@ assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
         run_lua("""
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
 local cooldownInfo={getDeflectCooldownState=function() return nil end}
+local CONFIG={DEACTIVATION={COOLDOWN_PROTECTION_RADIUS=16,COOLDOWN_PROTECTION_MAX_SPEED_RADIUS=40}}
+local function opponentOutside() return false end
 local frozen=true; local gameInfo={getBallFrozen=function() return frozen end}
 local s={stationary=false}
 """ + code + """
@@ -144,6 +149,8 @@ local function distanceLimit() return 140 end
 local function geometry() return {fullRadius=200} end
 local function dashEscapeRisk() end
 local function cooldownExpired() return false end
+local outside=false
+local function opponentOutside() return outside end
 local state={root={Position=v(0)},partner=99,target=88,activatedAt=10}
 local snapshot={targetId=88,position=v(10),speed=600}
 """ + code + """
@@ -154,7 +161,8 @@ assert(deactivationReason(state,snapshot,10.01)=='clash_distance','window radius
 snapshot.targetId=42
 assert(deactivationReason(state,snapshot,10.01)=='clash_distance','incoming target hid far partner')
 positions[99]=v(10); cd.windowExpired=true
-assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','near opponent hid expired miss')
+assert(deactivationReason(state,snapshot,10.01)==nil,'near opponent lost spam on miss')
+outside=true; assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','distant miss did not stop')
 frozen=true; assert(deactivationReason(state,snapshot,10.01)=='deflect_miss')
 cd.predictedReset=true; assert(deactivationReason(state,snapshot,10.01)==nil,'predicted parry counted as miss')
 """)

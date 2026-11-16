@@ -416,11 +416,12 @@ local function deactivationReason(state, snapshot, time)
       if typeof(position) == "Vector3" and (position - state.root.Position).Magnitude > limit then return "clash_distance" end
     end
   end
+  local outsideProtection = opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
   local cooldown = cooldownInfo.getDeflectCooldownState()
-  if cooldown and cooldown.blocking == true and cooldown.miss == true and cooldown.windowExpired == true and cooldown.predictedReset ~= true then return "deflect_miss" end
+  if cooldown and cooldown.blocking == true and cooldown.miss == true and cooldown.windowExpired == true and cooldown.predictedReset ~= true and outsideProtection then return "deflect_miss" end
   if gameInfo.getBallFrozen() == true or state.stationary then return nil end
   local escape = dashEscapeRisk(state, state, snapshot, time); state.dashEscape = escape
-  if escape then return escape.reason end
+  if escape and outsideProtection then return escape.reason end
   if cooldownExpired(state, snapshot, time) then return "deflect_cooldown_timeout" end
   if
     state.reason == "haunter"
@@ -440,14 +441,15 @@ local function deactivationReason(state, snapshot, time)
       and (snapshot.position - targetPosition).Magnitude <= targetRange + snapshotSpeed(snapshot) * value.effectiveWindow
     if inWindow then state.haunterWindowConfirmed = true end
     if age >= CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT then
-      if not state.haunterWindowConfirmed or not fresh then return "haunter_window_unconfirmed" end
+      if (not state.haunterWindowConfirmed or not fresh) and outsideProtection then return "haunter_window_unconfirmed" end
+      if not fresh then return nil end
       local opponent = state.partner and gameInfo.getPlayerMotion(state.partner); local limit = distanceLimit(snapshot, state.partner)
-      if typeof(opponent) ~= "Vector3" or not limit or (opponent - state.root.Position).Magnitude > limit then return "opponent_distance" end
+      if (typeof(opponent) ~= "Vector3" or not limit or (opponent - state.root.Position).Magnitude > limit) and outsideProtection then return "opponent_distance" end
       local target = userId(snapshot.targetId)
       if target ~= localPlayer.UserId and target ~= state.partner then return "haunter_target_changed" end
-      if target == localPlayer.UserId and not inWindow then return "haunter_ball_outside_window" end
+      if target == localPlayer.UserId and not inWindow and outsideProtection then return "haunter_ball_outside_window" end
       local wait = speedInterval(snapshot, 0.15, 0.04) + networkLatency()
-      if target == state.partner and state.departedAt and time - state.departedAt >= wait then return "haunter_return_timeout" end
+      if target == state.partner and state.departedAt and time - state.departedAt >= wait and outsideProtection then return "haunter_return_timeout" end
     end
   end
   if

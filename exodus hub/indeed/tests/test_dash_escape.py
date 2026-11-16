@@ -76,11 +76,16 @@ assert(AutoSpam.canSendManual()); assert(manualOn and observedReason==nil)
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
 local gameInfo={getBallFrozen=function() return false end}
 local cooldownInfo={getDeflectCooldownState=function() end}
+local CONFIG={DEACTIVATION={COOLDOWN_PROTECTION_RADIUS=16,COOLDOWN_PROTECTION_MAX_SPEED_RADIUS=40}}
+local outside=true
+local function opponentOutside() return outside end
 local function dashEscapeRisk() return {reason='opponent_dash_escape'} end
-local function cooldownExpired() error('slow cooldown gate called first') end
+local function cooldownExpired() return false end
+local function freshSnapshot() return false end
 local state={active=true}; local snapshot={}
 """ + code + """
 assert(deactivationReason(state,snapshot,11)=='opponent_dash_escape')
+outside=false; assert(deactivationReason(state,snapshot,11)==nil,'near opponent lost spam on projected dash')
 """)
 
 if __name__ == '__main__': unittest.main()
