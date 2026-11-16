@@ -37,14 +37,14 @@ for _,factor in ipairs(geometryFactors) do assert(factor==1) end
             with self.subTest(case=case):
                 check(case+"\nassert(not ap.isActive() and clicks==0,'unrelated approach started spam')")
 
-    def test_close_ball_eight_studs_and_spawn_already_targeted(self):
-        check("packet(42,0,8);assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='close_target')")
-        check("packet(42,0,8.01);assert(not ap.isActive())")
-        check("other.root.Position=v(17);packet(42,0,8);assert(not ap.isActive(),'distant bystander triggered close gate')")
+    def test_close_ball_five_studs_and_spawn_already_targeted(self):
+        check("packet(42,0,5);assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='close_target')")
+        check("packet(42,0,5.01);assert(not ap.isActive())")
+        check("other.root.Position=v(17);packet(42,0,5);assert(not ap.isActive(),'distant bystander triggered close gate')")
 
     def test_miss_always_stops_both_modes_even_during_reset(self):
         check('''
-packet(42,0,8);u.setManualSpamActive(true)
+packet(42,0,5);u.setManualSpamActive(true)
 cd.miss=true;snap.teleported=true;heart:Fire()
 stopped('deflect_miss');assert(not manual and not ap.canSendManual() and not ap.canSend())
 cd.miss=false;snap.teleported=false;packet(99,.01,50);packet(42,.05,50)
@@ -61,7 +61,7 @@ g.getDeflectAbility=function() return ability end
 u.getReplicatedStorage=function() return nil end
 assert(realCooldown.setup({Utils=u,GameInfo=g}))
 c.getDeflectCooldownState=realCooldown.getDeflectCooldownState
-packet(42,0,8);assert(ap.isActive())
+packet(42,0,5);assert(ap.isActive())
 ability.Cooldown=1.45;advance(.21);heartbeat(.01)
 stopped('deflect_miss')
 ability.Cooldown=0;ability.PendingPredictUntil=nil
@@ -75,7 +75,7 @@ u.setManualSpamActive(true);assert(ap.canSendManual(),'finished miss latched man
 
     def test_near_opponent_protects_cooldown_and_return_timeouts(self):
         check('''
-packet(42,0,8);cd.blocking=true;cd.blockingSince=tm
+packet(42,0,5);cd.blocking=true;cd.blockingSince=tm
 packet(99,.01,50);heartbeat(.5);assert(ap.isActive())
 ''')
 
@@ -102,10 +102,10 @@ stopped('target_return_timeout')
                               ("snap.targetId=88",'third_target'),
                               ("snap.ball=instance('BasePart')",'ball_replaced')):
             with self.subTest(reason=reason):
-                check("packet(42,0,8);"+action+";ap.canSend();stopped('"+reason+"')")
+                check("packet(42,0,5);"+action+";ap.canSend();stopped('"+reason+"')")
 
     def test_distance_uses_its_own_continuous_timer(self):
-        check("packet(42,0,8);other.root.Position=v(36);ap.canSend();heartbeat(.249);assert(ap.isActive());heartbeat(.002);ap.canSend();stopped('clash_distance')")
+        check("packet(42,0,5);other.root.Position=v(36);ap.canSend();heartbeat(.249);assert(ap.isActive());heartbeat(.002);ap.canSend();stopped('clash_distance')")
 
     def test_invalid_samples_pause_without_restarting_or_clicking(self):
         for mutation in ("snap.syncSpeed=-1","snap.syncSpeed=1001","snap.syncSpeed=math.huge","snap.syncSpeed=0/0",
@@ -123,7 +123,7 @@ local before=clicks;ap.onBallSync({Source='packet',Sequence=0,TargetPlayerID=42,
 ''')
 
     def test_disabled_and_detached_never_send(self):
-        check("cfg.AutoSpam=false;packet(42,0,8);assert(not ap.isActive() and clicks==0);cfg.AutoSpam=true;packet(42,.01,8);assert(ap.isActive());ap.detachCharacter();assert(not ap.canSend())")
+        check("cfg.AutoSpam=false;packet(42,0,5);assert(not ap.isActive() and clicks==0);cfg.AutoSpam=true;packet(42,.01,5);assert(ap.isActive());ap.detachCharacter();assert(not ap.canSend())")
 
     def test_pause_does_not_consume_return_or_cooldown_timeout(self):
         check("""
@@ -147,7 +147,7 @@ snap.teleported=false;packet(42,.05,50);assert(not ap.isActive(),'reset combined
                     check(f"other.root.Position=v({distance});snap.speed={speed};snap.syncSpeed={speed};snap.velocity=v(-{speed});packet(42,0,12);packet(99,.001);packet(42,.02);assert(ap.isActive() and clicks>0)")
 
     def test_new_ball_sequence_can_restart_at_lower_value(self):
-        check("packet(42,0,50,300);snap.ball=instance('BasePart');packet(42,.01,8,1);assert(ap.isActive() and clicks==1)")
+        check("packet(42,0,50,300);snap.ball=instance('BasePart');packet(42,.01,5,1);assert(ap.isActive() and clicks==1)")
 
     def test_haunter_uses_initial_event_only(self):
         for self_cast in (False,True):
