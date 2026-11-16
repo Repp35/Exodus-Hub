@@ -260,11 +260,9 @@ local function deactivationReason(state, s, time, cd)
     eventOnce(state, "clash_distance", state.distanceSince and time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT, state.partner)
   local escape = dashEscapeRisk(state, state, s, time); state.dashEscape = escape
   local escapeToken = escape and escape.eventToken; local opponentEscape = eventOnce(state, "opponent_dash_escape", escape and escape.reason == "opponent_dash_escape", escapeToken)
-  local selfEscape = eventOnce(state, "self_dash_escape", escape and escape.reason == "self_dash_escape", escapeToken)
-  local returnExpired = false
+  local selfEscape = eventOnce(state, "self_dash_escape", escape and escape.reason == "self_dash_escape", escapeToken); local returnExpired = false
   if s.targetId == state.partner then
-    state.departedAt = state.departedAt or time
-    returnExpired = time - state.departedAt >= CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
+    state.departedAt = state.departedAt or time; returnExpired = time - state.departedAt >= CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
       and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.RETURN_PROTECTION_MAX_SPEED_RADIUS, s, time)
   else
     state.departedAt = nil
