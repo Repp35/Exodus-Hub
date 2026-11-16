@@ -8,7 +8,7 @@ class DashClashPrediction(unittest.TestCase):
 other.root.Position=v(40);dash(99,-120);packet(42,0,50)
 assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='dash_incoming')
 ''')
-        check("dash(99,-120);packet(42,0,5);assert(ap.getActivationContext().reason=='dash_incoming')")
+        check("dash(99,-120);packet(42,0,2);assert(ap.getActivationContext().reason=='dash_incoming')")
 
     def test_new_dasher_is_not_hidden_by_previous_opponent(self):
         check("packet(88,0,50);dash(99,-120);packet(42,.01);assert(ap.getActivationContext().reason=='dash_incoming')")

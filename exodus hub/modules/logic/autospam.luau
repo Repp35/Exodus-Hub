@@ -11,6 +11,7 @@ local CONFIG = {
     RETURN = 0.36,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
+    CLOSE_INSTANT_DISTANCE = 2,
     CLOSE_OPPONENT_DISTANCE = 16,
     MAX_CLASH_DISTANCE = 35,
     RADIUS_FACTOR = 1,
@@ -68,7 +69,7 @@ local function listen(state, signal, callback)
   utils.trackCharacter(connection); return connection
 end
 local function clearEvidence(state)
-  state.outbound, state.pending, state.close, state.haunter = nil, nil, nil, nil
+  state.outbound, state.pending, state.close, state.haunter, state.closeArm = nil, nil, nil, nil, nil
 end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent = nil, nil
@@ -100,6 +101,7 @@ local function monitorCooldown(state)
     state.deflectCooldownSince, state.cooldownToken = nil, nil; eventOnce(state, "deflect_cooldown_timeout", false)
   end
   if activeMiss(cd) then
+    state.closeArm = nil
     if utils.isManualSpamActive() then utils.setManualSpamActive(false); utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss") end
     deactivate(state, "deflect_miss", time)
   end
@@ -163,6 +165,12 @@ local function observeTarget(state, s, time)
   local target, previous = s.targetId, state.target
   if target == previous then return end
   local me = localPlayer.UserId; state.close, state.pending = nil, nil
+  local arm = state.closeArm
+  if arm then
+    if previous == me and target == arm.partner then arm.stage = "outbound"
+    elseif previous == arm.partner and target == me and arm.stage == "outbound" then arm.stage = "confirmed"
+    elseif target ~= me or previous ~= arm.partner then state.closeArm = nil end
+  end
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.target, state.lastSwitchAt = target, time
   if previous == me and target ~= me then
@@ -355,14 +363,22 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, localPlayer.UserId) then state.gates.returnTarget = "return_ball_outside_window"
     else state.gates.returnTarget = "ready"; return "return_target", pending.partner end
   end
-  local closePartner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+  local distance = (s.position - state.root.Position).Magnitude; local closePartner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
     or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-  local close = closePartner and { partner = closePartner } or nil; state.gates.close = not close and "close_no_partner" or "close_ball_distance"
-  if close then
-    if not nearPartner(state, close.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE) then state.gates.close = "close_opponent_distance"
-    elseif s.targetId ~= localPlayer.UserId then state.gates.close = "close_not_target"
-    elseif (s.position - state.root.Position).Magnitude > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then state.gates.close = "close_ball_distance"
-    else state.gates.close = "ready"; return "close_target", close.partner end
+  state.gates.close = "close_not_target"
+  if s.targetId == localPlayer.UserId then
+    if distance <= CONFIG.ACTIVATION.CLOSE_INSTANT_DISTANCE and closePartner then state.gates.close = "ready"; return "close_target", closePartner end
+    local arm = state.closeArm
+    if arm and not nearPartner(state, arm.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE) then state.closeArm = nil; arm = nil end
+    if not arm and distance <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
+      local sender = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+      if sender then arm = { partner = sender, stage = "incoming" }; state.closeArm = arm end
+    end
+    state.gates.close = not arm and "close_no_sender_or_distance" or "close_wait_exchange"
+    if arm and arm.stage == "confirmed" then
+      if ballWindow(state, s, localPlayer.UserId) then state.gates.close = "ready"; return "close_target", arm.partner end
+      state.gates.close = "close_return_outside_window"
+    end
   end
   local haunter = state.haunter; state.gates.haunter = not haunter and "haunter_no_event" or "haunter_expired"
   if haunter and time - haunter.at <= CONFIG.ACTIVATION.HAUNTER_LIFETIME then

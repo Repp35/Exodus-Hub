@@ -7,7 +7,7 @@ class DashEscapeTests(unittest.TestCase):
         for id,velocity in ((99,120),(42,-120)):
             with self.subTest(id=id):
                 check(f'''
-packet(42,0,5);snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
+packet(42,0,2);snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
 packet(99,.01,50);cd.blocking=true;cd.blockingSince=tm;dash({id},{velocity})
 heartbeat(.049);assert(ap.isActive());heartbeat(.002)
 stopped({'"opponent_dash_escape"' if id==99 else '"self_dash_escape"'})
@@ -17,7 +17,7 @@ stopped({'"opponent_dash_escape"' if id==99 else '"self_dash_escape"'})
         for mutation in ("cd.blocking=false","dashSamples[99].velocity=v(0,120)","snap.position=v(8)"):
             with self.subTest(mutation=mutation):
                 check('''
-packet(42,0,5);snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
+packet(42,0,2);snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
 packet(99,.01,50);cd.blocking=true;cd.blockingSince=tm;dash(99,120)
 '''+mutation+";heartbeat(.06);assert(ap.isActive())")
 
