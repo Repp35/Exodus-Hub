@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo
+local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -25,12 +25,21 @@ local CONFIG = {
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
     DASH_WINDOW_FACTOR = 0.4,
+    DASH_MAX_SNAPSHOT_AGE = 0.15,
+    DASH_MIN_CPS = 4,
+    DASH_MIN_SCORE = 75,
+    DASH_MIN_ALIGNMENT = 0.6,
+    DASH_DETECTION_RANGE = 70,
   },
   DEACTIVATION = {
     STATIONARY_TIMEOUT = 0.3,
     STATIONARY_EPSILON = 0.05,
     HAUNTER_CONFIRM_TIMEOUT = 0.1,
     MANUAL_COOLDOWN_FACTOR = 1.3,
+    DASH_ESCAPE_COOLDOWN = 0.05,
+    DASH_ESCAPE_MIN_OUTWARD_SPEED = 15,
+    DASH_ESCAPE_MIN_HORIZONTAL_RATIO = 0.35,
+    DASH_ESCAPE_MIN_SEPARATION_GAIN = 2,
     RETURN_TIMEOUT_MIN_SPEED = 0.4,
     RETURN_TIMEOUT_MAX_SPEED = 0.2,
     DEFLECT_COOLDOWN_TIMEOUT = 0.09,
@@ -248,8 +257,73 @@ local function cooldownExpired(state, snapshot, time, multiplier)
     and time - state.deflectCooldownSince >= limit
     and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
 end
+local function dashEscapeRisk(state, tracker, snapshot, time)
+  if not state.root or not state.root.Parent or state.teleporting or not tracker or not tracker.partner then return nil end
+  if not freshSnapshot(snapshot, time) or snapshot.teleported or snapshot.locked or snapshot.targetId ~= tracker.partner then return nil end
+  if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.ACTIVATION.DASH_MAX_SNAPSHOT_AGE then return nil end
+  if not playerIsAlive(tracker.partner) then return nil end
+  local own = state.root.Position; local other, otherVelocity = gameInfo.getPlayerMotion(tracker.partner)
+  if typeof(own) ~= "Vector3" or typeof(other) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return nil end
+  local delta = other - own; local horizontal = Vector3.new(delta.X, 0, delta.Z)
+  local distance = delta.Magnitude; local flatDistance = horizontal.Magnitude
+  if not finite(distance) or not finite(flatDistance) or flatDistance < 1 then return nil end
+  local speed = snapshotSpeed(snapshot); local g = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
+  local ownRadius, otherRadius = compensatedRadius(localPlayer.UserId, speed), gameInfo.getPlayerRawRadius(tracker.partner, speed, false)
+  if not g or not finite(speed) or speed <= 0 or not finite(ownRadius) or not finite(otherRadius) or not finite(g.deflectWindow) then return nil end
+  local towardOther = other - snapshot.position
+  if snapshot.velocity:Dot(towardOther) <= 0 then return nil end
+  local ownWindow = ownRadius + speed * (g.deflectWindow * CONFIG.ACTIVATION.DASH_WINDOW_FACTOR + networkLatency())
+  if (snapshot.position - own).Magnitude <= ownWindow then return nil end
+  local localVelocity = state.root.AssemblyLinearVelocity
+  if typeof(localVelocity) ~= "Vector3" then localVelocity = Vector3.zero end
+  if typeof(otherVelocity) ~= "Vector3" then otherVelocity = Vector3.zero end
+  local function candidate(sample, selfDash)
+    if not sample or not sample.signalActive or not sample.normalModel or typeof(sample.velocity) ~= "Vector3" then return nil end
+    local velocity, remaining = sample.velocity, sample.normalModel.estimatedRemaining; local magnitude = velocity.Magnitude
+    local horizontalSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+    if not finite(magnitude) or magnitude < 70 or magnitude > 140 or not finite(remaining) or remaining <= 0 then return nil end
+    if horizontalSpeed < magnitude * CONFIG.DEACTIVATION.DASH_ESCAPE_MIN_HORIZONTAL_RATIO then return nil end
+    local away = velocity:Dot(horizontal) / flatDistance * (selfDash and -1 or 1)
+    if not finite(away) or away < CONFIG.DEACTIVATION.DASH_ESCAPE_MIN_OUTWARD_SPEED then return nil end
+    local drift = selfDash and otherVelocity or localVelocity
+    if not finite(drift.Magnitude) or drift.Magnitude > 40 then drift = Vector3.zero end
+    local relativeVelocity = selfDash and (drift - velocity) or (velocity - drift); local projectedDistance = (delta + relativeVelocity * remaining).Magnitude
+    local threshold = ownRadius + otherRadius + speed * g.deflectWindow * CONFIG.ACTIVATION.DASH_WINDOW_FACTOR
+    if
+      not finite(projectedDistance)
+      or projectedDistance <= threshold
+      or projectedDistance - distance < CONFIG.DEACTIVATION.DASH_ESCAPE_MIN_SEPARATION_GAIN
+    then
+      return nil
+    end
+    return {
+      reason = selfDash and "self_dash_escape" or "opponent_dash_escape",
+      distance = distance,
+      projectedDistance = projectedDistance,
+      threshold = threshold,
+    }
+  end
+  local result = candidate(dashInfo.getEstimate(tracker.partner), false) or candidate(dashInfo.getEstimate(localPlayer.UserId), true)
+  if not result then tracker.dashEscapeSince = nil; return nil end
+  local cooldown = cooldownInfo.getDeflectCooldownState()
+  if not cooldown or cooldown.blocking ~= true or cooldown.source == "unknown" then tracker.dashEscapeSince = nil; return nil end
+  local start = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or tracker.dashEscapeSince or time
+  tracker.dashEscapeSince = math.max(tracker.activatedAt or time, start)
+  if time - tracker.dashEscapeSince < CONFIG.DEACTIVATION.DASH_ESCAPE_COOLDOWN then return nil end
+  return result
+end
 local function activate(state, reason, partner, time, serverTime, snapshot)
-  if reason ~= "return_target" and reason ~= "kill_radius" and reason ~= "haunter" and reason ~= "haunter_self" and reason ~= "close_target" then return false end
+  if
+    reason ~= "return_target"
+    and reason ~= "kill_radius"
+    and reason ~= "haunter"
+    and reason ~= "haunter_self"
+    and reason ~= "close_target"
+    and reason ~= "dash_incoming"
+    and reason ~= "dash_self"
+  then
+    return false
+  end
   if
     current ~= state
     or state.active
@@ -264,7 +338,8 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   then
     return false
   end
-  local bypassExchange = reason == "haunter" or reason == "haunter_self" or reason == "kill_radius" or reason == "close_target"
+  local dashPrediction = reason == "dash_incoming" or reason == "dash_self"
+  local bypassExchange = dashPrediction or reason == "haunter" or reason == "haunter_self" or reason == "kill_radius" or reason == "close_target"
   if
     not bypassExchange
     and (
@@ -280,7 +355,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if
     not gameInfo.isSnapshotValid(snapshot)
     or snapshot.targetUncertain == true
-    or snapshot.targetId ~= localPlayer.UserId
+    or (snapshot.targetId ~= localPlayer.UserId and (not dashPrediction or snapshot.targetId ~= partner))
     or snapshot.teleported == true
     or snapshot.locked == true
     or not state.root
@@ -291,7 +366,9 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     return false
   end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
-  local toward = state.root.Position - snapshot.position
+  local targetPosition = dashPrediction and snapshot.targetId == partner and gameInfo.getPlayerMotion(partner) or state.root.Position
+  if typeof(targetPosition) ~= "Vector3" then return false end
+  local toward = targetPosition - snapshot.position
   if reason ~= "close_target" and (toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0) then return false end
   if reason == "close_target" and toward.Magnitude > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then return false end
   if not bypassExchange then
@@ -315,7 +392,7 @@ local function deactivate(state, reason, time)
   time = time or now()
   if state.active then
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
-    if reason == "deflect_cooldown_timeout" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
+    if reason == "deflect_cooldown_timeout" or reason == "opponent_dash_escape" or reason == "self_dash_escape" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
     lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
@@ -330,10 +407,25 @@ local function deactivationReason(state, snapshot, time)
   if state.teleporting or (snapshot and snapshot.teleported) then return nil end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   if state.stationary then return "ball_stationary" end
+  local escape = dashEscapeRisk(state, state, snapshot, time); state.dashEscape = escape
+  if escape then return escape.reason end
   if cooldownExpired(state, snapshot, time) then return "deflect_cooldown_timeout" end
-  if state.reason == "haunter" or state.reason == "haunter_self" or state.reason == "close_target" then
+  if
+    state.reason == "haunter"
+    or state.reason == "haunter_self"
+    or state.reason == "close_target"
+    or state.reason == "dash_incoming"
+    or state.reason == "dash_self"
+  then
     local age = time - (state.activatedAt or time); local fresh = freshSnapshot(snapshot, time) and not snapshot.locked
-    local value = fresh and geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR); local inWindow = value and (snapshot.position - state.root.Position).Magnitude <= value.fullRadius
+    local value = fresh and geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR); local ballTarget = fresh and userId(snapshot.targetId)
+    local targetPosition = ballTarget == state.partner and gameInfo.getPlayerMotion(state.partner) or state.root.Position
+    local targetRange = ballTarget == state.partner and gameInfo.getPlayerRawRadius(state.partner, snapshotSpeed(snapshot), false)
+      or (value and value.noWindowParryRadius)
+    local inWindow = value
+      and typeof(targetPosition) == "Vector3"
+      and finite(targetRange)
+      and (snapshot.position - targetPosition).Magnitude <= targetRange + snapshotSpeed(snapshot) * value.effectiveWindow
     if inWindow then state.haunterWindowConfirmed = true end
     if age >= CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT then
       if not state.haunterWindowConfirmed or not fresh then return "haunter_window_unconfirmed" end
@@ -419,6 +511,7 @@ local function targetChanged(state, target, time, snapshot, serverTime)
   if not target or target == state.target then return end
   local previous, ownId = state.target, localPlayer.UserId; local switchedToMe = target == ownId and previous and previous ~= ownId
   state.closeTargetAt, state.closeTargetPartner = nil, nil
+  if previous and (previous == ownId or target == ownId) then state.dashExchangeAt, state.dashExchangePartner = time, previous == ownId and target or previous end
   if previous and previous ~= ownId then state.previousOpponent = previous end
   if target ~= ownId then state.previousOpponent = target end
   if switchedToMe and not state.active and freshSnapshot(snapshot, time) and not snapshot.teleported and not snapshot.locked then
@@ -509,6 +602,50 @@ local function observeKillRadius(state, snapshot, time)
   if not first or time < first or time - first > returnWindow(window, speed, CONFIG.ACTIVATION.KILL_RADIUS_INTERVAL, networkLatency()) then return nil end
   state.killRadiusFirstAt = nil; return true
 end
+local function dashPrediction(state, snapshot, time)
+  local partner, switchedAt = state.dashExchangePartner, state.dashExchangeAt
+  if not partner or not switchedAt or time < switchedAt or time - switchedAt > 0.25 or not playerIsAlive(partner) then return nil end
+  if not freshSnapshot(snapshot, time) or snapshot.teleported or snapshot.locked then return nil end
+  if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.ACTIVATION.DASH_MAX_SNAPSHOT_AGE then return nil end
+  if snapshot.targetId ~= localPlayer.UserId and snapshot.targetId ~= partner then return nil end
+  local other = gameInfo.getPlayerMotion(partner); local own = state.root.Position
+  if typeof(other) ~= "Vector3" or typeof(own) ~= "Vector3" then return nil end
+  local speed = snapshotSpeed(snapshot); local g = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
+  local ownRadius = compensatedRadius(localPlayer.UserId, speed); local otherRadius = gameInfo.getPlayerRawRadius(partner, speed, false)
+  if not g or not finite(speed) or speed <= 0 or not finite(ownRadius) or not finite(otherRadius) then return nil end
+  local targetPos, targetRadius = snapshot.targetId == partner and other or own, snapshot.targetId == partner and otherRadius or ownRadius; local ballToTarget = targetPos - snapshot.position
+  if typeof(snapshot.velocity) ~= "Vector3" or ballToTarget.Magnitude <= 0.05 or snapshot.velocity:Dot(ballToTarget) <= 0 then return nil end
+  if ballToTarget.Magnitude > targetRadius + speed * g.effectiveWindow then return nil end
+  local ownDash, otherDash = dashInfo.getEstimate(localPlayer.UserId), dashInfo.getEstimate(partner)
+  local function model(sample, relative, reason)
+    if not sample or not sample.signalActive or not sample.normalModel or not sample.velocity or not sample.observedAt then return nil end
+    local age = time - sample.observedAt
+    if age < 0 or age > 0.2 or switchedAt < sample.observedAt - 0.05 or switchedAt > time then return nil end
+    local velocity, distance = sample.velocity, relative.Magnitude
+    if not finite(distance) or not finite(velocity.Magnitude) or distance <= 0.05 or velocity.Magnitude < 70 or velocity.Magnitude > 140 then return nil end
+    local closing = velocity:Dot(relative) / distance; local alignment = closing / velocity.Magnitude
+    if not finite(alignment) or alignment < CONFIG.ACTIVATION.DASH_MIN_ALIGNMENT then return nil end
+    local remaining = sample.normalModel.estimatedRemaining
+    if not finite(remaining) or remaining <= 0 then return nil end
+    local closestAt = math.clamp(relative:Dot(velocity) / velocity:Dot(velocity), 0, remaining); local projected = relative - velocity * closestAt
+    local predictedDistance = projected.Magnitude
+    local ok, obstruction = pcall(function()
+      local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude
+      local otherPlayer = players:GetPlayerByUserId(partner); params.FilterDescendantsInstances = { state.character, otherPlayer.Character, snapshot.ball }
+      params.RespectCanCollide = true; return utils.getWorkspace():Raycast(sample.position, velocity * closestAt, params)
+    end)
+    if not ok or obstruction then return nil end
+    local travelGap = math.max(0, predictedDistance - ownRadius - otherRadius); local cycle = math.max(2 * travelGap / speed, 1 / 50)
+    local cps = 1 / cycle; local predictedRange = ownRadius + otherRadius + speed * g.deflectWindow * CONFIG.ACTIVATION.DASH_WINDOW_FACTOR
+    if predictedDistance > predictedRange or cps < CONFIG.ACTIVATION.DASH_MIN_CPS then return nil end
+    local score = 50
+      + 25 * math.clamp((alignment - CONFIG.ACTIVATION.DASH_MIN_ALIGNMENT) / (1 - CONFIG.ACTIVATION.DASH_MIN_ALIGNMENT), 0, 1)
+      + 25 * math.clamp((predictedRange - predictedDistance) / math.max(predictedRange, 1), 0, 1)
+    if score < CONFIG.ACTIVATION.DASH_MIN_SCORE then return nil end
+    return { reason = reason, partner = partner, score = score, projectedDistance = predictedDistance, estimatedCps = cps, remaining = remaining }
+  end
+  return model(otherDash, own - other, "dash_incoming") or model(ownDash, other - own, "dash_self")
+end
 local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoEnabled)
   if current ~= state or not state.root.Parent then return end
   if not utils.isActive() then
@@ -546,12 +683,15 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
       if state.active and target == state.partner and not state.departedAt then state.departedAt = time end
     end
   end
+  if autoEnabled or state.active or utils.isManualSpamActive() then dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE) end
   if state.active and not blocked and checkDeactivation(state, snapshot, time) then blocked = true end
   sampleOwnDash(state, time)
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
   if not autoEnabled or blocked or state.active or state.stationary then return end
+  local prediction = dashPrediction(state, snapshot, time); state.dashPrediction = prediction
+  if prediction and activate(state, prediction.reason, prediction.partner, time, serverTime or snapshot.serverTime, snapshot) then return end
   if state.closeTargetAt then
     if time < state.closeTargetAt or time - state.closeTargetAt > CONFIG.ACTIVATION.CLOSE_TARGET_TIMEOUT then state.closeTargetAt, state.closeTargetPartner = nil, nil
     elseif activate(state, "close_target", state.closeTargetPartner, time, serverTime or snapshot.serverTime, snapshot) then return end
@@ -668,9 +808,9 @@ end
 
 -- lifecycle
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown
+  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then
     utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo = nil, nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
@@ -757,7 +897,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
   detach("teardown"); clashStatsModule = nil
-  clashStats = nil; utils, gameInfo, players, runService, localPlayer, clashStatsModule, cooldownInfo = nil, nil, nil, nil, nil, nil, nil
+  clashStats = nil; utils, gameInfo, players, runService, localPlayer, clashStatsModule, cooldownInfo, dashInfo = nil, nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -825,6 +965,8 @@ function AutoSpam.canSendManual()
   local reason
   if state.stationary then
     reason = "ball_stationary"
+  elseif dashEscapeRisk(state, manual, snapshot, time) then
+    reason = "dash_escape"
   elseif cooldownExpired(manual, snapshot, time, CONFIG.DEACTIVATION.MANUAL_COOLDOWN_FACTOR) then
     reason = "deflect_cooldown_timeout"
   elseif manual.partner and freshSnapshot(snapshot, time) then
@@ -924,6 +1066,8 @@ function AutoSpam.getStatus()
     phase = state and (state.active and "active" or "idle") or "detached",
     active = state ~= nil and state.active,
     lastGate = state and state.reason or "detached",
+    dashPrediction = state and state.dashPrediction or nil,
+    dashEscape = state and state.dashEscape or nil,
     lastActivationReason = lastActivationReason,
     lastActivationAt = lastActivationAt,
     lastStopReason = lastStopReason,
@@ -945,12 +1089,14 @@ AutoSpam.__contract = {
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
     Cooldown = "cooldown",
+    Dash = "dash",
   },
   requiresMethods = {
     Utils = {
       "now",
       "getLocalPlayer",
       "getPlayers",
+      "getWorkspace",
       "getRunService",
       "isActive",
       "getConfigValue",
@@ -984,6 +1130,7 @@ AutoSpam.__contract = {
       "getDeflectWindow",
     },
     Cooldown = { "getDeflectCooldownState" },
+    Dash = { "tick", "getEstimate" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
