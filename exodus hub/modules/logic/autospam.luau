@@ -418,11 +418,9 @@ local function deactivationReason(state, snapshot, time)
       if typeof(position) == "Vector3" and (position - state.root.Position).Magnitude > limit then return "clash_distance" end
     end
   end
-  local outsideProtection =
-    opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
   if gameInfo.getBallFrozen() == true or state.stationary then return nil end
   local escape = dashEscapeRisk(state, state, snapshot, time); state.dashEscape = escape
-  if escape and outsideProtection then return escape.reason end
+  if escape then return escape.reason end
   if cooldownExpired(state, snapshot, time) then return "deflect_cooldown_timeout" end
   if
     not state.haunterWindowConfirmed

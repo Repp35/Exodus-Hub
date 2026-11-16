@@ -85,7 +85,7 @@ local function freshSnapshot() return false end
 local state={active=true}; local snapshot={}
 """ + code + """
 assert(deactivationReason(state,snapshot,11)=='opponent_dash_escape')
-outside=false; assert(deactivationReason(state,snapshot,11)==nil,'near opponent lost spam on projected dash')
+outside=false; assert(deactivationReason(state,snapshot,11)=='opponent_dash_escape','near opponent blocked dash escape')
 """)
 
 if __name__ == '__main__': unittest.main()
