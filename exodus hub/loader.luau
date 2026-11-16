@@ -807,7 +807,7 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       return
     end
     if
-      not waitForMatchToEnd(function()
+      automatic and not waitForMatchToEnd(function()
         if automatic then notifyPersistent("Update queued: waiting for match to end", "update", "info") end
       end)
     then
@@ -815,7 +815,7 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       reloadInFlight = false; return
     end
     if
-      not waitForClashToEnd(function()
+      automatic and not waitForClashToEnd(function()
         if automatic then notifyPersistent("Update queued: waiting for clash to end", "update", "info") end
       end)
     then
@@ -848,7 +848,7 @@ local function startInternal()
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
   startupPerformed = true; printStartup("Exodus: Initializing...")
-  if wasStarted then
+  if wasStarted and not requestedRevision then
     local safe = waitForClashToEnd(function() notifyPersistent("Restart queued: waiting for clash to end", "shutdown", "info") end)
     clearPersistent("shutdown")
     if not safe then return false, "Loader", "runtime stopped while waiting for clash" end
