@@ -359,6 +359,23 @@ local function buildURLs(revision)
   end
   return urls
 end
+local function deliveryFallbackURL(url)
+  if type(url) ~= "string" or string.sub(url, 1, #BASE_URL) ~= BASE_URL then return nil end
+  local revision, path = string.match(string.sub(url, #BASE_URL + 1), "^([%da-fA-F]+)/(.+)$")
+  if not validRevision(revision) or string.sub(path, 1, #PROJECT_PATH) ~= PROJECT_PATH then return nil end
+  return "https://raw.githubusercontent.com/Repp35/Exodus-v2/" .. revision .. "/" .. path
+end
+local function requestDelivery(url)
+  local source, detail = request(url)
+  if source then return source end
+  local fallback = deliveryFallbackURL(url)
+  if fallback then
+    local recovered, fallbackError = request(fallback)
+    if recovered then return recovered end
+    detail = tostring(detail) .. "; GitHub: " .. tostring(fallbackError)
+  end
+  return nil, detail
+end
 local function buildCDNURL(url)
   local repository, version, path = string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/([^/]+)/(.+)$")
   if not repository or not version or not path then return nil end
@@ -368,10 +385,10 @@ local function loadModule(name, relativePath, url)
   local signature = signatureFor(relativePath)
   if not signatureValid(signature) then return nil, "assinatura inválida: " .. relativePath end
   local source, fetchError
-  if url then source, fetchError = request(url) end
+  if url then source, fetchError = requestDelivery(url) end
   local sourceKind = "delivery"
   if not source then
-    local fallbackURL = buildCDNURL(url)
+    local fallbackURL = buildCDNURL(deliveryFallbackURL(url) or url)
     if fallbackURL then
       local fallbackSource, fallbackError = request(fallbackURL)
       if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn" else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
@@ -757,7 +774,7 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       clearPersistent("update"); reloadInFlight = false
       return
     end
-    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
+    local source, fetchError = requestDelivery(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
     if not source then fail(fetchError); return end
     if
       automatic
