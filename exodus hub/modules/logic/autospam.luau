@@ -79,6 +79,11 @@ local function eventOnce(state, reason, condition, token)
 end
 local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
+  -- A missed deflect must never deactivate AutoSpam, regardless of distance.
+  if reason == "deflect_miss" or reason == "miss" or reason == "parry_miss" then
+    state.lastGate = "miss_ignored"
+    return false
+  end
   if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
@@ -368,8 +373,7 @@ local function observeStats(state, s, time, packet)
 end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
-  state.gates = {}; local cd, missed = monitorCooldown(state)
-  if missed then state.lastGate = "deflect_miss"; return end
+  state.gates = {}; local cd = monitorCooldown(state)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
