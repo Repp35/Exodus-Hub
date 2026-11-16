@@ -426,11 +426,13 @@ local function deactivationReason(state, snapshot, time)
   if cooldownExpired(state, snapshot, time) then return "deflect_cooldown_timeout" end
   if
     not state.haunterWindowConfirmed
-    and (state.reason == "haunter"
+    and (
+      state.reason == "haunter"
       or state.reason == "haunter_self"
       or state.reason == "close_target"
       or state.reason == "dash_incoming"
-      or state.reason == "dash_self")
+      or state.reason == "dash_self"
+    )
   then
     local age = time - (state.activatedAt or time); local fresh = freshSnapshot(snapshot, time) and not snapshot.locked
     local value = fresh and geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR); local ballTarget = fresh and userId(snapshot.targetId)
@@ -442,9 +444,7 @@ local function deactivationReason(state, snapshot, time)
       and finite(targetRange)
       and (snapshot.position - targetPosition).Magnitude <= targetRange + snapshotSpeed(snapshot) * value.effectiveWindow
     if inWindow then state.haunterWindowConfirmed = true end
-    if age >= CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT and not state.haunterWindowConfirmed then
-      return "haunter_window_unconfirmed"
-    end
+    if age >= CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT and not state.haunterWindowConfirmed then return "haunter_window_unconfirmed" end
   end
   if
     freshSnapshot(snapshot, time)
