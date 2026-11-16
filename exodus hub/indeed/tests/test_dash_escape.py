@@ -50,9 +50,12 @@ cd.blocking=true; cd.blockingSince=nil; assert(not dashEscapeRisk(state,tracker,
         run_lua("""
 local manualOn=true; local observedReason
 local root={Parent=true,Position={}}; local character={Parent=true}
-local current={root=root,character=character,manual={partner=99,activatedAt=10}}
+local current={root=root,character=character,manual={partner=99,activatedAt=10,engaged=true}}
 local utils={isManualSpamActive=function() return manualOn end,isActive=function() return true end,setManualSpamActive=function(v) manualOn=v end,recordTransition=function(_,_,_,reason) observedReason=reason end}
-local gameInfo={getSnapshotAt=function() return {targetId=99} end}
+local gameInfo={getSnapshotAt=function() return {targetId=99} end,getPlayerMotion=function() end}
+local function distanceLimit() end
+local function playerIsAlive() return true end
+local function typeof(x) return type(x) end
 local localPlayer={UserId=42}
 local function now() return 11 end
 local function freshSnapshot() return true end

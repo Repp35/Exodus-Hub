@@ -948,22 +948,19 @@ function AutoSpam.canSendManual()
   local manual = state.manual
   if not manual then manual = { activatedAt = time }; state.manual = manual end
   local target = freshSnapshot(snapshot, time) and userId(snapshot.targetId)
-  if target and target ~= localPlayer.UserId then manual.partner = target end
-  if not manual.partner then manual.partner = state.partner or state.previousOpponent end
-  if not manual.partner then
-    local nearest, nearestDistance
-    for _, player in ipairs(players:GetPlayers()) do
-      local position = player ~= localPlayer and playerIsAlive(player.UserId) and gameInfo.getPlayerMotion(player.UserId)
-      if typeof(position) == "Vector3" then
-        local distance = (position - state.root.Position).Magnitude
-        if not nearestDistance or distance < nearestDistance then nearest, nearestDistance = player.UserId, distance end
-      end
-    end
-    manual.partner = nearest
+  if target and target ~= localPlayer.UserId and target ~= manual.partner then
+    manual.partner, manual.engaged, manual.stationarySince = target, false, nil; manual.deflectCooldownSince, manual.dashEscapeSince = nil, nil
+  end
+  if not manual.partner and state.active then manual.partner = state.partner end
+  if manual.partner and freshSnapshot(snapshot, time) then
+    local opponent, limit = gameInfo.getPlayerMotion(manual.partner), distanceLimit(snapshot, manual.partner)
+    if playerIsAlive(manual.partner) and typeof(opponent) == "Vector3" and limit and (opponent - state.root.Position).Magnitude <= limit then manual.engaged = true end
   end
   manual.root = state.root
   local reason
-  if state.stationary then
+  if not manual.engaged then return true end
+  if state.stationary then manual.stationarySince = manual.stationarySince or time else manual.stationarySince = nil end
+  if manual.stationarySince and time - manual.stationarySince > CONFIG.DEACTIVATION.STATIONARY_TIMEOUT then
     reason = "ball_stationary"
   elseif dashEscapeRisk(state, manual, snapshot, time) then
     reason = "dash_escape"
