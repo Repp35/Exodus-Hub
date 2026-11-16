@@ -71,6 +71,55 @@ local function packet(target)
 end
 """ + case)
 
+    def test_disabled_ap_blocks_public_fire_and_pending_guard(self):
+        self.check_ap("""
+local enabled=true; local config=u.getConfigValue
+u.getConfigValue=function(k) if k=='AutoParry' then return enabled end return config(k) end
+local pending
+r.fireParry=function(_,guard) pending=guard; assert(guard()); fires=fires+1; return true end
+packet(42); assert(pending and pending())
+enabled=false
+assert(not pending(),'pending request survived disabling AP')
+packet(99); packet(42)
+assert(not ap.fire(),'public fire bypassed disabled AP')
+frameCb(1/60); assert(fires==1)
+""")
+
+    def test_pending_request_revalidates_ball_and_distance(self):
+        for change in (
+            "snap.position=v(300)", "snap.realPosition=v(300)",
+            "snap.targetId=99", "snap.teleported=true", "snap.locked=true",
+            "snap.ballValid=false", "snap.valid=false", "snap.resetting=true",
+            "snap.syncSpeed=0/0", "snap.syncSpeed=0", "snap.syncAt=tm-1",
+            "snap.syncAt=0/0", "snap.realPosition=v(0/0)",
+            "snap.ball={Parent=true}", "ball.Parent=nil", "root.Parent=nil",
+            "character.Parent=nil", "snap.mode='training'",
+        ):
+            with self.subTest(change=change):
+                self.check_ap("""
+local pending
+r.fireParry=function(_,guard) pending=guard; assert(guard()); fires=fires+1; return true end
+packet(42); assert(pending and pending())
+""" + change + "\nassert(not pending(),'stale pending request was allowed')")
+
+    def test_reset_position_cannot_click_through_normal_or_redirect_path(self):
+        self.check_ap("""
+r.fireParry=function(_,guard) if not guard() then return false end fires=fires+1; return true end
+snap.position=v(10); snap.realPosition=v(300)
+packet(42); assert(fires==0,'clicked using reset visual position')
+assert(not ap.fire(),'public fire used stale cached distance')
+tm=tm+1; assert(not ap.tryRedirectReturn(snap,tm)); assert(fires==0)
+snap.position=v(300); frameCb(1/60); assert(fires==0)
+snap.position=v(10); snap.realPosition=v(10); tm=tm+1
+frameCb(1/60); assert(fires==1,'did not recover after valid nearby data')
+""")
+
+    def test_optional_sync_fields_can_be_absent(self):
+        self.check_ap("""
+snap.realPosition=nil; snap.syncDirection=nil; snap.syncAt=nil; snap.syncSpeed=nil
+packet(42); assert(fires==1,'optional sync fields blocked valid AP')
+""")
+
     def test_raw_target_has_no_confirmation_or_visual_fallback(self):
         source = (ROOT / "aux/gameinfo.luau").read_text()
         target = source[source.index("local function targetId("):source.index("local function findBall()")]

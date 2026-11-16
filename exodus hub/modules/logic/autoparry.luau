@@ -291,6 +291,36 @@ local function fierceActive(time, cooldown)
   if not parried and state.cycle == state.fierceCycle and not state.fiercePreviouslyFired then state.fired = false end
   state.fierceUntil, state.fierceStartedAt, state.fierceCycle = 0, 0, nil; return false
 end
+local function matchDataReady(value, time)
+  if value.mode == "training" then return true end
+  if value.teleported or value.locked or value.ballValid == false or value.valid == false or value.resetting == true or value.ballCanMove == false then return false end
+  if not finite(value.targetId) or value.targetId <= 0 then return false end
+  if value.syncSpeed ~= nil and not finite(value.syncSpeed) then return false end
+  if value.syncAt ~= nil and not finite(value.syncAt) then return false end
+  local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed
+  if not finite(speed) or speed < CONFIG.MIN_PARRY_SPEED then return false end
+  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then return false end
+  if value.realPosition ~= nil and not vector(value.realPosition) then return false end
+  if value.syncDirection ~= nil and not vector(value.syncDirection) then return false end
+  return true
+end
+local function currentRequestReady(expectedBall, expectedMode, trainingThreshold)
+  if not state.root or not state.root.Parent or not state.character or not state.character.Parent then return false end
+  local time = clock(); local value = gameInfo.getSnapshotAt(time)
+  if not gameInfo.isSnapshotValid(value) or not matchDataReady(value, time) then return false end
+  local mode = value.mode == "training" and "training" or "match"
+  if mode ~= expectedMode or value.ball ~= expectedBall or not value.ball.Parent or value.targetId ~= state.player.UserId then return false end
+  if value.teleported or value.locked or sequenceOrder(value.syncSequence) == "old" then return false end
+  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then return false end
+  local position, own = value.position, gameInfo.getRootPosition(state.root)
+  if not vector(position) or not vector(own) then return false end
+  local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed; local geometry = radius(speed, activeWindowFactor(time))
+  if not geometry then return false end
+  local threshold = mode == "training" and trainingThreshold or geometry.fullRadius
+  if not finite(threshold) or (position - own).Magnitude > threshold then return false end
+  if mode ~= "training" and value.realPosition ~= nil and (value.realPosition - own).Magnitude > threshold then return false end
+  return true
+end
 local function request(reason)
   local now = clock()
   if
@@ -303,8 +333,9 @@ local function request(reason)
     return false
   end
   local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
-  local firedAt, speed, distance = now, state.speed, state.distance; state.fired, state.lastFireAt = true, firedAt
-  local wasRetry = state.retryReady; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  local expectedBall, expectedMode, trainingThreshold = state.lastBall, state.mode, state.triggerDistance; local firedAt, speed, distance = now, state.speed, state.distance
+  state.fired, state.lastFireAt = true, firedAt; local wasRetry = state.retryReady
+  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
   local function sameCycle()
     return state.generation == generation
       and state.cycle == cycle
@@ -321,7 +352,8 @@ local function request(reason)
       and not state.teleported
       and boundUtils.isActive()
       and (state.mode == "training" or not boundUtils.isSpamActive())
-      and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
+      and boundUtils.getConfigValue("AutoParry") ~= false
+      and currentRequestReady(expectedBall, expectedMode, trainingThreshold)
   end
   local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
   if not ok then detail, sent = sent, false end
@@ -425,17 +457,6 @@ local function resolveVelocity(value, position, speed, time)
   end
   if finite(speed) and speed > 0 and vector(value.syncDirection) and value.syncDirection.Magnitude > 0.01 then return value.syncDirection.Unit * speed end
   return velocity
-end
-local function matchDataReady(value, time)
-  if value.mode == "training" then return true end
-  if value.teleported or value.locked or value.ballValid == false then return false end
-  if not finite(value.targetId) or value.targetId <= 0 then return false end
-  local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed
-  if not finite(speed) or speed < CONFIG.MIN_PARRY_SPEED then return false end
-  if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then return false end
-  if value.realPosition ~= nil and not vector(value.realPosition) then return false end
-  if value.syncDirection ~= nil and not vector(value.syncDirection) then return false end
-  return true
 end
 local function tick(character, root, generation)
   if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
@@ -581,6 +602,7 @@ function AutoParry.cancelFierce(token)
 end
 function AutoParry.fire()
   if not state.alive or not state.bound or state.fired or state.teleported then return false end
+  if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return false end
   if not state.player or state.target ~= state.player.UserId or clock() < state.nextAttemptAt then return false end
   local g = radius(state.speed, activeWindowFactor(clock()))
   if not g or state.distance > g.fullRadius then return false end

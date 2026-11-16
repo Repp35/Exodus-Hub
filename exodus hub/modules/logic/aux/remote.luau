@@ -50,7 +50,7 @@ local function directRemote()
   remote = remotes and player and (remotes:FindFirstChild("pu_" .. player.UserId) or remotes:FindFirstChild(""))
   if remote and remote:IsA("RemoteEvent") then return remote, remote:FindFirstChild("u") end
 end
-local function fireDirect()
+local function fireDirect(guard)
   local remote, unreliable = directRemote()
   if not remote then return false, "Remote de Deflect indisponível" end
   local camera = workspace.CurrentCamera
@@ -62,11 +62,13 @@ local function fireDirect()
   buffer.writef32(packet, 9, pos.Z); buffer.writef32(packet, 13, look.X)
   buffer.writef32(packet, 17, look.Y); buffer.writef32(packet, 21, look.Z)
   directSequence = (directSequence + 1) % 65536; buffer.writeu16(packet, 25, directSequence)
-  buffer.writef64(packet, 27, workspace:GetServerTimeNow()); remote:FireServer(packet)
+  buffer.writef64(packet, 27, workspace:GetServerTimeNow())
+  if not allowed(guard) then return false, "Deflect cancelado" end
+  remote:FireServer(packet)
   if unreliable and unreliable:IsA("UnreliableRemoteEvent") then
     unreliable:FireServer(packet); local owner = epoch
     task.delay(0.03, function()
-      if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil then unreliable:FireServer(packet) end
+      if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil and allowed(guard) then unreliable:FireServer(packet) end
     end)
   end
   return true
@@ -103,8 +105,9 @@ local function configuredInput()
   end
   return Enum.KeyCode.F
 end
-local function fireInput()
+local function fireInput(guard)
   local input = configuredInput(); local vim = game:GetService("VirtualInputManager")
+  if not allowed(guard) then return false, "Deflect cancelado" end
   vim:SendKeyEvent(true, input, false, game)
   task.defer(function() vim:SendKeyEvent(false, input, false, game) end)
   return true
@@ -116,15 +119,17 @@ function Remote.fireParry(_flag, guard)
   local method = utils.getConfigValue("ClickMethod")
   if method == "Input" then
     if not allowed(guard) then return false, "Deflect cancelado" end
-    return fireInput()
+    return fireInput(guard)
   end
   if gameInfo.isTrainingArea() then
     if not allowed(guard) then return false, "Deflect cancelado" end
     local sent, detail = gameInfo.fireTrainingParry(); return sent, detail
   end
   if not allowed(guard) then return false, "Deflect cancelado" end
-  if method == "Direct" then return fireDirect() end
-  return send(gameInfo.getDeflectAbility(), CONFIG.PARRY_METHOD)
+  if method == "Direct" then return fireDirect(guard) end
+  local ability = gameInfo.getDeflectAbility()
+  if not allowed(guard) then return false, "Deflect cancelado" end
+  return send(ability, CONFIG.PARRY_METHOD)
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
