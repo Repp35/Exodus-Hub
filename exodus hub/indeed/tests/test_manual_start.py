@@ -38,6 +38,8 @@ assert(AutoSpam.canSendManual() and on)
 time=30.199; assert(AutoSpam.canSendManual() and on,'cooldown stopped before 200ms')
 time=30.201; assert(AutoSpam.canSendManual() and on,'cooldown disabled manual spam')
 time=100; assert(AutoSpam.canSendManual() and on,'long cooldown disabled manual spam')
+cd.miss=true; assert(not AutoSpam.canSendManual() and not on,'miss did not disable manual spam')
+cd.miss=false; on=true; assert(AutoSpam.canSendManual() and on,'manual did not recover after miss cleared')
 ''')
 
 if __name__ == '__main__': unittest.main()
