@@ -25,6 +25,7 @@ local CONFIG = {
     DASH_DETECTION_RANGE = 70,
   },
   DEACTIVATION = {
+    PROTECTION_RADIUS = 14,
     MAX_CLASH_DISTANCE = 35,
     DASH_ESCAPE_COOLDOWN = 0.05,
     DASH_ESCAPE_MIN_OUTWARD_SPEED = 15,
@@ -240,30 +241,28 @@ local function deactivationReason(state, s, time, cd)
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
-  if state.ball and s and s.ball ~= state.ball then return "ball_replaced" end
-  if sampleGate(state, s, time) then
-    state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil; state.cooldownResumeAt = time
+
+  -- Extra protection: never stop automatically while the opponent is within 14 studs.
+  local opponent = playerPosition(state.partner)
+  if not opponent then
+    state.distanceSince = nil
     return nil
   end
-  local thirdTarget = eventOnce(state, "third_target", s.targetId ~= localPlayer.UserId and s.targetId ~= state.partner, s.targetId); local opponent = playerPosition(state.partner)
-  if opponent and (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then state.distanceSince = state.distanceSince or time else state.distanceSince = nil end
-  local distanceEvent =
-    eventOnce(state, "clash_distance", state.distanceSince and time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT, state.partner)
-  local escape = dashEscapeRisk(state, state, s, time); state.dashEscape = escape
-  local escapeToken = escape and escape.eventToken; local opponentEscape = eventOnce(state, "opponent_dash_escape", escape and escape.reason == "opponent_dash_escape", escapeToken)
-  local selfEscape = eventOnce(state, "self_dash_escape", escape and escape.reason == "self_dash_escape", escapeToken); local returnExpired = false
-  if s.targetId == state.partner then
-    state.departedAt = state.departedAt or time; returnExpired = time - state.departedAt >= CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
-      and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.RETURN_PROTECTION_MAX_SPEED_RADIUS, s, time)
-  else
-    state.departedAt = nil
+  local distance = (opponent - state.root.Position).Magnitude
+  if distance <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
+    state.distanceSince = nil
+    return nil
   end
-  local returnEvent = eventOnce(state, "target_return_timeout", returnExpired, state.departedAt)
-  if thirdTarget then return "third_target" end
-  if distanceEvent then return "clash_distance" end
-  if opponentEscape then return "opponent_dash_escape" end
-  if selfEscape then return "self_dash_escape" end
-  if returnEvent then return "target_return_timeout" end
+
+  -- The only automatic stop conditions are opponent death/disconnect or sustained distance.
+  if distance > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then
+    state.distanceSince = state.distanceSince or time
+    if time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT then
+      return "clash_distance"
+    end
+  else
+    state.distanceSince = nil
+  end
 end
 local function dashPrediction(state, s, time)
   if s.syncAt == nil or time - s.syncAt > CONFIG.ACTIVATION.DASH_MAX_SNAPSHOT_AGE then return nil, "dash_snapshot_stale" end
