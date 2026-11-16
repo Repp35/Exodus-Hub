@@ -60,18 +60,20 @@ CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT=.1; CONFIG.DEACTIVATION.CLASH_GRACE_
 CONFIG.ACTIVATION={RADIUS_FACTOR=1}
 local function freshSnapshot(s) return s~=nil end
 local function cooldownExpired() return false end
+local function dashEscapeRisk() return nil end
 local function speedInterval() return .1 end
 local function networkLatency() return 0 end
 local function userId(x) return x end
-local function geometry() return {fullRadius=20} end
+local function geometry() return {fullRadius=20,noWindowParryRadius=8,effectiveWindow=.02} end
 local function distanceLimit() return 30 end
 local function targetReturnTimeout() return .2 end
 local function opponentOutside() return false end
+local function snapshotSpeed(s) return s.speed end
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
 localPlayer={UserId=42}; local distance=10
-local gameInfo={isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getPlayerMotion=function() return v(distance) end}
+local gameInfo={isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getPlayerMotion=function() return v(distance) end,getPlayerRawRadius=function() return 8 end}
 local s={reason='haunter',activatedAt=10,root={Position=v(0)},partner=99,target=42}
-local x={targetId=42,position=v(25)}
+local x={targetId=42,position=v(25),speed=600}
 """ + code + """
 assert(deactivationReason(s,x,10.05)==nil)
 assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed')
