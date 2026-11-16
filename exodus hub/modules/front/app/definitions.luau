@@ -186,7 +186,7 @@ local CONFIG = {
             { kind = "toggle", title = "Auto Dark", key = "AutoDark", shortcutKey = "DarkKeybind", abilityOnly = true },
             { kind = "toggle", title = "Auto Fierce", key = "AutoFierce", shortcutKey = "FierceKeybind", abilityOnly = true },
             { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind", abilityOnly = true },
-            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", shortcutKey = "AutoDashKeybind" },
+            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", shortcutKey = "AutoDashKeybind", abilityOnly = true },
           },
         },
         {
