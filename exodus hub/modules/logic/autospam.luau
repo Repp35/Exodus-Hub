@@ -82,11 +82,7 @@ local function eventOnce(state, reason, condition, token)
 end
 local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
-  -- A ball leaving its deflect window is not a reason to disable AutoSpam.
-  if type(reason) == "string" and (reason:find("window", 1, true) or reason:find("outside_window", 1, true)) then
-    state.lastGate = "window_ignored"
-    return false
-  end
+  if type(reason) == "string" and (reason:find("window", 1, true) or reason:find("outside_window", 1, true)) then state.lastGate = "window_ignored"; return false end
   if reason == "deflect_miss" or reason == "miss" or reason == "parry_miss" then state.lastGate = "miss_ignored"; return false end
   if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "cooldown" then
     local opponent = playerPosition(state.partner)
