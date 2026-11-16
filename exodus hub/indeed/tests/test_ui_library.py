@@ -24,7 +24,7 @@ LIB.lua_close.argtypes = [ctypes.c_void_p]
 
 
 def lua(source):
-    return re.sub(r'([A-Za-z_][\w.]*) ([+\-*/])= ([^;\n]+?)(?=;|\n| end)',
+    return re.sub(r'([A-Za-z_][\w.]*) ([+\-*/%])= ([^;\n]+?)(?=;|\n| end)',
                   lambda m: f'{m[1]} = {m[1]} {m[2]} ({m[3]})', source)
 
 
@@ -249,10 +249,10 @@ local trigger=findDescendant(select.Root,'Select')
 trigger.AbsolutePosition=Vector2.new(110,654);trigger.AbsoluteSize=Vector2.new(200,28)
 click(trigger);local portal=playerGui:FindFirstChild('ExodusDropdown');assert(portal)
 local menu=portal:FindFirstChildOfClass('CanvasGroup');local shift=scroll.CanvasPosition.Y
-assert(shift>0 and menu.Position.Y.Offset>=689,'opening must not cover its trigger')
+assert(shift>0 and not menu.Visible,'popup flashed before the owner finished scrolling')
 select.Root.AbsolutePosition=Vector2.new(100,625-shift);trigger.AbsolutePosition=Vector2.new(110,654-shift)
 game:GetService('RunService').Heartbeat:Fire(0.016)
-assert(menu.Position.Y.Offset==694-shift and menu.Size.Y.Offset>100)
+assert(menu.Visible and menu.Position.Y.Offset==694-shift and menu.Size.Y.Offset>100)
 assert(menu.Position.Y.Offset>=trigger.AbsolutePosition.Y+trigger.AbsoluteSize.Y)
 kit.destroy();scroll:Destroy();assert(listenerCount()==0)
 ''')
@@ -301,14 +301,14 @@ assert(border.Transparency==1)
 _G.ExodusUICleanup();finishTweens();assert(listenerCount()==0 and activeTweenCount()==0)
 ''')
 
-    def test_icons_use_native_assets_without_writing_files(self):
+    def test_icons_cache_native_fallback_when_custom_asset_loading_fails(self):
         self.run_lua('''
 local writes=0
 writefile=function() writes=writes+1 end
 getcustomasset=function() error('custom asset must not be used') end
 local icon=uiicons.create(panel,'settings')
 assert(icon:IsA('ImageLabel') and icon.Image:find('rbxasset://',1,true)==1)
-uiicons.create(panel,'settings');assert(writes==0,'icons must not write files')
+uiicons.create(panel,'settings');assert(writes==1,'failed custom assets must use a cached native fallback')
 panel:Destroy()
 ''')
 
@@ -353,7 +353,7 @@ assert(Utils.setConfig({AutoParry=true,UniversalFly=false}));assert(saves==1 and
 
     def test_config_backup_recovery_and_write_failure(self):
         source = (ROOT / 'modules/logic/aux/utils.luau').read_text()
-        helpers = source[source.index('local function readSavedConfig('):source.index('local function queueSave()')]
+        helpers = source[source.index('local function readSavedConfig('):source.index('local saveRunning = false')]
         loader = source[source.index('function Utils.loadConfig()'):source.index('function Utils.setConfigModule(')]
         self.run_lua('''
 local files, failWrite = {}, nil
@@ -385,14 +385,14 @@ files["folder/config.json"]="A"
 Utils.loadConfig()
 assert(persistenceReady and state.config.value=="A")
 assert(files["folder/config_backup_1.json"]=="A" and files["folder/config_recovery.json"]=="A")
-state.config={value="B"};saveDirty=true;saveConfig()
+state.config={value="B"};saveDirty=true;writeConfig()
 assert(files["folder/config.json"]=="B" and files["folder/config_recovery.json"]=="A")
 persistenceReady=false;files["folder/config.json"]=nil
 Utils.loadConfig();assert(state.config.value=="A" and files["folder/config.json"]=="A")
 files["folder/config.json"]="{}";files["folder/config_recovery.json"]="invalid"
 persistenceReady=false;Utils.loadConfig()
 assert(files["folder/config.json"]=="A" and state.config.value=="A")
-state.config={value="B"};saveDirty=true;failWrite="folder/config_recovery.json";saveConfig()
+state.config={value="B"};saveDirty=true;failWrite="folder/config_recovery.json";writeConfig()
 assert(files["folder/config.json"]=="A" and saveDirty)
 ''')
 
@@ -458,7 +458,7 @@ click(cap);game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',
 assert(config.FlyKeybind==Enum.KeyCode.K,'duplicate shortcut replaced an existing binding')
 click(cap);game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'Backspace'))
 assert(config.FlyKeybind==Enum.KeyCode.Unknown)
-utils.setConfig({FierceKeybind=Enum.KeyCode.L});abilities=false
+utils.setConfig({FierceKeybind=Enum.KeyCode.L,AutoFierce=false});abilities=false
 game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'L'),false);assert(not config.AutoFierce)
 _G.ExodusUICleanup();finishTweens();assert(listenerCount()==0)
 ''')
@@ -580,7 +580,8 @@ local cap=kit.Components.button(panel,{title='Panic',shortcutKey='Keybind'})
 local trigger=findDescendant(selected.Root,'Select')
 trigger.AbsolutePosition=Vector2.new(100,650)
 click(trigger);local portal=playerGui:FindFirstChild('ExodusDropdown');assert(portal)
-local menu=portal:FindFirstChildOfClass('CanvasGroup');assert(menu.Position.Y.Offset>=678,'popup must stay below the trigger near bottom')
+local menu=portal:FindFirstChildOfClass('CanvasGroup')
+assert(menu.Position.Y.Offset>=0 and menu.Position.Y.Offset+menu.Size.Y.Offset<=trigger.AbsolutePosition.Y,'popup must fit above the trigger near bottom')
 kit.dismiss();assert(not playerGui:FindFirstChild('ExodusDropdown'))
 click(findDescendant(cap.Root,'Shortcut_Keybind'));game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'Escape'))
 assert(config.Keybind==Enum.KeyCode.F9)

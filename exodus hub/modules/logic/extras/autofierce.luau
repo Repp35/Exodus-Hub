@@ -39,15 +39,15 @@ local function bindManualFierce()
   if ability == hookedAbility and ability and ability.ActivateAndBlock == hookedWrapper then return end
   unhookManualFierce()
   if type(ability) ~= "table" or type(ability.ActivateAndBlock) ~= "function" then return end
-  local original, raw = ability.ActivateAndBlock, rawget(ability, "ActivateAndBlock")
+  local original, raw = ability.ActivateAndBlock, rawget(ability, "ActivateAndBlock"); local owner, boundParry = epoch, autoParry
   local wrapper = function(self, ...)
     local token
-    if not finite(self.Cooldown) or self.Cooldown <= 0 then
-      local ok, value = pcall(autoParry.beginFierce)
+    if owner == epoch and (not finite(self.Cooldown) or self.Cooldown <= 0) then
+      local ok, value = pcall(boundParry.beginFierce)
       if ok then token = value end
     end
     local result = table.pack(pcall(original, self, ...))
-    if not result[1] or result[2] == false then autoParry.cancelFierce(token) end
+    if owner == epoch and (not result[1] or result[2] == false) then boundParry.cancelFierce(token) end
     if not result[1] then error(result[2], 0) end
     return table.unpack(result, 2, result.n)
   end

@@ -41,7 +41,7 @@ local directSequence = math.random(0, 65535)
 local function directRemote()
   local env = type(getrenv) == "function" and getrenv() or nil; local globals = type(env) == "table" and rawget(env, "_G")
   local remote = type(globals) == "table" and rawget(globals, "did2") or nil
-  if typeof(remote) == "Instance" and remote:IsA("RemoteEvent") then
+  if typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil then
     local unreliable = rawget(globals, "did2u")
     if typeof(unreliable) ~= "Instance" or not unreliable:IsA("UnreliableRemoteEvent") or unreliable.Parent ~= remote then unreliable = remote:FindFirstChild("u") end
     return remote, unreliable
@@ -66,9 +66,9 @@ local function fireDirect(guard)
   if not allowed(guard) then return false, "Deflect cancelado" end
   remote:FireServer(packet)
   if unreliable and unreliable:IsA("UnreliableRemoteEvent") then
-    unreliable:FireServer(packet); local owner = epoch
+    pcall(unreliable.FireServer, unreliable, packet); local owner = epoch
     task.delay(0.03, function()
-      if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil and allowed(guard) then unreliable:FireServer(packet) end
+      if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil and allowed(guard) then pcall(unreliable.FireServer, unreliable, packet) end
     end)
   end
   return true
@@ -114,8 +114,10 @@ local function fireInput(guard)
 end
 
 -- public-api
-function Remote.fireParry(_flag, guard)
+function Remote.fireParry(_flag, callerGuard)
   if not gameInfo then return false, "Remote não inicializado" end
+  local owner, info = epoch, gameInfo
+  local function guard() return owner == epoch and gameInfo == info and allowed(callerGuard) end
   local method = utils.getConfigValue("ClickMethod")
   if method == "Input" then
     if not allowed(guard) then return false, "Deflect cancelado" end
@@ -133,8 +135,8 @@ function Remote.fireParry(_flag, guard)
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
-  local ability = gameInfo and gameInfo.getFierceDeflectAbility()
-  if not allowed(guard) then return false, "Fierce cancelado" end
+  local owner = epoch; local ability = gameInfo and gameInfo.getFierceDeflectAbility()
+  if owner ~= epoch or not gameInfo or not allowed(guard) then return false, "Fierce cancelado" end
   return send(ability, CONFIG.FIERCE_METHOD)
 end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end

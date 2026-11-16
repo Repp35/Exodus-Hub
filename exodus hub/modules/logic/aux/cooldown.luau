@@ -7,6 +7,8 @@ local cooldownConnection, parriedConnection, heartbeatConnection, trainingConnec
 local cooldown, signalAt, heldAt, missingAt, warningAt
 local deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode
 local trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil
+local cooldownSignal, parriedSignal
+local epoch = 0
 
 -- configuration
 local CONFIG = {
@@ -62,14 +64,16 @@ function Cooldown.getTrainingCooldownState()
   }
 end
 local function bindTraining(now)
-  local storage = utils.getReplicatedStorage(); local event = child(child(child(storage, "Training"), "Remotes"), "Event")
+  if now < nextTrainingAt then return end
+  nextTrainingAt = now + CONFIG.TRAINING_RETRY; local storage = utils.getReplicatedStorage()
+  local event = child(child(child(storage, "Training"), "Remotes"), "Event")
   if not event or not event:IsA("RemoteEvent") then event = nil end
   if trainingConnection and (trainingConnection.Connected == false or trainingRemote ~= event) then disconnect(trainingConnection); trainingConnection, trainingRemote = nil, nil end
-  if trainingConnection or now < nextTrainingAt then return end
-  nextTrainingAt = now + CONFIG.TRAINING_RETRY
+  if trainingConnection then return end
   if not event then return end
-  trainingRemote = event
+  trainingRemote = event; local owner = epoch
   trainingConnection = event.OnClientEvent:Connect(function(kind, value)
+    if owner ~= epoch or trainingRemote ~= event or not utils then return end
     local player = utils.getLocalPlayer()
     if kind == "Parry" and player and value == player.UserId then trainingLockoutUntil, trainingAttemptUntil = nil, nil
     elseif kind == "Lockout" then local duration = finite(value) and value >= 0 and value or Cooldown.getTrainingMissCooldown(); trainingLockoutUntil = os.clock() + duration end
@@ -107,10 +111,17 @@ function Cooldown.getDeflectCooldownState()
     cooldown.rawActive, cooldown.endsAt, cooldown.serverKnown, signalAt = false, nil, false, 0
   end
   if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
-  if not cooldownConnection and time >= signalAt then
+  if time >= signalAt then
     signalAt = time + CONFIG.COOLDOWN_RETRY; local signals = Cooldown.getDeflectServerEvents()
-    if signals and signals.cooldown then
+    local signal = signals and signals.cooldown
+    if cooldownSignal ~= signal then
+      disconnect(cooldownConnection); cooldownConnection, cooldownSignal = nil, signal
+      cooldown.rawActive, cooldown.endsAt, cooldown.serverKnown = false, nil, false
+    end
+    if signal and not cooldownConnection then
+      local owner = epoch
       cooldownConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
+        if owner ~= epoch or cooldownSignal ~= signal or not cooldown then return end
         local kind, duration = Cooldown.decodeDeflectServerEvent(abilityId, eventId, value)
         if not kind then return end
         cooldown.known, cooldown.serverKnown, cooldown.lastEventAt = true, true, os.clock(); cooldown.rawActive = kind == "started"
@@ -118,15 +129,19 @@ function Cooldown.getDeflectCooldownState()
         cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
       end)
       utils.trackGlobal(cooldownConnection); missingAt = nil
-    else
+    elseif not signal then
       missingAt = missingAt or time
       if time - missingAt >= 3 and time >= warningAt then warningAt = time + 10; report("DeflectCooldown", "evento de cooldown do servidor indisponível") end
     end
   end
-  if not parriedConnection and time >= nextParriedAt then
+  if time >= nextParriedAt then
     nextParriedAt = time + CONFIG.COOLDOWN_RETRY; local signals = Cooldown.getDeflectServerEvents()
-    if signals and signals.parried then
+    local signal = signals and signals.parried
+    if parriedSignal ~= signal then disconnect(parriedConnection); parriedConnection, parriedSignal = nil, signal end
+    if signal and not parriedConnection then
+      local owner = epoch
       parriedConnection = signals.parried:Connect(function()
+        if owner ~= epoch or parriedSignal ~= signal or not cooldown then return end
         cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock()
       end)
       utils.trackGlobal(parriedConnection)
@@ -163,7 +178,8 @@ function Cooldown.getDeflectCooldownState()
   end
   previousBlocking = cooldown.blocking; cooldown.blockingSince, cooldown.episode = blockingSince, cooldownEpisode
   local attempt = deflectAttempt; local pendingOpen = finite(pendingUntil) and pendingUntil > time
-  local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false; local missActive = localKnown and cooldown.blocking == true and not pendingOpen
+  local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false
+  local missActive = cooldown.source ~= "unknown" and cooldown.blocking == true and not pendingOpen
   if attempt then
     if parried then attempt.missed = false elseif missActive then attempt.missed = true end
   end
@@ -198,10 +214,10 @@ function Cooldown.setup(deps)
   Cooldown.getDeflectCooldownState(); return true
 end
 function Cooldown.teardown()
-  disconnect(heartbeatConnection); disconnect(cooldownConnection)
-  disconnect(parriedConnection); disconnect(trainingConnection)
-  heartbeatConnection, cooldownConnection, parriedConnection, trainingConnection, trainingRemote = nil, nil, nil, nil, nil
-  cooldown, deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, nil, nil
+  epoch += 1; disconnect(heartbeatConnection)
+  disconnect(cooldownConnection); disconnect(parriedConnection)
+  disconnect(trainingConnection); heartbeatConnection, cooldownConnection, parriedConnection, trainingConnection, trainingRemote = nil, nil, nil, nil, nil
+  cooldownSignal, parriedSignal = nil, nil; cooldown, deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, nil, nil
   trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil = nil, nil, nil, nil; utils, gameInfo = nil, nil
 end
 

@@ -40,6 +40,7 @@ local function currentHumanoid()
   return character and character:FindFirstChildOfClass("Humanoid")
 end
 local function applySpeed()
+  if not Utils or not states.Speed then return true end
   local humanoid = currentHumanoid()
   if humanoid ~= speedHumanoid then
     disconnect("SpeedChanged")

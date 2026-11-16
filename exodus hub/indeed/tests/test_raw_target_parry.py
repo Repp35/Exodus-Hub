@@ -89,7 +89,7 @@ frameCb(1/60); assert(fires==1)
         for change in (
             "snap.position=v(300)", "snap.realPosition=v(300)",
             "snap.targetId=99", "snap.teleported=true", "snap.locked=true",
-            "snap.ballValid=false", "snap.valid=false", "snap.resetting=true",
+            "snap.ballValid=false", "snap.valid=false", "snap.resetting=true", "snap.targetUncertain=true", "cd.blocking=true",
             "snap.syncSpeed=0/0", "snap.syncSpeed=0", "snap.syncAt=tm-1",
             "snap.syncAt=0/0", "snap.realPosition=v(0/0)",
             "snap.ball={Parent=true}", "ball.Parent=nil", "root.Parent=nil",

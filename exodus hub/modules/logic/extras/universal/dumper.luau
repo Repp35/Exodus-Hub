@@ -122,7 +122,9 @@ local function saveFile(path, content, createdFolders)
       end
     end
   end
-  local ok, err = pcall(writefile, path, content); return ok, ok and nil or tostring(err)
+  local ok, err = pcall(writefile, path, content)
+  if not ok then return false, tostring(err) end
+  return true
 end
 local function allowed(object, allowDetached)
   if not isInstance(object) then return false end
@@ -557,12 +559,13 @@ function Dumper.start(callbacks)
   return true
 end
 function Dumper.stop()
+  status.running = false
   if activeToken then
     local callbacks = activeCallbacks; activeToken.cancelled = true
     activeToken, activeCallbacks = nil, nil; emit(callbacks, "onCanceled")
     log("Dump canceled.")
   end
-  status.running = false; return true
+  return true
 end
 function Dumper.isRunning() return activeToken ~= nil end
 function Dumper.getStatus() return table.clone(status) end

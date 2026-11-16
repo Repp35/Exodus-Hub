@@ -292,6 +292,7 @@ local function fierceActive(time, cooldown)
   state.fierceUntil, state.fierceStartedAt, state.fierceCycle = 0, 0, nil; return false
 end
 local function matchDataReady(value, time)
+  if value.targetUncertain == true then return false end
   if value.mode == "training" then return true end
   if value.teleported or value.locked or value.ballValid == false or value.valid == false or value.resetting == true or value.ballCanMove == false then return false end
   if not finite(value.targetId) or value.targetId <= 0 then return false end
@@ -310,6 +311,12 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   if not gameInfo.isSnapshotValid(value) or not matchDataReady(value, time) then return false end
   local mode = value.mode == "training" and "training" or "match"
   if mode ~= expectedMode or value.ball ~= expectedBall or not value.ball.Parent or value.targetId ~= state.player.UserId then return false end
+  if mode == "training" then
+    if cooldownInfo.getTrainingCooldownState().blocking == true then return false end
+  else
+    local cooldown = safeCooldown()
+    if not cooldown or cooldown.source == "unknown" or cooldown.blocking == true then return false end
+  end
   if value.teleported or value.locked or sequenceOrder(value.syncSequence) == "old" then return false end
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then return false end
   local position, own = value.position, gameInfo.getRootPosition(state.root)

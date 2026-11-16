@@ -22,6 +22,7 @@ local function clearGravity()
   gravityRoot = nil
 end
 local function updateGravity()
+  if not Utils or not enabledState then return end
   local player = Utils.getLocalPlayer(); local character = player and player.Character
   local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not humanoid or humanoid.Health <= 0 or not root or not root.Parent then clearGravity(); return end
@@ -84,6 +85,11 @@ function Gravity.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Gravity.teardown(); Utils = deps.Utils
   configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalGravity ~= nil then
+      local value = tonumber(changes.UniversalGravity)
+      if value and value == value and math.abs(value) < math.huge then gravityValue = math.clamp(value, 0, 400) end
+      if enabledState then updateGravity() end
+    end
     if changes.UniversalGravityEnabled ~= nil then Gravity.setEnabled(changes.UniversalGravityEnabled == true) end
   end)
   gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or Workspace.Gravity

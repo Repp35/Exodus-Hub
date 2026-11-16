@@ -359,8 +359,7 @@ function Utils.stop()
   end
   disconnectAll(state.characterConnections, connectionIndexes.character); disconnectAll(state.globalConnections, connectionIndexes.global)
   state.config, state.urls, modules = {}, {}, {}; persistenceReady, saveDirty = false, false
-  table.clear(spamObservers); table.clear(configObservers)
-  table.clear(observerIndexes.spam); table.clear(observerIndexes.config)
+  disconnectAll(spamObservers, observerIndexes.spam); disconnectAll(configObservers, observerIndexes.config)
   if type(_G.Exodus) == "table" then
     local exodus = _G.Exodus; exodus.Started, exodus.UIReady, exodus.Runtime, exodus.UI = false, false, nil, nil
     if type(exodus.RemoteHooks) == "table" then exodus.RemoteHooks.register = nil end
@@ -510,7 +509,15 @@ function Utils.loadConfig()
   return true
 end
 function Utils.setConfigModule(module)
-  if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then error("API interna ausente: Config.normalizePatch/validate", 2) end
+  if
+    type(module) ~= "table"
+    or type(module.normalizePatch) ~= "function"
+    or type(module.validate) ~= "function"
+    or type(module.validatePatch) ~= "function"
+    or type(module.defaults) ~= "function"
+  then
+    error("API interna ausente: Config.normalizePatch/validate/validatePatch/defaults", 2)
+  end
   configModule = module; return true
 end
 function Utils.setModuleURLs(urls)

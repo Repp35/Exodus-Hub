@@ -6,6 +6,7 @@ local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
+local receivedSequence
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 local minimumSpeed, maximumSpeed, speedAt
@@ -160,6 +161,8 @@ local function syncData(provider)
     if type(sequence) ~= "number" or (packet.Sequence ~= sequence and (packet.Sequence - sequence) % 65536 < 32768) then return packet end
     packet = nil
   end
+  local sequence = provider and provider.hasState == true and provider.lastSeq
+  if lastSync and receivedSequence and (not finite(sequence) or (receivedSequence ~= sequence and (receivedSequence - sequence) % 65536 < 32768)) then return lastSync end
   local data = provider and provider.hasState == true and provider.syncData or lastSync
   if type(data) ~= "table" then data = provider and provider.syncData end
   return type(data) == "table" and data or nil
@@ -331,11 +334,11 @@ function GameInfo.setup(deps)
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
-  sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
-  trainingZone = nil; snapshotCache, snapshotCacheAt = nil, -math.huge
-  table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
-  errors = {}; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
-  return true
+  receivedSequence = nil; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
+  trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil; trainingZone = nil
+  snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
+  minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
+  pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; return true
 end
 function GameInfo.getBall() return getBall() end
 function GameInfo.getBallPosition(value) return value.Position end
@@ -524,20 +527,25 @@ function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "
 function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
   if packet and current == packet then return packet.Sequence end
-  return provider and provider.hasState == true and provider.lastSeq or nil
+  local sequence = provider and provider.hasState == true and provider.lastSeq or nil
+  if not finite(sequence) then return receivedSequence end
+  if receivedSequence and (receivedSequence - sequence) % 65536 < 32768 then return receivedSequence end
+  return sequence
 end
 function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
 function GameInfo.applyPacket(value)
   if type(value) ~= "table" then return false end
   local sequence = value.Sequence
   if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
-  local previous = GameInfo.getSyncSequence()
-  if type(previous) == "number" then
-    local delta = (sequence - previous) % 65536
+  if receivedSequence ~= nil then
+    local delta = (sequence - receivedSequence) % 65536
     if delta == 0 or delta >= 32768 then return false end
   end
+  local provider = getReplicator(); local previous = provider and provider.hasState == true and provider.lastSeq
+  if finite(previous) and (sequence - previous) % 65536 >= 32768 then return false end
   packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt
-  invalidateSnapshotCache(); return true
+  receivedSequence, lastSync = sequence, packet; invalidateSnapshotCache()
+  return true
 end
 local function decodeBallPacketFallback(value)
   if typeof(value) ~= "buffer" or buffer.len(value) < 92 then return nil end
@@ -692,7 +700,7 @@ local function snapshot(time)
     targetId = target,
     targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
     targetSource = "sync",
-    targetUncertain = false,
+    targetUncertain = sync == nil or syncReceivedAt <= 0 or time < syncReceivedAt or time - syncReceivedAt > CONFIG.PACKET_AGE,
     teleported = sync and sync.Teleported == true or false,
     locked = sync and sync.Locked == true or false,
     ballCanMove = not (sync and sync.Locked == true),
@@ -722,11 +730,27 @@ function GameInfo.isSnapshotValid(value)
     and type(value.targeted) == "boolean"
 end
 function GameInfo.applySync(value)
+  local explicit = value ~= nil
   if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
-  if type(value) ~= "table" then local provider = getReplicator(); value = provider and provider.syncData end
+  local provider = getReplicator()
+  if type(value) ~= "table" then value = provider and provider.syncData end
   if type(value) ~= "table" then return nil end
-  lastSync, syncReceivedAt = value, os.clock(); invalidateSnapshotCache()
-  return value
+  if value.Sequence ~= nil and not finite(value.Sequence) then return nil end
+  local sequence = value.Sequence or (provider and provider.hasState == true and provider.lastSeq)
+  if finite(sequence) then
+    if sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return nil end
+    if receivedSequence ~= nil then
+      local delta = (sequence - receivedSequence) % 65536
+      if delta >= 32768 then return nil end
+      if delta == 0 then return nil end
+    end
+    receivedSequence = sequence
+  elseif not explicit then
+    return syncData(provider)
+  end
+  lastSync, packet, syncReceivedAt = table.clone(value), nil, os.clock()
+  if finite(sequence) then lastSync.Sequence = sequence end
+  invalidateSnapshotCache(); return lastSync
 end
 function GameInfo.installBallWatcher(track)
   if type(track) ~= "function" then return false, "trackConnection invalido" end
