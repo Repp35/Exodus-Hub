@@ -104,7 +104,9 @@ local function setupCharacter(character)
   local function watchHumanoid(humanoid)
     if currentLife ~= life or life.humanoids[humanoid] then return end
     life.humanoids[humanoid] = true
-    utils.trackCharacter(humanoid.Died:Connect(function() deactivate(life, "character_died") end))
+    utils.trackCharacter(humanoid.Died:Connect(function()
+      if humanoid.Parent == life.character then deactivate(life, "character_died") end
+    end))
     if humanoid.Health <= 0 then deactivate(life, "character_died") end
   end
   local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -113,6 +115,14 @@ local function setupCharacter(character)
   utils.trackCharacter(character.ChildAdded:Connect(function(child)
     if child:IsA("Humanoid") then watchHumanoid(child) end
   end))
+  if character.ChildRemoved then
+    utils.trackCharacter(character.ChildRemoved:Connect(function(child)
+      if currentLife == life and child.Name == "HumanoidRootPart" then
+        deactivate(life, "root_removed")
+        if utils and utils.isActive() and character.Parent then setupCharacter(character) end
+      end
+    end))
+  end
   startWorker()
 end
 function Character.setup(deps)

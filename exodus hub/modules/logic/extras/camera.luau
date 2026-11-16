@@ -46,7 +46,7 @@ local function startCamera()
           local wrapped
           wrapped = function(...)
             local rotation = original(...)
-            if not boundUtils.isActive() then
+            if token ~= cameraEpoch or utils ~= boundUtils or not boundUtils.isActive() then
               if api.getRotation == wrapped then api.getRotation = original end
               return rotation
             end

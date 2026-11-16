@@ -7,14 +7,39 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
-local samples, sampleIndex = {}, 0
+local samples, sampleHead, sampleTail, sampleAccepted = {}, 1, 0, 0
 
 -- configuration
 local CONFIG = {
   ERROR_RETRY_INTERVAL = 0.03,
+  MAX_FRAME_REQUESTS = 128,
+  MAX_ACCUMULATION_SECONDS = 0.1,
 }
 
 -- helpers
+local function clearSamples()
+  table.clear(samples); sampleHead, sampleTail, sampleAccepted = 1, 0, 0
+end
+local function expireSamples(time)
+  while sampleHead <= sampleTail do
+    local sample = samples[sampleHead]
+    if time >= sample.at and time - sample.at < 1 then break end
+    if sample.accepted then sampleAccepted -= 1 end
+    samples[sampleHead] = nil; sampleHead += 1
+  end
+  if sampleHead > sampleTail then
+    clearSamples()
+  elseif sampleHead > 1024 and sampleHead > sampleTail / 2 then
+    local count = sampleTail - sampleHead + 1
+    for index = 1, count do
+      samples[index] = samples[sampleHead + index - 1]
+    end
+    for index = count + 1, sampleTail do
+      samples[index] = nil
+    end
+    sampleHead, sampleTail = 1, count
+  end
+end
 local function readRate()
   local selected = utils.getConfigValue("SpamRateMode"); local mode = (selected == "Auto" or selected == "CPF" or selected == "MS") and selected or "CPS"
   if mode == "Auto" then return mode, 1 end
@@ -33,7 +58,7 @@ local function transition(active, reason)
   if utils and type(utils.recordTransition) == "function" then utils.recordTransition("Spam", previous, phase, reason) end
 end
 local function cancel(reason)
-  generation += 1; running, currentMode, currentRate = false, nil, nil
+  generation += 1; running, currentMode, currentRate, inFlight = false, nil, nil, false
   transition(false, reason)
 end
 
@@ -44,10 +69,10 @@ local function request(boundUtils, boundRemote, token, guard)
   local requestedAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
   if inFlight == requestToken then inFlight = false end
   if token ~= generation or utils ~= boundUtils then return end
-  status.lastRequestAt = requestedAt; sampleIndex = sampleIndex % 256 + 1
-  local sample = samples[sampleIndex]
-  if not sample then sample = {}; samples[sampleIndex] = sample end
-  sample.at, sample.accepted = status.lastRequestAt, ok and result == true
+  status.lastRequestAt = requestedAt; expireSamples(requestedAt)
+  local accepted = ok and result == true; sampleTail += 1
+  samples[sampleTail] = { at = requestedAt, accepted = accepted }
+  if accepted then sampleAccepted += 1 end
   if not ok then error(result, 0) end
   if token ~= generation or utils ~= boundUtils then return end
   if result == true then status.lastError = nil; return end
@@ -71,8 +96,8 @@ local function sync()
   if running then cancel("rate_changed") end
   generation += 1; local token, boundUtils, boundRemote, boundGameInfo = generation, utils, remote, gameInfo
   running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
+  local boundAutoSpam = autoSpam
   task.spawn(function()
-    local boundAutoSpam = autoSpam
     local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
     local function allowed()
       if not guard() then return false end
@@ -83,11 +108,12 @@ local function sync()
       while guard() do
         if mode ~= "Auto" then
           task.wait(); local time = os.clock()
-          local delta = math.max(0, time - previous); previous = time
+          local delta = math.clamp(time - previous, 0, CONFIG.MAX_ACCUMULATION_SECONDS); previous = time
           if allowed() then
-            credit += mode == "CPF" and rate or clicksPerSecond * delta; local count = math.floor(credit)
+            credit = math.min(CONFIG.MAX_FRAME_REQUESTS, credit + (mode == "CPF" and rate or clicksPerSecond * delta)); local count = math.floor(credit)
             credit -= count
             for _ = 1, count do
+              if not allowed() then credit = 0; break end
               request(boundUtils, boundRemote, token, allowed)
             end
           else
@@ -95,7 +121,11 @@ local function sync()
           end
         else
           task.wait()
-          if allowed() and not inFlight then request(boundUtils, boundRemote, token, allowed) end
+          if allowed() and not inFlight then
+            local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
+            if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
+            if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then request(boundUtils, boundRemote, token, allowed) end
+          end
         end
       end
     end, traceback)
@@ -147,15 +177,14 @@ function Spam.setup(deps)
 end
 function Spam.resetState()
   cancel("reset"); status.lastError, status.lastErrorAt = nil, -math.huge
-  table.clear(samples); sampleIndex = 0
-  local token = generation
+  clearSamples(); local token = generation
   task.defer(function()
     if token == generation then sync() end
   end)
 end
 function Spam.teardown()
-  cancel("teardown"); table.clear(samples)
-  sampleIndex = 0
+  cancel("teardown"); clearSamples()
+  status.lastRequestAt, status.lastError, status.lastErrorAt = 0, nil, -math.huge
   if utils then
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
     if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
@@ -165,20 +194,14 @@ end
 
 -- public-api
 function Spam.getStatus()
-  local now, attempts, accepted = os.clock(), 0, 0
-  for _, sample in pairs(samples) do
-    if now >= sample.at and now - sample.at < 1 then
-      attempts += 1
-      if sample.accepted then accepted += 1 end
-    end
-  end
+  expireSamples(os.clock())
   return {
     schema = utils and utils.apiVersion() or 1,
     phase = status.phase,
     lastRequestAt = status.lastRequestAt,
     lastError = status.lastError,
-    attemptsLastSecond = attempts,
-    acceptedLastSecond = accepted,
+    attemptsLastSecond = sampleTail - sampleHead + 1,
+    acceptedLastSecond = sampleAccepted,
     cpfFps = 0,
     cpfClicks = 0,
     cpfCompensation = false,

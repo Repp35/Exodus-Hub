@@ -185,7 +185,8 @@ local services={
   TextService={GetTextSize=function(_,value) return Vector2.new(#value*7,18) end},
 }
 game={GetService=function(_,name) return assert(services[name],name) end}
-workspace={CurrentCamera=Instance.new('Camera')}
+workspace=Instance.new('Workspace')
+workspace.CurrentCamera=Instance.new('Camera')
 workspace.CurrentCamera.ViewportSize=Vector2.new(1280,720)
 task={
   spawn=function(callback) local co=coroutine.create(callback);local ok,err=coroutine.resume(co);assert(ok,err);return co end,

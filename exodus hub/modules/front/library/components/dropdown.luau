@@ -130,12 +130,15 @@ function Components.install(context)
           if shift > 0 then scroll.CanvasPosition = Vector2.new(scroll.CanvasPosition.X, scroll.CanvasPosition.Y + shift / scale); moved = true end
         end
         ensureRoom = false
-        if moved then lastGeometry = nil; return end
+        if moved then
+          menu.Visible = false; lastGeometry = nil
+          return
+        end
         local above = math.max(0, pos.Y - spacing - margin); local upward = below < desired and above > below
         local height = math.min(desired, upward and above or below)
         if height <= 0 then close(); return end
-        local width = math.min(size.X, math.max(1, view.X - margin * 2)); menu.AnchorPoint = Vector2.zero
-        menu.Size = UDim2.fromOffset(width, height)
+        local width = math.min(size.X, math.max(1, view.X - margin * 2)); menu.Visible = true
+        menu.AnchorPoint = Vector2.zero; menu.Size = UDim2.fromOffset(width, height)
         menu.Position =
           UDim2.fromOffset(math.clamp(pos.X, margin, math.max(margin, view.X - width - margin)), upward and pos.Y - spacing - height or bottom + spacing)
         list.CanvasSize = UDim2.fromOffset(0, #choices * (row + gap) + pad * 2)

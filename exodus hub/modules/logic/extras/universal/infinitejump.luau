@@ -31,7 +31,7 @@ end
 local jumpButton
 local lastJump = 0
 local function jumpInAir()
-  if not states.InfiniteJump or UIS:GetFocusedTextBox() then return end
+  if not Utils or not states.InfiniteJump or UIS:GetFocusedTextBox() then return end
   local player = Utils.getLocalPlayer(); local character = player and player.Character
   local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not humanoid or humanoid.Health <= 0 or humanoid.Sit or not root or humanoid.FloorMaterial ~= Enum.Material.Air then return end
@@ -43,6 +43,7 @@ local function jumpInAir()
   root.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z); humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 end
 local function attachJumpButton()
+  if not Utils or not states.InfiniteJump then return end
   local player = Utils.getLocalPlayer(); local gui = player and player:FindFirstChildOfClass("PlayerGui")
   local interface = gui and gui:FindFirstChild("Interface"); local mobile = interface and interface:FindFirstChild("MobileUI")
   local buttons = mobile and mobile:FindFirstChild("Buttons"); local jump = buttons and buttons:FindFirstChild("Jump")

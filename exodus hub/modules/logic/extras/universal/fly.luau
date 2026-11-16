@@ -15,6 +15,7 @@ local Workspace = game:GetService("Workspace")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local states = { Fly = false }
+local epoch = 0
 local flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro
 local flyPlatformStand, flyAutoRotate
 local playerControls, playerControlsModule
@@ -99,16 +100,18 @@ local function getPlayerControls()
   local player = Utils.getLocalPlayer(); local scripts = player and player:FindFirstChild("PlayerScripts")
   local module = scripts and scripts:FindFirstChild("PlayerModule")
   if not module then return nil end
-  local ok, value = pcall(require, module)
+  local owner = epoch; local ok, value = pcall(require, module)
+  if owner ~= epoch or not Utils or not states.Fly then return nil end
   if ok and type(value) == "table" and type(value.GetControls) == "function" then
     local ready, result = pcall(value.GetControls, value)
-    if ready and result and type(result.GetMoveVector) == "function" then playerControls, playerControlsModule = result, module end
+    if owner == epoch and Utils and states.Fly and ready and result and type(result.GetMoveVector) == "function" then playerControls, playerControlsModule = result, module end
   end
   return playerControls
 end
 local function updateFly()
-  if not states.Fly then return end
-  local humanoid = flyCharacterReady(); local camera = Workspace.CurrentCamera
+  if not Utils or not states.Fly then return end
+  local owner = epoch; local humanoid = flyCharacterReady()
+  local camera = Workspace.CurrentCamera
   if not humanoid or not camera then return end
   local direction
   if UIS:GetFocusedTextBox() then clearControls() end
@@ -121,6 +124,7 @@ local function updateFly()
       + camera.CFrame.RightVector * (controls.Left + controls.Right)
       + Vector3.new(0, controls.Up + controls.Down, 0)
   end
+  if owner ~= epoch or not states.Fly or not Utils or humanoid ~= flyHumanoid or not flyRoot or not flyRoot.Parent then return end
   if direction.Magnitude > 1 then direction = direction.Unit end
   local speed = math.clamp(tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10); local velocity = direction * speed * 50
   flyVelocity.Velocity = velocity; flyRoot.AssemblyLinearVelocity = velocity
@@ -156,9 +160,9 @@ local function startFly()
   return true
 end
 local function stopFly()
-  disconnectPrefix("Fly"); clearControls()
-  detachFly(); playerControls, playerControlsModule = nil, nil
-  return true
+  epoch += 1; disconnectPrefix("Fly")
+  clearControls(); detachFly()
+  playerControls, playerControlsModule = nil, nil; return true
 end
 function Fly.setEnabled(enabled)
   if not Utils then return false, "recurso indisponível" end

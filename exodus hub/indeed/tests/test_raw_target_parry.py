@@ -89,7 +89,7 @@ frameCb(1/60); assert(fires==1)
         for change in (
             "snap.position=v(300)", "snap.realPosition=v(300)",
             "snap.targetId=99", "snap.teleported=true", "snap.locked=true",
-            "snap.ballValid=false", "snap.valid=false", "snap.resetting=true",
+            "snap.ballValid=false", "snap.valid=false", "snap.resetting=true", "snap.targetUncertain=true", "cd.blocking=true",
             "snap.syncSpeed=0/0", "snap.syncSpeed=0", "snap.syncAt=tm-1",
             "snap.syncAt=0/0", "snap.realPosition=v(0/0)",
             "snap.ball={Parent=true}", "ball.Parent=nil", "root.Parent=nil",
@@ -231,23 +231,27 @@ cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
     def test_single_window_exact_boundaries_and_speed_limits(self):
         geometry_source = (ROOT / "aux/gameinfo.luau").read_text()
         geometry_source = geometry_source[geometry_source.index("function GameInfo.getAutoParryGeometry("):geometry_source.index("function GameInfo.getProjectedDeflectRadius(")]
-        for speed, window in ((16, 0.5), (308, 0.375), (600, 0.25)):
+        for speed, window in ((16, 0.85), (308, 0.525), (600, 0.2)):
             with self.subTest(speed=speed):
                 self.check_ap("""
 local GameInfo=g
-local CONFIG={RANGE_BASE=8.5,AUTO_PARRY_TRIGGER_PADDING=1}
+local CONFIG={RANGE_BASE=8.5,AUTO_PARRY_TRIGGER_PADDING=0}
 local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
 g.getBallSpeedLimits=function() return 16,600 end
 g.getDeflectRange=function() return 11.5 end
 g.getAveragePing=function() return 0.05,0.05,1 end
+g.getDeflectWindow=function(speed) return .85-.65*math.clamp((speed-16)/584,0,1) end
+table.clone=function(t) local copy={} for k,v in pairs(t) do copy[k]=v end return copy end
 """ + geometry_source + f"""
-snap.syncSpeed={speed}; snap.speed={speed}; snap.velocity=v({speed})
-local boundary=11.5+1+{speed}*({window}*0.4+0.05+1/60)
+snap.syncSpeed={speed}; snap.speed={speed}; snap.velocity=v(-{speed})
+local risk=math.clamp(1-(11.5-4)/{speed}/(2/60),0,1)
+local factor=.3+(.85-.3)*risk
+local boundary=11.5+{speed}*({window}*factor+0.05+1/60)
 snap.position=v(boundary+0.001); packet(42)
 assert(fires==0,'clicked outside the 0.4 window')
 local timing=ap.getTiming(snap)
 assert(math.abs(timing.deflectWindow-{window})<1e-9)
-assert(timing.windowFactor==0.4,'stored old factor changed match gate')
+assert(math.abs(timing.windowFactor-factor)<1e-9,'adaptive factor differs from response risk')
 assert(math.abs(timing.triggerDistance-boundary)<1e-9)
 snap.position=v(boundary); frameCb(1/60)
 assert(fires==1,'exact distance boundary did not click')

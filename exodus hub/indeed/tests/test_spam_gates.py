@@ -39,6 +39,19 @@ observeMotion(s,x,2.299); assert(not s.stationary)
 x.position=v(51); observeMotion(s,x,2.3); assert(not s.stationary)
 ''')
 
+    def test_stationary_requires_independent_packets_and_continuous_samples(self):
+        code = section('local function freshSnapshot(', 'local function speedInterval(') + section('local function resetMotion(', 'local function cooldownExpired(')
+        run_lua(PRELUDE + '''local function resetExchange() end\n''' + code + '''
+local ball={};local state={};local x={ball=ball,position=v(2),syncSequence=1}
+observeMotion(state,x,1);observeMotion(state,x,1.4)
+assert(not state.stationary,'one packet was treated as continuous stationary motion')
+x.syncSequence=2;observeMotion(state,x,1.5)
+assert(not state.stationary,'packet gap counted as stationary time')
+x.syncSequence=3;observeMotion(state,x,1.65)
+x.syncSequence=4;observeMotion(state,x,1.81)
+assert(state.stationary,'continuous stationary samples were not detected')
+''')
+
     def test_manual_cooldown_is_130_percent_and_resets(self):
         code = section('local function cooldownExpired(', 'local function activate(')
         run_lua(PRELUDE + '''

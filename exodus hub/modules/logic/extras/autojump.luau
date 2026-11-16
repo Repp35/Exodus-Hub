@@ -4,6 +4,7 @@
 local AutoJump = {}
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
+local configObserver
 local epoch = 0
 
 -- configuration
@@ -34,9 +35,9 @@ end
 
 -- synchronization
 function AutoJump.sync()
-  stopJump()
-  if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then return true end
-  local player, runService = utils.getLocalPlayer(), utils.getRunService()
+  if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then stopJump(); return true end
+  if jumpConnection and jumpConnection.Connected ~= false then return true end
+  stopJump(); local player, runService = utils.getLocalPlayer(), utils.getRunService()
   if not player or not runService or not runService.Heartbeat then return false, "Jogador ou Heartbeat indisponível" end
   local token = epoch
   jumpConnection = runService.Heartbeat:Connect(function()
@@ -51,9 +52,16 @@ end
 function AutoJump.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
   AutoJump.teardown(); utils = deps.Utils
-  return AutoJump.sync()
+  configObserver = utils.observeConfig(function(changes)
+    if changes.AutoJump ~= nil then AutoJump.sync() end
+  end)
+  utils.trackGlobal(configObserver); return AutoJump.sync()
 end
 function AutoJump.teardown()
+  if configObserver then
+    if utils then utils.untrackGlobal(configObserver) end
+    configObserver:Disconnect(); configObserver = nil
+  end
   stopJump(); utils = nil
 end
 
@@ -61,7 +69,7 @@ end
 AutoJump.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = {
-    Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "isActive" },
+    Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "isActive", "observeConfig" },
   },
   provides = { "setup", "sync", "teardown" },
 }

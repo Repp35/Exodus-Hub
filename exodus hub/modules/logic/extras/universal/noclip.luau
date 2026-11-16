@@ -43,6 +43,7 @@ local function restoreCollision()
   noclipCharacter = nil
 end
 local function applyNoclip()
+  if not Utils or not enabledState then return end
   local player = Utils.getLocalPlayer(); local character = player and player.Character
   if character ~= noclipCharacter then
     restoreCollision(); noclipCharacter = character

@@ -19,7 +19,7 @@ class AntiLagTests(unittest.TestCase):
 assert(config.register('antilag',definition))
 local defaults=config.defaults()
 assert(defaults.AntiLagEnabled==false and defaults.AntiLagRemoveSwordSounds==true)
-assert(defaults.AntiLagRenderDistance==650)
+assert(defaults.AntiLagRenderDistance==350)
 assert(defaults.AntiLagRemoveLighting==true and defaults.AntiLagHideLobby==true)
 assert(defaults.AntiLagRemoveFog==true and defaults.AntiLagRemoveEffects==true)
 assert(config.validatePatch({AntiLagEnabled=true,AntiLagRenderDistance=950}))

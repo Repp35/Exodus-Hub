@@ -221,10 +221,16 @@ local function opponentOutside(state, radius, maxRadius, snapshot, time)
 end
 local function resetMotion(state)
   state.motionBall, state.motionPosition, state.motionAt = nil, nil, nil; state.stationary = false
+  state.motionSequence, state.motionSampleAt = nil, nil
 end
 local function observeMotion(state, snapshot, time)
   if snapshot and snapshot.teleported then return end
   if not freshSnapshot(snapshot, time) then resetMotion(state); return end
+  local sequence = snapshot.syncSequence
+  if finite(sequence) and state.motionBall == snapshot.ball and state.motionSequence == sequence then return end
+  if state.motionSampleAt and (time < state.motionSampleAt or time - state.motionSampleAt > CONFIG.DEACTIVATION.STATIONARY_TIMEOUT) then
+    state.motionPosition, state.motionAt, state.stationary = nil, nil, false
+  end
   if state.motionBall ~= snapshot.ball then
     resetMotion(state); resetExchange(state)
     state.target, state.previousOpponent = nil, nil; state.motionBall, state.motionPosition, state.motionAt = snapshot.ball, snapshot.position, time
@@ -233,6 +239,7 @@ local function observeMotion(state, snapshot, time)
   elseif state.motionAt and time - state.motionAt > CONFIG.DEACTIVATION.STATIONARY_TIMEOUT then
     state.stationary = true
   end
+  state.motionSequence, state.motionSampleAt = sequence, time
 end
 local function cooldownExpired(state, snapshot, time, multiplier)
   local cooldown = cooldownInfo.getDeflectCooldownState()
@@ -428,7 +435,9 @@ local function deactivationReason(state, snapshot, time)
     end
   end
   if
-    state.activatedAt
+    freshSnapshot(snapshot, time)
+    and not snapshot.locked
+    and state.activatedAt
     and time - state.activatedAt >= CONFIG.DEACTIVATION.CLASH_GRACE_PERIOD
     and state.target == state.partner
     and state.departedAt

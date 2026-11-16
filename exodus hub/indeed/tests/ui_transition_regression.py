@@ -2,7 +2,7 @@
 
 The shim translates compound assignments in the tested Luau modules and mocks
 Roblox APIs. It does not validate engine scheduling or server-side outcomes.
-Run from any directory: python path/to/parry_runtime_regression.py
+Run from any directory: python path/to/ui_transition_regression.py
 """
 import ctypes, pathlib, re
 lib = ctypes.CDLL('liblua5.4.so.0')
@@ -39,6 +39,7 @@ run('close and reload wait for all fades', """
 local function build(action)
  local faded, destroyed, calls={}, {}, 0
  local UIState={closing=false,pageTweens={}}
+ local context={scope={alive=true}}
  local screenGui={Parent=true,Name='screen'}; local informationGui={Parent=true,Name='information'}
  local function card(key) return {Parent=true,Name=key,GetAttribute=function() return key end,Destroy=function(self) destroyed[self.Name]=true; self.Parent=nil end} end
  local update,other=card('update'),card('other'); local children={update,other}
@@ -53,7 +54,7 @@ local function build(action)
  local Controls={onClose=function() calls=calls+1 end,onReload=function() calls=calls+1 end}
  local function showPersistentNotification() end; local function restoreAfterReloadFailure() end
 """+transition+"""
- local co=coroutine.create(function() animateClose(action) end); local ok,why=coroutine.resume(co); assert(ok and why=='waiting' and calls==0)
+ local co=coroutine.create(function() animateClose(action) end); local ok,why=coroutine.resume(co); assert(ok,why);assert(why=='waiting' and calls==0)
  assert(faded.screen and faded.information and faded.other); assert((faded.update==true)==(action=='close'))
  ok,why=coroutine.resume(co); assert(ok,why); assert(calls==1 and destroyed.other)
  assert((destroyed.update==true)==(action=='close'))

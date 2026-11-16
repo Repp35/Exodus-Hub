@@ -574,7 +574,7 @@ local function bindRuntime(loaded)
   end)
   local syncErrors = {}
   local function notifyBallSync(decodedData)
-    if type(decodedData) ~= "table" then return end
+    if not utils.isActive() or type(decodedData) ~= "table" then return end
     for _, sub in ipairs(ballSyncSubscribers) do
       local ok, result, detail = pcall(sub.handler, decodedData)
       if not ok or result == false then
@@ -597,8 +597,8 @@ local function bindRuntime(loaded)
       if type(refreshed) == "table" then notifyBallSync(refreshed) end
     end)
   end
-  local lastClashPacketSequence
   local function onBallSync(...)
+    if not utils.isActive() then return end
     local argCount = select("#", ...)
     local data
     for index = 1, argCount do
@@ -607,18 +607,9 @@ local function bindRuntime(loaded)
         if type(gameInfo.decodeBallPacket) == "function" then
           local packet = gameInfo.decodeBallPacket(value)
           if type(packet) == "table" and type(packet.Sequence) == "number" then
-            local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
-            local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536; local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
-            if (forward == true or forward < 32768) and currentDelta < 32768 then
-              lastClashPacketSequence = sequence; packet.Source = "packet"
-              if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
-              notifyBallSync(packet)
-            end
+            packet.Source = "packet"
+            if gameInfo.applyPacket(packet) then notifyBallSync(packet) end
           end
-        end
-        if buffer.len(value) >= 92 and bit32.btest(buffer.readu8(value, 0), 1) then
-          local sequence = buffer.readu16(value, 1); local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
-          if type(current) ~= "number" or (sequence - current) % 65536 < 32768 then notifyBallSync({ Teleported = true, TeleportSequence = sequence }) end
         end
         scheduleSyncRefresh(); return
       end
@@ -857,7 +848,8 @@ local function startInternal()
       if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao alterar valor") end
     end,
     onPanic = function()
-      loaded.autoparry.resetState(); loaded.autospam.stopSpam()
+      utils.setConfig({ AutoParry = false, AutoSpam = false }); utils.stopAllSpam()
+      loaded.autospam.stopSpam()
     end,
     onClose = function() utils.stop() end,
     onReload = reloadLatest,

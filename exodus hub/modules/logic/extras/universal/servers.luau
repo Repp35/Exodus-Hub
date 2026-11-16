@@ -4,6 +4,7 @@ local Servers = {}
 
 local utils, failureConnection
 local generation, busy, busyUntil, reporter = 0, false, 0, nil
+local pendingServerId
 
 -- configuration
 local CONFIG = {
@@ -19,7 +20,7 @@ local function finite(v) return type(v) == "number" and v == v and v > -math.hug
 local function begin(callback)
   if not utils or not utils.isActive() then return nil, "Hub inativo" end
   if busy and os.clock() < busyUntil then return nil, "Já existe uma busca ou um teleporte em andamento" end
-  generation = generation + 1; busy, busyUntil, reporter = true, os.clock() + 60, callback
+  generation = generation + 1; busy, busyUntil, reporter, pendingServerId = true, os.clock() + 60, callback, nil
   return generation
 end
 local function report(message)
@@ -32,13 +33,13 @@ local function teleport(serverId, token)
   if token ~= generation or not utils or not utils.isActive() then return false, "Operação cancelada" end
   local player = utils.getLocalPlayer()
   if not player then busy = false; return false, "Jogador indisponível" end
-  busyUntil = os.clock() + CONFIG.TELEPORT_TIMEOUT
+  busyUntil, pendingServerId = os.clock() + CONFIG.TELEPORT_TIMEOUT, serverId
   local ok, err = pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, serverId, player) end)
   if token ~= generation or not utils then return false, "Operação cancelada" end
-  if not ok then busy = false; return false, tostring(err) end
+  if not ok then busy, pendingServerId = false, nil; return false, tostring(err) end
   task.delay(CONFIG.TELEPORT_TIMEOUT, function()
     if token ~= generation or not busy or not utils then return end
-    busy = false; report("O teleporte não foi concluído; você pode tentar novamente")
+    busy, pendingServerId = false, nil; report("O teleporte não foi concluído; você pode tentar novamente")
   end)
   return true
 end
@@ -96,7 +97,7 @@ end
 
 -- lifecycle
 function Servers.teardown()
-  generation = generation + 1; busy, reporter = false, nil
+  generation = generation + 1; busy, reporter, pendingServerId = false, nil, nil
   if failureConnection then
     if utils then utils.untrackGlobal(failureConnection) end
     failureConnection:Disconnect(); failureConnection = nil
@@ -107,9 +108,10 @@ function Servers.setup(deps)
   Servers.teardown()
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
   utils = deps.Utils
-  failureConnection = game:GetService("TeleportService").TeleportInitFailed:Connect(function(player, _, message, placeId)
-    if not utils or player ~= utils.getLocalPlayer() or placeId ~= game.PlaceId or not busy then return end
-    busy = false; report("Teleporte falhou: " .. tostring(message))
+  failureConnection = game:GetService("TeleportService").TeleportInitFailed:Connect(function(player, _, message, placeId, options)
+    if not utils or player ~= utils.getLocalPlayer() or placeId ~= game.PlaceId or not busy or not pendingServerId then return end
+    if options and options.ServerInstanceId ~= "" and options.ServerInstanceId ~= pendingServerId then return end
+    busy, pendingServerId = false, nil; report("Teleporte falhou: " .. tostring(message))
     utils.recordError("Servers", message)
   end)
   utils.trackGlobal(failureConnection); return true
