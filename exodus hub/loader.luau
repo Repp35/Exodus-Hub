@@ -733,8 +733,7 @@ end
 local function matchInProgress()
   local loaded = Exodus.Context
   if type(loaded) ~= "table" or type(loaded.gameinfo) ~= "table" or type(loaded.gameinfo.getGameContext) ~= "function" then return false end
-  local ok, context = pcall(loaded.gameinfo.getGameContext)
-  return ok and type(context) == "table" and (context.roundActive == true or context.inMatch == true or context.area == "match")
+  local ok, context = pcall(loaded.gameinfo.getGameContext); return ok and type(context) == "table" and (context.roundActive == true or context.inMatch == true or context.area == "match")
 end
 local function waitForMatchToEnd(onWaiting)
   local waiting, clearSince = false, nil
