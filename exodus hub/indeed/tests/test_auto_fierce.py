@@ -1,12 +1,9 @@
 """Behavioral coverage for sustained cooldown Fierce activation, offline."""
-from pathlib import Path
-import re
 import unittest
 
-from test_raw_target_parry import run_lua
+from test_logic_reliability import module, run_case
 
-SOURCE = (Path(__file__).resolve().parents[2] / 'modules/logic/extras/autofierce.luau').read_text()
-SOURCE = re.sub(r'([A-Za-z_][\w.]*) \+= ([^;\n]+?)(?=;|\n| end)', lambda m: f'{m[1]} = {m[1]} + ({m[2]})', SOURCE)
+SOURCE = module('extras/autofierce.luau')
 PRELUDE = '''
 local tm=10; os.clock=function() return tm end
 local heartbeat
@@ -16,19 +13,23 @@ local snap={ball=ball,mode='match',syncAt=tm,targetId=42}
 local fresh,valid,frozen=true,true,false
 local cd={source='local',blocking=true,blockingSince=10,episode=1,miss=false}
 local sent,begun,cancelled,manual=0,0,0,0
+local stoppedAuto,stoppedAll=0,0
 local ability={Cooldown=0,ActivateAndBlock=function() manual=manual+1 end}
 local original=ability.ActivateAndBlock
 local approaching,distance=true,10
+local killTime,entry,rawRadius
 local window,ping=0.2,0.05
 local inClash=false
 local beforeGuard,failSend
 local u={getLocalPlayer=function() return player end,isActive=function() return active end,
  getConfigValue=function() return enabled end,getRunService=function() return {Heartbeat={Connect=function(_,fn) heartbeat=fn; return {Disconnect=function() end} end}} end,
- trackGlobal=function() end,untrackGlobal=function() end}
+ trackGlobal=function() end,untrackGlobal=function() end,
+ stopAllSpam=function() stoppedAll=stoppedAll+1 end}
+local spam={stopSpam=function() stoppedAuto=stoppedAuto+1 end}
 local g={getDefensePhysics=function() return {inClash=inClash} end,getDeflectWindow=function() return window end,getAveragePing=function() return ping end,areAbilitiesEnabled=function() return abilities end,getFierceDeflectAbility=function() return ability end,
  getSnapshotAt=function() if fresh then snap.syncAt=tm end; return snap end,
  isSnapshotValid=function() return valid end,getBallFrozen=function() return frozen end}
-local a={getTiming=function() return {approaching=approaching,distance=distance,triggerDistance=20} end,beginFierce=function() begun=begun+1; return {} end,cancelFierce=function(token) if token then cancelled=cancelled+1 end end}
+local a={getTiming=function() return {approaching=approaching,distance=distance,triggerDistance=20,timeToKill=killTime,predictionTimeToRange=entry,noWindowParryRadius=rawRadius} end,beginFierce=function() begun=begun+1; return {} end,cancelFierce=function(token) if token then cancelled=cancelled+1 end end}
 local c={getDeflectCooldownState=function() return cd end}
 local r={fireFierce=function(guard)
  if beforeGuard then beforeGuard() end
@@ -40,8 +41,8 @@ end}
 
 class AutoFierceTests(unittest.TestCase):
     def check(self, script):
-        run_lua(PRELUDE + '\nlocal mod=(function()\n' + SOURCE + '\nend)()\n' + '''
-assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=c}))
+        run_case(PRELUDE + SOURCE + '''
+assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=c,AutoSpam=spam}))
 local function step(time) tm=time; heartbeat() end
 ''' + script)
 
@@ -92,20 +93,20 @@ cd.blocking=false; cd.lastParriedAt=10.75; step(10.75)
 cd.missDeadline=nil; step(11); assert(sent==0)
 ''')
 
-    def test_clash_discards_current_cooldown_even_after_clash_ends(self):
+    def test_clash_suppression_ends_with_clash_in_the_same_episode(self):
         self.check('''
 inClash=true; step(10); step(10.6); assert(sent==0,'Fierce spent in clash')
-inClash=false; step(10.7); assert(sent==0,'clash cooldown spent Fierce on exit')
+inClash=false; step(10.7); assert(sent==1,'clash permanently vetoed rescue after exit')
 cd.blocking=false; step(10.8)
 cd.blocking=true; cd.blockingSince=11; cd.episode=2
-step(11); step(11.318); assert(sent==1,'fresh cooldown outside clash was blocked')
+step(11); step(11.318); assert(sent==2,'fresh cooldown outside clash was blocked')
 ''')
 
     def test_teardown_clears_clash_episode_for_reexecution(self):
         self.check('''
 inClash=true; step(10); mod.teardown()
 inClash=false
-assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=c}))
+assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=c,AutoSpam=spam}))
 step(10.5); assert(sent==1,'reexecution retained discarded clash episode')
 ''')
 
@@ -165,22 +166,20 @@ failSend=false; step(10.6); assert(sent==1)
 ''')
 
     def test_real_cooldown_pending_deadline_survives_client_expiry(self):
-        cooldown_source = (Path(__file__).resolve().parents[2] / 'modules/logic/aux/cooldown.luau').read_text()
-        cooldown_source = re.sub(r'([A-Za-z_][\w.]*) \+= ([^;\n]+?)(?=;|\n| end)', lambda m: f'{m[1]} = {m[1]} + ({m[2]})', cooldown_source)
-        run_lua(PRELUDE + '''
+        run_case(PRELUDE + '''
 local deflect={Cooldown=1.45,PendingPressAt=10,PendingPredictUntil=10.8}
 g.getDeflectAbility=function() return deflect end
 u.getReplicatedStorage=function() return nil end
 u.recordError=function(_,message) error(message) end
-local realCooldown=(function()\n''' + cooldown_source + '''\nend)()
+''' + module('aux/cooldown.luau') + '''
+local realCooldown=mod
 assert(realCooldown.setup({Utils=u,GameInfo=g}))
-local mod=(function()\n''' + SOURCE + '''\nend)()
-assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=realCooldown}))
+''' + SOURCE + '''
+assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=realCooldown,AutoSpam=spam}))
 heartbeat(); tm=10.5; heartbeat(); assert(sent==0)
 deflect.PendingPredictUntil=nil; deflect.Cooldown=0.65
- tm=10.8; heartbeat(); assert(sent==0,'client expiry prematurely spent Fierce')
-tm=10.916; heartbeat(); assert(sent==0,'missing server response margin')
-tm=10.918; heartbeat(); assert(sent==1)
+tm=10.8; heartbeat(); assert(sent==1,'confirmed miss waited through another response margin')
+tm=10.918; heartbeat(); assert(sent==1,'same miss consumed Fierce twice')
 mod.teardown(); realCooldown.teardown()
 ''')
 
@@ -189,6 +188,54 @@ mod.teardown(); realCooldown.teardown()
 enabled=false; ability:ActivateAndBlock()
 assert(manual==1 and begun==1)
 mod.teardown(); assert(ability.ActivateAndBlock==original)
+''')
+
+    def test_confirmed_miss_rescues_inside_lingering_clash_and_stops_spam(self):
+        self.check('''
+inClash=true; cd.miss=true; cd.windowExpired=true; cd.windowEndsAt=10.03
+step(10); assert(sent==0)
+step(10.031); assert(sent==1,'clash vetoed confirmed miss rescue')
+assert(stoppedAuto==1 and stoppedAll==1 and begun==1,'rescue did not take priority over spam')
+step(10.1); assert(sent==1)
+''')
+
+    def test_imminent_death_rescues_before_normal_threshold(self):
+        self.check('''
+inClash=true; killTime=.04; entry=.03
+cd.windowEndsAt=10.01; cd.windowExpired=true
+step(10.02); assert(sent==1,'emergency waited for normal sustained timer')
+''')
+
+    def test_pending_parry_and_recovery_before_danger_preserve_fierce(self):
+        self.check('''
+inClash=true; killTime=.08; entry=.02
+cd.windowEndsAt=10.1; cd.windowExpired=false
+step(10.01); assert(sent==0,'usable pending window was ignored')
+cd.windowEndsAt=10.005; cd.windowExpired=true; cd.miss=true
+cd.remaining=.001; killTime=.3
+step(10.02); assert(sent==0,'Fierce spent despite cooldown recovering before danger')
+''')
+
+    def test_stationary_ball_inside_raw_range_still_allows_rescue(self):
+        self.check('''
+approaching=false; distance=6; rawRadius=8.5; frozen=nil
+cd.miss=true; cd.windowExpired=true; inClash=true
+step(10.1); assert(sent==1)
+''')
+
+    def test_unavailable_or_dead_owner_cannot_spend_fierce(self):
+        for method in ('IsOwnerAlive', 'IsAvailable'):
+            with self.subTest(method=method):
+                self.check('ability.' + method + '=function() return false end; step(11); assert(sent==0)')
+
+    def test_automatic_activation_uses_one_ap_lock(self):
+        self.check('''
+r.fireFierce=function(guard)
+ if not guard() then return false end
+ assert(stoppedAuto==1 and stoppedAll==1,'spam still active at Fierce dispatch')
+ ability:ActivateAndBlock(); sent=sent+1; return true
+end
+step(10.5); assert(sent==1 and manual==1 and begun==1,'automatic wrapper duplicated AP lock')
 ''')
 
 if __name__ == '__main__':
