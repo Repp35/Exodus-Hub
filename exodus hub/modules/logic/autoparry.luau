@@ -104,6 +104,7 @@ local CONFIG = {
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+local function validBallSpeed(value) return finite(value) and value >= 0 and value <= 1000 end
 local function vector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 local function clock() return os.clock() end
 local function phase(value, reason)
@@ -240,7 +241,7 @@ local function matchTiming(value, time, own, factor)
   if not value or not vector(value.position) or not vector(own) then return nil end
   local speed = tonumber(value.syncSpeed)
   if not finite(speed) or speed <= 0 then speed = value.speed end
-  if not finite(speed) or speed < 0 then return nil end
+  if not validBallSpeed(speed) then return nil end
   local g = radius(speed, factor or activeWindowFactor())
   if not g then return nil end
   local velocity = vector(value.velocity) and value.velocity or Vector3.zero
@@ -342,7 +343,8 @@ local function matchDataReady(value, time)
   if value.mode == "training" then return true end
   if value.teleported or value.locked or value.ballValid == false or value.valid == false or value.resetting == true or value.ballCanMove == false then return false end
   if not finite(value.targetId) or value.targetId <= 0 then return false end
-  if value.syncSpeed ~= nil and not finite(value.syncSpeed) then return false end
+  if value.syncSpeed ~= nil and not validBallSpeed(value.syncSpeed) then return false end
+  if not validBallSpeed(value.speed) then return false end
   if value.syncAt ~= nil and not finite(value.syncAt) then return false end
   local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed
   if not finite(speed) or speed < CONFIG.MIN_PARRY_SPEED then return false end
@@ -460,7 +462,7 @@ local function tickTraining(value, root, time)
   local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
   if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
   local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
-  if not finite(speed) or speed < CONFIG.TRAINING_MIN_SPEED then
+  if (value.syncSpeed ~= nil and not validBallSpeed(value.syncSpeed)) or not validBallSpeed(speed) or speed < CONFIG.TRAINING_MIN_SPEED then
     state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "training_speed_unavailable")
     return
   end
@@ -796,7 +798,7 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   if not vector(position) or not vector(root) then return nil end
   velocity = vector(velocity) and velocity or Vector3.zero; local speed = tonumber(value.syncSpeed)
   if not finite(speed) or speed <= 0 then speed = velocity.Magnitude > 0.1 and velocity.Magnitude or tonumber(value.speed) or 0 end
-  if not finite(speed) or speed < 0 then return nil end
+  if not validBallSpeed(speed) then return nil end
   samplePing(); local geometry = value.mode == "training" and trainingGeometry(speed, factor) or radius(speed, factor, baseWindow)
   if not geometry then return nil end
   local match = value.mode ~= "training" and matchTiming(value, time, root, factor) or nil

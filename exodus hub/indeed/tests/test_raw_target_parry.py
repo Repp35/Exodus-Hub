@@ -124,6 +124,15 @@ snap.visualPosition=v(10); snap.realPosition=v(10); tm=tm+1
 frameCb(1/60); assert(fires==1,'nearby ball did not recover')
 """)
 
+    def test_invalid_ball_speed_never_triggers_parry(self):
+        for speed in ("-1", "1001", "math.huge", "-math.huge", "0/0", "'600'"):
+            with self.subTest(speed=speed):
+                self.check_ap("""
+r.fireParry=function(_,guard) if not guard() then return false end fires=fires+1; return true end
+snap.syncSpeed=""" + speed + """; packet(42)
+assert(fires==0 and not ap.fire(), 'invalid speed triggered parry')
+""")
+
     def test_optional_sync_fields_can_be_absent(self):
         self.check_ap("""
 snap.realPosition=nil; snap.syncDirection=nil; snap.syncAt=nil; snap.syncSpeed=nil
@@ -247,6 +256,7 @@ cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 local GameInfo=g
 local CONFIG={RANGE_BASE=8.5,AUTO_PARRY_TRIGGER_PADDING=0}
 local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
+local function validBallSpeed(x) return finite(x) and x>=0 and x<=1000 end
 g.getBallSpeedLimits=function() return 16,600 end
 g.getDeflectRange=function() return 11.5 end
 g.getAveragePing=function() return 0.05,0.05,1 end

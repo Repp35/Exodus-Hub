@@ -66,6 +66,7 @@ minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+local function validBallSpeed(value) return finite(value) and value >= 0 and value <= 1000 end
 local function finiteVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 local EMPTY_OPTIONS = {}
 local function invalidateSnapshotCache()
@@ -535,6 +536,9 @@ end
 function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
 function GameInfo.applyPacket(value)
   if type(value) ~= "table" then return false end
+  if value.Speed ~= nil and not validBallSpeed(value.Speed) then return false end
+  if value.MaxSpeed ~= nil and not validBallSpeed(value.MaxSpeed) then return false end
+  if value.RealPosition ~= nil and not finiteVector(value.RealPosition) then return false end
   local sequence = value.Sequence
   if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
   if receivedSequence ~= nil then
@@ -561,11 +565,9 @@ local function decodeBallPacketFallback(value)
     or not finite(dx)
     or not finite(dy)
     or not finite(dz)
-    or not finite(speed)
-    or speed < 0
+    or not validBallSpeed(speed)
     or not finite(accel)
-    or not finite(maximum)
-    or maximum < 0
+    or not validBallSpeed(maximum)
     or not finite(curve)
     or curve < 0
     or not finite(curveMax)
@@ -612,7 +614,8 @@ function GameInfo.decodeBallPacket(value)
   end
   if type(decoded) ~= "table" then decoded = decodeBallPacketFallback(value) end
   if type(decoded) ~= "table" then return nil end
-  if not finiteVector(decoded.position) or not finiteVector(decoded.direction) or not finite(decoded.speed) or decoded.speed < 0 then return nil end
+  if not finiteVector(decoded.position) or not finiteVector(decoded.direction) or not validBallSpeed(decoded.speed) then return nil end
+  if decoded.maxSpeed ~= nil and not validBallSpeed(decoded.maxSpeed) then return nil end
   return {
     Sequence = decoded.seq,
     ServerTime = decoded.serverTime,
@@ -787,8 +790,8 @@ function GameInfo.isSnapshotValid(value)
     and value.ball.Parent ~= nil
     and finiteVector(value.position)
     and finiteVector(value.velocity)
-    and finite(value.speed)
-    and value.speed >= 0
+    and validBallSpeed(value.speed)
+    and (value.syncSpeed == nil or validBallSpeed(value.syncSpeed))
     and finite(value.targetId)
     and type(value.targeted) == "boolean"
 end
@@ -798,6 +801,9 @@ function GameInfo.applySync(value)
   local provider = getReplicator()
   if type(value) ~= "table" then value = provider and provider.syncData end
   if type(value) ~= "table" then return nil end
+  if value.Speed ~= nil and not validBallSpeed(value.Speed) then return nil end
+  if value.MaxSpeed ~= nil and not validBallSpeed(value.MaxSpeed) then return nil end
+  if value.RealPosition ~= nil and not finiteVector(value.RealPosition) then return nil end
   if value.Sequence ~= nil and not finite(value.Sequence) then return nil end
   local sequence = value.Sequence or (provider and provider.hasState == true and provider.lastSeq)
   if finite(sequence) then
@@ -882,7 +888,7 @@ function GameInfo.getBallFrozen()
   return ballData:GetAttribute("Frozen") == true
 end
 function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyOverride, options)
-  if not finite(speed) or speed < 0 then return nil end
+  if not validBallSpeed(speed) then return nil end
   options = type(options) == "table" and options or EMPTY_OPTIONS; local includeResilience = options.resilience ~= false
   local range = includeResilience and GameInfo.getDeflectRange() or CONFIG.RANGE_BASE
   if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
@@ -918,7 +924,7 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
   }
 end
 function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride)
-  if not finite(speed) or speed < 0 then return nil end
+  if not validBallSpeed(speed) then return nil end
   local low, high = GameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or high <= low then return nil end
   local window = GameInfo.getDeflectWindow(speed, false); local range = GameInfo.getDeflectRange()
