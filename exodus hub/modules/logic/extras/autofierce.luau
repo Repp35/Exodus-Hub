@@ -122,7 +122,7 @@ local function update()
       local current = cooldownInfo.getDeflectCooldownState(); local currentTiming = incomingInWindow(currentSnapshot, os.clock())
       if not current or current.episode ~= episode or not currentTiming or not sustainedCooldown(current, os.clock(), currentTiming) then return false end
       if not token then
-        autoSpam.stopSpam("fierce_rescue"); utils.stopAllSpam()
+        -- Fierce rescue must not disable AutoSpam or Manual Spam.
         token = autoParry.beginFierce()
       end
       return true
