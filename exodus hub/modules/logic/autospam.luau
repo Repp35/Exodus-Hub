@@ -223,17 +223,8 @@ local function resetMotion(state)
   state.motionBall, state.motionPosition, state.motionAt = nil, nil, nil; state.stationary = false
 end
 local function observeMotion(state, snapshot, time)
+  if snapshot and snapshot.teleported then return end
   if not freshSnapshot(snapshot, time) then resetMotion(state); return end
-  if snapshot.teleported then
-    resetMotion(state); state.teleporting = true
-    resetExchange(state); return
-  end
-  if state.teleporting then
-    state.teleporting = false; resetMotion(state)
-    state.activatedAt = state.active and time or state.activatedAt; state.deflectCooldownSince = nil
-    state.haunterWindowConfirmed = false
-    if state.active and state.target == state.partner then state.departedAt = time end
-  end
   if state.motionBall ~= snapshot.ball then
     resetMotion(state); resetExchange(state)
     state.target, state.previousOpponent = nil, nil; state.motionBall, state.motionPosition, state.motionAt = snapshot.ball, snapshot.position, time
@@ -258,7 +249,7 @@ local function cooldownExpired(state, snapshot, time, multiplier)
     and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
 end
 local function dashEscapeRisk(state, tracker, snapshot, time)
-  if not state.root or not state.root.Parent or state.teleporting or not tracker or not tracker.partner then return nil end
+  if not state.root or not state.root.Parent or not tracker or not tracker.partner then return nil end
   if not freshSnapshot(snapshot, time) or snapshot.teleported or snapshot.locked or snapshot.targetId ~= tracker.partner then return nil end
   if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.ACTIVATION.DASH_MAX_SNAPSHOT_AGE then return nil end
   if not playerIsAlive(tracker.partner) then return nil end
@@ -332,7 +323,6 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     or (reason ~= "kill_radius" and not partner)
     or (partner ~= nil and (partner == localPlayer.UserId or not playerIsAlive(partner)))
     or state.stationary == true
-    or state.teleporting == true
     or state.timeoutBlocked == true
     or (state.lastDeactivatedAt and time - state.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
   then
@@ -404,7 +394,7 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  if state.teleporting or (snapshot and snapshot.teleported) then return nil end
+  if snapshot and snapshot.teleported then return nil end
   if gameInfo.getBallFrozen() == true or state.stationary then return nil end
   local escape = dashEscapeRisk(state, state, snapshot, time); state.dashEscape = escape
   if escape then return escape.reason end
@@ -663,7 +653,6 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time); observeMotion(state, snapshot, time)
   if snapshot and snapshot.teleported then return end
-  if state.teleporting then return end
   if gameInfo.getBallFrozen() == true then
     state.deflectCooldownSince, state.departedAt = nil, nil
     if state.active then state.activatedAt = time end
@@ -902,17 +891,13 @@ end
 function AutoSpam.onBallSync(data)
   local state = current
   if not state or type(data) ~= "table" or (data.Source ~= "packet" and data.Teleported ~= true) then return end
+  if data.Teleported == true then return end
   local time = now(); local sequence = data.Sequence or data.TeleportSequence
   if finite(sequence) and finite(state.sequence) then
     local delta = (sequence - state.sequence) % CONFIG.SHARED.SEQUENCE_MODULUS
     if delta == 0 or delta >= CONFIG.SHARED.SEQUENCE_HALF then return end
   end
   if finite(sequence) then state.sequence = sequence end
-  if data.Teleported == true then
-    state.teleporting = true; resetMotion(state)
-    resetExchange(state); state.deflectCooldownSince = nil
-    state.killRadiusInside, state.killRadiusFirstAt, state.killRadiusBall = nil, nil, nil; return
-  end
   local autoEnabled = utils.getConfigValue("AutoSpam") == true; local manualEnabled = utils.isManualSpamActive()
   local context = gameInfo.getClashContext()
   if not autoEnabled and not manualEnabled and not state.active and (not clashStats or clashStats.frozen) and not context then
@@ -940,17 +925,8 @@ function AutoSpam.canSendManual()
     return false
   end
   if not utils.isActive() or not state.root.Parent or not state.character.Parent then return false end
-  local time = now(); local snapshot = gameInfo.getSnapshotAt(time)
-  local manual = state.manual
+  local time = now(); local manual = state.manual
   if not manual then manual = { activatedAt = time }; state.manual = manual end
-  local target = freshSnapshot(snapshot, time) and userId(snapshot.targetId)
-  if target and target ~= localPlayer.UserId and target ~= manual.partner then manual.partner, manual.engaged = target, false end
-  if not manual.partner and state.active then manual.partner = state.partner end
-  if manual.partner and freshSnapshot(snapshot, time) then
-    local opponent, limit = gameInfo.getPlayerMotion(manual.partner), distanceLimit(snapshot, manual.partner)
-    if playerIsAlive(manual.partner) and typeof(opponent) == "Vector3" and limit and (opponent - state.root.Position).Magnitude <= limit then manual.engaged = true end
-  end
-  manual.root = state.root
   local reason
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
@@ -959,12 +935,7 @@ function AutoSpam.canSendManual()
   else
     manual.deflectCooldownSince = nil
   end
-  if manual.deflectCooldownSince and time - manual.deflectCooldownSince > CONFIG.DEACTIVATION.MANUAL_COOLDOWN_TIMEOUT then
-    reason = "deflect_cooldown_timeout"
-  elseif manual.engaged and manual.partner and freshSnapshot(snapshot, time) then
-    local opponent, limit = gameInfo.getPlayerMotion(manual.partner), distanceLimit(snapshot, manual.partner)
-    if typeof(opponent) == "Vector3" and limit and (opponent - state.root.Position).Magnitude > limit then reason = "opponent_distance" end
-  end
+  if manual.deflectCooldownSince and time - manual.deflectCooldownSince > CONFIG.DEACTIVATION.MANUAL_COOLDOWN_TIMEOUT then reason = "deflect_cooldown_timeout" end
   if reason then
     state.manual = nil; utils.setManualSpamActive(false)
     utils.recordTransition("ManualSpam", "active", "inactive", reason); return false
@@ -973,7 +944,6 @@ function AutoSpam.canSendManual()
 end
 function AutoSpam.canSend()
   if current and current.active and utils then checkDeactivation(current, gameInfo.getSnapshotAt(now()), now()) end
-  if current and current.teleporting then return false end
   return current ~= nil
     and current.active
     and current.root.Parent ~= nil

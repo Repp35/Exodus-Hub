@@ -33,8 +33,8 @@ assert(math.abs(returnWindow(1,600,.3,0)-.04)<1e-8)
 local ball={}; local s={active=true,partner=99,target=42}; local x={ball=ball,position=v(2)}
 observeMotion(s,x,1); observeMotion(s,x,1.299); assert(not s.stationary)
 observeMotion(s,x,1.301); assert(s.stationary)
-x.teleported=true; observeMotion(s,x,1.31); assert(s.teleporting and s.active and not s.stationary)
-x.teleported=false; x.position=v(50); observeMotion(s,x,2); assert(s.active and not s.teleporting and not s.stationary)
+x.teleported=true; observeMotion(s,x,1.31); assert(s.active and s.stationary and s.motionAt==1)
+x.teleported=false; x.position=v(50); observeMotion(s,x,2); assert(s.active and not s.stationary)
 observeMotion(s,x,2.299); assert(not s.stationary)
 x.position=v(51); observeMotion(s,x,2.3); assert(not s.stationary)
 ''')
@@ -94,6 +94,22 @@ local s={stationary=false}
 assert(deactivationReason(s,{},10)==nil)
 frozen=false; s.stationary=true; assert(deactivationReason(s,{},10)==nil)
 s.stationary=false; assert(deactivationReason(s,{teleported=true},10)==nil)
+""")
+
+    def test_teleport_packet_preserves_state_and_sending(self):
+        packet=section('function AutoSpam.onBallSync(', '-- public-api')
+        send=section('function AutoSpam.canSend()', 'function AutoSpam.stopSpam()')
+        run_lua("""
+local current={active=true,sequence=5,partner=99,root={Parent=true},character={Parent=true}}
+local AutoSpam={}
+local function now() return 10 end
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local gameInfo={getSnapshotAt=function() return {teleported=true} end}
+local function checkDeactivation() end
+""" + packet + send + """
+AutoSpam.onBallSync({Source='packet',Teleported=true,Sequence=900})
+assert(current.active and current.sequence==5 and current.partner==99)
+assert(AutoSpam.canSend(),'teleport paused outgoing spam')
 """)
 
 if __name__ == '__main__': unittest.main()

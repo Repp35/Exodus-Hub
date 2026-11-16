@@ -31,7 +31,7 @@ assert(AutoSpam.canSendManual() and on,'first click cancelled by distant target 
 time=20; assert(AutoSpam.canSendManual() and on,'unrelated distant target cancelled manual')
 distance=10; assert(AutoSpam.canSendManual() and on)
 time=20.1; assert(AutoSpam.canSendManual() and on,'stationary timer inherited from before activation')
-current.stationary=false; distance=30; assert(not AutoSpam.canSendManual() and not on,'engaged opponent escape no longer stopped manual')
+current.stationary=false; distance=30; assert(AutoSpam.canSendManual() and on,'distant opponent disabled manual')
 on=true; current.manual=nil; current.stationary=true; distance=100; time=30
 cd.blocking=true; cd.blockingSince=30
 assert(AutoSpam.canSendManual() and on)
