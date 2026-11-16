@@ -79,6 +79,15 @@ local function eventOnce(state, reason, condition, token)
 end
 local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
+  -- Protect active clashes against miss and all other automatic stop gates nearby.
+  if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" then
+    local opponent = playerPosition(state.partner)
+    if state.root and state.root.Parent and opponent
+      and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
+      state.lastGate = "near_opponent_protected"
+      return false
+    end
+  end
   time = time or now()
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
   state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
@@ -117,6 +126,16 @@ local function geometry(s, factor)
   if not speed or speed <= 0 then return nil end
   local g = gameInfo.getDeflectGeometry(speed, "game", factor or 1, false, networkLatency())
   if not g or not finite(g.fullRadius) or not finite(g.effectiveWindow) or not finite(g.deflectWindow) or not finite(g.noWindowParryRadius) then return nil end
+  -- Reduce the speed-dependent window loss by 20% for AutoSpam only.
+  local low, high = gameInfo.getBallSpeedLimits()
+  if finite(low) and finite(high) and high > low then
+    local fraction = math.clamp((speed - low) / (high - low), 0, 1)
+    local bonus = 0.65 * 0.20 * fraction
+    g.deflectWindow += bonus
+    g.effectiveWindow += bonus * (factor or 1)
+    g.fullRadius += speed * bonus * (factor or 1)
+    g.leadTime += bonus
+  end
   return g, speed
 end
 local function ballWindow(state, s, target)
