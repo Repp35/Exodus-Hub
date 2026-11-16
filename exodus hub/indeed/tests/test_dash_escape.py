@@ -44,7 +44,7 @@ cd.blocking=false; assert(not dashEscapeRisk(state,tracker,snapshot,10.051))
 cd.blocking=true; cd.blockingSince=nil; assert(not dashEscapeRisk(state,tracker,snapshot,10.06)); assert(dashEscapeRisk(state,tracker,snapshot,10.111))
 ''')
 
-    def test_manual_escape_turns_off_manual_spam(self):
+    def test_manual_escape_does_not_turn_off_manual_spam(self):
         src=(ROOT/'autospam.luau').read_text()
         code=src[src.index('function AutoSpam.canSendManual()'):src.index('function AutoSpam.canSend()')]
         run_lua("""
@@ -62,9 +62,11 @@ local function freshSnapshot() return true end
 local function userId(x) return x end
 local function dashEscapeRisk() return {reason='opponent_dash_escape'} end
 local function cooldownExpired() return false end
+local cooldownInfo={getDeflectCooldownState=function() return {blocking=false} end}
+local function finite(x) return type(x)=="number" and x==x and math.abs(x)<math.huge end
 local AutoSpam={}
 """ + code + """
-assert(not AutoSpam.canSendManual()); assert(not manualOn and observedReason=='dash_escape')
+assert(AutoSpam.canSendManual()); assert(manualOn and observedReason==nil)
 """)
 
     def test_auto_escape_has_priority_over_slow_cooldown(self):

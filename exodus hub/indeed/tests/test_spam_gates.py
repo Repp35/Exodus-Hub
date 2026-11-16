@@ -84,4 +84,16 @@ assert(deactivationReason(s,x,10.29)==nil)
 assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
 """)
 
+    def test_frozen_stationary_and_teleported_do_not_deactivate_auto(self):
+        code = section('local function deactivationReason(', 'local function checkDeactivation(')
+        run_lua("""
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local frozen=true; local gameInfo={getBallFrozen=function() return frozen end}
+local s={stationary=false}
+""" + code + """
+assert(deactivationReason(s,{},10)==nil)
+frozen=false; s.stationary=true; assert(deactivationReason(s,{},10)==nil)
+s.stationary=false; assert(deactivationReason(s,{teleported=true},10)==nil)
+""")
+
 if __name__ == '__main__': unittest.main()
