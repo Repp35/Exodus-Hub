@@ -26,18 +26,22 @@ local function clearExchange()
   exchangePartner, exchangeTarget, exchangeChanges, exchangeAt = nil, nil, 0, nil
 end
 local function clashPartner(packetTarget)
-  local time = utils.now()
-  local physics = gameInfo.getDefensePhysics()
-  local context = gameInfo.getClashContext(true)
-  local snapshot = gameInfo.getSnapshotAt(time)
-  if not physics or physics.inClash ~= true or not context or not gameInfo.isSnapshotValid(snapshot)
-    or snapshot.targetUncertain or snapshot.teleported or snapshot.locked
-    or (snapshot.syncAt ~= nil and (not finite(snapshot.syncAt) or time < snapshot.syncAt or time - snapshot.syncAt > 0.5)) then
+  local time = utils.now(); local physics = gameInfo.getDefensePhysics()
+  local context = gameInfo.getClashContext(true); local snapshot = gameInfo.getSnapshotAt(time)
+  if
+    not physics
+    or physics.inClash ~= true
+    or not context
+    or not gameInfo.isSnapshotValid(snapshot)
+    or snapshot.targetUncertain
+    or snapshot.teleported
+    or snapshot.locked
+    or (snapshot.syncAt ~= nil and (not finite(snapshot.syncAt) or time < snapshot.syncAt or time - snapshot.syncAt > 0.5))
+  then
     clearExchange(); return nil
   end
   local partner, target = context.partnerId, packetTarget or snapshot.targetId
-  if not finite(partner) or partner <= 0 or partner == localPlayer.UserId
-    or (target ~= localPlayer.UserId and target ~= partner) then clearExchange(); return nil end
+  if not finite(partner) or partner <= 0 or partner == localPlayer.UserId or (target ~= localPlayer.UserId and target ~= partner) then clearExchange(); return nil end
   if exchangePartner ~= partner or (exchangeAt and (time < exchangeAt or time - exchangeAt > CONFIG.MAX_EXCHANGE_AGE)) then clearExchange(); exchangePartner = partner end
   if exchangeTarget ~= target then
     if exchangeTarget ~= nil then exchangeChanges = exchangeChanges + 1 end
