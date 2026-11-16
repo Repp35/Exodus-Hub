@@ -105,6 +105,15 @@ local function sync()
     end
     local ok, err = xpcall(function()
       local credit, previous = 0, os.clock(); local clicksPerSecond = mode == "MS" and 1000 / rate or rate
+      if boundUtils.isAutoSpamActive() and allowed() then
+        if mode ~= "Auto" then
+          request(boundUtils, boundRemote, token, allowed)
+        else
+          local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
+          if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
+          if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then request(boundUtils, boundRemote, token, allowed) end
+        end
+      end
       while guard() do
         if mode ~= "Auto" then
           task.wait(); local time = os.clock()

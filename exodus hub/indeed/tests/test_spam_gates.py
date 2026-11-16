@@ -1,170 +1,169 @@
-"""Exercise the spam timing and teleport policies with Lua mocks."""
+"""Behavioral coverage of the rewritten activation/deactivation state machine."""
 import unittest
-from test_raw_target_parry import ROOT, run_lua
-
-SOURCE = (ROOT / 'autospam.luau').read_text()
-def section(start, end):
-    return SOURCE[SOURCE.index(start):SOURCE.index(end)]
-
-PRELUDE = '''
-math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
-local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
-local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end end
-V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
-local function v(x) return setmetatable({x=x},V) end
-function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
-local gameInfo={getBallSpeedLimits=function() return 16,600 end,isSnapshotValid=function(s) return s~=nil end}
-local CONFIG={SHARED={MIN_RETURN=1/25,SNAPSHOT_MAX_AGE=.5},DEACTIVATION={STATIONARY_EPSILON=.05,STATIONARY_TIMEOUT=.3,DEFLECT_COOLDOWN_TIMEOUT=.18,COOLDOWN_PROTECTION_RADIUS=16,COOLDOWN_PROTECTION_MAX_SPEED_RADIUS=40}}
-'''
+from autospam_harness import check
 
 class SpamGates(unittest.TestCase):
-    def test_speed_windows(self):
-        code = section('local function snapshotSpeed(', 'local function returnTimeout(') + section('local function returnWindow(', 'local function sampleOwnDash(')
-        run_lua(PRELUDE + code + '''
-assert(math.abs(speedInterval({syncSpeed=16},.5,.1)-.5)<1e-8)
-assert(math.abs(speedInterval({syncSpeed=600},.5,.1)-.1)<1e-8)
-assert(math.abs(returnWindow(1,16,.3,0)-.3)<1e-8)
-assert(math.abs(returnWindow(1,600,.3,0)-.04)<1e-8)
+    def test_fast_returns_at_close_range_dispatch_in_return_packet(self):
+        for interval in (.005,.02,.05,.1,.2,.35):
+            with self.subTest(interval=interval):
+                check(f'''
+packet(42,0,50);assert(not ap.isActive())
+packet(99,.001);local before=clicks
+packet(42,{interval},50)
+assert(ap.isActive(),ap.getStatus().lastGate);assert(ap.getActivationContext().reason=='return_target')
+assert(clicks==before+1,'no immediate click on activation')
 ''')
 
-    def test_stationary_and_teleport_resume(self):
-        code = section('local function freshSnapshot(', 'local function speedInterval(') + section('local function resetMotion(', 'local function cooldownExpired(')
-        run_lua(PRELUDE + '''local function resetExchange(s) s.exchange=nil end\n''' + code + '''
-local ball={}; local s={active=true,partner=99,target=42}; local x={ball=ball,position=v(2)}
-observeMotion(s,x,1); observeMotion(s,x,1.299); assert(not s.stationary)
-observeMotion(s,x,1.301); assert(s.stationary)
-x.teleported=true; observeMotion(s,x,1.31); assert(s.active and s.stationary and s.motionAt==1)
-x.teleported=false; x.position=v(50); observeMotion(s,x,2); assert(s.active and not s.stationary)
-observeMotion(s,x,2.299); assert(not s.stationary)
-x.position=v(51); observeMotion(s,x,2.3); assert(not s.stationary)
+    def test_repeated_identical_positions_do_not_block_clash(self):
+        check('''
+packet(42,0,50)
+for i=1,30 do heartbeat(.02) end
+packet(99,.01,50);packet(42,.05,50)
+assert(ap.isActive() and clicks>0,'unchanged sampled position blocked target evidence')
 ''')
 
-    def test_stationary_requires_independent_packets_and_continuous_samples(self):
-        code = section('local function freshSnapshot(', 'local function speedInterval(') + section('local function resetMotion(', 'local function cooldownExpired(')
-        run_lua(PRELUDE + '''local function resetExchange() end\n''' + code + '''
-local ball={};local state={};local x={ball=ball,position=v(2),syncSequence=1}
-observeMotion(state,x,1);observeMotion(state,x,1.4)
-assert(not state.stationary,'one packet was treated as continuous stationary motion')
-x.syncSequence=2;observeMotion(state,x,1.5)
-assert(not state.stationary,'packet gap counted as stationary time')
-x.syncSequence=3;observeMotion(state,x,1.65)
-x.syncSequence=4;observeMotion(state,x,1.81)
-assert(state.stationary,'continuous stationary samples were not detected')
+    def test_full_radius_plus_maximum_window(self):
+        check('''
+packet(42,0,200);packet(99,.01);packet(42,.06)
+assert(ap.isActive(),'full-radius-only gate blocked the extra window')
+for _,factor in ipairs(geometryFactors) do assert(factor==1) end
 ''')
 
-    def test_manual_cooldown_is_130_percent_and_resets(self):
-        code = section('local function cooldownExpired(', 'local function activate(')
-        run_lua(PRELUDE + '''
-local cd={blocking=true,blockingSince=10}
-local cooldownInfo={getDeflectCooldownState=function() return cd end}
-local function opponentOutside() return true end
-''' + code + '''
-local auto={activatedAt=10}; local manual={activatedAt=10}
-assert(not cooldownExpired(auto,nil,10.179)); assert(cooldownExpired(auto,nil,10.181))
-assert(not cooldownExpired(manual,nil,10.233,1.3)); assert(cooldownExpired(manual,nil,10.235,1.3))
-cd.blocking=false; assert(not cooldownExpired(manual,nil,10.12,1.3)); assert(manual.deflectCooldownSince==nil)
-cd.blocking=true; cd.blockingSince=nil; assert(not cooldownExpired(manual,nil,11,1.3)); assert(cooldownExpired(manual,nil,11.235,1.3))
+    def test_single_target_slow_return_far_opponent_and_third_party_do_not_activate(self):
+        for case in ("packet(42,0,50);heartbeat(.1)",
+                     "packet(42,0,50);packet(99,.01);packet(42,.5)",
+                     "other.root.Position=v(50);packet(42,0,50);packet(99,.01);packet(42,.05)",
+                     "packet(42,0,50);packet(99,.01);packet(88,.01);packet(42,.05)"):
+            with self.subTest(case=case):
+                check(case+"\nassert(not ap.isActive() and clicks==0,'unrelated approach started spam')")
+
+    def test_close_ball_eight_studs_and_spawn_already_targeted(self):
+        check("packet(42,0,8);assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='close_target')")
+        check("packet(42,0,8.01);assert(not ap.isActive())")
+        check("other.root.Position=v(17);packet(42,0,8);assert(not ap.isActive(),'distant bystander triggered close gate')")
+
+    def test_miss_always_stops_both_modes_even_during_reset(self):
+        check('''
+packet(42,0,8);u.setManualSpamActive(true)
+cd.miss=true;snap.teleported=true;heart:Fire()
+stopped('deflect_miss');assert(not manual and not ap.canSendManual() and not ap.canSend())
+cd.miss=false;snap.teleported=false;packet(99,.01,50);packet(42,.05,50)
+assert(ap.isActive(),'stale stopped-partner lock blocked recovery')
 ''')
 
-    def test_haunter_rejects_unconfirmed_window_and_fleeing_opponent(self):
-        code = section('local function deactivationReason(', 'local function checkDeactivation(')
-        run_lua(PRELUDE + """
-CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT=.1; CONFIG.DEACTIVATION.CLASH_GRACE_PERIOD=.15
-CONFIG.ACTIVATION={RADIUS_FACTOR=1}
-local function freshSnapshot(s) return s~=nil end
-local function cooldownExpired() return false end
-local function dashEscapeRisk() return nil end
-local function speedInterval() return .1 end
-local function networkLatency() return 0 end
-local function userId(x) return x end
-local function geometry() return {fullRadius=20,noWindowParryRadius=8,effectiveWindow=.02} end
-local function distanceLimit() return 30 end
-local function targetReturnTimeout() return .2 end
-local outside=false
-local function opponentOutside() return outside end
-local function snapshotSpeed(s) return s.speed end
-local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local cooldownInfo={getDeflectCooldownState=function() return nil end}
-localPlayer={UserId=42}; local distance=10
-local gameInfo={isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getPlayerMotion=function() return v(distance) end,getPlayerRawRadius=function() return 8 end}
-local s={reason='haunter',activatedAt=10,root={Position=v(0)},partner=99,target=42}
-local x={targetId=42,position=v(25),speed=600}
-""" + code + """
-assert(deactivationReason(s,x,10.05)==nil)
-assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed')
-x.position=v(10); assert(deactivationReason(s,x,10.11)==nil)
-distance=31; assert(deactivationReason(s,x,10.12)=='clash_distance')
-distance=10; x.targetId=99; s.departedAt=10.2
-assert(deactivationReason(s,x,10.29)==nil)
-outside=true; assert(deactivationReason(s,x,10.31)==nil,'initial haunter gate remained active after confirmation')
+    def test_real_cooldown_historical_miss_does_not_latch_new_session(self):
+        from test_logic_reliability import module
+        extra = module('aux/cooldown.luau').replace('local mod=', 'local realCooldown=', 1)
+        # The service models a reversible attempt, a miss, then an expired cooldown.
+        setup = """
+local ability={Cooldown=0,PendingPressAt=tm,PendingPredictUntil=tm+.2}
+g.getDeflectAbility=function() return ability end
+u.getReplicatedStorage=function() return nil end
+assert(realCooldown.setup({Utils=u,GameInfo=g}))
+c.getDeflectCooldownState=realCooldown.getDeflectCooldownState
+packet(42,0,8);assert(ap.isActive())
+ability.Cooldown=1.45;advance(.21);heartbeat(.01)
+stopped('deflect_miss')
+ability.Cooldown=0;ability.PendingPredictUntil=nil
+local status=realCooldown.getDeflectCooldownState()
+assert(status.miss and status.phase=='miss_finished','fixture did not retain historical miss')
+packet(99,.01,50);packet(42,.05,50)
+assert(ap.isActive() and ap.canSend(),'finished miss latched automatic activation')
+u.setManualSpamActive(true);assert(ap.canSendManual(),'finished miss latched manual activation')
+"""
+        check(setup, extra=extra)
+
+    def test_near_opponent_protects_cooldown_and_return_timeouts(self):
+        check('''
+packet(42,0,8);cd.blocking=true;cd.blockingSince=tm
+packet(99,.01,50);heartbeat(.5);assert(ap.isActive())
+''')
+
+    def test_distant_continuous_cooldown_stops_after_180ms_and_resets(self):
+        check('''
+snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
+other.root.Position=v(20);packet(42,0,12);packet(99,.01);packet(42,.05)
+assert(ap.isActive());cd.blocking=true;cd.blockingSince=tm
+heartbeat(.17);assert(ap.isActive());cd.blocking=false;heartbeat(.01)
+cd.blocking=true;cd.blockingSince=tm;heartbeat(.17);assert(ap.isActive())
+heartbeat(.02);stopped('deflect_cooldown_timeout')
+''')
+
+    def test_distant_nonreturn_stops_after_timeout(self):
+        check('''
+other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
+assert(ap.isActive());packet(99,.01);heartbeat(.39);assert(ap.isActive());heartbeat(.02)
+stopped('target_return_timeout')
+''')
+
+    def test_hard_stops(self):
+        for action,reason in (("enabled=false",'hub_inactive'),("cfg.AutoSpam=false",'disabled'),
+                              ("me.hum.Health=0",'player_died'),("other.hum.Health=0",'opponent_left_or_died'),
+                              ("other.root.Position=v(36)",'clash_distance'),("snap.targetId=88",'third_target'),
+                              ("snap.ball=instance('BasePart')",'ball_replaced')):
+            with self.subTest(reason=reason):
+                check("packet(42,0,8);"+action+";ap.canSend();stopped('"+reason+"')")
+
+    def test_invalid_samples_pause_without_restarting_or_clicking(self):
+        for mutation in ("snap.syncSpeed=-1","snap.syncSpeed=1001","snap.syncSpeed=math.huge","snap.syncSpeed=0/0",
+                         "snap.syncSpeed='600'","snap.position=v(0/0)","snap.realPosition=v(math.huge)",
+                         "snap.realPosition=v(500)","snap.syncAt=tm-1","snap.targetUncertain=true"):
+            with self.subTest(mutation=mutation):
+                check(mutation+";heart:Fire();assert(not ap.isActive() and clicks==0)")
+
+    def test_duplicate_old_and_wrapped_sequences(self):
+        check('''
+packet(42,0,50,65534);packet(99,.01,50,65535)
+packet(42,.01,50,65534);assert(not ap.isActive(),'old packet armed a return')
+packet(42,.01,50,0);assert(ap.isActive(),'sequence wrap rejected')
+local before=clicks;ap.onBallSync({Source='packet',Sequence=0,TargetPlayerID=42,Speed=600});assert(clicks==before)
+''')
+
+    def test_disabled_and_detached_never_send(self):
+        check("cfg.AutoSpam=false;packet(42,0,8);assert(not ap.isActive() and clicks==0);cfg.AutoSpam=true;packet(42,.01,8);assert(ap.isActive());ap.detachCharacter();assert(not ap.canSend())")
+
+    def test_pause_does_not_consume_return_or_cooldown_timeout(self):
+        check("""
+other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
+packet(99,.01);cd.blocking=true;cd.blockingSince=tm
+snap.locked=true;heartbeat(1);assert(ap.isActive() and not ap.canSend())
+snap.locked=false;cd.blocking=false;heartbeat(.01);assert(ap.isActive())
+heartbeat(.2);assert(ap.isActive(),'paused time counted toward return')
 """)
 
-    def test_frozen_stationary_and_teleported_do_not_deactivate_auto(self):
-        code = section('local function deactivationReason(', 'local function checkDeactivation(')
-        run_lua("""
-local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local cooldownInfo={getDeflectCooldownState=function() return nil end}
-local CONFIG={DEACTIVATION={COOLDOWN_PROTECTION_RADIUS=16,COOLDOWN_PROTECTION_MAX_SPEED_RADIUS=40}}
-local function opponentOutside() return false end
-local frozen=true; local gameInfo={getBallFrozen=function() return frozen end}
-local s={stationary=false}
-""" + code + """
-assert(deactivationReason(s,{},10)==nil)
-frozen=false; s.stationary=true; assert(deactivationReason(s,{},10)==nil)
-s.stationary=false; assert(deactivationReason(s,{teleported=true},10)==nil)
+    def test_reset_does_not_create_fake_return_and_cannot_hide_miss(self):
+        check('''
+packet(42,0,50);packet(99,.01);snap.teleported=true;heart:Fire()
+snap.teleported=false;packet(42,.05,50);assert(not ap.isActive(),'reset combined two rounds')
+''')
+
+    def test_fast_packets_between_frames_at_many_distances(self):
+        for distance in (2,8,16,34):
+            for speed in (16,308,600,1000):
+                with self.subTest(distance=distance,speed=speed):
+                    check(f"other.root.Position=v({distance});snap.speed={speed};snap.syncSpeed={speed};snap.velocity=v(-{speed});packet(42,0,12);packet(99,.001);packet(42,.02);assert(ap.isActive() and clicks>0)")
+
+    def test_new_ball_sequence_can_restart_at_lower_value(self):
+        check("packet(42,0,50,300);snap.ball=instance('BasePart');packet(42,.01,8,1);assert(ap.isActive() and clicks==1)")
+
+    def test_haunter_uses_initial_event_only(self):
+        for self_cast in (False,True):
+            with self.subTest(self_cast=self_cast):
+                check("""
+local event={OnClientEvent=signal(),Parent=true}
+g.getHaunterEvent=function() return event end
+local originalTypeof=typeof;typeof=function(x) if type(x)=='table' and x.cf then return 'CFrame' end return originalTypeof(x) end
+packet(42,0,50);heartbeat(.01)
+""" + ("event.OnClientEvent:Fire({cf=true,Position=v(0)},{cf=true,Position=v(10)})" if self_cast else "event.OnClientEvent:Fire({cf=true,Position=v(10)},{cf=true,Position=v(5)})") + """
+assert(ap.isActive(),'initial haunter evidence did not activate')
+heartbeat(.5);assert(ap.isActive(),'haunter initial window stayed active as a stop gate')
 """)
 
-    def test_teleport_packet_preserves_state_and_sending(self):
-        packet=section('function AutoSpam.onBallSync(', '-- public-api')
-        send=section('function AutoSpam.canSend()', 'function AutoSpam.stopSpam(')
-        run_lua("""
-local current={active=true,sequence=5,partner=99,root={Parent=true},character={Parent=true}}
-local AutoSpam={}
-local function now() return 10 end
-local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local gameInfo={getSnapshotAt=function() return {teleported=true} end}
-local function checkDeactivation() end
-""" + packet + send + """
-AutoSpam.onBallSync({Source='packet',Teleported=true,Sequence=900})
-assert(current.active and current.sequence==5 and current.partner==99)
-assert(AutoSpam.canSend(),'teleport paused outgoing spam')
-""")
+    def test_diagnostics_expose_all_failed_candidates(self):
+        check('''
+packet(42,0,50);local status=ap.getStatus()
+assert(status.gates.dash and status.gates.returnTarget and status.gates.close and status.gates.haunter)
+assert(status.gates.returnTarget=='return_no_round_trip')
+''')
 
-    def test_far_target_and_expired_miss_stop_even_with_large_window(self):
-        code = section('local function deactivationReason(', 'local function checkDeactivation(')
-        run_lua(PRELUDE + """
-CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE=35
-CONFIG.DEACTIVATION.CLASH_GRACE_PERIOD=.15
-local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local localPlayer={UserId=42}; local frozen=false
-local positions={[99]=v(10),[88]=v(80)}
-gameInfo.getPlayerMotion=function(id) return positions[id] end
-gameInfo.getBallFrozen=function() return frozen end
-local cd={blocking=true,miss=false,windowExpired=false}
-local cooldownInfo={getDeflectCooldownState=function() return cd end}
-local function freshSnapshot() return true end
-local function distanceLimit() return 140 end
-local function geometry() return {fullRadius=200} end
-local function dashEscapeRisk() end
-local function cooldownExpired() return false end
-local outside=false
-local function opponentOutside() return outside end
-local state={root={Position=v(0)},partner=99,target=88,activatedAt=10}
-local snapshot={targetId=88,position=v(10),speed=600}
-""" + code + """
-assert(deactivationReason(state,snapshot,10.01)=='clash_distance','distant third target kept spam alive')
-snapshot.targetId=99; assert(deactivationReason(state,snapshot,10.01)==nil,'near clash stopped')
-positions[99]=v(40)
-assert(deactivationReason(state,snapshot,10.01)=='clash_distance','window radius overrode physical clash limit')
-snapshot.targetId=42
-assert(deactivationReason(state,snapshot,10.01)=='clash_distance','incoming target hid far partner')
-positions[99]=v(10); cd.miss=true
-assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','near opponent hid miss')
-cd.blocking=false; cd.windowExpired=false; cd.predictedReset=true
-assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','confirmed miss was ignored')
-assert(deactivationReason(state,{teleported=true},10.01)=='deflect_miss','teleport hid miss')
-cd.miss=false; frozen=true; assert(deactivationReason(state,snapshot,10.01)==nil)
-
-""")
-
-if __name__ == '__main__': unittest.main()
+if __name__=='__main__': unittest.main()

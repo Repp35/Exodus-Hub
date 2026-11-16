@@ -151,6 +151,12 @@ function Controller.create(context)
       nextGateUpdate = time + 0.1; local status = getTelemetry(time)
       local lines = { "AutoSpam: " .. (status and status.active == true and "ACTIVE" or "WAITING") }
       if status and validGate(status.lastGate) then lines[#lines + 1] = "State: " .. status.lastGate end
+      if status and type(status.gates) == "table" then
+        for _, key in ipairs({ "common", "dash", "returnTarget", "close", "haunter" }) do
+          local reason = status.gates[key]
+          if validGate(reason) then lines[#lines + 1] = key .. ": " .. reason end
+        end
+      end
       if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
       if status and validGate(status.lastStopReason) then lines[#lines + 1] = "Deactivation: " .. status.lastStopReason end
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))

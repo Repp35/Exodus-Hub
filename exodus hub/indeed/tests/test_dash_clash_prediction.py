@@ -1,46 +1,33 @@
-"""Simulation of dash clash prediction and its rejection gates."""
+"""Real activation paths, including dash priority and physical rejection cases."""
 import unittest
-from test_raw_target_parry import ROOT, run_lua
+from autospam_harness import check
 
 class DashClashPrediction(unittest.TestCase):
-    def test_incoming_self_and_invalid_evidence(self):
-        source=(ROOT/'autospam.luau').read_text()
-        model=source[source.index('local function dashPrediction('):source.index('local function evaluate(')]
-        run_lua('''
-math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
-local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
-local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.sqrt(t.x*t.x+t.y*t.y) end return V[k] end
-V.__sub=function(a,b) return setmetatable({x=a.x-b.x,y=a.y-b.y},V) end
-V.__mul=function(a,b) return setmetatable({x=a.x*b,y=a.y*b},V) end
-function V:Dot(b) return self.x*b.x+self.y*b.y end
-local function v(x,y) return setmetatable({x=x,y=y or 0},V) end
-function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
-RaycastParams={new=function() return {} end}; Enum={RaycastFilterType={Exclude=1}}
-local wall=false; local utils={getWorkspace=function() return {Raycast=function() return wall and {} or nil end} end}
-local localPlayer={UserId=42}; local players={GetPlayerByUserId=function() return {Character={}} end}
-local other=v(40); local gameInfo={getPlayerMotion=function() return other end,getPlayerRawRadius=function() return 8 end}
-local function compensatedRadius() return 8 end
-local function geometry() return {effectiveWindow=.4,deflectWindow=.4} end
-local function snapshotSpeed(s) return s.speed end
-local function playerIsAlive() return true end
-local function freshSnapshot(s) return s and s.valid end
-local CONFIG={ACTIVATION={DASH_MAX_SNAPSHOT_AGE=.15,DASH_WINDOW_FACTOR=1,DASH_MIN_ALIGNMENT=.6,DASH_MIN_CPS=4,DASH_MIN_SCORE=75}}
-local opponentDash={signalActive=true,observedAt=10,position=v(40),velocity=v(-120),normalModel={estimatedRemaining=.15}}
-local selfDash={signalActive=true,observedAt=10,position=v(0),velocity=v(120),normalModel={estimatedRemaining=.15}}
-local a,b=opponentDash,nil; local dashInfo={getEstimate=function(id) if id==99 then return a else return b end end}
-local state={dashExchangePartner=99,dashExchangeAt=10.05,root={Position=v(0)},character={}}
-local snap={valid=true,targetId=42,syncAt=10.05,ball={},position=v(5),velocity=v(-600),speed=600}
-''' + model + '''
-local r=dashPrediction(state,snap,10.05); assert(r and r.reason=='dash_incoming' and r.score>=75)
-a=nil; b=selfDash; r=dashPrediction(state,snap,10.05); assert(r and r.reason=='dash_self')
-selfDash.velocity=v(-120); assert(not dashPrediction(state,snap,10.05)); selfDash.velocity=v(120)
-wall=true; assert(not dashPrediction(state,snap,10.05)); wall=false
-snap.syncAt=9; assert(not dashPrediction(state,snap,10.05)); snap.syncAt=10.05
-snap.targetId=77; assert(not dashPrediction(state,snap,10.05)); snap.targetId=42
-state.dashExchangeAt=9; assert(dashPrediction(state,snap,10.05),'fresh dash rejected due to old target exchange'); state.dashExchangeAt=10.05
-state.dashExchangePartner=nil; state.previousOpponent=99; assert(dashPrediction(state,snap,10.05),'previous opponent ignored'); state.dashExchangePartner=99
-selfDash.signalActive=false; assert(not dashPrediction(state,snap,10.05)); selfDash.signalActive=true
-snap.teleported=true; assert(not dashPrediction(state,snap,10.05))
+    def test_dash_is_first_and_needs_no_target_exchange(self):
+        check('''
+other.root.Position=v(40);dash(99,-120);packet(42,0,50)
+assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='dash_incoming')
+''')
+        check("dash(99,-120);packet(42,0,8);assert(ap.getActivationContext().reason=='dash_incoming')")
+
+    def test_new_dasher_is_not_hidden_by_previous_opponent(self):
+        check("packet(88,0,50);dash(99,-120);packet(42,.01);assert(ap.getActivationContext().reason=='dash_incoming')")
+
+    def test_self_dash_activates(self):
+        check("other.root.Position=v(40);packet(99,0,50);dash(42,120);heartbeat(.01);assert(ap.getActivationContext().reason=='dash_self')")
+
+    def test_invalid_dash_does_not_start_spam(self):
+        for mutation in ("dashSamples[99].signalActive=false","dashSamples[99].velocity=v(120)",
+                         "dashSamples[99].observedAt=tm-1","dashSamples[99].normalModel.estimatedRemaining=0",
+                         "wall=true","snap.position=v(500)","dashSamples[99].velocity=v(0,120)"):
+            with self.subTest(mutation=mutation):
+                check("other.root.Position=v(40);dash(99,-120);"+mutation+";packet(42);assert(not ap.isActive() and clicks==0)")
+
+    def test_dash_evidence_is_consumed_after_stop(self):
+        check('''
+dash(99,-120);packet(42,0,50);assert(ap.isActive());ap.stopSpam('stop_spam');heartbeat(.01)
+assert(not ap.isActive(),'same dash restarted stopped session')
+packet(99,.01,50);packet(42,.05,50);assert(ap.isActive(),'new real return blocked after dash')
 ''')
 
-if __name__ == '__main__': unittest.main()
+if __name__=='__main__': unittest.main()
