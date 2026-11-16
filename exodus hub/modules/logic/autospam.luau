@@ -10,12 +10,12 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 -- configuration
 local CONFIG = {
   ACTIVATION = {
-    RETURN = 0.30,
+    RETURN = 0.36,
     KILL_RADIUS_INTERVAL = 0.30,
     EXCHANGE_MAX_INTERVAL = 0.5,
     EXCHANGE_MIN_INTERVAL = 0.1,
     EXCHANGE_READY_TIME = 0.2,
-    CLOSE_TARGET_DISTANCE = 5,
+    CLOSE_TARGET_DISTANCE = 8,
     CLOSE_TARGET_TIMEOUT = 0.15,
     REACTIVATION_COOLDOWN = 0.04,
     RADIUS_FACTOR = 1,
@@ -24,7 +24,8 @@ local CONFIG = {
     MAX_DISTANCE_REFERENCE = 51,
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
-    DASH_WINDOW_FACTOR = 0.4,
+    DASH_WINDOW_FACTOR = 1,
+    DASH_ESCAPE_WINDOW_FACTOR = 0.4,
     DASH_MAX_SNAPSHOT_AGE = 0.15,
     DASH_MIN_CPS = 4,
     DASH_MIN_SCORE = 75,
@@ -270,7 +271,7 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
   if not g or not finite(speed) or speed <= 0 or not finite(ownRadius) or not finite(otherRadius) or not finite(g.deflectWindow) then return nil end
   local towardOther = other - snapshot.position
   if snapshot.velocity:Dot(towardOther) <= 0 then return nil end
-  local ownWindow = ownRadius + speed * (g.deflectWindow * CONFIG.ACTIVATION.DASH_WINDOW_FACTOR + networkLatency())
+  local ownWindow = ownRadius + speed * (g.deflectWindow * CONFIG.ACTIVATION.DASH_ESCAPE_WINDOW_FACTOR + networkLatency())
   if (snapshot.position - own).Magnitude <= ownWindow then return nil end
   local localVelocity = state.root.AssemblyLinearVelocity
   if typeof(localVelocity) ~= "Vector3" then localVelocity = Vector3.zero end
@@ -286,7 +287,7 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
     local drift = selfDash and otherVelocity or localVelocity
     if not finite(drift.Magnitude) or drift.Magnitude > 40 then drift = Vector3.zero end
     local relativeVelocity = selfDash and (drift - velocity) or (velocity - drift); local projectedDistance = (delta + relativeVelocity * remaining).Magnitude
-    local threshold = ownRadius + otherRadius + speed * g.deflectWindow * CONFIG.ACTIVATION.DASH_WINDOW_FACTOR
+    local threshold = ownRadius + otherRadius + speed * g.deflectWindow * CONFIG.ACTIVATION.DASH_ESCAPE_WINDOW_FACTOR
     if
       not finite(projectedDistance)
       or projectedDistance <= threshold
@@ -480,7 +481,7 @@ local function canActivateReturn(state, snapshot, time)
   local toward = state.root.Position - snapshot.position; local distance = toward.Magnitude
   local value = activationGeometry(state, snapshot, state.pending.partner, time)
   if not value or distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
-  local closingSpeed = snapshot.velocity:Dot(toward) / distance; return finite(closingSpeed) and closingSpeed > 0 and distance <= value.fullRadius + closingSpeed * value.effectiveWindow * 0.8
+  local closingSpeed = snapshot.velocity:Dot(toward) / distance; return finite(closingSpeed) and closingSpeed > 0 and distance <= value.fullRadius + closingSpeed * value.effectiveWindow
 end
 local function armReturn(state, previous, time, snapshot, serverTime)
   if
@@ -597,8 +598,8 @@ local function observeKillRadius(state, snapshot, time)
   state.killRadiusFirstAt = nil; return true
 end
 local function dashPrediction(state, snapshot, time)
-  local partner, switchedAt = state.dashExchangePartner, state.dashExchangeAt
-  if not partner or not switchedAt or time < switchedAt or time - switchedAt > 0.25 or not playerIsAlive(partner) then return nil end
+  local partner, switchedAt = state.dashExchangePartner or state.previousOpponent, state.dashExchangeAt
+  if not partner or not playerIsAlive(partner) then return nil end
   if not freshSnapshot(snapshot, time) or snapshot.teleported or snapshot.locked then return nil end
   if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.ACTIVATION.DASH_MAX_SNAPSHOT_AGE then return nil end
   if snapshot.targetId ~= localPlayer.UserId and snapshot.targetId ~= partner then return nil end
@@ -609,12 +610,12 @@ local function dashPrediction(state, snapshot, time)
   if not g or not finite(speed) or speed <= 0 or not finite(ownRadius) or not finite(otherRadius) then return nil end
   local targetPos, targetRadius = snapshot.targetId == partner and other or own, snapshot.targetId == partner and otherRadius or ownRadius; local ballToTarget = targetPos - snapshot.position
   if typeof(snapshot.velocity) ~= "Vector3" or ballToTarget.Magnitude <= 0.05 or snapshot.velocity:Dot(ballToTarget) <= 0 then return nil end
-  if ballToTarget.Magnitude > targetRadius + speed * g.effectiveWindow then return nil end
+  if ballToTarget.Magnitude > targetRadius + speed * (g.deflectWindow + g.effectiveWindow) then return nil end
   local ownDash, otherDash = dashInfo.getEstimate(localPlayer.UserId), dashInfo.getEstimate(partner)
   local function model(sample, relative, reason)
     if not sample or not sample.signalActive or not sample.normalModel or not sample.velocity or not sample.observedAt then return nil end
     local age = time - sample.observedAt
-    if age < 0 or age > 0.2 or switchedAt < sample.observedAt - 0.05 or switchedAt > time then return nil end
+    if age < 0 or age > 0.2 or (switchedAt and switchedAt > time) then return nil end
     local velocity, distance = sample.velocity, relative.Magnitude
     if not finite(distance) or not finite(velocity.Magnitude) or distance <= 0.05 or velocity.Magnitude < 70 or velocity.Magnitude > 140 then return nil end
     local closing = velocity:Dot(relative) / distance; local alignment = closing / velocity.Magnitude

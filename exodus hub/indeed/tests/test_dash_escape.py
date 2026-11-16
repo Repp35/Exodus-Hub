@@ -15,7 +15,7 @@ V.__mul=function(a,b) return setmetatable({X=a.X*b,Y=a.Y*b,Z=a.Z*b},V) end
 function V:Dot(b) return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
 local function v(x,y,z) return setmetatable({X=x,Y=y or 0,Z=z or 0},V) end
 Vector3={new=v,zero=v(0)}; function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
-local CONFIG={ACTIVATION={DASH_MAX_SNAPSHOT_AGE=.15,RADIUS_FACTOR=1,DASH_WINDOW_FACTOR=.4},DEACTIVATION={DASH_ESCAPE_MIN_HORIZONTAL_RATIO=.35,DASH_ESCAPE_MIN_OUTWARD_SPEED=15,DASH_ESCAPE_MIN_SEPARATION_GAIN=2,DASH_ESCAPE_COOLDOWN=.05}}
+local CONFIG={ACTIVATION={DASH_MAX_SNAPSHOT_AGE=.15,RADIUS_FACTOR=1,DASH_ESCAPE_WINDOW_FACTOR=.4},DEACTIVATION={DASH_ESCAPE_MIN_HORIZONTAL_RATIO=.35,DASH_ESCAPE_MIN_OUTWARD_SPEED=15,DASH_ESCAPE_MIN_SEPARATION_GAIN=2,DASH_ESCAPE_COOLDOWN=.05}}
 local state={root={Parent=true,Position=v(0),AssemblyLinearVelocity=v(0)}}; local tracker={partner=99,activatedAt=10}
 local snapshot={syncAt=10,targetId=99,position=v(30),velocity=v(100),speed=100}
 local function freshSnapshot(x) return x~=nil end

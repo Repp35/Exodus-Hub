@@ -24,7 +24,7 @@ local function geometry() return {effectiveWindow=.4,deflectWindow=.4} end
 local function snapshotSpeed(s) return s.speed end
 local function playerIsAlive() return true end
 local function freshSnapshot(s) return s and s.valid end
-local CONFIG={ACTIVATION={DASH_MAX_SNAPSHOT_AGE=.15,DASH_WINDOW_FACTOR=.4,DASH_MIN_ALIGNMENT=.6,DASH_MIN_CPS=4,DASH_MIN_SCORE=75}}
+local CONFIG={ACTIVATION={DASH_MAX_SNAPSHOT_AGE=.15,DASH_WINDOW_FACTOR=1,DASH_MIN_ALIGNMENT=.6,DASH_MIN_CPS=4,DASH_MIN_SCORE=75}}
 local opponentDash={signalActive=true,observedAt=10,position=v(40),velocity=v(-120),normalModel={estimatedRemaining=.15}}
 local selfDash={signalActive=true,observedAt=10,position=v(0),velocity=v(120),normalModel={estimatedRemaining=.15}}
 local a,b=opponentDash,nil; local dashInfo={getEstimate=function(id) if id==99 then return a else return b end end}
@@ -37,7 +37,8 @@ selfDash.velocity=v(-120); assert(not dashPrediction(state,snap,10.05)); selfDas
 wall=true; assert(not dashPrediction(state,snap,10.05)); wall=false
 snap.syncAt=9; assert(not dashPrediction(state,snap,10.05)); snap.syncAt=10.05
 snap.targetId=77; assert(not dashPrediction(state,snap,10.05)); snap.targetId=42
-state.dashExchangeAt=9; assert(not dashPrediction(state,snap,10.05)); state.dashExchangeAt=10.05
+state.dashExchangeAt=9; assert(dashPrediction(state,snap,10.05),'fresh dash rejected due to old target exchange'); state.dashExchangeAt=10.05
+state.dashExchangePartner=nil; state.previousOpponent=99; assert(dashPrediction(state,snap,10.05),'previous opponent ignored'); state.dashExchangePartner=99
 selfDash.signalActive=false; assert(not dashPrediction(state,snap,10.05)); selfDash.signalActive=true
 snap.teleported=true; assert(not dashPrediction(state,snap,10.05))
 ''')
