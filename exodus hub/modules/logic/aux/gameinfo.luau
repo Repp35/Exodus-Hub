@@ -981,7 +981,7 @@ function GameInfo.spinCrate(network, crate, guard)
   network:CSendEvent(owned == true and CONFIG.GAME_IDS.CRATE_OWNED or CONFIG.GAME_IDS.CRATE_NEW, crate); return true
 end
 function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
-function GameInfo.getClashContext()
+function GameInfo.getClashContext(ignoreDistance)
   local player = players.LocalPlayer
   if not player then return nil end
   local lastAt, by, target = world:GetAttribute("LastParryAt"), world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
@@ -992,7 +992,8 @@ function GameInfo.getClashContext()
   if age < 0 or (age > 1 and (age > 2.5 or currentTarget ~= target)) then return nil end
   local partner = players:GetPlayerByUserId(partnerId); local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
   local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
-  if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
+  if not ownRoot or not partnerRoot then return nil end
+  if ignoreDistance ~= true and (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
   return { partnerId = partnerId, lastParryAt = lastAt, age = age }
 end
 function GameInfo.getStatus()

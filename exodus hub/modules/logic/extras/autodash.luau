@@ -22,20 +22,10 @@ local function finite(value) return type(value) == "number" and value == value a
 local function validVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 
 -- event-filtering
-local function relevantOpponent(event, localRoot)
-  local active = autoSpam.getActivationContext()
-  if active.active then return active.partner == event.userId end
-  local context = gameInfo.getClashContext()
-  if context and context.partnerId then return context.partnerId == event.userId end
-  if (event.position - localRoot.Position).Magnitude > CONFIG.FALLBACK_RANGE then return false end
-  local time = utils.now(); local snapshot = gameInfo.getSnapshotAt(time)
-  if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked or snapshot.targetUncertain or snapshot.targetId ~= event.userId then return false end
-  if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > 0.5) then return false end
-  local speed = tonumber(snapshot.syncSpeed)
-  if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-  if not finite(speed) or speed <= 0 then return false end
-  local geometry = gameInfo.getDeflectGeometry(speed, "game", 0.8, false); return geometry ~= nil and (snapshot.position - localRoot.Position).Magnitude <= geometry.fullRadius
+local function clashPartner()
+  local context = gameInfo.getClashContext(true); return context and context.partnerId or nil
 end
+local function relevantOpponent(event) return clashPartner() == event.userId end
 
 -- event-handling
 local function onDash(event)
@@ -75,7 +65,6 @@ local function onDash(event)
   local character = player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   local localHumanoid = localRoot.Parent:FindFirstChildOfClass("Humanoid")
   if not humanoid or humanoid.Health <= 0 or not localHumanoid or localHumanoid.Health <= 0 then return end
-  if (event.position - localRoot.Position).Magnitude > CONFIG.DETECTION_RANGE then return end
   local velocity = event.velocity; local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
   if velocity.Y < CONFIG.MIN_UP_SPEED or horizontalSpeed > velocity.Y * CONFIG.MAX_HORIZONTAL_RATIO then return end
   if not relevantOpponent(event, localRoot) then return end
@@ -108,7 +97,8 @@ function AutoDash.bindCharacter(character)
     if time >= lastTickAt and time - lastTickAt < CONFIG.TICK_INTERVAL then return end
     lastTickAt = time
     if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
-    dash.tick(time, true, root.Position, CONFIG.DETECTION_RANGE)
+    local partner = clashPartner()
+    if partner then dash.tick(time, true, partner) end
   end)
   utils.trackCharacter(heartbeat); return true
 end
