@@ -241,25 +241,13 @@ local function deactivationReason(state, s, time, cd)
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
-
-  -- Extra protection: never stop automatically while the opponent is within 14 studs.
   local opponent = playerPosition(state.partner)
-  if not opponent then
-    state.distanceSince = nil
-    return nil
-  end
+  if not opponent then state.distanceSince = nil; return nil end
   local distance = (opponent - state.root.Position).Magnitude
-  if distance <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
-    state.distanceSince = nil
-    return nil
-  end
-
-  -- The only automatic stop conditions are opponent death/disconnect or sustained distance.
+  if distance <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then state.distanceSince = nil; return nil end
   if distance > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then
     state.distanceSince = state.distanceSince or time
-    if time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT then
-      return "clash_distance"
-    end
+    if time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT then return "clash_distance" end
   else
     state.distanceSince = nil
   end
