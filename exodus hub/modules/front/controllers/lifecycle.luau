@@ -134,13 +134,10 @@ function Controller.create(context)
   local closePending = false
   local function animateClose(action)
     if UIState.closing or closePending then return end
-    -- Keep the interface usable during manual reload; do not fade or block input.
     if action == "reload" then
       if type(Controls.onReload) == "function" then
         local started, reason = Controls.onReload(restoreAfterReloadFailure)
-        if started == false and context.notifications.toast then
-          context.notifications.toast(tostring(reason or "Reload unavailable"), true)
-        end
+        if started == false and context.notifications.toast then context.notifications.toast(tostring(reason or "Reload unavailable"), true) end
       end
       return
     end
