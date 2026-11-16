@@ -807,7 +807,8 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       return
     end
     if
-      automatic and not waitForMatchToEnd(function()
+      automatic
+      and not waitForMatchToEnd(function()
         if automatic then notifyPersistent("Update queued: waiting for match to end", "update", "info") end
       end)
     then
@@ -815,7 +816,8 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
       reloadInFlight = false; return
     end
     if
-      automatic and not waitForClashToEnd(function()
+      automatic
+      and not waitForClashToEnd(function()
         if automatic then notifyPersistent("Update queued: waiting for clash to end", "update", "info") end
       end)
     then
