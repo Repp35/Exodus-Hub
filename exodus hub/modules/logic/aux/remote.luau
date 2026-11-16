@@ -4,7 +4,7 @@
 local Remote = {}
 local gameInfo, utils
 local epoch = 0
-local keybindObject
+local keybindObject, inputService
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
@@ -50,27 +50,36 @@ local function directRemote()
   remote = remotes and player and (remotes:FindFirstChild("pu_" .. player.UserId) or remotes:FindFirstChild(""))
   if remote and remote:IsA("RemoteEvent") then return remote, remote:FindFirstChild("u") end
 end
-local function fireDirect(guard)
-  local remote, unreliable = directRemote()
+local function resendDirect(owner, remote, unreliable, guard, packet)
+  if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil and allowed(guard) then pcall(unreliable.FireServer, unreliable, packet) end
+end
+local function fireDirect(guard, context)
+  local time = os.clock()
+  local remote, unreliable
+  if context.remote and context.remote.Parent ~= nil and time >= context.checkedAt and time - context.checkedAt < 1 / 240 then
+    remote, unreliable = context.remote, context.unreliable
+    if unreliable and unreliable.Parent ~= remote then unreliable = nil end
+  else
+    remote, unreliable = directRemote(); context.remote, context.unreliable, context.checkedAt = remote, unreliable, time
+  end
   if not remote then return false, "Remote de Deflect indisponível" end
   local camera = workspace.CurrentCamera
   if not camera then return false, "Câmera indisponível" end
   local cf = camera.CFrame
-  local pos, look = cf.Position, cf.LookVector
-  local packet = buffer.create(35); buffer.writeu8(packet, 0, 1)
-  buffer.writef32(packet, 1, pos.X); buffer.writef32(packet, 5, pos.Y)
-  buffer.writef32(packet, 9, pos.Z); buffer.writef32(packet, 13, look.X)
-  buffer.writef32(packet, 17, look.Y); buffer.writef32(packet, 21, look.Z)
+  if not context.prefix or context.camera ~= camera or context.frame ~= cf then
+    local prefix = buffer.create(25); buffer.writeu8(prefix, 0, 1)
+    local pos, look = cf.Position, cf.LookVector
+    buffer.writef32(prefix, 1, pos.X); buffer.writef32(prefix, 5, pos.Y)
+    buffer.writef32(prefix, 9, pos.Z); buffer.writef32(prefix, 13, look.X)
+    buffer.writef32(prefix, 17, look.Y); buffer.writef32(prefix, 21, look.Z)
+    context.prefix, context.camera, context.frame = prefix, camera, cf
+  end
+  local packet = buffer.create(35); buffer.copy(packet, 0, context.prefix, 0, 25)
   directSequence = (directSequence + 1) % 65536; buffer.writeu16(packet, 25, directSequence)
   buffer.writef64(packet, 27, workspace:GetServerTimeNow())
   if not allowed(guard) then return false, "Deflect cancelado" end
   remote:FireServer(packet)
-  if unreliable and unreliable:IsA("UnreliableRemoteEvent") then
-    pcall(unreliable.FireServer, unreliable, packet); local owner = epoch
-    task.delay(0.03, function()
-      if epoch == owner and gameInfo and unreliable.Parent == remote and remote.Parent ~= nil and allowed(guard) then pcall(unreliable.FireServer, unreliable, packet) end
-    end)
-  end
+  if unreliable and unreliable:IsA("UnreliableRemoteEvent") then pcall(unreliable.FireServer, unreliable, packet); task.delay(0.03, resendDirect, epoch, remote, unreliable, guard, packet) end
   return true
 end
 local function configuredInput()
@@ -105,31 +114,25 @@ local function configuredInput()
   end
   return Enum.KeyCode.F
 end
+local function releaseInput(vim, input) vim:SendKeyEvent(false, input, false, game) end
 local function fireInput(guard)
-  local input = configuredInput(); local vim = game:GetService("VirtualInputManager")
+  local input = configuredInput(); inputService = inputService or game:GetService("VirtualInputManager")
+  local vim = inputService
   if not allowed(guard) then return false, "Deflect cancelado" end
-  vim:SendKeyEvent(true, input, false, game)
-  task.defer(function() vim:SendKeyEvent(false, input, false, game) end)
+  vim:SendKeyEvent(true, input, false, game); task.defer(releaseInput, vim, input)
   return true
 end
 
 -- public-api
-function Remote.fireParry(_flag, callerGuard)
-  if not gameInfo then return false, "Remote não inicializado" end
-  local owner, info = epoch, gameInfo
-  local function guard() return owner == epoch and gameInfo == info and allowed(callerGuard) end
+local function dispatchParry(info, guard, context)
   local method = utils.getConfigValue("ClickMethod")
-  if method == "Input" then
+  if method == "Input" then return fireInput(guard) end
+  if info.isTrainingArea() then
     if not allowed(guard) then return false, "Deflect cancelado" end
-    return fireInput(guard)
+    local sent, detail = info.fireTrainingParry(); return sent, detail
   end
-  if gameInfo.isTrainingArea() then
-    if not allowed(guard) then return false, "Deflect cancelado" end
-    local sent, detail = gameInfo.fireTrainingParry(); return sent, detail
-  end
-  if not allowed(guard) then return false, "Deflect cancelado" end
-  if method == "Direct" then return fireDirect(guard) end
-  local ability = gameInfo.getDeflectAbility()
+  if method == "Direct" then return fireDirect(guard, context) end
+  local ability = info.getDeflectAbility()
   if not allowed(guard) then return false, "Deflect cancelado" end
   local previousCall = ability and ability.LastDeflectCallAt; local clicks = ability and ability.ClickInstances
   local lastClick = type(clicks) == "table" and clicks[#clicks] or nil; local sent, detail = send(ability, CONFIG.PARRY_METHOD)
@@ -144,6 +147,15 @@ function Remote.fireParry(_flag, callerGuard)
   end
   return sent, detail
 end
+function Remote.prepareParry(callerGuard)
+  local owner, info, context = epoch, gameInfo, {}
+  local function guard() return owner == epoch and gameInfo == info and allowed(callerGuard) end
+  return function()
+    if not info or owner ~= epoch or gameInfo ~= info then return false, "Remote não inicializado" end
+    return dispatchParry(info, guard, context)
+  end
+end
+function Remote.fireParry(_flag, callerGuard) return Remote.prepareParry(callerGuard)() end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
   local owner = epoch; local ability = gameInfo and gameInfo.getFierceDeflectAbility()
@@ -152,7 +164,7 @@ function Remote.fireFierce(guard)
 end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end
 function Remote.teardown()
-  epoch += 1; keybindObject, gameInfo, utils = nil, nil, nil
+  epoch += 1; keybindObject, inputService, gameInfo, utils = nil, nil, nil, nil
   return true
 end
 
@@ -174,6 +186,7 @@ Remote.__contract = {
     "setup",
     "teardown",
     "fireParry",
+    "prepareParry",
     "fireDark",
     "fireFierce",
     "fireDash",

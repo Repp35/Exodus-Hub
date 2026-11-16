@@ -6,8 +6,9 @@ local utils, remote, gameInfo, autoSpam, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
+local requestSequence = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
-local samples, sampleHead, sampleTail, sampleAccepted = {}, 1, 0, 0
+local samples, sampleHead, sampleTail, sampleAccepted, sampleAttempts = {}, 1, 0, 0, 0
 
 -- configuration
 local CONFIG = {
@@ -18,14 +19,15 @@ local CONFIG = {
 
 -- helpers
 local function clearSamples()
-  table.clear(samples); sampleHead, sampleTail, sampleAccepted = 1, 0, 0
+  table.clear(samples); sampleHead, sampleTail, sampleAccepted, sampleAttempts = 1, 0, 0, 0
 end
 local function expireSamples(time)
   while sampleHead <= sampleTail do
     local sample = samples[sampleHead]
     if time >= sample.at and time - sample.at < 1 then break end
-    if sample.accepted then sampleAccepted -= 1 end
-    samples[sampleHead] = nil; sampleHead += 1
+    sample.live = false; sampleAccepted -= sample.accepted
+    sampleAttempts -= sample.attempts; samples[sampleHead] = nil
+    sampleHead += 1
   end
   if sampleHead > sampleTail then
     clearSamples()
@@ -63,25 +65,30 @@ local function cancel(reason)
 end
 
 -- dispatch
-local function request(boundUtils, boundRemote, token, guard)
+local function beginSample(time)
+  expireSamples(time); local sample = { at = time, attempts = 0, accepted = 0, live = true }
+  sampleTail += 1; samples[sampleTail] = sample
+  return sample
+end
+local function request(boundUtils, dispatch, token, sample)
   if inFlight then return end
-  local requestToken = {}; inFlight = requestToken
-  local requestedAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
+  requestSequence += 1; local requestToken = requestSequence
+  inFlight = requestToken; status.lastRequestAt = os.clock()
+  sample.attempts += 1; sampleAttempts += 1
+  local result, detail = dispatch()
   if inFlight == requestToken then inFlight = false end
   if token ~= generation or utils ~= boundUtils then return end
-  status.lastRequestAt = requestedAt; expireSamples(requestedAt)
-  local accepted = ok and result == true; sampleTail += 1
-  samples[sampleTail] = { at = requestedAt, accepted = accepted }
-  if accepted then sampleAccepted += 1 end
-  if not ok then error(result, 0) end
-  if token ~= generation or utils ~= boundUtils then return end
-  if result == true then status.lastError = nil; return end
+  if result == true then
+    if sample.live then sample.accepted += 1; sampleAccepted += 1 end
+    status.lastError = nil; return true
+  end
   local message = tostring(detail or "Remote.fireParry indisponível"); status.lastError = message
   local time = os.clock()
   if time - status.lastErrorAt >= 1 then
     status.lastErrorAt = time
     if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
   end
+  return false, detail
 end
 
 -- scheduler
@@ -104,14 +111,18 @@ local function sync()
       return (boundUtils.isManualSpamActive() and boundAutoSpam.canSendManual()) or boundAutoSpam.canSend()
     end
     local ok, err = xpcall(function()
+      local dispatch = type(boundRemote.prepareParry) == "function" and boundRemote.prepareParry(allowed)
+        or function() return boundRemote.fireParry(1, allowed) end
       local credit, previous = 0, os.clock(); local clicksPerSecond = mode == "MS" and 1000 / rate or rate
       if boundUtils.isAutoSpamActive() and allowed() then
         if mode ~= "Auto" then
-          request(boundUtils, boundRemote, token, allowed)
+          request(boundUtils, dispatch, token, beginSample(os.clock()))
         else
           local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
           if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
-          if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then request(boundUtils, boundRemote, token, allowed) end
+          if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then
+            request(boundUtils, dispatch, token, beginSample(os.clock()))
+          end
         end
       end
       while guard() do
@@ -121,9 +132,13 @@ local function sync()
           if allowed() then
             credit = math.min(CONFIG.MAX_FRAME_REQUESTS, credit + (mode == "CPF" and rate or clicksPerSecond * delta)); local count = math.floor(credit)
             credit -= count
-            for _ = 1, count do
-              if not allowed() then credit = 0; break end
-              request(boundUtils, boundRemote, token, allowed)
+            if count > 0 then
+              local sample = beginSample(time)
+              for _ = 1, count do
+                if not guard() then credit = 0; break end
+                local sent, detail = request(boundUtils, dispatch, token, sample)
+                if sent == false and detail == "Deflect cancelado" then credit = 0; break end
+              end
             end
           else
             credit = 0
@@ -133,7 +148,9 @@ local function sync()
           if allowed() and not inFlight then
             local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
             if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
-            if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then request(boundUtils, boundRemote, token, allowed) end
+            if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then
+              request(boundUtils, dispatch, token, beginSample(os.clock()))
+            end
           end
         end
       end
@@ -209,7 +226,7 @@ function Spam.getStatus()
     phase = status.phase,
     lastRequestAt = status.lastRequestAt,
     lastError = status.lastError,
-    attemptsLastSecond = sampleTail - sampleHead + 1,
+    attemptsLastSecond = sampleAttempts,
     acceptedLastSecond = sampleAccepted,
     cpfFps = 0,
     cpfClicks = 0,
