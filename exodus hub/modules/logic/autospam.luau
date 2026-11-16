@@ -30,12 +30,8 @@ local CONFIG = {
     DASH_ESCAPE_MIN_OUTWARD_SPEED = 15,
     DASH_ESCAPE_MIN_HORIZONTAL_RATIO = 0.35,
     DASH_ESCAPE_MIN_SEPARATION_GAIN = 2,
-    DEFLECT_COOLDOWN_TIMEOUT = 0.18,
     CLASH_DISTANCE_TIMEOUT = 0.25,
-    TARGET_RETURN_TIMEOUT_MIN_SPEED = 0.3,
-    TARGET_RETURN_TIMEOUT_MAX_SPEED = 0.4,
-    COOLDOWN_PROTECTION_RADIUS = 16,
-    COOLDOWN_PROTECTION_MAX_SPEED_RADIUS = 40,
+    TARGET_RETURN_TIMEOUT = 0.18,
     RETURN_PROTECTION_RADIUS = 10,
     RETURN_PROTECTION_MAX_SPEED_RADIUS = 25,
   },
@@ -89,17 +85,8 @@ local function deactivate(state, reason, time)
   utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
 local function activeMiss(cd) return cd and cd.miss == true and cd.phase ~= "miss_finished" end
-local function cooldownToken(cd) return cd and (cd.episode or cd.blockingSince) or "unknown" end
 local function monitorCooldown(state)
   local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
-  local token = cooldownToken(cd)
-  if cd and cd.blocking == true then
-    if state.cooldownToken ~= token or state.deflectCooldownSince == nil then
-      state.cooldownToken = token; state.deflectCooldownSince = math.max(finite(cd.blockingSince) and math.min(cd.blockingSince, time) or time, state.cooldownResumeAt or 0)
-    end
-  else
-    state.deflectCooldownSince, state.cooldownToken = nil, nil; eventOnce(state, "deflect_cooldown_timeout", false)
-  end
   if activeMiss(cd) then
     state.closeArm = nil
     if utils.isManualSpamActive() then utils.setManualSpamActive(false); utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss") end
@@ -273,18 +260,11 @@ local function deactivationReason(state, s, time, cd)
     eventOnce(state, "clash_distance", state.distanceSince and time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT, state.partner)
   local escape = dashEscapeRisk(state, state, s, time); state.dashEscape = escape
   local escapeToken = escape and escape.eventToken; local opponentEscape = eventOnce(state, "opponent_dash_escape", escape and escape.reason == "opponent_dash_escape", escapeToken)
-  local selfEscape = eventOnce(state, "self_dash_escape", escape and escape.reason == "self_dash_escape", escapeToken); local cooldownExpired = cd
-    and cd.blocking == true
-    and state.deflectCooldownSince
-    and time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-    and opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, s, time)
-  local cooldownEvent = eventOnce(state, "deflect_cooldown_timeout", cooldownExpired, cooldownToken(cd)); local returnExpired = false
+  local selfEscape = eventOnce(state, "self_dash_escape", escape and escape.reason == "self_dash_escape", escapeToken)
+  local returnExpired = false
   if s.targetId == state.partner then
-    state.departedAt = state.departedAt or time; local minimum, maximum = gameInfo.getBallSpeedLimits()
-    local progress = finite(minimum) and finite(maximum) and maximum > minimum and math.clamp((snapshotSpeed(s) - minimum) / (maximum - minimum), 0, 1) or 0
-    local timeout = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MIN_SPEED
-      + (CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MAX_SPEED - CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT_MIN_SPEED) * progress
-    returnExpired = time - state.departedAt >= timeout
+    state.departedAt = state.departedAt or time
+    returnExpired = time - state.departedAt >= CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
       and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.RETURN_PROTECTION_MAX_SPEED_RADIUS, s, time)
   else
     state.departedAt = nil
@@ -294,7 +274,6 @@ local function deactivationReason(state, s, time, cd)
   if distanceEvent then return "clash_distance" end
   if opponentEscape then return "opponent_dash_escape" end
   if selfEscape then return "self_dash_escape" end
-  if cooldownEvent then return "deflect_cooldown_timeout" end
   if returnEvent then return "target_return_timeout" end
 end
 local function dashPrediction(state, s, time)

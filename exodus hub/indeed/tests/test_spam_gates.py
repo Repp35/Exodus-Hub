@@ -98,20 +98,18 @@ packet(42,0,2);cd.blocking=true;cd.blockingSince=tm
 packet(99,.01,50);heartbeat(.5);assert(ap.isActive())
 ''')
 
-    def test_distant_continuous_cooldown_stops_after_180ms_and_resets(self):
-        check('''
-snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
-other.root.Position=v(20);packet(42,0,12);packet(99,.01);packet(42,.05)
-assert(ap.isActive());cd.blocking=true;cd.blockingSince=tm
-heartbeat(.17);assert(ap.isActive());cd.blocking=false;heartbeat(.01)
-cd.blocking=true;cd.blockingSince=tm;heartbeat(.17);assert(ap.isActive())
-heartbeat(.02);stopped('deflect_cooldown_timeout')
-''')
+    def test_continuous_nonmiss_cooldown_does_not_stop_spam(self):
+        check("""
+snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16);other.root.Position=v(20)
+packet(42,0,12);packet(99,.01);packet(42,.05)
+cd.blocking=true;cd.blockingSince=tm;heartbeat(2)
+assert(ap.isActive(),'ordinary cooldown stopped spam')
+""")
 
     def test_distant_nonreturn_stops_after_timeout(self):
         check('''
 other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
-assert(ap.isActive());packet(99,.01);heartbeat(.39);assert(ap.isActive());heartbeat(.02)
+assert(ap.isActive());packet(99,.01);heartbeat(.179);assert(ap.isActive());heartbeat(.002)
 stopped('target_return_timeout')
 ''')
 
@@ -150,7 +148,7 @@ other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
 packet(99,.01);cd.blocking=true;cd.blockingSince=tm
 snap.locked=true;heartbeat(1);assert(ap.isActive() and not ap.canSend())
 snap.locked=false;cd.blocking=false;heartbeat(.01);assert(ap.isActive())
-heartbeat(.2);assert(ap.isActive(),'paused time counted toward return')
+heartbeat(.17);assert(ap.isActive(),'paused time counted toward return')
 """)
 
     def test_reset_does_not_create_fake_return_and_cannot_hide_miss(self):

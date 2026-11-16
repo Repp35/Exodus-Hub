@@ -21,18 +21,11 @@ cd.blocking=false;cd.phase='miss_finished';heartbeat(.01)
 assert(ap.isActive() and clicks>before,'finished miss prevented recovery')
 """)
 
-    def test_cooldown_timeout_fires_once_without_waiting_for_cooldown_to_clear(self):
-        check(COUNT+'''
-snap.speed=16;snap.syncSpeed=16;snap.velocity=v(-16);other.root.Position=v(20)
-packet(42,0,12);packet(99,.01);packet(42,.05)
-cd.blocking=true;cd.blockingSince=tm;cd.episode=1
-heartbeat(.181);stopped('deflect_cooldown_timeout')
-heartbeat(.021);assert(ap.isActive(),'same cooldown latched return gate')
-for i=1,10 do heartbeat(.01);assert(ap.isActive()) end
-assert(stops('deflect_cooldown_timeout')==1)
-cd.episode=2;cd.blockingSince=tm;heartbeat(.181);stopped('deflect_cooldown_timeout')
-assert(stops('deflect_cooldown_timeout')==2)
-''')
+    def test_ordinary_cooldown_is_not_a_stop_event(self):
+        check(COUNT+"""
+packet(42,0,2);cd.blocking=true;cd.blockingSince=tm;cd.episode=1
+heartbeat(2);assert(ap.isActive() and stops('deflect_cooldown_timeout')==0)
+""")
 
     def test_miss_wait_is_independent_of_normal_timeout(self):
         check(COUNT+"""

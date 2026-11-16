@@ -35,11 +35,10 @@ O dash tem prioridade sobre os demais. Um evento não utilizado deixa no diagnó
 | Controle/lifecycle | Hub ou AutoSpam desligado; personagem local morto/removido/desvinculado; adversário morto/saiu; troca do objeto da bola; parada explícita, inclusive resgate Fierce. |
 | Terceiro alvo | Uma amostra válida informa que o alvo é outro jogador, fora do par atual. |
 | Distância | Adversário a mais de **35 studs por 250 ms contínuos**. O contador pertence à condição de distância e independe do motivo da ativação. |
-| Cooldown prolongado | Bloqueio contínuo durante **180 ms**, contados pelo início do próprio bloqueio, **e** adversário fora da proteção de **16–40 studs**, interpolada pela velocidade da bola entre os limites do jogo. O contador zera quando o bloqueio termina. |
-| Retorno ausente | Bola permanece mirando no adversário por **300–400 ms**, conforme velocidade, **e** adversário fora da proteção de **10–25 studs**. Troca de volta para você zera a espera. |
+| Retorno ausente | Bola permanece mirando no adversário por **180 ms**, **e** adversário fora da proteção de **10–25 studs**. Troca de volta para você zera a espera. |
 | Fuga por dash | **Sem proteção de proximidade.** Bola mirando no adversário, dados de até 150 ms, bola saindo do seu alcance de fuga (janela 0,4×), dash ativo normal de 70–140 studs/s, componente horizontal ≥ 35%, afastamento ≥ 15 studs/s, ganho projetado ≥ 2 studs e separação projetada maior que a soma dos raios + velocidade da bola × janela 0,4×. Exige cooldown conhecido bloqueando por **50 ms** do próprio bloqueio. Vale para dash próprio ou adversário. |
 
-Miss, terceiro alvo e fuga por dash não recebem proteção por adversário próximo. Os limites de cooldown comum e retorno recebem a proteção indicada.
+Miss, terceiro alvo e fuga por dash não recebem proteção por adversário próximo. O limite de retorno recebe a proteção indicada. Cooldown comum, sozinho, não desliga mais o auto spam.
 
 ## Pausa e retomada
 
@@ -47,7 +46,7 @@ Dados inválidos, antigos, alvo incerto, teleporte, reset, bola travada, Frozen 
 
 Depois de um desligamento real existe apenas um intervalo global de **20 ms**. Ele não é prolongado por chamadas de desligamento quando já está desligado. Após isso, os gatilhos ainda válidos são reavaliados: mesmo oponente, mesmo dash, mesmo retorno ou mesmo Haunter podem ativar novamente. O cooldown comum não veta a avaliação. **Miss é a exceção: a reativação espera o miss terminar**, independentemente do intervalo de 20 ms.
 
-As ações de ligar/desligar são idempotentes: ligar enquanto já está ligado ou desligar enquanto já está desligado não repete a transição. A ativação não consulta o motivo de desligamento nem um histórico de gatilhos usados. Timeout de cooldown, fuga por dash e falta de retorno registram suas próprias ocorrências, sem impedir a ativação. Miss em curso mantém a espera até terminar. Uma ocorrência é reaplicável quando a condição desaparece e volta, ou quando surge um episódio novo; a mesma ocorrência mantida não fica desligando em todo frame. O histórico de ocorrências serve para evitar ações repetidas. A espera por miss consulta o estado atual do cooldown, não esse histórico.
+As ações de ligar/desligar são idempotentes: ligar enquanto já está ligado ou desligar enquanto já está desligado não repete a transição. A ativação não consulta o motivo de desligamento nem um histórico de gatilhos usados. Fuga por dash e falta de retorno registram suas próprias ocorrências, sem impedir a ativação. Miss em curso mantém a espera até terminar. Uma ocorrência é reaplicável quando a condição desaparece e volta, ou quando surge um episódio novo; a mesma ocorrência mantida não fica desligando em todo frame. O histórico de ocorrências serve para evitar ações repetidas. A espera por miss consulta o estado atual do cooldown, não esse histórico.
 
 ## Envio dos cliques
 
