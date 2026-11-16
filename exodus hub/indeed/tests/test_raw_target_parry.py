@@ -233,6 +233,12 @@ cd.blocking=true; packet(42); assert(fires==0,'radius bypassed cooldown')
 cd.blocking=false; frameCb(1/60); assert(fires==1,'ready radius click delayed')
 """)
 
+    def test_training_radius_entry_guard_accepts_same_window_as_trigger(self):
+        self.check_ap("""
+snap.mode='training'; snap.trainingRound=1; snap.position=v(100); snap.velocity=v(-600)
+frameCb(1/60); assert(fires==1,'training guard rejected radius entry trigger')
+""")
+
     def test_training_base_radius_does_not_require_closing_velocity(self):
         self.check_ap("""
 snap.mode='training'; snap.trainingRound=1; snap.position=v(8.5); snap.velocity=v(600)

@@ -369,6 +369,18 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then return false end
   local position, own = value.position, gameInfo.getRootPosition(state.root)
   if not vector(position) or not vector(own) then return false end
+  if mode == "training" then
+    local velocity = value.velocity
+    local speed = value.syncSpeed ~= nil and value.syncSpeed or (vector(velocity) and velocity.Magnitude or nil)
+    if not vector(velocity) or not validBallSpeed(speed) or speed < CONFIG.TRAINING_MIN_SPEED then return false end
+    local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR)
+    local ping = finite(state.ping) and math.clamp(state.ping, 0, CONFIG.TRAINING_MAX_PING) or 0
+    local entry, _, lead = radiusTiming(position, velocity, own, speed, geometry, ping)
+    if entry <= lead then return true end
+    local delta = own - position; local distance = delta.Magnitude
+    local closing = distance > 0 and velocity:Dot(delta) / distance or 0
+    return finite(closing) and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED and finite(trainingThreshold) and distance <= trainingThreshold
+  end
   local matchGeometry
   if mode ~= "training" then
     local timing = matchTiming(value, time, own)
@@ -429,7 +441,7 @@ local function request(reason)
     if state.mode == "training" then
       state.fired = false; state.nextAttemptAt = clock() + CONFIG.FRAME_BASE
       phase("waiting", "training_attempt_failed"); local errorAt = clock()
-      if errorAt - state.lastErrorAt >= 1 then state.lastErrorAt = errorAt; boundUtils.recordError("TrainingParry", tostring(detail or "Treino indisponível")) end
+      if detail ~= "Deflect cancelado" and errorAt - state.lastErrorAt >= 1 then state.lastErrorAt = errorAt; boundUtils.recordError("TrainingParry", tostring(detail or "Treino indisponível")) end
       return false
     end
     state.fired = false; state.retryReady = wasRetry
