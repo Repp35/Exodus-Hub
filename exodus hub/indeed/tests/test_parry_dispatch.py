@@ -72,6 +72,23 @@ info.getDeflectAbility=function() return {GetKeybindBySlotID=function() permit=f
 assert(not module.fireParry(1,guard)); assert(sends==0)
 """)
 
+    def test_client_rejection_is_not_reported_as_a_sent_parry(self):
+        self.check("""
+method='Deflect'
+local ability={ClickInstances={},Deflect=function() end}
+info.getDeflectAbility=function() return ability end
+assert(not module.fireParry(1,guard),'nil rejection armed AP as if a packet was sent')
+""")
+
+    def test_valid_nil_return_with_new_click_is_accepted(self):
+        self.check("""
+method='Deflect'
+local ability={ClickInstances={},LastDeflectCallAt=1}
+ability.Deflect=function(self) self.LastDeflectCallAt=2;self.ClickInstances[1]={};sends=sends+1 end
+info.getDeflectAbility=function() return ability end
+assert(module.fireParry(1,guard));assert(sends==1)
+""")
+
 
 if __name__ == '__main__':
     unittest.main()

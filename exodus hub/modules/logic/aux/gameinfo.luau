@@ -31,17 +31,17 @@ local CONFIG = {
   BALL_SEARCH_INTERVAL = 0.5,
   SYNC_CONNECTED_INTERVAL = 3,
   SYNC_RETRY_INTERVAL = 1,
-  SPAM_MIN_INTERVAL = 0.0301,
+  SPAM_MIN_INTERVAL = 0.008,
   SPEED_REFRESH = 0.5,
   SAMPLE_INTERVAL = 1 / 240,
   SAMPLE_MAX_GAP = 0.5,
-  WINDOW_BASE = 0.6,
-  WINDOW_SPREAD = 0.5,
+  WINDOW_BASE = 0.85,
+  WINDOW_SPREAD = 0.65,
   RANGE_BASE = 8.5,
   RANGE_BONUS_SPAN = 7.5,
   RANGE_BONUS_STEP = 0.225,
   RANGE_WINDOW_BONUS = 0.12,
-  AUTO_PARRY_TRIGGER_PADDING = 1,
+  AUTO_PARRY_TRIGGER_PADDING = 0,
   AP_WINDOW_LOW_SPEED = 0.45,
   AP_WINDOW_HIGH_SPEED = 0.25,
   PING_SAMPLE_INTERVAL = 0.25,
@@ -592,6 +592,13 @@ local function decodeBallPacketFallback(value)
     grace = bit32.btest(flags, 4),
     oldGrace = bit32.btest(flags, 8),
     possessed = bit32.btest(flags, 32),
+    forceDirection = bit32.btest(flags, 16),
+    curveTime = curve,
+    curveTimeMax = curveMax,
+    curveAxis = Vector3.new(buffer.readf32(value, 71), buffer.readf32(value, 75), buffer.readf32(value, 79)),
+    bouncesLeft = buffer.readu8(value, 91),
+    flightTime = buffer.len(value) >= 96 and buffer.readf32(value, 92) or nil,
+    noSpeedFeel = bit32.btest(flags, 128),
   }
 end
 function GameInfo.decodeBallPacket(value)
@@ -622,6 +629,13 @@ function GameInfo.decodeBallPacket(value)
     Speed = decoded.speed,
     Accel = decoded.accel,
     MaxSpeed = decoded.maxSpeed,
+    ForceDirection = decoded.forceDirection,
+    CurveTime = decoded.curveTime,
+    CurveTimeMax = decoded.curveTimeMax,
+    CurveAxis = decoded.curveAxis,
+    BouncesLeft = decoded.bouncesLeft,
+    FlightTime = decoded.flightTime,
+    NoSpeedFeel = decoded.noSpeedFeel,
   }
 end
 function GameInfo.getTargetId() return targetId(syncData()) end
@@ -682,7 +696,7 @@ local function snapshot(time)
     sampledPosition, sampledAt = position, time
   end
   if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-  local target = targetId(sync)
+  local target = targetId(sync); local frozen = GameInfo.getBallFrozen() == true
   local result = {
     schema = 2,
     generatedAt = time,
@@ -703,7 +717,8 @@ local function snapshot(time)
     targetUncertain = sync == nil or syncReceivedAt <= 0 or time < syncReceivedAt or time - syncReceivedAt > CONFIG.PACKET_AGE,
     teleported = sync and sync.Teleported == true or false,
     locked = sync and sync.Locked == true or false,
-    ballCanMove = not (sync and sync.Locked == true),
+    ballCanMove = not frozen and not (sync and sync.Locked == true),
+    frozen = frozen,
     grace = sync and sync.Grace == true or false,
     oldGrace = sync and sync.OldGrace == true or false,
     syncAt = syncReceivedAt,
@@ -717,6 +732,54 @@ end
 -- public-api
 function GameInfo.getSnapshot(_, time) return snapshot(time) end
 function GameInfo.getSnapshotAt(time) return snapshot(time) end
+function GameInfo.getParrySnapshot(time)
+  local value = snapshot(time)
+  if not value or value.mode == "training" or not value.targeted or value.ballCanMove == false or value.teleported or value.locked or value.targetUncertain then return value end
+  if value.parrySampled then return value.parrySnapshot or value end
+  value.parrySampled = true; local provider = getReplicator()
+  if not provider or type(provider.SimulateFrom) ~= "function" or not world then return value end
+  local history = provider.history; local latest = type(history) == "table" and history[#history]
+  local sync = syncData(provider)
+  local sample
+  if type(latest) == "table" and provider.lastSeq == value.syncSequence and latest.targetId == value.targetId then
+    sample = latest
+  elseif sync and finite(sync.ServerTime) and finiteVector(sync.RealPosition) and finiteVector(sync.ForcedDirection) then
+    sample = {
+      position = sync.RealPosition,
+      direction = sync.ForcedDirection,
+      speed = sync.Speed,
+      accel = finite(sync.Accel) and sync.Accel or 0,
+      maxSpeed = sync.MaxSpeed or sync.Speed,
+      serverTime = sync.ServerTime,
+      targetId = sync.TargetPlayerID,
+      locked = sync.Locked,
+      grace = sync.Grace,
+      oldGrace = sync.OldGrace,
+      possessed = (sync.PossessorId or 0) ~= 0,
+      curveTime = sync.CurveTime or 1,
+      curveTimeMax = sync.CurveTimeMax or 1,
+      curveAxis = sync.CurveAxis,
+      bouncesLeft = sync.BouncesLeft or 0,
+      flightTime = sync.FlightTime,
+      noSpeedFeel = sync.NoSpeedFeel,
+    }
+
+  end
+  if not sample or not finite(sample.serverTime) or not finiteVector(sample.position) then return value end
+  local serverNow = world:GetServerTimeNow(); local age = serverNow - sample.serverTime
+  if not finite(age) or age < -0.02 or age > 0.25 then return value end
+  local target = playerRoot(value.targetId)
+  if not target then return value end
+  local dt = 1 / 240
+  local ok, position, nextPosition = pcall(
+    function() return provider:SimulateFrom(sample, math.max(age, 0), target.Position), provider:SimulateFrom(sample, math.max(age, 0) + dt, target.Position) end
+  )
+  if not ok or not finiteVector(position) or not finiteVector(nextPosition) then return value end
+  local predicted = table.clone(value); predicted.visualPosition, predicted.visualVelocity = value.position, value.velocity
+  predicted.position, predicted.velocity = position, (nextPosition - position) / dt; predicted.speed = predicted.velocity.Magnitude
+  predicted.predicted, predicted.predictionAge, predicted.predictionSource = true, math.max(age, 0), "replicator_simulation"; value.parrySnapshot = predicted
+  return predicted
+end
 function GameInfo.isSnapshotValid(value)
   return type(value) == "table"
     and typeof(value.ball) == "Instance"
@@ -811,7 +874,7 @@ function GameInfo.getDefensePhysics()
   grace = math.clamp(grace, 0.075, cap); local inClash = gameBall and player and type(gameBall.IsInClash) == "function" and gameBall:IsInClash(player) == true
   if inClash and type(gameBall.ApplyClashPressureGrace) == "function" then grace = gameBall:ApplyClashPressureGrace(grace, player) end
   local kill = gameBall and type(gameBall.GetKillDistance) == "function" and gameBall:GetKillDistance() or 4
-  return { killRadius = kill, grace = grace, ping = ping, uplink = ping * 0.5, serverNow = world:GetServerTimeNow(), inClash = inClash == true }
+  return { killRadius = kill, grace = grace, ping = ping, uplink = ping, serverNow = world:GetServerTimeNow(), inClash = inClash == true }
 end
 function GameInfo.getBallFrozen()
   if not ballData or not ballData.Parent then ballData = child(world, "BallData") end
@@ -858,14 +921,13 @@ function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride
   if not finite(speed) or speed < 0 then return nil end
   local low, high = GameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or high <= low then return nil end
-  local progress = math.clamp((speed - low) / (high - low), 0, 1); local window = 0.5 + (0.25 - 0.5) * progress
-  local range = GameInfo.getDeflectRange()
+  local window = GameInfo.getDeflectWindow(speed, false); local range = GameInfo.getDeflectRange()
   if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
   if not finite(window) or window < 0 then return nil end
   local latency = finite(latencyOverride) and math.max(0, latencyOverride) or GameInfo.getAveragePing()
   if not finite(latency) then latency = 0 end
   local factorValue = finite(factor) and math.clamp(factor, 0, 1) or 0.3; local frame = finite(frameLead) and math.clamp(frameLead, 0, 0.15) or 1 / 60
-  local networkLead = latency + frame; local lead = window * factorValue + networkLead
+  local networkLead = latency + frame; local lead = latency + math.min(window * factorValue + frame, window * 0.95)
   return {
     fullRadius = range + CONFIG.AUTO_PARRY_TRIGGER_PADDING + speed * lead,
     pureRadius = CONFIG.RANGE_BASE,
@@ -879,7 +941,10 @@ function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride
     windowFactor = factorValue,
     triggerPadding = CONFIG.AUTO_PARRY_TRIGGER_PADDING,
     networkLead = networkLead,
+    uplinkLead = latency,
+    frameLead = frame,
     autoParry = true,
+    killRadius = 4,
   }
 end
 function GameInfo.getProjectedDeflectRadius(geometry, closingSpeed)
@@ -999,6 +1064,7 @@ GameInfo.__contract = {
     "getStatus",
     "getSnapshot",
     "getSnapshotAt",
+    "getParrySnapshot",
     "isSnapshotValid",
     "getSyncData",
     "getSyncSequence",

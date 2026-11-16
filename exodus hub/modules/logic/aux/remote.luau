@@ -131,7 +131,18 @@ function Remote.fireParry(_flag, callerGuard)
   if method == "Direct" then return fireDirect(guard) end
   local ability = gameInfo.getDeflectAbility()
   if not allowed(guard) then return false, "Deflect cancelado" end
-  return send(ability, CONFIG.PARRY_METHOD)
+  local previousCall = ability and ability.LastDeflectCallAt; local clicks = ability and ability.ClickInstances
+  local lastClick = type(clicks) == "table" and clicks[#clicks] or nil; local sent, detail = send(ability, CONFIG.PARRY_METHOD)
+  if sent and ability and type(ability.ClickInstances) == "table" then
+    local currentClicks = ability.ClickInstances
+    if
+      (type(ability.LastDeflectCallAt) == "number" and ability.LastDeflectCallAt == previousCall)
+      or (currentClicks == clicks and currentClicks[#currentClicks] == lastClick)
+    then
+      return false, "Deflect recusado pelo cliente"
+    end
+  end
+  return sent, detail
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
