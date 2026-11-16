@@ -14,7 +14,7 @@ V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
 local function v(x) return setmetatable({x=x},V) end
 function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
 local gameInfo={getBallSpeedLimits=function() return 16,600 end,isSnapshotValid=function(s) return s~=nil end}
-local CONFIG={SHARED={MIN_RETURN=1/25,SNAPSHOT_MAX_AGE=.5},DEACTIVATION={STATIONARY_EPSILON=.05,STATIONARY_TIMEOUT=.3,DEFLECT_COOLDOWN_TIMEOUT=.09,COOLDOWN_PROTECTION_RADIUS=16,COOLDOWN_PROTECTION_MAX_SPEED_RADIUS=40}}
+local CONFIG={SHARED={MIN_RETURN=1/25,SNAPSHOT_MAX_AGE=.5},DEACTIVATION={STATIONARY_EPSILON=.05,STATIONARY_TIMEOUT=.3,DEFLECT_COOLDOWN_TIMEOUT=.18,COOLDOWN_PROTECTION_RADIUS=16,COOLDOWN_PROTECTION_MAX_SPEED_RADIUS=40}}
 '''
 
 class SpamGates(unittest.TestCase):
@@ -60,10 +60,10 @@ local cooldownInfo={getDeflectCooldownState=function() return cd end}
 local function opponentOutside() return true end
 ''' + code + '''
 local auto={activatedAt=10}; local manual={activatedAt=10}
-assert(not cooldownExpired(auto,nil,10.089)); assert(cooldownExpired(auto,nil,10.091))
-assert(not cooldownExpired(manual,nil,10.116,1.3)); assert(cooldownExpired(manual,nil,10.118,1.3))
+assert(not cooldownExpired(auto,nil,10.179)); assert(cooldownExpired(auto,nil,10.181))
+assert(not cooldownExpired(manual,nil,10.233,1.3)); assert(cooldownExpired(manual,nil,10.235,1.3))
 cd.blocking=false; assert(not cooldownExpired(manual,nil,10.12,1.3)); assert(manual.deflectCooldownSince==nil)
-cd.blocking=true; cd.blockingSince=nil; assert(not cooldownExpired(manual,nil,11,1.3)); assert(cooldownExpired(manual,nil,11.118,1.3))
+cd.blocking=true; cd.blockingSince=nil; assert(not cooldownExpired(manual,nil,11,1.3)); assert(cooldownExpired(manual,nil,11.235,1.3))
 ''')
 
     def test_haunter_rejects_unconfirmed_window_and_fleeing_opponent(self):
@@ -91,14 +91,12 @@ local s={reason='haunter',activatedAt=10,root={Position=v(0)},partner=99,target=
 local x={targetId=42,position=v(25),speed=600}
 """ + code + """
 assert(deactivationReason(s,x,10.05)==nil)
-assert(deactivationReason(s,x,10.11)==nil,'near opponent lost unconfirmed clash')
-outside=true; assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed'); outside=false
+assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed')
 x.position=v(10); assert(deactivationReason(s,x,10.11)==nil)
 distance=31; assert(deactivationReason(s,x,10.12)=='clash_distance')
 distance=10; x.targetId=99; s.departedAt=10.2
 assert(deactivationReason(s,x,10.29)==nil)
-assert(deactivationReason(s,x,10.31)==nil,'near opponent lost return clash')
-outside=true; assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
+outside=true; assert(deactivationReason(s,x,10.31)==nil,'initial haunter gate remained active after confirmation')
 """)
 
     def test_frozen_stationary_and_teleported_do_not_deactivate_auto(self):
@@ -142,7 +140,7 @@ local localPlayer={UserId=42}; local frozen=false
 local positions={[99]=v(10),[88]=v(80)}
 gameInfo.getPlayerMotion=function(id) return positions[id] end
 gameInfo.getBallFrozen=function() return frozen end
-local cd={blocking=true,miss=true,windowExpired=false}
+local cd={blocking=true,miss=false,windowExpired=false}
 local cooldownInfo={getDeflectCooldownState=function() return cd end}
 local function freshSnapshot() return true end
 local function distanceLimit() return 140 end
@@ -160,11 +158,13 @@ positions[99]=v(40)
 assert(deactivationReason(state,snapshot,10.01)=='clash_distance','window radius overrode physical clash limit')
 snapshot.targetId=42
 assert(deactivationReason(state,snapshot,10.01)=='clash_distance','incoming target hid far partner')
-positions[99]=v(10); cd.windowExpired=true
-assert(deactivationReason(state,snapshot,10.01)==nil,'near opponent lost spam on miss')
-outside=true; assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','distant miss did not stop')
-frozen=true; assert(deactivationReason(state,snapshot,10.01)=='deflect_miss')
-cd.predictedReset=true; assert(deactivationReason(state,snapshot,10.01)==nil,'predicted parry counted as miss')
+positions[99]=v(10); cd.miss=true
+assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','near opponent hid miss')
+cd.blocking=false; cd.windowExpired=false; cd.predictedReset=true
+assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','confirmed miss was ignored')
+assert(deactivationReason(state,{teleported=true},10.01)=='deflect_miss','teleport hid miss')
+cd.miss=false; frozen=true; assert(deactivationReason(state,snapshot,10.01)==nil)
+
 """)
 
 if __name__ == '__main__': unittest.main()

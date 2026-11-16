@@ -36,16 +36,16 @@ local CONFIG = {
     STATIONARY_TIMEOUT = 0.3,
     STATIONARY_EPSILON = 0.05,
     HAUNTER_CONFIRM_TIMEOUT = 0.1,
-    DASH_ESCAPE_COOLDOWN = 0.05,
+    DASH_ESCAPE_COOLDOWN = 0.1,
     DASH_ESCAPE_MIN_OUTWARD_SPEED = 15,
     DASH_ESCAPE_MIN_HORIZONTAL_RATIO = 0.35,
     DASH_ESCAPE_MIN_SEPARATION_GAIN = 2,
     RETURN_TIMEOUT_MIN_SPEED = 0.4,
     RETURN_TIMEOUT_MAX_SPEED = 0.2,
-    DEFLECT_COOLDOWN_TIMEOUT = 0.09,
-    CLASH_GRACE_PERIOD = 0.15,
-    TARGET_RETURN_TIMEOUT_MIN_SPEED = 0.15,
-    TARGET_RETURN_TIMEOUT_MAX_SPEED = 0.22,
+    DEFLECT_COOLDOWN_TIMEOUT = 0.18,
+    CLASH_GRACE_PERIOD = 0.25,
+    TARGET_RETURN_TIMEOUT_MIN_SPEED = 0.3,
+    TARGET_RETURN_TIMEOUT_MAX_SPEED = 0.4,
     COOLDOWN_PROTECTION_RADIUS = 16,
     RETURN_PROTECTION_RADIUS = 10,
     COOLDOWN_PROTECTION_MAX_SPEED_RADIUS = 40,
@@ -407,6 +407,8 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  local cooldown = cooldownInfo.getDeflectCooldownState()
+  if cooldown and cooldown.miss == true then return "deflect_miss" end
   if snapshot and snapshot.teleported then return nil end
   if snapshot and type(snapshot.targetId) == "number" and snapshot.targetId > 0 and freshSnapshot(snapshot, time) then
     local target = snapshot.targetId ~= localPlayer.UserId and snapshot.targetId or state.partner
@@ -418,27 +420,17 @@ local function deactivationReason(state, snapshot, time)
   end
   local outsideProtection =
     opponentOutside(state, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
-  local cooldown = cooldownInfo.getDeflectCooldownState()
-  if
-    cooldown
-    and cooldown.blocking == true
-    and cooldown.miss == true
-    and cooldown.windowExpired == true
-    and cooldown.predictedReset ~= true
-    and outsideProtection
-  then
-    return "deflect_miss"
-  end
   if gameInfo.getBallFrozen() == true or state.stationary then return nil end
   local escape = dashEscapeRisk(state, state, snapshot, time); state.dashEscape = escape
   if escape and outsideProtection then return escape.reason end
   if cooldownExpired(state, snapshot, time) then return "deflect_cooldown_timeout" end
   if
-    state.reason == "haunter"
-    or state.reason == "haunter_self"
-    or state.reason == "close_target"
-    or state.reason == "dash_incoming"
-    or state.reason == "dash_self"
+    not state.haunterWindowConfirmed
+    and (state.reason == "haunter"
+      or state.reason == "haunter_self"
+      or state.reason == "close_target"
+      or state.reason == "dash_incoming"
+      or state.reason == "dash_self")
   then
     local age = time - (state.activatedAt or time); local fresh = freshSnapshot(snapshot, time) and not snapshot.locked
     local value = fresh and geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR); local ballTarget = fresh and userId(snapshot.targetId)
@@ -450,16 +442,8 @@ local function deactivationReason(state, snapshot, time)
       and finite(targetRange)
       and (snapshot.position - targetPosition).Magnitude <= targetRange + snapshotSpeed(snapshot) * value.effectiveWindow
     if inWindow then state.haunterWindowConfirmed = true end
-    if age >= CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT then
-      if (not state.haunterWindowConfirmed or not fresh) and outsideProtection then return "haunter_window_unconfirmed" end
-      if not fresh then return nil end
-      local opponent = state.partner and gameInfo.getPlayerMotion(state.partner); local limit = distanceLimit(snapshot, state.partner)
-      if (typeof(opponent) ~= "Vector3" or not limit or (opponent - state.root.Position).Magnitude > limit) and outsideProtection then return "opponent_distance" end
-      local target = userId(snapshot.targetId)
-      if target ~= localPlayer.UserId and target ~= state.partner then return "haunter_target_changed" end
-      if target == localPlayer.UserId and not inWindow and outsideProtection then return "haunter_ball_outside_window" end
-      local wait = speedInterval(snapshot, 0.15, 0.04) + networkLatency()
-      if target == state.partner and state.departedAt and time - state.departedAt >= wait and outsideProtection then return "haunter_return_timeout" end
+    if age >= CONFIG.DEACTIVATION.HAUNTER_CONFIRM_TIMEOUT and not state.haunterWindowConfirmed then
+      return "haunter_window_unconfirmed"
     end
   end
   if
