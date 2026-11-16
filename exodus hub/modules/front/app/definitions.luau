@@ -156,11 +156,18 @@ local CONFIG = {
           components = {
             { kind = "toggle", title = "Ativar Anti Lag", key = "AntiLagEnabled" },
             {
+              kind = "toggle",
+              title = "Ocultar abaixo do chão percorrido",
+              description = "Exibe até 5 studs abaixo da menor altura pisada na partida.",
+              key = "AntiLagFloorCull",
+              parentKey = "AntiLagEnabled",
+            },
+            {
               kind = "slider",
               title = "Distância de renderização",
               key = "AntiLagRenderDistance",
               parentKey = "AntiLagEnabled",
-              min = 350,
+              min = 128,
               max = 1200,
               increment = 50,
               valueName = "studs",
@@ -242,6 +249,13 @@ local CONFIG = {
         {
           title = "Universal Controls",
           components = {
+            {
+              kind = "toggle",
+              title = "Infinite Zoom",
+              description = "Remove o limite de distância da câmera.",
+              key = "UniversalInfiniteZoom",
+              feature = "InfiniteZoom",
+            },
             {
               kind = "toggle",
               title = "Infinite Jump",

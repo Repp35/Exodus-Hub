@@ -120,6 +120,12 @@ snap.realPosition=nil; snap.syncDirection=nil; snap.syncAt=nil; snap.syncSpeed=n
 packet(42); assert(fires==1,'optional sync fields blocked valid AP')
 """)
 
+    def test_bounded_sync_lag_does_not_block_near_ball(self):
+        self.check_ap("""
+snap.position=v(10); snap.realPosition=v(70); snap.syncAt=tm-.1
+packet(42); assert(fires==1,'normal sync delay blocked AP')
+""")
+
     def test_raw_target_has_no_confirmation_or_visual_fallback(self):
         source = (ROOT / "aux/gameinfo.luau").read_text()
         target = source[source.index("local function targetId("):source.index("local function findBall()")]

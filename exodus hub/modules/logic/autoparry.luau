@@ -318,7 +318,10 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   if not geometry then return false end
   local threshold = mode == "training" and trainingThreshold or geometry.fullRadius
   if not finite(threshold) or (position - own).Magnitude > threshold then return false end
-  if mode ~= "training" and value.realPosition ~= nil and (value.realPosition - own).Magnitude > threshold then return false end
+  if mode ~= "training" and value.realPosition ~= nil and (value.realPosition - own).Magnitude > threshold then
+    local age = finite(value.syncAt) and math.clamp(time - value.syncAt, 0, 0.15) or 0.15; local tolerance = math.max(6, speed * (age + math.clamp(state.ping, 0, 0.1) + CONFIG.FRAME_BASE))
+    if state.resetPending or (value.position - value.realPosition).Magnitude > tolerance then return false end
+  end
   return true
 end
 local function request(reason)

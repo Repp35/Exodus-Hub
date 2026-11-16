@@ -5,6 +5,7 @@ local Character = {}
 local utils, spam, binds
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
+local startWorker
 
 -- configuration
 local CONFIG = {
@@ -52,7 +53,7 @@ local function bindLife(life)
   end
   if not valid(life) then return end
   if not root or not root:IsA("BasePart") or not root.Parent then
-    deactivate(life, "root_unavailable"); setPhase("invalid", "root_unavailable")
+    life.attempted = false; setPhase("waiting", "root_unavailable")
     return
   end
   for index, entry in ipairs(binds) do
@@ -62,14 +63,17 @@ local function bindLife(life)
     if not valid(life) then detach(entry); return end
     if result ~= true then
       utils.recordError("Character", ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))); detach(entry)
-      deactivate(life, "bind_failed"); setPhase("invalid", "bind_failed")
+      for i = #life.bound, 1, -1 do
+        detach(life.bound[i]); life.bound[i] = nil
+      end
+      life.attempted = false; setPhase("waiting", "bind_failed")
       return
     end
     life.bound[#life.bound + 1] = entry
   end
   if valid(life) then setPhase("bound", "character_bound") end
 end
-local function startWorker()
+startWorker = function()
   if workerRunning then return end
   workerRunning = true
   task.spawn(function()
@@ -82,7 +86,12 @@ local function startWorker()
       utils.recordError("Character", reason); deactivate(life, "bind_error")
       setPhase("invalid", "bind_error")
     end
-    if currentLife and not currentLife.attempted then startWorker() end
+    if currentLife and not currentLife.attempted then
+      local retryLife = currentLife
+      task.delay(0.25, function()
+        if currentLife == retryLife and utils then startWorker() end
+      end)
+    end
   end)
 end
 local function setupCharacter(character)

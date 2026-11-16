@@ -8,6 +8,7 @@ local Utils
 local CONFIG = {
   schema = {
     AntiLagEnabled = "boolean",
+    AntiLagFloorCull = "boolean",
     AntiLagRenderDistance = "rate",
     AntiLagRemoveLighting = "boolean",
     AntiLagRemoveSwordSounds = "boolean",
@@ -17,6 +18,7 @@ local CONFIG = {
   },
   defaults = {
     AntiLagEnabled = false,
+    AntiLagFloorCull = false,
     AntiLagRenderDistance = 350,
     AntiLagRemoveLighting = true,
     AntiLagRemoveSwordSounds = true,
@@ -31,16 +33,16 @@ local PROFILE = {
   StartEnabled = false,
   ShowMenu = false,
   CullEnabled = true,
-  CullView = true,
-  CullVertical = true,
+  CullView = false,
+  CullVertical = false,
   CullAbove = 200,
   CullBelow = 100,
   CullVerticalMargin = 20,
   HideLobbyInMatch = true,
   GameSwordSounds = false,
   CullDistance = 350,
-  CullRestoreMargin = 90,
-  CullKeepNear = 220,
+  CullRestoreMargin = 24,
+  CullKeepNear = 64,
   CullViewPadding = 150,
   CullViewDegrees = 35,
   CullHideDelay = 0.8,
@@ -377,7 +379,7 @@ local function createOptimizer(services, initialConfig)
     if key == "MaxItemsPerFrame" then value = math.floor(math.clamp(value, 8, 1000)) end
     if key == "ReapplyInterval" then value = math.clamp(value, 0.1, 2) end
     local bounds = {
-      CullDistance = { 350, 1200 },
+      CullDistance = { 128, 1200 },
       CullRestoreMargin = { 30, 150 },
       CullKeepNear = { 80, 300 },
       CullViewPadding = { 50, 300 },
@@ -649,6 +651,7 @@ local function spatialDecision(distance, projection, radius, previous, outsideSi
   return nil, outsideSince
 end
 local function verticalDecision(minY, maxY, cameraY, previous, options)
+  if options.CullFloorY and maxY < options.CullFloorY then return "floor" end
   if not options.CullVertical then return nil end
   local margin = options.CullVerticalMargin or 20
   local above = (options.CullAbove or 200) - (if previous == "above" then margin else 0)
@@ -846,6 +849,7 @@ local function createSpatialController(services, getOption)
       }
 
       if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
+      if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
       cycling, stepsLeft = true, #chunkList; nextCycleAt = now + option("CullInterval", 0.12)
     end
     while cycling and count < 160 and os.clock() < deadline do
@@ -931,7 +935,7 @@ end
 local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or CONFIG.defaults.AntiLagRenderDistance
   if distance ~= distance then distance = CONFIG.defaults.AntiLagRenderDistance end
-  profile.CullDistance = math.clamp(distance, 350, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
+  profile.CullDistance = math.clamp(distance, 128, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
   profile.Lights, profile.Shadows, profile.FlatLighting = not lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
   profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.NoFog, profile.Atmosphere = not fog, not fog
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = not effects, not effects, not effects; profile.PostEffects, profile.Clouds, profile.FlatSky = not effects, not effects, not effects
@@ -1007,6 +1011,17 @@ local function startSession()
     GetFocusY = function()
       local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
       return root and root.Position.Y or nil
+    end,
+    GetFloorY = function()
+      if not setting("AntiLagFloorCull") then owner.floorY = nil; return nil end
+      local character = player.Character
+      if owner.floorCharacter ~= character then owner.floorCharacter, owner.floorY = character, nil end
+      local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
+      if workspace:GetAttribute("MatchStatus") ~= 6 or (player:GetAttribute("Lives") or 0) <= 0 then owner.floorY = nil; return nil end
+      if root and humanoid and humanoid.Health > 0 and humanoid.FloorMaterial ~= Enum.Material.Air then
+        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
+      end
+      return owner.floorY and owner.floorY - 5 or nil
     end,
     OnHidden = function(object, hidden)
       owner.masks[object] = if hidden then true else nil
