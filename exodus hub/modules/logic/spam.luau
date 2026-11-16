@@ -137,7 +137,8 @@ local function sync()
               for _ = 1, count do
                 if not guard() then credit = 0; break end
                 local sent, detail = request(boundUtils, dispatch, token, sample)
-                if sent == false and detail == "Deflect cancelado" then credit = 0; break end
+                -- Fierce Deflect can cancel an individual deflect, but must not interrupt manual spam.
+                if sent == false and detail == "Deflect cancelado" and not boundUtils.isManualSpamActive() then credit = 0; break end
               end
             end
           else
