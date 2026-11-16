@@ -168,6 +168,9 @@ function Cooldown.getDeflectCooldownState()
   cooldown.blocking = cooldown.active; cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
   local pendingAt = ability and ability.PendingPressAt; local pendingUntil = ability and ability.PendingPredictUntil
   if finite(pendingAt) and pendingAt > 0 and pendingAt <= time then Cooldown.recordDeflectAttempt(pendingAt) end
+  if deflectAttempt and finite(pendingAt) and pendingAt == deflectAttempt.pressedAt and finite(pendingUntil) then
+    deflectAttempt.windowEndsAt = math.max(deflectAttempt.windowEndsAt or pendingUntil, pendingUntil)
+  end
   if cooldown.blocking then
     if previousBlocking ~= true then blockingSince = time; cooldownEpisode = (cooldownEpisode or 0) + 1 end
   elseif cooldown.blocking == false then
@@ -184,6 +187,7 @@ function Cooldown.getDeflectCooldownState()
     if parried then attempt.missed = false elseif missActive then attempt.missed = true end
   end
   cooldown.pressAt = attempt and attempt.pressedAt or nil; cooldown.missDeadline = pendingOpen and pendingUntil or nil
+  cooldown.windowEndsAt = attempt and attempt.windowEndsAt or nil; cooldown.windowExpired = finite(cooldown.windowEndsAt) and time >= cooldown.windowEndsAt
   cooldown.miss = not parried and (missActive or (attempt and attempt.missed == true)) or false; cooldown.outcome = parried and "parried" or (cooldown.miss and "miss" or "pending")
   if parried then cooldown.phase = "reverted"
   elseif cooldown.blocking == true and pendingOpen then cooldown.phase = "reversible"

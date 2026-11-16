@@ -32,6 +32,7 @@ local CONFIG = {
     DASH_DETECTION_RANGE = 70,
   },
   DEACTIVATION = {
+    MAX_CLASH_DISTANCE = 35,
     STATIONARY_TIMEOUT = 0.3,
     STATIONARY_EPSILON = 0.05,
     HAUNTER_CONFIRM_TIMEOUT = 0.1,
@@ -363,6 +364,10 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     return false
   end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
+  if partner then
+    local opponent = gameInfo.getPlayerMotion(partner)
+    if typeof(opponent) ~= "Vector3" or (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then return false end
+  end
   local targetPosition = dashPrediction and snapshot.targetId == partner and gameInfo.getPlayerMotion(partner) or state.root.Position
   if typeof(targetPosition) ~= "Vector3" then return false end
   local toward = targetPosition - snapshot.position
@@ -389,7 +394,9 @@ local function deactivate(state, reason, time)
   time = time or now()
   if state.active then
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
-    if reason == "deflect_cooldown_timeout" or reason == "opponent_dash_escape" or reason == "self_dash_escape" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
+    if reason == "deflect_miss" or reason == "deflect_cooldown_timeout" or reason == "opponent_dash_escape" or reason == "self_dash_escape" then
+      state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target
+    end
     lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
@@ -402,6 +409,16 @@ local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if snapshot and snapshot.teleported then return nil end
+  if snapshot and type(snapshot.targetId) == "number" and snapshot.targetId > 0 and freshSnapshot(snapshot, time) then
+    local target = snapshot.targetId ~= localPlayer.UserId and snapshot.targetId or state.partner
+    if target then
+      local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
+      local maximum = CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE or 35; limit = finite(limit) and math.min(limit, maximum) or maximum
+      if typeof(position) == "Vector3" and (position - state.root.Position).Magnitude > limit then return "clash_distance" end
+    end
+  end
+  local cooldown = cooldownInfo.getDeflectCooldownState()
+  if cooldown and cooldown.blocking == true and cooldown.miss == true and cooldown.windowExpired == true and cooldown.predictedReset ~= true then return "deflect_miss" end
   if gameInfo.getBallFrozen() == true or state.stationary then return nil end
   local escape = dashEscapeRisk(state, state, snapshot, time); state.dashEscape = escape
   if escape then return escape.reason end
@@ -445,20 +462,6 @@ local function deactivationReason(state, snapshot, time)
     and opponentOutside(state, CONFIG.DEACTIVATION.RETURN_PROTECTION_RADIUS, CONFIG.DEACTIVATION.RETURN_PROTECTION_MAX_SPEED_RADIUS, snapshot, time)
   then
     return "target_return_timeout"
-  end
-  if
-    snapshot
-    and gameInfo.isSnapshotValid(snapshot)
-    and snapshot.targetUncertain ~= true
-    and not snapshot.teleported
-    and not snapshot.locked
-    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
-  then
-    local target = userId(snapshot.targetId)
-    if target and target ~= localPlayer.UserId and target ~= state.partner then
-      local position = gameInfo.getPlayerMotion(target); local value = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
-      if typeof(position) == "Vector3" and value and (position - state.root.Position).Magnitude > value.fullRadius then return "target_outside_window" end
-    end
   end
 end
 local function checkDeactivation(state, snapshot, time)
@@ -961,8 +964,11 @@ function AutoSpam.canSend()
     and utils.isActive()
     and utils.getConfigValue("AutoSpam") == true
 end
-function AutoSpam.stopSpam()
-  if current then deactivate(current, "stop_spam", now()) end
+function AutoSpam.stopSpam(reason)
+  if current then
+    if reason == "fierce_rescue" then current.timeoutBlocked, current.timeoutBlockedTarget = true, current.target end
+    deactivate(current, reason == "fierce_rescue" and reason or "stop_spam", now())
+  end
 end
 function AutoSpam.getDashData()
   local state = current

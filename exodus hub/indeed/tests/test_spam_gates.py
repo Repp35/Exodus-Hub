@@ -83,6 +83,7 @@ local function targetReturnTimeout() return .2 end
 local function opponentOutside() return false end
 local function snapshotSpeed(s) return s.speed end
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local cooldownInfo={getDeflectCooldownState=function() return nil end}
 localPlayer={UserId=42}; local distance=10
 local gameInfo={isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getPlayerMotion=function() return v(distance) end,getPlayerRawRadius=function() return 8 end}
 local s={reason='haunter',activatedAt=10,root={Position=v(0)},partner=99,target=42}
@@ -91,7 +92,7 @@ local x={targetId=42,position=v(25),speed=600}
 assert(deactivationReason(s,x,10.05)==nil)
 assert(deactivationReason(s,x,10.11)=='haunter_window_unconfirmed')
 x.position=v(10); assert(deactivationReason(s,x,10.11)==nil)
-distance=31; assert(deactivationReason(s,x,10.12)=='opponent_distance')
+distance=31; assert(deactivationReason(s,x,10.12)=='clash_distance')
 distance=10; x.targetId=99; s.departedAt=10.2
 assert(deactivationReason(s,x,10.29)==nil)
 assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
@@ -101,6 +102,7 @@ assert(deactivationReason(s,x,10.31)=='haunter_return_timeout')
         code = section('local function deactivationReason(', 'local function checkDeactivation(')
         run_lua("""
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local cooldownInfo={getDeflectCooldownState=function() return nil end}
 local frozen=true; local gameInfo={getBallFrozen=function() return frozen end}
 local s={stationary=false}
 """ + code + """
@@ -111,7 +113,7 @@ s.stationary=false; assert(deactivationReason(s,{teleported=true},10)==nil)
 
     def test_teleport_packet_preserves_state_and_sending(self):
         packet=section('function AutoSpam.onBallSync(', '-- public-api')
-        send=section('function AutoSpam.canSend()', 'function AutoSpam.stopSpam()')
+        send=section('function AutoSpam.canSend()', 'function AutoSpam.stopSpam(')
         run_lua("""
 local current={active=true,sequence=5,partner=99,root={Parent=true},character={Parent=true}}
 local AutoSpam={}
@@ -123,6 +125,38 @@ local function checkDeactivation() end
 AutoSpam.onBallSync({Source='packet',Teleported=true,Sequence=900})
 assert(current.active and current.sequence==5 and current.partner==99)
 assert(AutoSpam.canSend(),'teleport paused outgoing spam')
+""")
+
+    def test_far_target_and_expired_miss_stop_even_with_large_window(self):
+        code = section('local function deactivationReason(', 'local function checkDeactivation(')
+        run_lua(PRELUDE + """
+CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE=35
+CONFIG.DEACTIVATION.CLASH_GRACE_PERIOD=.15
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local localPlayer={UserId=42}; local frozen=false
+local positions={[99]=v(10),[88]=v(80)}
+gameInfo.getPlayerMotion=function(id) return positions[id] end
+gameInfo.getBallFrozen=function() return frozen end
+local cd={blocking=true,miss=true,windowExpired=false}
+local cooldownInfo={getDeflectCooldownState=function() return cd end}
+local function freshSnapshot() return true end
+local function distanceLimit() return 140 end
+local function geometry() return {fullRadius=200} end
+local function dashEscapeRisk() end
+local function cooldownExpired() return false end
+local state={root={Position=v(0)},partner=99,target=88,activatedAt=10}
+local snapshot={targetId=88,position=v(10),speed=600}
+""" + code + """
+assert(deactivationReason(state,snapshot,10.01)=='clash_distance','distant third target kept spam alive')
+snapshot.targetId=99; assert(deactivationReason(state,snapshot,10.01)==nil,'near clash stopped')
+positions[99]=v(40)
+assert(deactivationReason(state,snapshot,10.01)=='clash_distance','window radius overrode physical clash limit')
+snapshot.targetId=42
+assert(deactivationReason(state,snapshot,10.01)=='clash_distance','incoming target hid far partner')
+positions[99]=v(10); cd.windowExpired=true
+assert(deactivationReason(state,snapshot,10.01)=='deflect_miss','near opponent hid expired miss')
+frozen=true; assert(deactivationReason(state,snapshot,10.01)=='deflect_miss')
+cd.predictedReset=true; assert(deactivationReason(state,snapshot,10.01)==nil,'predicted parry counted as miss')
 """)
 
 if __name__ == '__main__': unittest.main()

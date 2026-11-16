@@ -75,6 +75,7 @@ assert(AutoSpam.canSendManual()); assert(manualOn and observedReason==nil)
         run_lua("""
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
 local gameInfo={getBallFrozen=function() return false end}
+local cooldownInfo={getDeflectCooldownState=function() end}
 local function dashEscapeRisk() return {reason='opponent_dash_escape'} end
 local function cooldownExpired() error('slow cooldown gate called first') end
 local state={active=true}; local snapshot={}

@@ -21,6 +21,10 @@ Client refusal leaves the AP armed and uses the available retry delay instead of
 
 ## Validation and limits
 
+AutoSpam exits when the confirmed opponent or outgoing target exceeds its separation limit, capped at the game's 35-stud clash distance. The speed-expanded ball window cannot extend that limit. An expired pending deflect that remains on cooldown stops AutoSpam and blocks reactivation until the cooldown clears.
+
+AutoFierce suppresses routine clash cooldowns only while the clash is active. A confirmed expired miss or an imminent kill with no usable pending parry can trigger rescue even if the game's clash context lingers. The final dispatch rechecks the target, cooldown, pending window and ability availability, stops spam, blocks automatic reactivation during cooldown, and acquires one AP lock. A pending parry that can still intercept the ball and a cooldown that recovers before danger preserve Fierce.
+
 Targeted checks cover 30/60/144/240 FPS, high speed, pressured windows, visual/server position disagreement, callback ordering, packet metadata, adaptive safety margins and short client-throttle retries. These use explicit engine doubles, including a simulator double; they do not reproduce Roblox's complete physics or networking. The production path delegates curved motion to the game's simulator instead of replacing it with a linear approximation.
 
 The predictor has bounded packet age and a visual fallback. Cooldown, frozen/reset state, late packets, scheduler stalls and server changes can still prevent a successful parry. No timing factor can guarantee survival under every network or frame stall.
