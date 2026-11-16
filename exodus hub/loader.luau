@@ -730,6 +730,27 @@ local function clashInProgress(loaded)
   end
   return false
 end
+local function matchInProgress()
+  local loaded = Exodus.Context
+  if type(loaded) ~= "table" or type(loaded.gameinfo) ~= "table" or type(loaded.gameinfo.getGameContext) ~= "function" then return false end
+  local ok, context = pcall(loaded.gameinfo.getGameContext)
+  return ok and type(context) == "table" and (context.roundActive == true or context.inMatch == true or context.area == "match")
+end
+local function waitForMatchToEnd(onWaiting)
+  local waiting, clearSince = false, nil
+  while Exodus.Started == true do
+    if matchInProgress() then
+      if not waiting and type(onWaiting) == "function" then onWaiting() end
+      waiting, clearSince = true, nil
+    else
+      if not waiting then return true end
+      clearSince = clearSince or os.clock()
+      if os.clock() - clearSince >= 0.75 then return true end
+    end
+    task.wait(0.1)
+  end
+  return false
+end
 local function waitForClashToEnd(onWaiting)
   local loaded = Exodus.Context
   if type(loaded) ~= "table" or type(loaded.utils) ~= "table" then return true end
@@ -785,6 +806,14 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
     then
       clearPersistent("update"); reloadInFlight = false
       return
+    end
+    if
+      not waitForMatchToEnd(function()
+        if automatic then notifyPersistent("Update queued: waiting for match to end", "update", "info") end
+      end)
+    then
+      if automatic then clearPersistent("update") end
+      reloadInFlight = false; return
     end
     if
       not waitForClashToEnd(function()
