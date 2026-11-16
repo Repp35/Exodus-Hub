@@ -27,6 +27,27 @@ assert(not config.validatePatch({AntiLagEnabled='yes'}))
 assert(not config.validatePatch({AntiLagRenderDistance=math.huge}))
 """)
 
+    def test_optional_terrain_failure_is_reported_in_status_without_warning(self):
+        from test_raw_target_parry import run_lua
+        report = SOURCE[SOURCE.index('  local function reportUnavailable('):SOURCE.index('  local function inScope(')]
+        report = report.replace('unsupportedCount += 1', 'unsupportedCount = unsupportedCount + 1')
+        status = SOURCE[SOURCE.index('  function controller:GetStatus()'):SOURCE.index('  function controller:Destroy()')]
+        run_lua("""
+table.clone=function(t) local copy={} for k,v in pairs(t) do copy[k]=v end return copy end
+local unsupported={};local unsupportedCount=0;local warnings=0
+warn=function() warnings=warnings+1 end
+local controller={};local enabled,alive,destroying,workerRunning=false,true,false,false
+local records={};local changedProperties,restoreFailures,runtimeFailures,generation=0,0,0,0
+local function workAvailable() return false end
+"""+report+status+"""
+reportUnavailable('Terrain.Decoration');reportUnavailable('Terrain.Decoration')
+assert(warnings==0 and unsupportedCount==1)
+local s=controller:GetStatus();assert(s.UnsupportedProperties['Terrain.Decoration'] and s.Unsupported==1)
+s.UnsupportedProperties['Terrain.Decoration']=nil
+assert(controller:GetStatus().UnsupportedProperties['Terrain.Decoration'],'status exposed mutable internal state')
+reportUnavailable('Lighting.Unknown');assert(warnings==1 and unsupportedCount==2,'other unsupported failures were hidden')
+""")
+
     def test_children_only_appear_while_active_on_desktop_and_mobile(self):
         for desktop in (True, False):
             with self.subTest(desktop=desktop):

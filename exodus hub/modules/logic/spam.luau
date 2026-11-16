@@ -243,7 +243,7 @@ Spam.__contract = {
     AutoSpam = "autospam",
   },
   requiresMethods = {
-    Remote = { "fireParry" },
+    Remote = { "fireParry", "prepareParry" },
     AutoSpam = { "canSend", "canSendManual" },
     GameInfo = { "getAutoSpamDelay", "getMinimumSpamInterval" },
     Utils = {

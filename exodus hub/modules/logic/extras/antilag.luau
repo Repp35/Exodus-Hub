@@ -106,7 +106,7 @@ local function createOptimizer(services, initialConfig)
   local function reportUnavailable(key)
     if not unsupported[key] then
       unsupported[key] = true; unsupportedCount += 1
-      warn("[AntiLag] Ajuste indisponivel neste cliente: " .. key)
+      if key ~= "Terrain.Decoration" then warn("[AntiLag] Ajuste indisponivel neste cliente: " .. key) end
     end
   end
   local function unavailable(object, property) reportUnavailable(object.ClassName .. "." .. property) end
@@ -416,6 +416,7 @@ local function createOptimizer(services, initialConfig)
       Instances = #records,
       Properties = changedProperties,
       Unsupported = unsupportedCount,
+      UnsupportedProperties = table.clone(unsupported),
       RestoreFailures = restoreFailures,
       RuntimeFailures = runtimeFailures,
       Generation = generation,
