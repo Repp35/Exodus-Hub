@@ -555,12 +555,8 @@ end
 function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.canSendManual()
   local state = current
-  -- Manual spam has no automatic cooldown, miss, snapshot or opponent gates.
-  -- Only explicit manual toggle/hub shutdown and missing character prevent sending.
   if not state or not utils or not utils.isActive() or not utils.isManualSpamActive() then return false end
-  return state.root ~= nil and state.root.Parent ~= nil
-    and state.character ~= nil and state.character.Parent ~= nil
-    and playerIsAlive(localPlayer.UserId)
+  return state.root ~= nil and state.root.Parent ~= nil and state.character ~= nil and state.character.Parent ~= nil and playerIsAlive(localPlayer.UserId)
 end
 function AutoSpam.canSend()
   local state = current
