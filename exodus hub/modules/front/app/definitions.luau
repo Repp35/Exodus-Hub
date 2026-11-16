@@ -244,6 +244,13 @@ local CONFIG = {
           components = {
             {
               kind = "toggle",
+              title = "Infinite Zoom",
+              description = "Remove o limite de distância da câmera.",
+              key = "UniversalInfiniteZoom",
+              feature = "InfiniteZoom",
+            },
+            {
+              kind = "toggle",
               title = "Infinite Jump",
               description = "Permite pular no ar.",
               key = "UniversalInfiniteJump",
