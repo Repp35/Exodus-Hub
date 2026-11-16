@@ -9,6 +9,9 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.36,
+    SELF_RETURN_MIN_TIME = 0.30,
+    SELF_RETURN_MAX_TIME = 0.10,
+    SELF_RETURN_DIRECTION_RATIO = 0.12,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
     CLOSE_INSTANT_DISTANCE = 2,
@@ -69,7 +72,7 @@ local function clearEvidence(state)
   state.outbound, state.pending, state.close, state.haunter, state.closeArm = nil, nil, nil, nil, nil
 end
 local function resetTargets(state)
-  clearEvidence(state); state.target, state.previousOpponent = nil, nil
+  clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -321,7 +324,50 @@ local function dashPrediction(state, s, time)
   end
   return nil, lastGate
 end
+local function consistentSelfReturn(state, s, time)
+  local me = localPlayer.UserId
+  local tracker = state.selfReturn
+  if s.targetId ~= me or not vector(s.position) or not vector(s.velocity) then
+    state.selfReturn = nil
+    return nil
+  end
+  local speed = snapshotSpeed(s)
+  local low, high = gameInfo.getBallSpeedLimits()
+  if not speed or not finite(low) or not finite(high) or high <= low then return nil end
+  local delta = state.root.Position - s.position
+  local distance = delta.Magnitude
+  if distance < 0.1 then return nil end
+  local radial = s.velocity:Dot(delta) / distance
+  local direction = radial > speed * CONFIG.ACTIVATION.SELF_RETURN_DIRECTION_RATIO and "incoming"
+    or radial < -speed * CONFIG.ACTIVATION.SELF_RETURN_DIRECTION_RATIO and "outgoing" or nil
+  if not direction then return nil end
+  if not tracker or tracker.ball ~= s.ball or time - tracker.lastAt > 0.15 then
+    tracker = { ball = s.ball, direction = direction, lastAt = time, switches = 0 }
+    state.selfReturn = tracker
+    return nil
+  end
+  tracker.lastAt = time
+  if direction ~= tracker.direction then
+    if tracker.direction == "outgoing" and direction == "incoming" then
+      tracker.returnAt = time
+      tracker.switches += 1
+    end
+    tracker.direction = direction
+  end
+  local fraction = math.clamp((speed - low) / (high - low), 0, 1)
+  local duration = CONFIG.ACTIVATION.SELF_RETURN_MIN_TIME
+    + (CONFIG.ACTIVATION.SELF_RETURN_MAX_TIME - CONFIG.ACTIVATION.SELF_RETURN_MIN_TIME) * fraction
+  if direction ~= "incoming" or tracker.switches < 1 or not tracker.returnAt
+    or time - tracker.returnAt < duration then return nil end
+  if not ballWindow(state, s, me) then return nil end
+  local partner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
+    or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
+  return partner
+end
 local function chooseActivation(state, s, time)
+  local selfReturnPartner = consistentSelfReturn(state, s, time)
+  state.gates.selfReturn = selfReturnPartner and "ready" or "self_return_waiting"
+  if selfReturnPartner then return "consistent_self_return", selfReturnPartner end
   local prediction, dashGate = dashPrediction(state, s, time); state.dashPrediction, state.gates.dash = prediction, dashGate
   if prediction then return prediction.reason, prediction.partner, prediction.at end
   local pending = state.pending; state.gates.returnTarget = not pending and "return_no_round_trip" or "return_expired"
@@ -497,6 +543,7 @@ function AutoSpam.bindCharacter(character)
     lastGate = "waiting",
     gates = {},
     stopEvents = {},
+    selfReturn = nil,
     lastRootPosition = root.Position,
     lastTickAt = -math.huge,
   }
