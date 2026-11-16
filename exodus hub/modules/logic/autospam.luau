@@ -933,8 +933,7 @@ function AutoSpam.canSendManual()
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.miss == true then
     state.manual = nil; utils.setManualSpamActive(false)
-    utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss")
-    return false
+    utils.recordTransition("ManualSpam", "active", "inactive", "deflect_miss"); return false
   end
   return true
 end
