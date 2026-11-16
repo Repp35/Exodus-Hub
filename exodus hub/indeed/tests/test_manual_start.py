@@ -36,7 +36,8 @@ on=true; current.manual=nil; current.stationary=true; distance=100; time=30
 cd.blocking=true; cd.blockingSince=30
 assert(AutoSpam.canSendManual() and on)
 time=30.199; assert(AutoSpam.canSendManual() and on,'cooldown stopped before 200ms')
-time=30.201; assert(not AutoSpam.canSendManual() and not on,'cooldown above 200ms did not stop')
+time=30.201; assert(AutoSpam.canSendManual() and on,'cooldown disabled manual spam')
+time=100; assert(AutoSpam.canSendManual() and on,'long cooldown disabled manual spam')
 ''')
 
 if __name__ == '__main__': unittest.main()

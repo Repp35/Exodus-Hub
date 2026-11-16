@@ -372,12 +372,14 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
     local timing = matchTiming(value, time, own)
     if not timing or not timing.ready then return false end
     matchGeometry = timing.geometry
-    if value.predicted == true then return true end
   end
   local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed; local geometry = matchGeometry or radius(speed, activeWindowFactor(time))
   if not geometry then return false end
   local threshold = mode == "training" and trainingThreshold or geometry.fullRadius
   if not finite(threshold) or (position - own).Magnitude > threshold + CONFIG.DISTANCE_EPSILON then return false end
+  if mode ~= "training" and value.predicted == true then
+    if not vector(value.visualPosition) or (value.visualPosition - own).Magnitude > threshold + CONFIG.DISTANCE_EPSILON then return false end
+  end
   if mode ~= "training" and value.realPosition ~= nil and (value.realPosition - own).Magnitude > threshold then
     local age = finite(value.syncAt) and math.clamp(time - value.syncAt, 0, 0.15) or 0.15; local tolerance = math.max(6, speed * (age + math.clamp(state.ping, 0, 0.1) + CONFIG.FRAME_BASE))
     if state.resetPending or (value.position - value.realPosition).Magnitude > tolerance then return false end
@@ -576,7 +578,7 @@ local function tick(character, root, generation)
   local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or tonumber(value.speed) or 0
   if state.resetPending then
     local real = value.realPosition; local tolerance = math.max(6, math.max(speed, 0) * 0.15)
-    if value.predicted ~= true and (not vector(real) or (position - real).Magnitude > tolerance) then
+    if not vector(real) or (position - real).Magnitude > tolerance then
       state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "reset_position_pending")
       return
     end

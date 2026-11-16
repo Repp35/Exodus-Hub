@@ -114,6 +114,16 @@ snap.position=v(10); snap.realPosition=v(10); tm=tm+1
 frameCb(1/60); assert(fires==1,'did not recover after valid nearby data')
 """)
 
+    def test_predicted_near_ball_cannot_override_distant_visual_on_reset(self):
+        self.check_ap("""
+r.fireParry=function(_,guard) if not guard() then return false end fires=fires+1; return true end
+snap.predicted=true; snap.position=v(10); snap.visualPosition=v(300); snap.realPosition=v(300)
+packet(42); assert(fires==0,'prediction clicked while visible ball was far away')
+assert(not ap.fire()); assert(not ap.tryRedirectReturn(snap,tm))
+snap.visualPosition=v(10); snap.realPosition=v(10); tm=tm+1
+frameCb(1/60); assert(fires==1,'nearby ball did not recover')
+""")
+
     def test_optional_sync_fields_can_be_absent(self):
         self.check_ap("""
 snap.realPosition=nil; snap.syncDirection=nil; snap.syncAt=nil; snap.syncSpeed=nil

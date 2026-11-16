@@ -90,15 +90,16 @@ clashing=true;assert(math.abs(gi.getDeflectWindow(600)-.32)<1e-9)
 pressure=1;assert(math.abs(gi.getDeflectWindow(600)-.03)<1e-9)
 ''')
 
-    def test_predicts_from_timestamp_without_waiting_for_visual_ball(self):
+    def test_prediction_waits_for_visual_ball_in_range(self):
         self.check('''
 ping=.05;publish(75,600,.1,200)
 local raw=gi.getSnapshotAt(tm);local predicted=gi.getParrySnapshot(tm)
 assert(raw.position.X==200 and math.abs(predicted.position.X-75)<1e-8)
 assert(predicted.predicted and predicted.predictionAge>.09)
 local calls=simCalls;assert(gi.getParrySnapshot(tm)==predicted and simCalls==calls,'prediction cache recomputed same frame')
-frame:Fire(1/60);assert(fires==1,'visual lag blocked the valid server-time window')
-assert(firedDistance>4)
+frame:Fire(1/60);assert(fires==0,'distant visual ball allowed a ghost click')
+tm=tm+.2;publish(75,600,0,75);frame:Fire(1/60)
+assert(fires==1 and firedDistance>4,'nearby ball did not recover')
 ''')
 
     def test_new_packet_before_replicator_callback_keeps_simulation_metadata(self):
@@ -117,7 +118,7 @@ assert(decoded.NoSpeedFeel and decoded.CurveTime==.2 and decoded.CurveTimeMax==1
 assert(decoded.CurveAxis.Y==1 and decoded.BouncesLeft==2 and decoded.FlightTime==.5)
 assert(gi.applyPacket(decoded));assert(provider.lastSeq==1)
 frame:Fire(1/60)
-assert(fires==1 and math.abs(firedDistance-75)<1e-6,'packet waited for old replicator/visual state')
+assert(fires==0,'new packet bypassed the distant visual ball')
 ''')
 
     def test_visual_ball_near_kill_radius_cannot_force_an_early_click(self):
@@ -125,7 +126,9 @@ assert(fires==1 and math.abs(firedDistance-75)<1e-6,'packet waited for old repli
 publish(250,600,0,4)
 frame:Fire(1/60);assert(fires==0,'visual grace position overrode authoritative state')
 publish(75,600,0,250);frame:Fire(1/60)
-assert(fires==1,'failed to click when authoritative ball entered window')
+assert(fires==0,'distant visual ball allowed a ghost click')
+tm=tm+.2;publish(75,600,0,75);frame:Fire(1/60)
+assert(fires==1,'failed to click when both positions entered window')
 ''')
 
     def test_high_speed_crosses_window_before_kill_at_multiple_frame_rates(self):

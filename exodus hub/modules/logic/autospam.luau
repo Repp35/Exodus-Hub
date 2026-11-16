@@ -36,7 +36,6 @@ local CONFIG = {
     STATIONARY_TIMEOUT = 0.3,
     STATIONARY_EPSILON = 0.05,
     HAUNTER_CONFIRM_TIMEOUT = 0.1,
-    MANUAL_COOLDOWN_TIMEOUT = 0.2,
     DASH_ESCAPE_COOLDOWN = 0.05,
     DASH_ESCAPE_MIN_OUTWARD_SPEED = 15,
     DASH_ESCAPE_MIN_HORIZONTAL_RATIO = 0.35,
@@ -937,21 +936,6 @@ function AutoSpam.canSendManual()
     return false
   end
   if not utils.isActive() or not state.root.Parent or not state.character.Parent then return false end
-  local time = now(); local manual = state.manual
-  if not manual then manual = { activatedAt = time }; state.manual = manual end
-  local reason
-  local cooldown = cooldownInfo.getDeflectCooldownState()
-  if cooldown and cooldown.blocking == true then
-    local start = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or manual.deflectCooldownSince or time
-    manual.deflectCooldownSince = math.max(manual.activatedAt, start)
-  else
-    manual.deflectCooldownSince = nil
-  end
-  if manual.deflectCooldownSince and time - manual.deflectCooldownSince > CONFIG.DEACTIVATION.MANUAL_COOLDOWN_TIMEOUT then reason = "deflect_cooldown_timeout" end
-  if reason then
-    state.manual = nil; utils.setManualSpamActive(false)
-    utils.recordTransition("ManualSpam", "active", "inactive", reason); return false
-  end
   return true
 end
 function AutoSpam.canSend()
