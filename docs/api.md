@@ -85,16 +85,21 @@ clash. Animar a troca de interface pertence ao controller lifecycle.
 | Configuração | Padrão | Efeito |
 | --- | --- | --- |
 | AntiLagEnabled | false | Ativa o otimizador e seu journal reversível. |
-| AntiLagRenderDistance | 128 | Distância de renderização do cenário. |
+| AntiLagRenderDistance | 200 | Raio ao redor do personagem para cenário, personagens, bolas, efeitos e indicadores no mundo. |
 | AntiLagFloorCull | true | Usa a menor altura pisada, com margem de 5 studs; mantém peças potencialmente visíveis no campo de visão. |
-| AntiLagClashCull | false | Limita o cenário a 60 studs por direção do personagem e ao piso durante clash. |
-| AntiLagRemoveTextures | false | Oculta texturas do cenário, preservando cores, geometria e física. |
 
-O culling usa limites de cada peça e planos da câmera com margem. Indexação,
-ocultação e restauração têm orçamento por tick. Personagens, bolas e objetos
-marcados com `AntiLagKeepVisible` são preservados. O filtro não desliga colisões,
-toque ou consulta física. Uma peça grande que cruza um limite é mantida inteira.
+O culling usa limites de cada objeto e planos da câmera com margem apenas para
+o campo de visão. A distância não tem margem adicional nem exceções para
+personagens, bolas, indicadores ou objetos `AntiLagKeepVisible`. Peças móveis são
+reavaliadas; efeitos, luzes, nomes e interfaces 3D usam a posição de seu suporte
+ou Adornee. Ocultar partículas e trails também limpa os rastros já emitidos.
 
-Decals/textures são ocultados, texturas de mesh são limpas por suas propriedades
-compatíveis e SurfaceAppearance é estacionado temporariamente fora da cena.
-O journal restaura os objetos e valores ao desligar a opção ou a sessão.
+Indexação, ocultação e restauração têm orçamento por frame. O journal restaura
+as propriedades ao desligar o recurso; colisões, toque e consultas físicas não
+são alterados. Texturas são preservadas.
+
+O filtro atua sobre instâncias: peças e beams que cruzam o limite são mantidos
+inteiros para preservar o trecho próximo. A API pública não oferece recorte
+esférico por pixel nem corte local do Terrain sólido sem alterar voxels. Efeitos
+emitidos de dentro do raio podem se estender além dele; isso não é um far clip
+global do motor. Mudanças são aplicadas gradualmente conforme o orçamento.

@@ -19,8 +19,8 @@ class AntiLagTests(unittest.TestCase):
 assert(config.register('antilag',definition))
 local defaults=config.defaults()
 assert(defaults.AntiLagEnabled==false and defaults.AntiLagRemoveSwordSounds==true)
-assert(defaults.AntiLagRenderDistance==128 and defaults.AntiLagFloorCull==true)
-assert(defaults.AntiLagClashCull==false and defaults.AntiLagRemoveTextures==false)
+assert(defaults.AntiLagRenderDistance==200 and defaults.AntiLagFloorCull==true)
+assert(defaults.AntiLagClashCull==nil and defaults.AntiLagRemoveTextures==nil)
 assert(defaults.AntiLagRemoveLighting==true and defaults.AntiLagHideLobby==true)
 assert(defaults.AntiLagRemoveFog==true and defaults.AntiLagRemoveEffects==true)
 assert(config.validatePatch({AntiLagEnabled=true,AntiLagRenderDistance=950}))
@@ -74,31 +74,3 @@ assert(listenerCount()==baseline and activeTweenCount()==0)
 
 if __name__ == "__main__":
     unittest.main()
-
-class TexturePolicy(unittest.TestCase):
-    def test_texture_removal_changes_only_visual_properties_and_keeps_color(self):
-        from test_raw_target_parry import run_lua
-        protected = SOURCE[SOURCE.index('  local function isProtectedVisual('):SOURCE.index('  local function desiredFor(')]
-        desired = SOURCE[SOURCE.index('  local function desiredFor('):SOURCE.index('  local function removeEntry(')]
-        desired = desired.replace('if options.TransparentWater then 1 else 0', '(options.TransparentWater and 1 or 0)')
-        run_lua('''
-local Workspace={};local Lighting={};local services={GameSettings={}}
-local journal={};local textureParking={};local emptyTextureContent=nil
-local function read(object,property) return true,object[property] end
-local options={RemoveTextures=true};local Enum={Material={SmoothPlastic='smooth'}}
-local function object(class)
- return {Parent=Workspace,Name='scenery',Color='red',CanCollide=true,CanTouch=true,CanQuery=true,
-  IsA=function(_,kind) return kind==class or (class=='MeshPart' and kind=='BasePart') end,
-  GetAttribute=function() end}
-end
-''' + protected + desired + '''
-local part=object('MeshPart');part.CurrentPhysicalProperties={density=2,friction=.4};local target=desiredFor(part)
-assert(target.CustomPhysicalProperties==part.CurrentPhysicalProperties)
-assert(target.TextureID=='' and target.Material=='smooth' and target.Color==nil)
-assert(target.CanCollide==nil and target.CanTouch==nil and target.CanQuery==nil and target.Anchored==nil and target.MeshId==nil)
-assert(part.Color=='red' and part.CanCollide and part.CanTouch and part.CanQuery)
-local decal=desiredFor(object('Decal'));assert(decal.Transparency==1)
-local appearance=desiredFor(object('SurfaceAppearance'));assert(appearance.Parent==textureParking and appearance.ColorMap==nil)
-part.Name='GameBall';assert(desiredFor(part).TextureID==nil,'combat indicator was stripped')
-options.RemoveTextures=false;local restored=desiredFor(object('MeshPart'));assert(next(restored)==nil)
-''')

@@ -27,7 +27,7 @@ class CameraCulling(unittest.TestCase):
 function V:Dot(b) return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
 '''+code+'''
 local view={position=v(),look=v(0,0,1),right=v(1,0,0),up=v(0,1,0),options={
- CullDistance=128,CullRestoreMargin=8,CullKeepNear=16,CullView=true,CullViewPadding=12,
+ CullDistance=128,CullKeepNear=16,CullView=true,CullViewPadding=12,
  CullHideDelay=.15,ViewTanX=1,ViewTanY=1,CullVertical=false,CullFloorY=-5}}
 view.planes=cameraPlanes(view)
 local half=v(1,1,1)
@@ -43,20 +43,20 @@ view.look=v(0,-1,0);view.up=v(0,0,1);view.planes=cameraPlanes(view)
 assert(renderDecision(v(0,-50,20),half,'floor',1,11,view,false)==nil,'looking down failed to restore visible geometry')
 ''')
 
-    def test_clash_cube_is_centered_on_player_and_keeps_intersecting_parts(self):
+    def test_distance_has_no_extra_margin_even_when_visible_or_turning(self):
         self.check('''
-view.options.ClashCenter=v();view.options.ClashFloorY=-5
-assert(renderDecision(v(0,0,61),half,nil,nil,10,view,false)==nil)
-assert(renderDecision(v(0,0,62),half,nil,nil,10,view,false)=='clash_cube')
-assert(renderDecision(v(0,-20,40),half,nil,nil,10,view,false)=='clash_floor')
-view.options.ClashCenter=nil;view.options.ClashFloorY=nil
-assert(renderDecision(v(0,0,62),half,'clash_cube',nil,11,view,false)==nil)
-assert(renderDecision(v(0,0,127),half,'distance',nil,11,view,false)==nil,'distance hysteresis hid an object inside the configured range')
+view.options.CullDistance=200
+assert(renderDecision(v(0,0,202),half,nil,nil,10,view,false)=='distance')
+assert(renderDecision(v(0,0,202),half,nil,nil,10,view,true)=='distance','turn hold bypassed range')
+assert(renderDecision(v(0,0,200),half,'distance',nil,11,view,false)==nil)
+view.focus=v(0,0,100)
+assert(renderDecision(v(0,0,250),half,'distance',nil,12,view,false)==nil,'range did not follow player')
+assert(renderDecision(v(0,0,302),half,nil,nil,12,view,false)=='distance')
 ''')
 
     def test_floor_history_only_descends_when_grounded_and_resets_on_respawn(self):
         source=(ROOT/'extras/antilag.luau').read_text()
-        code=source[source.index('    GetFloorY = function()'):source.index('    GetClashBounds = function()')]
+        code=source[source.index('    GetFloorY = function()'):source.index('    GetFocusPosition = function()')]
         run_lua('''
 Enum={Material={Air='air'}}
 local owner={};local enabled=true
@@ -77,22 +77,31 @@ assert(services.GetFloorY()==92)
 enabled=false;assert(services.GetFloorY()==nil)
 ''')
 
-    def test_clash_bounds_exit_when_native_clash_ends(self):
+class SceneRadiusPolicy(unittest.TestCase):
+    def test_masks_override_combat_exemptions_and_preserve_physics(self):
         source=(ROOT/'extras/antilag.luau').read_text()
-        code=source[source.index('    GetClashBounds = function()'):source.index('    OnHidden = function(')]
-        run_lua('''
-local enabled=true
-local function setting() return enabled end
-local physics={clashKnown=true,inClash=false}
-local DeflectGeometry={getDefensePhysics=function() return physics end}
-local AutoSpam={isActive=function() return true end}
-local root={Position={Y=10}};local player={Character={FindFirstChild=function() return root end}}
-local owner={currentFloorY=7,closed=false}
-local services={
-'''+code+'''
-}
-assert(services.GetClashBounds()==nil,'old AutoSpam activity kept native-ended clash mode enabled')
-physics.inClash=true;local center,floor=services.GetClashBounds();assert(center==root.Position and floor==2)
-physics.inClash=false;physics.clashKnown=false;assert(services.GetClashBounds()==root.Position)
-enabled=false;assert(services.GetClashBounds()==nil)
+        game=source[source.index('local function applyGamePolicy('):source.index('local function verticalDecision(')]
+        scene=source[source.index('local function applyScenePolicy('):source.index('-- lifecycle')]
+        run_lua(game+scene+'''
+Enum={HumanoidDisplayDistanceType={None='none'}}
+local function object(class,name,parent)
+ return {Name=name or class,Parent=parent,CanCollide=true,CanTouch=true,CanQuery=true,
+ IsA=function(_,kind) return kind==class end,GetAttribute=function() end}
+end
+local ball=object('BasePart','GameBall')
+local target,watch=applyGamePolicy(ball,{LocalTransparencyModifier=1},false,{GameKeepIndicators=true})
+assert(target.LocalTransparencyModifier==nil)
+target,watch=applyScenePolicy(ball,target,watch,{}, {[ball]=true},false,nil)
+assert(target.LocalTransparencyModifier==1 and watch,'radius did not override ball exemption')
+assert(target.CanCollide==nil and target.CanTouch==nil and target.CanQuery==nil and target.Anchored==nil)
+for _,class in ipairs({'ParticleEmitter','Trail','Beam','Highlight','Light','BillboardGui','SurfaceGui','Smoke','Fire','Sparkles'}) do
+ local o=object(class);local t,w=applyScenePolicy(o,{},false,{}, {[o]=true},false,nil)
+ assert(t.Enabled==false and w,class..' was still visible')
+ local restored=applyScenePolicy(o,{},false,{}, {},false,nil);assert(next(restored)==nil,class..' mask survived restoration')
+end
+for _,class in ipairs({'ForceField','Explosion','PVAdornment'}) do
+ local o=object(class);assert(applyScenePolicy(o,{},false,{}, {[o]=true},false,nil).Visible==false)
+end
+local hum=object('Humanoid');assert(applyScenePolicy(hum,{},false,{}, {[hum]=true},false,nil).DisplayDistanceType=='none')
+local decal=object('Decal');assert(applyScenePolicy(decal,{},false,{}, {[decal]=true},false,nil).Transparency==1)
 ''')
