@@ -135,17 +135,10 @@ local function stateSnapshot()
   }
 end
 local function diagnosticsSnapshot()
-  local statuses = {}; local names = {}
-  for name in pairs(modules) do
-    names[#names + 1] = name
-  end
-  table.sort(names)
-  for _, name in ipairs(names) do
-    local module = modules[name]
-    if type(module) == "table" and type(module.getStatus) == "function" then
-      local ok, status = pcall(module.getStatus)
-      if ok and type(status) == "table" then statuses[name] = snapshot(status) end
-    end
+  local statuses = {}; local source = modules.status
+  if type(source) == "table" and type(source.collect) == "function" then
+    local ok, result = pcall(source.collect)
+    if ok and type(result) == "table" then statuses = snapshot(result) end
   end
   local diagnostics = state.diagnostics
   return {

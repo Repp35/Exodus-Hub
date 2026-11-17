@@ -155,6 +155,36 @@ function ClashStats.waitForNextClash()
   if stats and stats.frozen then stats.waitingForClash = true end
 end
 function ClashStats.get() return stats end
+function ClashStats.getStatus()
+  if not stats then return {} end
+  local currentCps = stats.currentCps
+  if currentCps and not stats.frozen then currentCps = math.min(currentCps, 1 / math.max(stats.cycleInterval or 0, stats.lastCycleAt and utils.now() - stats.lastCycleAt or math.huge)) end
+  local duration = stats.duration or (stats.startedAt and math.max(0, utils.now() - stats.startedAt))
+  return {
+    partnerId = stats.partnerId,
+    distance = stats.distance,
+    cps = stats.cps,
+    currentCps = currentCps,
+    startSample = stats.startSample and table.clone(stats.startSample) or nil,
+    endSample = stats.endSample and table.clone(stats.endSample) or nil,
+    endReason = stats.endReason,
+    speed = stats.speed,
+    frozen = stats.frozen,
+    duration = duration,
+    travelTarget = stats.travelTarget,
+    travelElapsed = not stats.frozen and finite(stats.travelStartedAt) and math.max(0, utils.now() - stats.travelStartedAt) or nil,
+    travelTargetName = stats.travelTarget and (stats.travelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
+    deceasedName = stats.deceasedId and (stats.deceasedId == localPlayer.UserId and "You" or "Opponent") or nil,
+    travelStartedAt = not stats.frozen and stats.travelStartedAt or nil,
+    lastTravelTime = stats.lastTravelTime,
+    lastTravelTarget = stats.lastTravelTarget,
+    lastTravelTargetName = stats.lastTravelTarget and (stats.lastTravelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
+    fatalTravelTime = stats.fatalTravelTime,
+    penultimateTravelTime = stats.penultimateTravelTime,
+    penultimateTarget = stats.penultimateTarget,
+    deceasedId = stats.deceasedId,
+  }
+end
 
 -- contract
 ClashStats.__contract = {
@@ -163,7 +193,7 @@ ClashStats.__contract = {
     Utils = { "getLocalPlayer", "getPlayers", "now" },
     GameInfo = { "getClashContext", "getPlayerMotion" },
   },
-  provides = { "setup", "teardown", "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
+  provides = { "setup", "teardown", "begin", "finish", "observe", "freeze", "get", "getStatus", "waitForNextClash" },
 }
 
 return ClashStats

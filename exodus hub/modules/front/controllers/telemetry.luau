@@ -12,8 +12,7 @@ function Controller.setup() return true end
 -- controller
 function Controller.create(context)
   local playerGui = context.playerGui; local Utils = context.deps.Utils
-  local AutoSpam = context.deps.AutoSpam; local StatusView = context.deps.StatusView
-  local AutoParry = context.deps.AutoParry; local C = context.theme.COLORS
+  local StatusView = context.deps.StatusView; local C = context.theme.COLORS
   local RunService = context.services.RunService; local inst = context.inst
   local corner = context.corner; local twPlay = context.twPlay
   local setTextIfChanged = context.setTextIfChanged; local trackConn = context.trackConn
@@ -137,16 +136,10 @@ function Controller.create(context)
   })
   local setAPVisible = compactInformation(apLabel); local setDistanceVisible = compactInformation(distanceLabel)
   local setTravelVisible = compactInformation(travelLabel); local setGateVisible = compactInformation(gateLabel)
-  local failures = {}; local lastActivation, lastStop = nil, nil
-  local lastPeak, lastDistance = nil, {}; local lastTravel = {}
+  local lastActivation, lastStop = nil, nil; local lastPeak, lastDistance = nil, {}
+  local lastTravel = {}
   local function finite(v) return type(v) == "number" and v == v and v > -math.huge and v < math.huge end
   local function validText(v) return type(v) == "string" and v ~= "" and v ~= "nil" and v ~= "null" end
-  local function read(name, provider)
-    local ok, value = pcall(provider.getStatus)
-    if ok and type(value) == "table" then failures[name] = nil; return value end
-    if not failures[name] then failures[name] = true; pcall(Utils.recordError, "Info", name .. ": " .. tostring(ok and "invalid status" or value)) end
-    return nil
-  end
   local function render(label, show, enabled, lines)
     local text = enabled and table.concat(lines or {}, "\n") or ""
     if text == "" then label.Visible = false end
@@ -162,8 +155,8 @@ function Controller.create(context)
     }
 
     local data = {}
-    if enabled.ap then data.ap = read("AutoParry", AutoParry) end
-    if enabled.gates or enabled.travel or enabled.distance then data.autoSpam = read("AutoSpam", AutoSpam) end
+    if enabled.ap then data.ap = context.deps.Status.get("autoparry") end
+    if enabled.gates or enabled.travel or enabled.distance then data.autoSpam = context.deps.Status.get("autospam") end
     if type(data.autoSpam) == "table" then
       local status = data.autoSpam
       if

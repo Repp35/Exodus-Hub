@@ -2,6 +2,7 @@
 
 -- module
 local AutoFierce = {}
+local deflectGeometry
 local utils, gameInfo, remote, autoParry, cooldownInfo, autoSpam
 local connections = {}
 local lastFierceEpisode, localUserId
@@ -72,11 +73,11 @@ local function sustainedCooldown(cooldown, now, timing)
   local startedAt = cooldown.blockingSince
   if not finite(startedAt) or startedAt <= 0 or startedAt > now then return false end
   if not finite(cooldown.episode) or cooldown.episode <= 0 then return false end
-  local physics = gameInfo.getDefensePhysics(); local ping = gameInfo.getAveragePing()
+  local physics = deflectGeometry.getDefensePhysics(); local ping = gameInfo.getAveragePing()
   if not finite(ping) or ping < 0 then return false end
   local responseMargin = math.min(ping * 2, 1) + CONFIG.SERVER_FRAME_MARGIN
   if timerEpisode ~= cooldown.episode or timerStartedAt ~= startedAt then
-    local window = gameInfo.getDeflectWindow()
+    local window = deflectGeometry.getDeflectWindow()
     if not finite(window) or window <= 0 then return false end
     timerEpisode, timerStartedAt, timerReadyAt = cooldown.episode, startedAt, startedAt + window + responseMargin; timerWindowEndsAt = startedAt + window
   end
@@ -137,6 +138,7 @@ end
 
 -- lifecycle
 function AutoFierce.setup(deps)
+  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
   if
     type(deps) ~= "table"
     or type(deps.Utils) ~= "table"
@@ -148,10 +150,10 @@ function AutoFierce.setup(deps)
   then
     return false, "dependências ausentes: Utils, GameInfo ou Remote"
   end
-  AutoFierce.teardown(); utils, gameInfo, remote, autoParry, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry, deps.Cooldown
-  autoSpam = deps.AutoSpam; lastFierceEpisode, pendingEpisode = 0, nil
-  local player = utils.getLocalPlayer(); localUserId = player and player.UserId
-  local runService = utils.getRunService()
+  AutoFierce.teardown(); deflectGeometry = deps.DeflectGeometry
+  utils, gameInfo, remote, autoParry, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry, deps.Cooldown; autoSpam = deps.AutoSpam
+  lastFierceEpisode, pendingEpisode = 0, nil; local player = utils.getLocalPlayer()
+  localUserId = player and player.UserId; local runService = utils.getRunService()
   if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
   bindManualFierce(); local owner = epoch
   track(runService.Heartbeat:Connect(function()
@@ -174,6 +176,7 @@ end
 -- contract
 AutoFierce.__contract = {
   requires = {
+    DeflectGeometry = "deflectgeometry",
     Utils = "utils",
     GameInfo = "gameinfo",
     Remote = "remote",
@@ -182,6 +185,7 @@ AutoFierce.__contract = {
     AutoSpam = "autospam",
   },
   requiresMethods = {
+    DeflectGeometry = { "getDefensePhysics", "getDeflectWindow" },
     Utils = {
       "getConfigValue",
       "getLocalPlayer",
@@ -199,8 +203,6 @@ AutoFierce.__contract = {
       "getParrySnapshot",
       "isSnapshotValid",
       "getBallFrozen",
-      "getDeflectWindow",
-      "getDefensePhysics",
       "getAveragePing",
     },
     Cooldown = { "getDeflectCooldownState" },

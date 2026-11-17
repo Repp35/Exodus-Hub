@@ -5,7 +5,7 @@ local GameInfo = {}
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local ballSync, geometry
+local ballSync
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 local minimumSpeed, maximumSpeed, speedAt
@@ -34,15 +34,6 @@ local CONFIG = {
   SPEED_REFRESH = 0.5,
   SAMPLE_INTERVAL = 1 / 240,
   SAMPLE_MAX_GAP = 0.5,
-  WINDOW_BASE = 0.85,
-  WINDOW_SPREAD = 0.65,
-  RANGE_BASE = 8.5,
-  RANGE_BONUS_SPAN = 7.5,
-  RANGE_BONUS_STEP = 0.225,
-  RANGE_WINDOW_BONUS = 0.12,
-  AUTO_PARRY_TRIGGER_PADDING = 0,
-  AP_WINDOW_LOW_SPEED = 0.45,
-  AP_WINDOW_HIGH_SPEED = 0.25,
   PING_SAMPLE_INTERVAL = 0.25,
   PING_SAMPLE_COUNT = 8,
   SNAPSHOT_CACHE_INTERVAL = 1 / 240,
@@ -315,17 +306,10 @@ function GameInfo.stopMaintenance()
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  if
-    type(deps.BallSync) ~= "table"
-    or type(deps.BallSync.create) ~= "function"
-    or type(deps.DeflectGeometry) ~= "table"
-    or type(deps.DeflectGeometry.create) ~= "function"
-  then
-    return false, "dependências ausentes: BallSync ou DeflectGeometry"
-  end
+  if type(deps.BallSync) ~= "table" or type(deps.BallSync.create) ~= "function" then return false, "dependência ausente: BallSync" end
   GameInfo.stopMaintenance(); utils = deps.Utils
   ballSync = deps.BallSync.create({ getReplicator = getReplicator, invalidateSnapshotCache = invalidateSnapshotCache, packetAge = CONFIG.PACKET_AGE })
-  geometry = deps.DeflectGeometry.create(GameInfo, CONFIG); players, world = utils.getPlayers(), utils.getWorkspace()
+  players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil
@@ -422,34 +406,6 @@ function GameInfo.getPlayerDistance(id)
   local otherRoot = playerRoot(id)
   if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
   return (ownRoot.Position - otherRoot.Position).Magnitude
-end
-function GameInfo.getDeflectRangeParameters() return CONFIG.RANGE_BASE, CONFIG.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or CONFIG.RANGE_BONUS_STEP end
-function GameInfo.getDeflectRange()
-  local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
-  if sharedLayout() and player then return GameInfo.getPlayerDeflectRange(player.UserId) end
-  return range
-end
-function GameInfo.getPlayerDeflectRange(id)
-  local player = type(id) == "number" and players:GetPlayerByUserId(id)
-  if not player then return nil end
-  local range = player:GetAttribute("DeflectRange")
-  if not finite(range) then return CONFIG.RANGE_BASE end
-  range = math.clamp(range, CONFIG.RANGE_BASE, CONFIG.RANGE_BASE + CONFIG.RANGE_BONUS_SPAN)
-  if sharedLayout() and range > CONFIG.RANGE_BASE and type(GameInfo.getClashContext) == "function" then
-    local context = GameInfo.getClashContext(); local own = players.LocalPlayer
-    if context and own and (id == own.UserId or id == context.partnerId) then
-      local distance = GameInfo.getPlayerDistance(context.partnerId)
-      if finite(distance) and distance <= math.max(20, range + 8) then return CONFIG.RANGE_BASE end
-    end
-  end
-  return range
-end
-function GameInfo.getPlayerRawRadius(id, speed, includePing)
-  local range = GameInfo.getPlayerDeflectRange(id)
-  if not range then return nil end
-  local latency = includePing and GameInfo.getAveragePing() or 0
-  if not finite(latency) or latency < 0 then latency = 0 end
-  return range + (finite(speed) and math.max(0, speed) * latency or 0)
 end
 function GameInfo.getDeflectAbility() return getAbility(CONFIG.GAME_IDS.DEFLECT, "Deflect") end
 function GameInfo.getLastDeflectPressAt()
@@ -704,60 +660,14 @@ function GameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or low <= 0 or high <= low then error("API externa inválida: GameBall retornou limites de velocidade inválidos", 2) end
   minimumSpeed, maximumSpeed = low, high; return minimumSpeed, maximumSpeed
 end
-function GameInfo.getDeflectWindow(speed, includeResilience)
-  local low, high = GameInfo.getBallSpeedLimits()
-  if not finite(speed) then
-    local sync = syncData()
-    if sync and finite(sync.Speed) then speed = sync.Speed end
-  end
-  if not finite(speed) or high <= low then return nil end
-  local window = CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer
-  local inClash = false
-  if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
-  if inClash and type(gameBall.GetClashMinWindow) == "function" then
-    local minimum = gameBall:GetClashMinWindow(speed)
-    if finite(minimum) then window = math.max(window, minimum) end
-  end
-  if includeResilience ~= false and not sharedLayout() then
-    local range = GameInfo.getDeflectRange()
-    if finite(range) then window += math.clamp((range - CONFIG.RANGE_BASE) / CONFIG.RANGE_BONUS_SPAN, 0, 1) * CONFIG.RANGE_WINDOW_BONUS end
-  end
-  if inClash and type(gameBall.ApplyClashPressure) == "function" then
-    window = gameBall:ApplyClashPressure(window, player)
-  elseif inClash and type(gameBall.GetClashWindowScale) == "function" then
-    local scale = gameBall:GetClashWindowScale()
-    if finite(scale) and scale > 0 then window *= scale end
-  end
-  return window
+function GameInfo.getDefenseSource()
+  GameInfo.getBallSpeedLimits(); return gameBall
 end
-function GameInfo.getDefensePhysics()
-  GameInfo.getBallSpeedLimits(); local player = players.LocalPlayer
-  local ping = GameInfo.getAveragePing()
-  if not finite(ping) or ping < 0 then ping = 0 end
-  local grace, cap = ping + 0.075, 0.35; local press = player and player:GetAttribute("PressDelay")
-  if finite(press) then grace = math.max(grace, press + 0.05); cap = math.clamp(press + 0.05, 0.35, 0.45) end
-  grace = math.clamp(grace, 0.075, cap); local inClash = gameBall and player and type(gameBall.IsInClash) == "function" and gameBall:IsInClash(player) == true
-  if inClash and type(gameBall.ApplyClashPressureGrace) == "function" then grace = gameBall:ApplyClashPressureGrace(grace, player) end
-  local kill = gameBall and type(gameBall.GetKillDistance) == "function" and gameBall:GetKillDistance() or 4
-  return { killRadius = kill, grace = grace, ping = ping, uplink = ping, serverNow = world:GetServerTimeNow(), inClash = inClash == true }
-end
+function GameInfo.usesSharedLayout() return sharedLayout() end
 function GameInfo.getBallFrozen()
   if not ballData or not ballData.Parent then ballData = child(world, "BallData") end
   if not ballData then return nil end
   return ballData:GetAttribute("Frozen") == true
-end
-function GameInfo.getDeflectGeometry(...) return geometry.getDeflectGeometry(...) end
-function GameInfo.getAutoParryGeometry(...) return geometry.getAutoParryGeometry(...) end
-function GameInfo.getProjectedDeflectRadius(...) return geometry.getProjectedDeflectRadius(...) end
-function GameInfo.isBallWithinDeflectRadius(factor)
-  local snapshot = GameInfo.getSnapshotAt()
-  if not GameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false end
-  local player = players.LocalPlayer; local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-  if not root or not root.Parent then return false end
-  local speed = tonumber(snapshot.syncSpeed)
-  if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-  if not finite(speed) or speed <= 0 then return false end
-  local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, false); return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
 end
 function GameInfo.getDarkSealEventId() return CONFIG.GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
@@ -805,11 +715,9 @@ GameInfo.__contract = {
   requires = {
     Utils = "utils",
     BallSync = "ballsync",
-    DeflectGeometry = "deflectgeometry",
   },
   requiresMethods = {
     BallSync = { "create" },
-    DeflectGeometry = { "create" },
     Utils = {
       "now",
       "apiVersion",
@@ -823,7 +731,8 @@ GameInfo.__contract = {
     },
   },
   provides = {
-    "getDefensePhysics",
+    "getDefenseSource",
+    "usesSharedLayout",
     "setup",
     "applyPacket",
     "isTrainingArea",
@@ -838,18 +747,9 @@ GameInfo.__contract = {
     "getAveragePing",
     "areAbilitiesEnabled",
     "observeAbilityMode",
-    "getDeflectRange",
-    "getDeflectRangeParameters",
-    "getPlayerDeflectRange",
-    "getPlayerRawRadius",
     "getPlayerDistance",
     "getPlayerMotion",
     "getHaunterEvent",
-    "getDeflectWindow",
-    "getDeflectGeometry",
-    "getAutoParryGeometry",
-    "getProjectedDeflectRadius",
-    "isBallWithinDeflectRadius",
     "getBallFrozen",
     "getDeflectAbility",
     "getLastDeflectPressAt",

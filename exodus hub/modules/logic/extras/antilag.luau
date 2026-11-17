@@ -2,13 +2,15 @@
 
 -- module
 local AntiLag = {}
-local Utils
+local Utils, DeflectGeometry, AutoSpam
 
 -- configuration
 local CONFIG = {
   schema = {
     AntiLagEnabled = "boolean",
     AntiLagFloorCull = "boolean",
+    AntiLagClashCull = "boolean",
+    AntiLagRemoveTextures = "boolean",
     AntiLagRenderDistance = "rate",
     AntiLagRemoveLighting = "boolean",
     AntiLagRemoveSwordSounds = "boolean",
@@ -18,8 +20,10 @@ local CONFIG = {
   },
   defaults = {
     AntiLagEnabled = false,
-    AntiLagFloorCull = false,
-    AntiLagRenderDistance = 350,
+    AntiLagFloorCull = true,
+    AntiLagClashCull = false,
+    AntiLagRemoveTextures = false,
+    AntiLagRenderDistance = 128,
     AntiLagRemoveLighting = true,
     AntiLagRemoveSwordSounds = true,
     AntiLagHideLobby = true,
@@ -33,19 +37,20 @@ local PROFILE = {
   StartEnabled = false,
   ShowMenu = false,
   CullEnabled = true,
-  CullView = false,
+  CullView = true,
+  RemoveTextures = false,
   CullVertical = false,
   CullAbove = 200,
   CullBelow = 100,
   CullVerticalMargin = 20,
   HideLobbyInMatch = true,
   GameSwordSounds = false,
-  CullDistance = 350,
-  CullRestoreMargin = 24,
-  CullKeepNear = 64,
-  CullViewPadding = 150,
-  CullViewDegrees = 35,
-  CullHideDelay = 0.8,
+  CullDistance = 128,
+  CullRestoreMargin = 8,
+  CullKeepNear = 16,
+  CullViewPadding = 12,
+  CullViewDegrees = 8,
+  CullHideDelay = 0.15,
   CullInterval = 0.12,
   CullBudgetMs = 0.75,
   GameGenerators = true,
@@ -116,9 +121,10 @@ local function createOptimizer(services, initialConfig)
     end
     return false
   end
-  local function isCharacterObject(object)
-    local ancestor = object.Parent
+  local function isProtectedVisual(object)
+    local ancestor = object
     while ancestor and ancestor ~= Workspace do
+      if ancestor.Name == "GameBall" or ancestor.Name == "TrainingBall" or ancestor:GetAttribute("AntiLagKeepVisible") == true then return true end
       if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return true end
       ancestor = ancestor.Parent
     end
@@ -178,11 +184,23 @@ local function createOptimizer(services, initialConfig)
           target[property] = options.FlatSkyTexture
         end
       end
+    elseif object:IsA("Decal") or object:IsA("Texture") then
+      if options.RemoveTextures and not isProtectedVisual(object) then target.Transparency = 1 end
+    elseif object:IsA("SpecialMesh") then
+      if options.RemoveTextures and not isProtectedVisual(object) then target.TextureId = "" end
+    elseif object:IsA("SurfaceAppearance") then
+      if options.RemoveTextures and not isProtectedVisual(object) then target.ColorMap, target.NormalMap, target.RoughnessMap, target.MetalnessMap = "", "", "", "" end
     elseif object:IsA("BasePart") then
       watch = false
       if options.Shadows then target.CastShadow = false end
-      if not isCharacterObject(object) then
+      if not isProtectedVisual(object) then
         if options.FlatMaterials then target.Material = Enum.Material.SmoothPlastic; target.MaterialVariant, target.Reflectance = "", 0 end
+        if options.RemoveTextures then
+          local ok, physical = read(object, "CurrentPhysicalProperties")
+          if ok and physical then target.CustomPhysicalProperties = physical end
+          target.Material, target.MaterialVariant = Enum.Material.SmoothPlastic, ""
+          if object:IsA("MeshPart") then target.TextureID = "" end
+        end
         if options.HideTaggedDecorations and CollectionService:HasTag(object, "AntiLagDecoration") then target.LocalTransparencyModifier = 1 end
       end
     end
@@ -360,8 +378,17 @@ local function createOptimizer(services, initialConfig)
   connections[#connections + 1] = Workspace.DescendantAdded:Connect(function(object)
     if enabled and object:IsA("Humanoid") and object.Parent then scan[#scan + 1] = { items = { object.Parent }, index = 1 }; scheduleWorker() end
   end)
-  function controller:RefreshInstance(object)
-    if enabled and alive then enqueue(object) end
+  function controller:RefreshInstance(object, immediate)
+    if not enabled or not alive then return end
+    if immediate then
+      local ok, message = pcall(process, object)
+      if not ok then
+        runtimeFailures += 1
+        if runtimeFailures <= 3 then warn("[AntiLag] " .. tostring(message)) end
+      end
+    else
+      enqueue(object)
+    end
   end
   function controller:RefreshSubtree(object)
     if enabled and alive and object then scan[#scan + 1] = { items = { object }, index = 1 }; scheduleWorker() end
@@ -380,11 +407,11 @@ local function createOptimizer(services, initialConfig)
     if key == "ReapplyInterval" then value = math.clamp(value, 0.1, 2) end
     local bounds = {
       CullDistance = { 128, 1200 },
-      CullRestoreMargin = { 30, 150 },
-      CullKeepNear = { 80, 300 },
-      CullViewPadding = { 50, 300 },
-      CullViewDegrees = { 20, 70 },
-      CullHideDelay = { 0.4, 2 },
+      CullRestoreMargin = { 4, 64 },
+      CullKeepNear = { 8, 128 },
+      CullViewPadding = { 0, 100 },
+      CullViewDegrees = { 2, 30 },
+      CullHideDelay = { 0.05, 2 },
       CullInterval = { 0.06, 0.35 },
       CullBudgetMs = { 0.2, 1.5 },
       CullAbove = { 80, 600 },
@@ -638,19 +665,6 @@ local function applyGamePolicy(object, target, watch, options)
   end
   return target, watch
 end
-local function spatialDecision(distance, projection, radius, previous, outsideSince, now, options, turnHold)
-  local surfaceDistance = math.max(0, distance - radius)
-  if surfaceDistance <= options.CullKeepNear then return nil, nil end
-  local limit = options.CullDistance
-  if previous == "distance" then limit -= options.CullRestoreMargin end
-  if surfaceDistance > limit then return "distance", nil end
-  if not options.CullView or turnHold or distance < 0.001 then return nil, nil end
-  local inside = projection >= options.ViewCos * distance - radius - options.CullViewPadding
-  if inside then return nil, nil end
-  outsideSince = outsideSince or now
-  if now - outsideSince >= options.CullHideDelay then return "view", outsideSince end
-  return nil, outsideSince
-end
 local function verticalDecision(minY, maxY, cameraY, previous, options)
   if options.CullFloorY and maxY < options.CullFloorY then return "floor" end
   if not options.CullVertical then return nil end
@@ -662,6 +676,54 @@ local function verticalDecision(minY, maxY, cameraY, previous, options)
   if maxY < math.min(cameraY, anchorY) - below then return "below" end
   return nil
 end
+local function boundsHalf(frame, size)
+  local right, up, look = frame.RightVector, frame.UpVector, frame.LookVector
+  return Vector3.new(
+    (math.abs(right.X) * size.X + math.abs(up.X) * size.Y + math.abs(look.X) * size.Z) * 0.5,
+    (math.abs(right.Y) * size.X + math.abs(up.Y) * size.Y + math.abs(look.Y) * size.Z) * 0.5,
+    (math.abs(right.Z) * size.X + math.abs(up.Z) * size.Y + math.abs(look.Z) * size.Z) * 0.5
+  )
+end
+local function cameraPlanes(view)
+  local normals = {
+    view.look,
+    view.look * view.options.ViewTanX + view.right,
+    view.look * view.options.ViewTanX - view.right,
+    view.look * view.options.ViewTanY + view.up,
+    view.look * view.options.ViewTanY - view.up,
+  }
+
+  local planes = {}
+  for _, normal in ipairs(normals) do
+    planes[#planes + 1] = { normal = normal, padding = view.options.CullViewPadding * normal.Magnitude }
+  end
+  return planes
+end
+local function inCameraView(delta, half, view)
+  for _, plane in ipairs(view.planes) do
+    local normal = plane.normal; local support = math.abs(normal.X) * half.X + math.abs(normal.Y) * half.Y + math.abs(normal.Z) * half.Z
+    if normal:Dot(delta) + support + plane.padding < 0 then return false end
+  end
+  return true
+end
+local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
+  local delta = position - view.position; local options = view.options
+  if options.ClashCenter then
+    local offset = position - options.ClashCenter
+    if math.abs(offset.X) - half.X > 60 or math.abs(offset.Y) - half.Y > 60 or math.abs(offset.Z) - half.Z > 60 then return "clash_cube", nil end
+    if options.ClashFloorY and position.Y + half.Y < options.ClashFloorY then return "clash_floor", nil end
+  end
+  local dx, dy, dz = math.max(0, math.abs(delta.X) - half.X), math.max(0, math.abs(delta.Y) - half.Y), math.max(0, math.abs(delta.Z) - half.Z)
+  local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz); local limit = options.CullDistance + (previous == "distance" and 0 or options.CullRestoreMargin)
+  if not options.ClashCenter and surfaceDistance > limit then return "distance", nil end
+  if turnHold or inCameraView(delta, half, view) then return nil, nil end
+  local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
+  if vertical then return vertical, nil end
+  if not options.CullView or surfaceDistance <= options.CullKeepNear then return nil, nil end
+  outsideSince = outsideSince or now
+  if now - outsideSince >= options.CullHideDelay then return "view", outsideSince end
+  return nil, outsideSince
+end
 local function createSpatialController(services, getOption)
   local Workspace, player = services.Workspace, services.Player; local controller = {}
   local active, alive = false, true; local records, chunks, chunkList = {}, {}, {}
@@ -671,7 +733,8 @@ local function createSpatialController(services, getOption)
   local connections = {}; local hiddenCount, trackedCount = 0, 0
   local lobbyHidden, lastLobby = false, nil; local elapsed, holdUntil, lastLook = 1, 0, nil
   local nextCycleAt, cycling = 0, false; local stepsLeft = 0
-  local cameraSnapshot
+  local cameraSnapshot, lastCameraFrame
+  local hiddenEntries, hiddenCursor = {}, 1
   local function option(key, fallback)
     local value = getOption(key)
     return if value == nil then fallback else value
@@ -679,6 +742,14 @@ local function createSpatialController(services, getOption)
   local function setHidden(entry, hidden)
     if entry.hidden == hidden then return end
     entry.hidden = hidden
+    if hidden then
+      entry.hiddenIndex = #hiddenEntries + 1; hiddenEntries[entry.hiddenIndex] = entry
+    elseif entry.hiddenIndex then
+      local index = entry.hiddenIndex; local last = hiddenEntries[#hiddenEntries]
+      hiddenEntries[index] = last
+      if last then last.hiddenIndex = index end
+      hiddenEntries[#hiddenEntries] = nil; entry.hiddenIndex = nil
+    end
     hiddenCount += if hidden then 1 else -1
     services.OnHidden(entry.object, hidden)
   end
@@ -708,49 +779,29 @@ local function createSpatialController(services, getOption)
   end
   local function eligible(object)
     if not object:IsA("BasePart") or object:IsA("Terrain") or not object.Anchored or object.Transparency >= 0.99 or moved[object] then return false end
-    local gameRoot = Workspace:FindFirstChild("Game"); local map = Workspace:FindFirstChild("Map")
-    local allowed = map and object:IsDescendantOf(map)
-    if not allowed and gameRoot then
-      for _, name in ipairs({ "Maps", "Lobby", "LimitedTime" }) do
-        local root = gameRoot:FindFirstChild(name)
-        if root and object:IsDescendantOf(root) then allowed = true; break end
-      end
-    end
-    if not allowed and not option("CullVertical", true) then return false end
     local ancestor = object
     while ancestor and ancestor ~= Workspace do
       if ancestor.Name == "GameBall" or ancestor.Name == "TrainingBall" or ancestor:GetAttribute("AntiLagKeepVisible") == true then return false end
       if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return false end
       ancestor = ancestor.Parent
     end
-    return true, allowed == true
+    return true
   end
   local function register(object)
     if records[object] then return end
-    local accepted, fullCulling = eligible(object)
-    if not accepted then return end
+    if not eligible(object) then return end
     local position = object.Position; local size = 64
-    local x, y, z = math.floor(position.X / size), math.floor(position.Y / size), math.floor(position.Z / size)
-    local key = (if fullCulling then "map:" else "vertical:") .. x .. ":" .. y .. ":" .. z
+    local x, y, z = math.floor(position.X / size), math.floor(position.Y / size), math.floor(position.Z / size); local key = x .. ":" .. y .. ":" .. z
     local chunk = chunks[key]
     if not chunk then
       chunk = {
         key = key,
         index = #chunkList + 1,
         parts = {},
-        fullCulling = fullCulling,
-        minY = math.huge,
-        maxY = -math.huge,
-        center = Vector3.new((x + 0.5) * size, (y + 0.5) * size, (z + 0.5) * size),
-        radius = 0,
       }
 
       chunks[key], chunkList[chunk.index] = chunk, chunk
     end
-    chunk.radius = math.max(chunk.radius, (position - chunk.center).Magnitude + object.Size.Magnitude * 0.5); local frame, dimensions = object.CFrame, object.Size
-    local halfHeight = (math.abs(frame.RightVector.Y) * dimensions.X + math.abs(frame.UpVector.Y) * dimensions.Y + math.abs(frame.LookVector.Y) * dimensions.Z)
-      * 0.5
-    chunk.minY = math.min(chunk.minY, position.Y - halfHeight); chunk.maxY = math.max(chunk.maxY, position.Y + halfHeight)
     local entry = { object = object, position = position, chunk = chunk, index = #chunk.parts + 1, hidden = false }; chunk.parts[entry.index], records[object] = entry, entry
     trackedCount += 1
   end
@@ -773,20 +824,21 @@ local function createSpatialController(services, getOption)
     return nil, false
   end
   local function currentOptions(camera)
-    local aspect = camera.ViewportSize.X / math.max(camera.ViewportSize.Y, 1); local vertical = math.rad(camera.FieldOfView * 0.5)
-    local horizontal = math.atan(math.tan(vertical) * aspect); local halfAngle = math.min(math.rad(130), math.max(vertical, horizontal) + math.rad(option("CullViewDegrees", 35)))
+    local aspect = camera.ViewportSize.X / math.max(camera.ViewportSize.Y, 1); local margin = math.rad(option("CullViewDegrees", PROFILE.CullViewDegrees))
+    local vertical = math.rad(camera.FieldOfView * 0.5); local horizontal = math.atan(math.tan(vertical) * aspect)
     return {
       CullDistance = option("CullDistance", PROFILE.CullDistance),
-      CullRestoreMargin = option("CullRestoreMargin", 90),
-      CullKeepNear = option("CullKeepNear", 220),
+      CullRestoreMargin = option("CullRestoreMargin", PROFILE.CullRestoreMargin),
+      CullKeepNear = option("CullKeepNear", PROFILE.CullKeepNear),
       CullView = option("CullView", true),
-      CullViewPadding = option("CullViewPadding", 150),
-      CullHideDelay = option("CullHideDelay", 0.8),
-      ViewCos = math.cos(halfAngle),
-      CullVertical = option("CullVertical", true),
-      CullAbove = option("CullAbove", 200),
-      CullBelow = option("CullBelow", 100),
-      CullVerticalMargin = option("CullVerticalMargin", 20),
+      CullViewPadding = option("CullViewPadding", PROFILE.CullViewPadding),
+      CullHideDelay = option("CullHideDelay", PROFILE.CullHideDelay),
+      ViewTanX = math.tan(math.min(math.rad(89), horizontal + margin)),
+      ViewTanY = math.tan(math.min(math.rad(89), vertical + margin)),
+      CullVertical = option("CullVertical", false),
+      CullAbove = option("CullAbove", PROFILE.CullAbove),
+      CullBelow = option("CullBelow", PROFILE.CullBelow),
+      CullVerticalMargin = option("CullVerticalMargin", PROFILE.CullVerticalMargin),
     }
   end
   local function processChunk(now)
@@ -794,33 +846,20 @@ local function createSpatialController(services, getOption)
       if stepsLeft <= 0 or #chunkList == 0 then cycling = false; return false end
       if chunkIndex > #chunkList then chunkIndex = 1 end
       local chunk = chunkList[chunkIndex]; chunkIndex += 1
-      stepsLeft -= 1; local delta = chunk.center - cameraSnapshot.position
-      local reason = verticalDecision(chunk.minY, chunk.maxY, cameraSnapshot.position.Y, chunk.reason, cameraSnapshot.options)
-      local outsideSince
-      if not reason and chunk.fullCulling then
-        reason, outsideSince = spatialDecision(
-          delta.Magnitude,
-          delta:Dot(cameraSnapshot.look),
-          chunk.radius,
-          chunk.reason,
-          chunk.outsideSince,
-          now,
-          cameraSnapshot.options,
-          now < holdUntil
-        )
-      end
-      chunk.outsideSince = outsideSince
-      if reason == nil and chunk.reason == nil then return true end
-      work = { chunk = chunk, index = 1, reason = reason }
+      stepsLeft -= 1; work = { chunk = chunk, index = 1 }
     end
     local job = work; local entry = job.chunk.parts[job.index]
-    if not entry then
-      job.chunk.reason = job.reason; work = nil
-      return true
-    end
+    if not entry then work = nil; return true end
     local object = entry.object
-    if not object:IsDescendantOf(Workspace) or not object.Anchored or (object.Position - entry.position).Magnitude > 2 then moved[object] = true; forget(object)
-    else setHidden(entry, job.reason ~= nil); job.index += 1 end
+    if not object:IsDescendantOf(Workspace) or not object.Anchored or (object.Position - entry.position).Magnitude > 2 then
+      moved[object] = true; forget(object)
+    else
+      local frame, dimensions = object.CFrame, object.Size
+      if frame ~= entry.frame or dimensions ~= entry.dimensions then entry.frame, entry.dimensions, entry.half = frame, dimensions, boundsHalf(frame, dimensions) end
+      local half = entry.half; local reason, outsideSince = renderDecision(object.Position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
+      entry.reason, entry.outsideSince = reason, outsideSince; setHidden(entry, reason ~= nil)
+      job.index += 1
+    end
     return true
   end
   function controller:Tick(now, camera)
@@ -840,19 +879,34 @@ local function createSpatialController(services, getOption)
     end
     if not camera then return end
     local look = camera.CFrame.LookVector
-    if lastLook and look:Dot(lastLook) < 0.75 then holdUntil = now + 0.6; work, cycling, nextCycleAt = nil, false, 0 end
+    if lastLook and look:Dot(lastLook) < 0.75 then holdUntil = now + 0.15; nextCycleAt = 0 end
     lastLook = look
-    if not cycling and now >= nextCycleAt then
-      cameraSnapshot = {
-        position = camera.CFrame.Position,
-        look = look,
-        options = currentOptions(camera),
-      }
+    cameraSnapshot = {
+      position = camera.CFrame.Position,
+      look = look,
+      right = camera.CFrame.RightVector,
+      up = camera.CFrame.UpVector,
+      options = currentOptions(camera),
+    }
 
-      if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
-      if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
-      cycling, stepsLeft = true, #chunkList; nextCycleAt = now + option("CullInterval", 0.12)
+    lastCameraFrame = camera.CFrame; cameraSnapshot.planes = cameraPlanes(cameraSnapshot)
+    if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
+    if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
+    if services.GetClashBounds then cameraSnapshot.options.ClashCenter, cameraSnapshot.options.ClashFloorY = services.GetClashBounds() end
+    if not active or not alive then return end
+    local restoreLimit = math.min(#hiddenEntries, 48); local restoreDeadline = os.clock() + 0.25 / 1000
+    for _ = 1, restoreLimit do
+      if os.clock() >= restoreDeadline or #hiddenEntries == 0 then break end
+      if hiddenCursor > #hiddenEntries then hiddenCursor = 1 end
+      local entry = hiddenEntries[hiddenCursor]; local object = entry.object
+      if not object.Parent or not object.Anchored or (object.Position - entry.position).Magnitude > 2 then
+        moved[object] = true; forget(object)
+      else
+        local half = boundsHalf(object.CFrame, object.Size); local reason = renderDecision(object.Position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
+        if not reason then entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false) else hiddenCursor += 1 end
+      end
     end
+    if not cycling and now >= nextCycleAt then cycling, stepsLeft = true, #chunkList; nextCycleAt = now + option("CullInterval", PROFILE.CullInterval) end
     while cycling and count < 160 and os.clock() < deadline do
       if not processChunk(now) then break end
       count += 1
@@ -864,14 +918,15 @@ local function createSpatialController(services, getOption)
     end
     records, chunks, chunkList, stack, pending, queued = {}, {}, {}, {}, {}, {}; moved = setmetatable({}, { __mode = "k" })
     head, tail, chunkIndex, trackedCount = 1, 0, 1, 0; work, cycling, lastLook = nil, false, nil
-    nextCycleAt, elapsed = 0, 1
+    nextCycleAt, elapsed = 0, 1; hiddenEntries, hiddenCursor, lastCameraFrame = {}, 1, nil
   end
   local function refreshDriver()
     if driver then driver:Disconnect(); driver = nil end
     if not active or not option("CullEnabled", true) then return end
     driver = services.RunService.Heartbeat:Connect(function(dt)
-      elapsed += dt
-      if #stack > 0 or head <= tail or work or cycling or elapsed >= option("CullInterval", 0.12) then elapsed = 0; controller:Tick(os.clock(), Workspace.CurrentCamera) end
+      elapsed += dt; local camera = Workspace.CurrentCamera
+      local changed = camera and camera.CFrame ~= lastCameraFrame
+      if changed or #stack > 0 or head <= tail or work or cycling or elapsed >= option("CullInterval", 0.12) then elapsed = 0; controller:Tick(os.clock(), camera) end
     end)
   end
   function controller:SetEnabled(value)
@@ -936,7 +991,8 @@ end
 local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or CONFIG.defaults.AntiLagRenderDistance
   if distance ~= distance then distance = CONFIG.defaults.AntiLagRenderDistance end
-  profile.CullDistance = math.clamp(distance, 128, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
+  profile.CullDistance = math.clamp(distance, 128, 1200); profile.RemoveTextures = setting("AntiLagRemoveTextures") == true
+  local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
   profile.Lights, profile.Shadows, profile.FlatLighting = not lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
   profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.NoFog, profile.Atmosphere = not fog, not fog
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = not effects, not effects, not effects; profile.PostEffects, profile.Clouds, profile.FlatSky = not effects, not effects, not effects
@@ -1014,19 +1070,33 @@ local function startSession()
       return root and root.Position.Y or nil
     end,
     GetFloorY = function()
-      if not setting("AntiLagFloorCull") then owner.floorY = nil; return nil end
+      if not setting("AntiLagFloorCull") and not setting("AntiLagClashCull") then owner.floorY, owner.currentFloorY = nil, nil; return nil end
       local character = player.Character
-      if owner.floorCharacter ~= character then owner.floorCharacter, owner.floorY = character, nil end
+      if owner.floorCharacter ~= character then owner.floorCharacter, owner.floorY, owner.currentFloorY = character, nil, nil end
       local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
-      if workspace:GetAttribute("MatchStatus") ~= 6 or (player:GetAttribute("Lives") or 0) <= 0 then owner.floorY = nil; return nil end
       if root and humanoid and humanoid.Health > 0 and humanoid.FloorMaterial ~= Enum.Material.Air then
-        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
+        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.currentFloorY = footY
+        owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
       end
-      return owner.floorY and owner.floorY - 5 or nil
+      return setting("AntiLagFloorCull") and owner.floorY and owner.floorY - 5 or nil
+    end,
+    GetClashBounds = function()
+      if owner.closed or not setting("AntiLagClashCull") then return nil end
+      local ok, physics = pcall(DeflectGeometry.getDefensePhysics)
+      if owner.closed then return nil end
+      local inClash = ok and type(physics) == "table" and physics.inClash == true
+      if ok and type(physics) == "table" and physics.clashKnown == true then
+        if not inClash then return nil end
+      elseif not inClash and not AutoSpam.isActive() then
+        return nil
+      end
+      local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
+      if not root then return nil end
+      return root.Position, owner.currentFloorY and owner.currentFloorY - 5 or nil
     end,
     OnHidden = function(object, hidden)
       owner.masks[object] = if hidden then true else nil
-      owner.engine:RefreshInstance(object)
+      owner.engine:RefreshInstance(object, not hidden)
     end,
     OnLobbyHidden = function(hidden, lobby)
       local previous = owner.lobby; owner.lobbyHidden, owner.lobby = hidden, lobby
@@ -1116,8 +1186,9 @@ function AntiLag.teardown()
   stopSession(); return true
 end
 function AntiLag.setup(deps)
+  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" or type(deps.AutoSpam) ~= "table" then return false, "DeflectGeometry ou AutoSpam ausente" end
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  AntiLag.teardown(); Utils = deps.Utils
+  AntiLag.teardown(); Utils, DeflectGeometry, AutoSpam = deps.Utils, deps.DeflectGeometry, deps.AutoSpam
   observer = Utils.observeConfig(function(changes)
     for key in pairs(changes) do
       if CONFIG.schema[key] then
@@ -1137,8 +1208,14 @@ function AntiLag.setup(deps)
 end
 AntiLag.__config = CONFIG
 AntiLag.__contract = {
-  requires = { Utils = "utils" },
+  requires = {
+    Utils = "utils",
+    DeflectGeometry = "deflectgeometry",
+    AutoSpam = "autospam",
+  },
   requiresMethods = {
+    DeflectGeometry = { "getDefensePhysics" },
+    AutoSpam = { "isActive" },
     Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "isActive", "observeConfig", "trackGlobal", "untrackGlobal", "recordError" },
   },
   provides = { "setup", "teardown", "setEnabled", "getStatus" },

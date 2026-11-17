@@ -36,3 +36,7 @@ python3 -m unittest discover -s 'exodus hub/indeed/tests' -p 'test_*.py'
 python3 'exodus hub/indeed/tests/update_channel_regression.py'
 python3 'exodus hub/indeed/tests/ui_transition_regression.py'
 ```
+
+O hash integral da árvore visual usado na primeira modularização foi removido:
+qualquer nova opção ou descrição o invalidava sem identificar um defeito. Os
+testes semânticos de layout, controles, textos, visibilidade e lifecycle continuam.

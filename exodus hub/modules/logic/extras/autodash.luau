@@ -2,6 +2,7 @@
 
 -- module
 local AutoDash = {}
+local deflectGeometry
 local utils, gameInfo, dash, movement, autoSpam, localPlayer, runService
 local root, heartbeat
 local lastTickAt = -math.huge
@@ -26,7 +27,7 @@ local function clearExchange()
   exchangePartner, exchangeTarget, exchangeChanges, exchangeAt = nil, nil, 0, nil
 end
 local function clashPartner(packetTarget)
-  local time = utils.now(); local physics = gameInfo.getDefensePhysics()
+  local time = utils.now(); local physics = deflectGeometry.getDefensePhysics()
   local context = gameInfo.getClashContext(true); local snapshot = gameInfo.getSnapshotAt(time)
   if
     not physics
@@ -105,9 +106,10 @@ end
 
 -- setup
 function AutoDash.setup(deps)
+  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement or not deps.AutoSpam then return false, "dependências ausentes" end
-  AutoDash.teardown(); utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
-  localPlayer, runService = utils.getLocalPlayer(), utils.getRunService()
+  AutoDash.teardown(); deflectGeometry = deps.DeflectGeometry
+  utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam; localPlayer, runService = utils.getLocalPlayer(), utils.getRunService()
   if not localPlayer or not runService then return false, "serviços indisponíveis" end
   dash.setHandler(onDash); return true
 end
@@ -151,6 +153,7 @@ end
 -- contract
 AutoDash.__contract = {
   requires = {
+    DeflectGeometry = "deflectgeometry",
     Utils = "utils",
     GameInfo = "gameinfo",
     Dash = "dash",
@@ -158,6 +161,7 @@ AutoDash.__contract = {
     AutoSpam = "autospam",
   },
   requiresMethods = {
+    DeflectGeometry = { "getDefensePhysics" },
     Utils = {
       "getLocalPlayer",
       "getRunService",
@@ -172,7 +176,6 @@ AutoDash.__contract = {
       "getClashContext",
       "getSnapshotAt",
       "isSnapshotValid",
-      "getDefensePhysics",
       "isPlayerDashing",
     },
     Dash = { "setHandler", "tick" },

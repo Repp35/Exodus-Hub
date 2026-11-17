@@ -83,11 +83,11 @@ class AdaptiveParry(unittest.TestCase):
 
     def test_windows_match_dump_and_clash_pressure(self):
         self.check('''
-assert(math.abs(gi.getDeflectWindow(16)-.85)<1e-9)
-assert(math.abs(gi.getDeflectWindow(308)-.525)<1e-9)
-assert(math.abs(gi.getDeflectWindow(600)-.2)<1e-9)
-clashing=true;assert(math.abs(gi.getDeflectWindow(600)-.32)<1e-9)
-pressure=1;assert(math.abs(gi.getDeflectWindow(600)-.03)<1e-9)
+assert(math.abs(gi._geometry.getDeflectWindow(16)-.85)<1e-9)
+assert(math.abs(gi._geometry.getDeflectWindow(308)-.525)<1e-9)
+assert(math.abs(gi._geometry.getDeflectWindow(600)-.2)<1e-9)
+clashing=true;assert(math.abs(gi._geometry.getDeflectWindow(600)-.32)<1e-9)
+pressure=1;assert(math.abs(gi._geometry.getDeflectWindow(600)-.03)<1e-9)
 ''')
 
     def test_prediction_waits_for_visual_ball_in_range(self):

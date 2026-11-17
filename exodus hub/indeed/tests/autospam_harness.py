@@ -47,7 +47,7 @@ local defense={enabled=true,responseBudget=1/4.73}
 local defender={getPressureDetector=function() return defense end}
 local stats
 local st={begin=function(id,t) stats={partnerId=id,startedAt=t,frozen=false} end,get=function() return stats end,
- observe=function() end,finish=function() if stats then stats.frozen=true end end,freeze=function() if stats then stats.frozen=true end end,waitForNextClash=function() end}
+ getStatus=function() return stats or {} end,observe=function() end,finish=function() if stats then stats.frozen=true end end,freeze=function() if stats then stats.frozen=true end end,waitForNextClash=function() end}
 local d={tick=function() end,getEstimate=function(id) return dashSamples[id] end}
 RaycastParams={new=function() return {} end}; Enum={RaycastFilterType={Exclude=1}}
 local r={fireParry=function(_,guard) if not guard() then return false,'Deflect cancelado' end clicks=clicks+1;return true end}

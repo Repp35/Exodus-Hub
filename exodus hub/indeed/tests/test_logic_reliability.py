@@ -26,11 +26,33 @@ def run_case(script):
 def module(path):
     source = (ROOT / path).read_text()
     if path == 'aux/gameinfo.luau':
-        # Compose real dependencies for fixtures that instantiate GameInfo directly.
         dependencies = (module('aux/ballsync.luau').replace('local mod=', 'local TestBallSync=', 1)
                         + module('aux/deflectgeometry.luau').replace('local mod=', 'local TestGeometry=', 1))
-        source = dependencies + source.replace('function GameInfo.setup(deps)',
-            'function GameInfo.setup(deps)\n deps.BallSync=TestBallSync; deps.DeflectGeometry=TestGeometry')
+        source = source.replace('function GameInfo.setup(deps)',
+            'function GameInfo.setup(deps)\n deps.BallSync=TestBallSync')
+        start = source.index('function GameInfo.setup(deps)')
+        end = source.index('function GameInfo.getBall()', start)
+        setup = source[start:end].replace('  return true\nend',
+            '  GameInfo._geometry=TestGeometry; return TestGeometry.setup({GameInfo=GameInfo,Utils=deps.Utils})\nend')
+        source = dependencies + source[:start] + setup + source[end:]
+    if path in ('autoparry.luau', 'autospam.luau', 'extras/autofierce.luau', 'extras/autodash.luau'):
+        # Existing fixtures provide geometry doubles alongside game data. Production
+        # obtains a separate service through Permissions.resolve.
+        dependencies = module('aux/deflectgeometry.luau').replace('local mod=', 'local TestGeometry=', 1)
+        marker = re.search(r'function (\w+)\.setup\(deps\)', source).group(0)
+        wiring = """
+ if deps and deps.GameInfo and not deps.DeflectGeometry then
+  local g=deps.GameInfo
+  deps.DeflectGeometry=g._geometry or setmetatable({}, {__index=function(_,name)
+   if g[name] then return g[name] end
+   if name=='getAutoParryGeometry' and g.getDeflectGeometry then
+    return function(speed,factor,frame,ping) return g.getDeflectGeometry(speed,'ap',factor,false,ping) end
+   end
+   return TestGeometry[name]
+  end})
+ end
+"""
+        source = dependencies + source.replace(marker, marker + wiring)
     if not os.environ.get('LUAU_BIN'):
         source = re.sub(
             r'([A-Za-z_][\w.]*) ([+\-*/%])= ([^;\n]+?)(?=;|\n| end| else\b)',
@@ -252,7 +274,7 @@ mod.teardown()
 
 class LifecycleReliability(unittest.TestCase):
     def test_auto_dark_and_jump_follow_external_config_without_duplicate_frames(self):
-        for file, key in [('autodark', 'AutoDark'), ('autojump', 'AutoJump')]:
+        for file, key in [('autodark', 'AutoDark'), ('universal/autojump', 'AutoJump')]:
             with self.subTest(module=file):
                 run_case(COMMON + '''
 Enum={Material={Air='Air'},HumanoidStateType={Jumping='Jumping'}}
@@ -283,7 +305,7 @@ local changed=signal()
 local u={getLocalPlayer=function() return player end,isActive=function() return true end,
  getConfigValue=function() return 1.5 end,observeConfig=function(fn) return changed:Connect(fn) end,
  trackGlobal=function() end,untrackGlobal=function() end}
-''' + module('extras/camera.luau') + '''
+''' + module('extras/universal/camera.luau') + '''
 assert(mod.setup({Utils=u}));local retained=api.getRotation
 assert(retained(2)==3)
 mod.teardown();assert(api.getRotation(2)==2 and retained(2)==2,'stale wrapper kept applying sensitivity')

@@ -90,6 +90,7 @@ local CONFIG = {
   AUTHORIZATION_PATH = "security/entitlements.luau",
   MODULES = {
     { name = "updater", path = "modules/core/updater.luau" },
+    { name = "status", path = "modules/core/status.luau" },
     { name = "runtime", path = "modules/core/runtime.luau" },
     { name = "permissions", path = "modules/logic/aux/permissions.luau" },
     { name = "config", path = "modules/front/app/config.luau" },
@@ -114,8 +115,8 @@ local CONFIG = {
     { name = "clashstats", path = "modules/logic/aux/clashstats.luau" },
     { name = "autodark", path = "modules/logic/extras/autodark.luau" },
     { name = "movement", path = "modules/logic/aux/movement.luau" },
-    { name = "autojump", path = "modules/logic/extras/autojump.luau" },
-    { name = "camera", path = "modules/logic/extras/camera.luau" },
+    { name = "autojump", path = "modules/logic/extras/universal/autojump.luau" },
+    { name = "camera", path = "modules/logic/extras/universal/camera.luau" },
     { name = "antilag", path = "modules/logic/extras/antilag.luau" },
     { name = "infinitejump", path = "modules/logic/extras/universal/infinitejump.luau" },
     { name = "noclip", path = "modules/logic/extras/universal/noclip.luau" },
@@ -138,7 +139,7 @@ local CONFIG = {
     { name = "uiwindow", path = "modules/front/controllers/window.luau" },
     { name = "uifloating", path = "modules/front/controllers/floating.luau" },
     { name = "uinotificationview", path = "modules/front/controllers/notifications.luau" },
-    { name = "uistatus", path = "modules/front/app/status.luau" },
+    { name = "uistatus", path = "modules/front/app/status-view.luau" },
     { name = "uitelemetry", path = "modules/front/controllers/telemetry.luau" },
     { name = "uiinput", path = "modules/front/controllers/input.luau" },
     { name = "uilifecycle", path = "modules/front/controllers/lifecycle.luau" },
@@ -759,8 +760,8 @@ local function startInternal()
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
   utils.start(); utils.setLifecyclePhase("loading")
-  Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
-  local configured, configModuleName, configError = configureModules(loaded, utils, urls)
+  loaded.status.configure(loaded, utils.recordError); Exodus.Utils = utils
+  Exodus.State = utils.getStateSnapshot(); local configured, configModuleName, configError = configureModules(loaded, utils, urls)
   if not configured then return stopStartup(utils, configModuleName, configError) end
   Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot()
   utils.setLifecyclePhase("initializing"); local modulesReady, failedModule, modulesError = initializeModules(loaded)

@@ -4,8 +4,6 @@ Covers state and lifecycle behavior, not engine rendering, text metrics or sched
 The system Lua 5.4 shared library is required, as in the existing runtime harnesses.
 """
 import ctypes
-import hashlib
-import json
 import re
 import unittest
 from pathlib import Path
@@ -48,7 +46,7 @@ function table.freeze(t) return t end
 function math.clamp(x,a,b) return math.max(a,math.min(b,x)) end
 '''
 MOCK = (Path(__file__).parent / 'fixtures/roblox_ui.txt').read_text()
-MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uidisplay', 'uicontrols', 'uiinputs', 'uiselection', 'uidropdown', 'uikit', 'uipages', 'uiconfig', 'uinotifications', 'uiactions', 'uicontext', 'uiwindow', 'uifloating', 'uinotificationview', 'uistatus', 'uitelemetry', 'uiinput', 'uilifecycle', 'ui'))
+MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uidisplay', 'uicontrols', 'uiinputs', 'uiselection', 'uidropdown', 'uikit', 'uipages', 'uiconfig', 'uinotifications', 'uiactions', 'uicontext', 'uiwindow', 'uifloating', 'uinotificationview', 'status', 'uistatus', 'uitelemetry', 'uiinput', 'uilifecycle', 'ui'))
 SETUP = '''
 assert(uitheme.setup())
 assert(uiruntime.setup({Theme=uitheme}))
@@ -98,8 +96,10 @@ local function newKit(extra)
  return uikit.create(options)
 end
 local function fullDeps()
- return {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},AutoParry={getStatus=function() return {} end},
+ local deps = {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},AutoParry={getStatus=function() return {} end},
   UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,NotificationPolicy=uinotifications,Context=uicontext,Window=uiwindow,Floating=uifloating,Notifications=uinotificationview,StatusView=uistatus,Telemetry=uitelemetry,Input=uiinput,Lifecycle=uilifecycle,Controls={}}
+ deps.Status=status.create({autoparry=deps.AutoParry,autospam=deps.AutoSpam},utils.recordError)
+ return deps
 end
 '''
 
@@ -120,37 +120,6 @@ class UILibraryTests(unittest.TestCase):
             return value.decode() if value else None
         finally:
             LIB.lua_close(state)
-
-    def scene_digest(self, desktop):
-        script = '''
-local service=game:GetService('UserInputService')
-service.KeyboardEnabled=DESKTOP;service.MouseEnabled=DESKTOP;service.TouchEnabled=not DESKTOP
-assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
-local keys={'ClassName','Name','Size','Position','AnchorPoint','LayoutOrder','BackgroundColor3','BackgroundTransparency','Text','TextSize','Font','TextColor3','TextTransparency','Image','ImageTransparency','Rotation','CornerRadius','Color','Thickness','Padding','PaddingLeft','PaddingRight','PaddingTop','PaddingBottom','AutomaticSize','AutomaticCanvasSize','ScrollBarThickness','GroupTransparency','Visible','ZIndex'}
-local function atom(value)
- if type(value)~='table' then return tostring(value) end
- if value.__type=='EnumItem' then return value.Name end
- local parts={}
- for key,item in pairs(value) do if key~='__type' then parts[#parts+1]=tostring(key)..'='..atom(item) end end
- table.sort(parts);return '{'..table.concat(parts,',')..'}'
-end
-local function tree(root)
- local parts={}
- for _,key in ipairs(keys) do parts[#parts+1]=key..'='..atom(root._props[key]) end
- local children={}
- for _,child in ipairs(root:GetChildren()) do children[#children+1]=tree(child) end
- table.sort(children)
- return '('..table.concat(parts,';')..'['..table.concat(children)..'])'
-end
-return tree(playerGui)
-'''.replace('DESKTOP', 'true' if desktop else 'false')
-        return hashlib.sha256(self.run_lua(script).encode()).hexdigest()
-
-    def test_modularization_preserves_desktop_and_mobile_scene_properties(self):
-        expected = json.loads((Path(__file__).parent / 'fixtures/ui-scene.json').read_text())
-        for desktop in (True, False):
-            with self.subTest(desktop=desktop):
-                self.assertEqual(self.scene_digest(desktop), expected['desktop' if desktop else 'mobile'])
 
     def test_long_descriptions_have_room_below_pc_toggle_and_shortcut(self):
         self.run_lua('''

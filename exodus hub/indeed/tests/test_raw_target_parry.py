@@ -58,11 +58,11 @@ c.getTrainingCooldownState=function() return {blocking=tm<trainingUntil} end
 class RawTargetParry(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        source = (ROOT / "autoparry.luau").read_text()
-        cls.source = re.sub(r"([A-Za-z_][\w.]*) \+= ([^;\n]+?)(?=;|\n| end)", lambda m: f"{m[1]} = {m[1]} + ({m[2]})", source)
+        from test_logic_reliability import module
+        cls.source = module('autoparry.luau').replace('local mod=', 'local ap=', 1)
 
     def check_ap(self, case):
-        run_lua(PRELUDE + "local ap=(function()\n" + self.source + "\nend)()\n" + """
+        run_lua(PRELUDE + self.source + """
 assert(ap.setup({Utils=u,GameInfo=g,Remote=r,Cooldown=c}))
 assert(ap.bindCharacter(character))
 local function packet(target)
@@ -261,7 +261,7 @@ cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 """)
 
     def test_single_window_exact_boundaries_and_speed_limits(self):
-        geometry_source = (ROOT / "aux/deflectgeometry.luau").read_text().replace("function Geometry.", "function GameInfo.")
+        geometry_source = (ROOT / "aux/deflectgeometry.luau").read_text().replace("Geometry.", "GameInfo.").replace("gameInfo.", "GameInfo.")
         geometry_source = geometry_source[geometry_source.index("function GameInfo.getAutoParryGeometry("):geometry_source.index("function GameInfo.getProjectedDeflectRadius(")]
         for speed, window in ((16, 0.85), (308, 0.525), (600, 0.2)):
             with self.subTest(speed=speed):

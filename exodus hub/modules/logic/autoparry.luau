@@ -2,6 +2,7 @@
 
 -- module
 local AutoParry = {}
+local deflectGeometry
 local utils, gameInfo, remote, cooldownInfo
 local maxObservedCps, syncInterval, lastSyncAt, lastAcceptedSample
 local state = {
@@ -90,17 +91,9 @@ local CONFIG = {
   TIME_EPSILON = 0.000001,
   DISTANCE_EPSILON = 0.0001,
   MAX_FRAME_ALLOWANCE = 0.12,
-  TRAINING_BASE_SPEED = 16,
-  TRAINING_MAX_SPEED = 600,
-  TRAINING_DEFLECT_DISTANCE = 8.5,
-  TRAINING_TRIGGER_PADDING = 2,
-  TRAINING_MAX_PING = 0.25,
   TRAINING_WINDOW_FACTOR = 0.3,
-  TRAINING_MAX_LEAD_FACTOR = 0.8,
   TRAINING_MIN_SPEED = 1,
   TRAINING_MIN_CLOSING_SPEED = 1,
-  TRAINING_WINDOW_SLOW = 0.85,
-  TRAINING_WINDOW_FAST = 0.2,
 }
 
 -- helpers
@@ -147,11 +140,11 @@ end
 -- geometry
 local function rangeBonus()
   if not state.alive or not state.bound then return 0 end
-  local _, cap = gameInfo.getDeflectRangeParameters(); local g = gameInfo.getDeflectGeometry(0, 0, 0, false, 0)
+  local _, cap = deflectGeometry.getDeflectRangeParameters(); local g = deflectGeometry.getDeflectGeometry(0, 0, 0, false, 0)
   return g and math.clamp(g.resilienceBonus, 0, cap) or 0
 end
 local function resilience()
-  local bonus = rangeBonus(); local _, cap, step = gameInfo.getDeflectRangeParameters()
+  local bonus = rangeBonus(); local _, cap, step = deflectGeometry.getDeflectRangeParameters()
   return {
     stack = math.floor(bonus / step + 0.5),
     size = bonus,
@@ -170,36 +163,15 @@ local function recordAutoParryRequest()
   state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt = now
   if state.autoParryCps > 0 then maxObservedCps = math.max(maxObservedCps or 0, math.min(25, state.autoParryCps)) end
 end
-local function trainingGeometry(speed, factor)
-  speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
-  local progress = span > 0 and math.clamp((speed - CONFIG.TRAINING_BASE_SPEED) / span, 0, 1) or 1
-  local blockWindow = CONFIG.TRAINING_WINDOW_SLOW + (CONFIG.TRAINING_WINDOW_FAST - CONFIG.TRAINING_WINDOW_SLOW) * progress; local deflectDistance = CONFIG.TRAINING_DEFLECT_DISTANCE
-  factor = finite(factor) and math.clamp(factor, 0, CONFIG.TRAINING_MAX_LEAD_FACTOR) or activeWindowFactor(clock())
-  local effectiveWindow = blockWindow * factor
-  return {
-    fullRadius = deflectDistance + speed * effectiveWindow + CONFIG.TRAINING_TRIGGER_PADDING,
-    pureRadius = deflectDistance,
-    noWindowParryRadius = deflectDistance,
-    resilienceBonus = 0,
-    pingRadius = 0,
-    deflectWindow = blockWindow,
-    effectiveWindow = effectiveWindow,
-    leadTime = blockWindow,
-    windowFactor = factor,
-    triggerPadding = CONFIG.TRAINING_TRIGGER_PADDING,
-    training = true,
-  }
-end
+local function trainingGeometry(speed, factor) return deflectGeometry.getTrainingGeometry(speed, finite(factor) and factor or activeWindowFactor()) end
 local function radius(speed, factor, baseWindow)
   speed = finite(speed) and math.max(speed, 0) or 0
   if state.mode == "training" then return trainingGeometry(speed, factor) end
   factor = tonumber(factor)
   if not finite(factor) then factor = activeWindowFactor(clock()) end
-  factor = math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR)
-  if type(gameInfo.getAutoParryGeometry) == "function" then return gameInfo.getAutoParryGeometry(speed, factor, CONFIG.FRAME_BASE + state.frameAllowance, state.ping) end
-  return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
+  factor = math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR); return deflectGeometry.getAutoParryGeometry(speed, factor, CONFIG.FRAME_BASE + state.frameAllowance, state.ping)
 end
-local function guaranteedRadius(geometry, speed, ping) return geometry.noWindowParryRadius + math.max(0, speed) * math.max(0, ping) end
+local function guaranteedRadius(geometry, speed, ping) return deflectGeometry.getGuaranteedRadius(geometry, speed, ping) end
 
 -- telemetry
 local function samplePing()
@@ -210,26 +182,8 @@ local function appendRecent(list, item)
   if #list > CONFIG.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
 end
 local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry, rangeOverride)
-  local delta = rootPosition - position; local distance = delta.Magnitude
-  local ballVelocity = velocity
-  if finite(nominalSpeed) and nominalSpeed > 0 and ballVelocity.Magnitude > nominalSpeed * 1.1 then ballVelocity = ballVelocity.Unit * nominalSpeed * 1.1 end
   local rootVelocity = state.root and state.root.Parent and state.root.AssemblyLinearVelocity or Vector3.zero
-  if not vector(rootVelocity) then rootVelocity = Vector3.zero end
-  local relative = ballVelocity - rootVelocity; local closing = distance > 0 and relative:Dot(delta) / distance or 0
-  if not finite(closing) then closing = 0 end
-  local padding = finite(geometry.triggerPadding) and math.max(0, geometry.triggerPadding) or 0; local range = rangeOverride or (geometry.noWindowParryRadius + padding)
-  local threshold = range + math.max(0, closing) * geometry.effectiveWindow; local entry = math.huge
-  local c = delta:Dot(delta) - range * range
-  if c <= 0 then
-    entry = 0
-  else
-    local a = relative:Dot(relative); local b = delta:Dot(relative)
-    if a > 0.000001 and b > 0 then
-      local discriminant = b * b - a * c
-      if discriminant >= 0 then entry = c / (b + math.sqrt(discriminant)) end
-    end
-  end
-  return distance, closing, threshold, entry
+  return deflectGeometry.getTrajectory(position, velocity, rootPosition, nominalSpeed, geometry, rangeOverride, rootVelocity)
 end
 local function radiusTiming(position, velocity, rootPosition, speed, geometry, ping)
   local range = guaranteedRadius(geometry, speed, ping); local _, _, _, entry = trajectory(position, velocity, rootPosition, speed, geometry, range)
@@ -249,7 +203,7 @@ local function matchTiming(value, time, own, factor)
   if not g then return nil end
   local velocity = vector(value.velocity) and value.velocity or Vector3.zero
   if velocity.Magnitude < 0.1 and vector(value.syncDirection) and value.syncDirection.Magnitude > 0.01 then velocity = value.syncDirection.Unit * speed end
-  local distance, closing, _, entry = trajectory(value.position, velocity, own, speed, g); local killRadius = finite(g.killRadius) and g.killRadius or 4
+  local distance, closing, _, entry = trajectory(value.position, velocity, own, speed, g); local killRadius = deflectGeometry.getKillRadius(g)
   local _, _, _, killTime = trajectory(value.position, velocity, own, speed, g, killRadius)
   local risk, adaptive = 0, g.windowFactor
   if g.autoParry == true then
@@ -258,10 +212,7 @@ local function matchTiming(value, time, own, factor)
     risk = math.clamp(1 - gapTime / math.max(response, 0.001), 0, 1)
     local imminent = math.clamp(1 - killTime / math.max(2 * ((g.networkLead or 0) + CONFIG.SERVER_FRAME_MARGIN + jitter), 0.001), 0, 1); risk = math.max(risk, imminent)
     local base = finite(g.windowFactor) and g.windowFactor or activeWindowFactor(); adaptive = base + math.max(0, CONFIG.MAX_WINDOW_FACTOR - base) * risk
-    g = table.clone(g); g.windowFactor = adaptive
-    local uplink = finite(g.uplinkLead) and g.uplinkLead or state.ping; local frameLead = finite(g.frameLead) and g.frameLead or math.max(0, (g.networkLead or 0) - uplink)
-    g.effectiveWindow = uplink + math.min(g.deflectWindow * adaptive + frameLead, g.deflectWindow * 0.95); g.leadTime = g.effectiveWindow
-    g.fullRadius = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * g.effectiveWindow
+    g = deflectGeometry.withAutoParryFactor(g, adaptive, closing, state.ping)
   end
   local ready = distance <= g.fullRadius
   if g.autoParry == true then ready = distance <= g.noWindowParryRadius + CONFIG.DISTANCE_EPSILON or (closing > 0 and entry <= g.effectiveWindow + CONFIG.TIME_EPSILON) end
@@ -375,7 +326,7 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   if mode == "training" then
     local velocity = value.velocity; local speed = value.syncSpeed ~= nil and value.syncSpeed or (vector(velocity) and velocity.Magnitude or nil)
     if not vector(velocity) or not validBallSpeed(speed) or speed < CONFIG.TRAINING_MIN_SPEED then return false end
-    local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR); local ping = finite(state.ping) and math.clamp(state.ping, 0, CONFIG.TRAINING_MAX_PING) or 0
+    local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR); local ping = deflectGeometry.getTrainingLatency(state.ping)
     local entry, _, lead = radiusTiming(position, velocity, own, speed, geometry, ping)
     if entry <= lead then return true end
     local delta = own - position; local distance = delta.Magnitude
@@ -496,9 +447,7 @@ local function tickTraining(value, root, time)
   local delta = rootPosition - position; local distance = delta.Magnitude
   local closing = distance > 0 and velocity:Dot(delta) / distance or 0
   if not finite(closing) then closing = 0 end
-  local ping = finite(state.ping) and math.clamp(state.ping, 0, CONFIG.TRAINING_MAX_PING) or 0
-  local lead = math.min(geometry.deflectWindow * CONFIG.TRAINING_MAX_LEAD_FACTOR, geometry.effectiveWindow + ping + CONFIG.FRAME_BASE + state.frameAllowance)
-  local threshold = geometry.noWindowParryRadius + CONFIG.TRAINING_TRIGGER_PADDING + math.max(0, closing) * lead
+  local ping = deflectGeometry.getTrainingLatency(state.ping); local threshold = deflectGeometry.getTrainingTrigger(geometry, closing, ping, state.frameAllowance)
   state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0; state.closingSpeed, state.triggerDistance = closing, threshold
   state.trainingLastValidAt, state.trainingLastServerTime = time, value.serverTime; local confirmed = value.trainingParryAt
   if
@@ -522,7 +471,7 @@ local function tickTraining(value, root, time)
   then
     state.fired, state.nextAttemptAt, state.retryReady = false, 0, true
   end
-  if state.retryReady then threshold = geometry.noWindowParryRadius + math.max(0, closing) * geometry.deflectWindow * CONFIG.RETRY_WINDOW_FACTOR; state.triggerDistance = threshold end
+  if state.retryReady then threshold = deflectGeometry.getTrainingTrigger(geometry, closing, ping, state.frameAllowance, CONFIG.RETRY_WINDOW_FACTOR); state.triggerDistance = threshold end
   if state.fired then phase("waiting", "training_awaiting_return"); return end
   if finite(confirmed) then state.trainingConfirmedAt = confirmed end
   if cooldownInfo.getTrainingCooldownState().blocking then phase("waiting", "training_lockout"); return end
@@ -628,6 +577,7 @@ end
 
 -- public-api
 function AutoParry.setup(deps)
+  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
   if
     type(deps) ~= "table"
     or type(deps.Utils) ~= "table"
@@ -637,8 +587,8 @@ function AutoParry.setup(deps)
   then
     return false, "dependências inválidas"
   end
-  detach("setup"); utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown
-  state.player = utils.getLocalPlayer()
+  detach("setup"); deflectGeometry = deps.DeflectGeometry
+  utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown; state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
   resetTracking(); phase("detached", "setup_complete")
   return true
@@ -857,8 +807,8 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   local match = value.mode ~= "training" and matchTiming(value, time, root, factor) or nil
   if match then geometry, velocity = match.geometry, match.velocity end
   local distance, closing, triggerDistance, entry = trajectory(position, velocity, root, speed, geometry); local lead, adaptiveFactor = adaptiveLead(geometry, entry, closing)
-  triggerDistance = geometry.training and (geometry.noWindowParryRadius + (geometry.triggerPadding or 0) + math.max(0, closing) * lead) or geometry.fullRadius
-  local distanceToRadius = distance - triggerDistance; local radiusEntry, defenseRadius, gateLead = radiusTiming(position, velocity, root, speed, geometry, state.ping)
+  triggerDistance = geometry.training and deflectGeometry.getProjectedTriggerRadius(geometry, closing) or geometry.fullRadius; local distanceToRadius = distance - triggerDistance
+  local radiusEntry, defenseRadius, gateLead = radiusTiming(position, velocity, root, speed, geometry, state.ping)
   local timeToTrigger = math.min(math.max(entry - lead, 0), math.max(radiusEntry - gateLead, 0))
   if not geometry.training then timeToTrigger = match and match.ready and 0 or math.max(0, entry - lead) end
   return {
@@ -1044,12 +994,26 @@ end
 -- contract
 AutoParry.__contract = {
   requires = {
+    DeflectGeometry = "deflectgeometry",
     Remote = "remote",
     GameInfo = "gameinfo",
     Utils = "utils",
     Cooldown = "cooldown",
   },
   requiresMethods = {
+    DeflectGeometry = {
+      "getKillRadius",
+      "getDeflectRangeParameters",
+      "getDeflectGeometry",
+      "getTrainingGeometry",
+      "getAutoParryGeometry",
+      "getGuaranteedRadius",
+      "getTrajectory",
+      "withAutoParryFactor",
+      "getTrainingLatency",
+      "getTrainingTrigger",
+      "getProjectedTriggerRadius",
+    },
     Remote = { "fireParry" },
     Cooldown = { "getDeflectCooldownState", "recordDeflectAttempt", "recordTrainingDeflectAttempt", "getTrainingCooldownState" },
     GameInfo = {
@@ -1066,10 +1030,6 @@ AutoParry.__contract = {
       "getBallPosition",
       "getBallVelocity",
       "getRootPosition",
-      "getDeflectGeometry",
-      "getAutoParryGeometry",
-      "getDeflectRangeParameters",
-      "getProjectedDeflectRadius",
       "getAutoSpamDelay",
     },
     Utils = {

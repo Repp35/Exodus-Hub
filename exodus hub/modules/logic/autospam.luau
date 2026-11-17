@@ -2,6 +2,7 @@
 
 local AutoSpam = {}
 
+local deflectGeometry
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
 local current, generation = nil, 0
 local clashStats
@@ -134,29 +135,25 @@ local function freshSnapshot(s, time)
     and (s.syncAt == nil or (finite(s.syncAt) and time >= s.syncAt and time - s.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
 end
 local function compensatedRadius(id, speed)
-  local radius = gameInfo.getPlayerRawRadius(id, speed, false); return finite(radius) and radius + (id == localPlayer.UserId and speed * networkLatency() or 0) or nil
+  local radius = deflectGeometry.getPlayerRawRadius(id, speed, false)
+  return finite(radius) and deflectGeometry.addLatencyRadius(radius, speed, id == localPlayer.UserId and networkLatency() or 0) or nil
 end
 local function geometry(s, factor)
   local speed = snapshotSpeed(s)
   if not speed or speed <= 0 then return nil end
-  local g = gameInfo.getDeflectGeometry(speed, "game", factor or 1, false, networkLatency())
+  local g = deflectGeometry.getDeflectGeometry(speed, "game", factor or 1, false, networkLatency())
   if not g or not finite(g.fullRadius) or not finite(g.effectiveWindow) or not finite(g.deflectWindow) or not finite(g.noWindowParryRadius) then return nil end
-  local low, high = gameInfo.getBallSpeedLimits()
-  if finite(low) and finite(high) and high > low then
-    local fraction = math.clamp((speed - low) / (high - low), 0, 1); local bonus = 0.65 * 0.20 * fraction
-    g.deflectWindow += bonus; g.effectiveWindow += bonus * (factor or 1)
-    g.fullRadius += speed * bonus * (factor or 1); g.leadTime += bonus
-  end
+  local low, high = gameInfo.getBallSpeedLimits(); g = deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1)
   return g, speed
 end
 local function ballWindow(state, s, target)
   local position = target == localPlayer.UserId and state.root.Position or playerPosition(target); local g, speed = geometry(s, 1)
   if not vector(position) or not g then return false end
   local delta = position - s.position; local distance = delta.Magnitude
-  local range = target == localPlayer.UserId and g.noWindowParryRadius or gameInfo.getPlayerRawRadius(target, speed, false)
+  local range = target == localPlayer.UserId and g.noWindowParryRadius or deflectGeometry.getPlayerRawRadius(target, speed, false)
   if not finite(range) then return false end
-  local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0; local full = target == localPlayer.UserId and g.fullRadius or range + speed * g.effectiveWindow
-  return distance <= range or (closing > 0 and distance <= full + closing * g.effectiveWindow)
+  local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0; local full = target == localPlayer.UserId and g.fullRadius or deflectGeometry.projectRadius(range, speed, g.effectiveWindow)
+  return distance <= range or (closing > 0 and distance <= deflectGeometry.projectRadius(full, closing, g.effectiveWindow))
 end
 local function nearPartner(state, id, limit)
   if not id or id == localPlayer.UserId or not playerIsAlive(id) then return nil end
@@ -213,11 +210,11 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
   local distance = delta.Magnitude; local flatDistance = horizontal.Magnitude
   if not finite(distance) or not finite(flatDistance) or flatDistance < 1 then return nil end
   local speed = snapshotSpeed(snapshot); local g = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
-  local ownRadius, otherRadius = compensatedRadius(localPlayer.UserId, speed), gameInfo.getPlayerRawRadius(tracker.partner, speed, false)
+  local ownRadius, otherRadius = compensatedRadius(localPlayer.UserId, speed), deflectGeometry.getPlayerRawRadius(tracker.partner, speed, false)
   if not g or not finite(speed) or speed <= 0 or not finite(ownRadius) or not finite(otherRadius) or not finite(g.deflectWindow) then return nil end
   local towardOther = other - snapshot.position
   if snapshot.velocity:Dot(towardOther) <= 0 then return nil end
-  local ownWindow = ownRadius + speed * (g.deflectWindow * CONFIG.ACTIVATION.DASH_ESCAPE_WINDOW_FACTOR + networkLatency())
+  local ownWindow = deflectGeometry.projectRadius(ownRadius, speed, g.deflectWindow, CONFIG.ACTIVATION.DASH_ESCAPE_WINDOW_FACTOR, networkLatency())
   if (snapshot.position - own).Magnitude <= ownWindow then return nil end
   local localVelocity = state.root.AssemblyLinearVelocity
   if typeof(localVelocity) ~= "Vector3" then localVelocity = Vector3.zero end
@@ -233,7 +230,7 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
     local drift = selfDash and otherVelocity or localVelocity
     if not finite(drift.Magnitude) or drift.Magnitude > 40 then drift = Vector3.zero end
     local relativeVelocity = selfDash and (drift - velocity) or (velocity - drift); local projectedDistance = (delta + relativeVelocity * remaining).Magnitude
-    local threshold = ownRadius + otherRadius + speed * g.deflectWindow * CONFIG.ACTIVATION.DASH_ESCAPE_WINDOW_FACTOR
+    local threshold = deflectGeometry.projectRadius(ownRadius, speed, g.deflectWindow, CONFIG.ACTIVATION.DASH_ESCAPE_WINDOW_FACTOR, 0, otherRadius)
     if
       not finite(projectedDistance)
       or projectedDistance <= threshold
@@ -355,7 +352,7 @@ local function dashPrediction(state, s, time)
     if not ballWindow(state, s, s.targetId) then return nil, "dash_ball_outside_window" end
     local own, other = state.root.Position, playerPosition(partner); local g, speed = geometry(s, 1)
     if not g then return nil, "dash_geometry" end
-    local ownRadius, otherRadius = compensatedRadius(localPlayer.UserId, speed), gameInfo.getPlayerRawRadius(partner, speed, false)
+    local ownRadius, otherRadius = compensatedRadius(localPlayer.UserId, speed), deflectGeometry.getPlayerRawRadius(partner, speed, false)
     if not finite(ownRadius) or not finite(otherRadius) then return nil, "dash_geometry" end
     local function model(sample, relative, reason)
       if
@@ -373,7 +370,7 @@ local function dashPrediction(state, s, time)
       local closing = sample.velocity:Dot(relative) / distance
       if closing / magnitude < CONFIG.ACTIVATION.DASH_MIN_ALIGNMENT then return nil end
       local closestAt = math.clamp(relative:Dot(sample.velocity) / sample.velocity:Dot(sample.velocity), 0, remaining); local predicted = (relative - sample.velocity * closestAt).Magnitude
-      local limit = math.min(CONFIG.ACTIVATION.MAX_CLASH_DISTANCE, ownRadius + otherRadius + speed * g.effectiveWindow)
+      local limit = math.min(CONFIG.ACTIVATION.MAX_CLASH_DISTANCE, deflectGeometry.projectRadius(ownRadius, speed, g.effectiveWindow, 1, 0, otherRadius))
       if predicted > limit then return nil end
       local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude
       params.FilterDescendantsInstances = { state.character, players:GetPlayerByUserId(partner).Character, s.ball }; params.RespectCanCollide = true
@@ -592,9 +589,10 @@ local function detach(reason)
   end
 end
 function AutoSpam.setup(deps)
+  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
+  deflectGeometry = deps.DeflectGeometry; utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
@@ -709,38 +707,6 @@ end
 function AutoSpam.getDashData()
   local dashing, speed, duration = gameInfo.getLocalDashState(); return { dashing = dashing == true, speed = speed or 120, duration = duration or 0.2, windowFactor = 1 }
 end
-local function clashStatus()
-  if not clashStats then return nil end
-  local currentCps = clashStats.currentCps
-  if currentCps and not clashStats.frozen then
-    currentCps = math.min(currentCps, 1 / math.max(clashStats.cycleInterval or 0, clashStats.lastCycleAt and now() - clashStats.lastCycleAt or math.huge))
-  end
-  local duration = clashStats.duration or (clashStats.startedAt and math.max(0, now() - clashStats.startedAt))
-  return {
-    partnerId = clashStats.partnerId,
-    distance = clashStats.distance,
-    cps = clashStats.cps,
-    currentCps = currentCps,
-    startSample = clashStats.startSample and table.clone(clashStats.startSample) or nil,
-    endSample = clashStats.endSample and table.clone(clashStats.endSample) or nil,
-    endReason = clashStats.endReason,
-    speed = clashStats.speed,
-    frozen = clashStats.frozen,
-    duration = duration,
-    travelTarget = clashStats.travelTarget,
-    travelElapsed = not clashStats.frozen and finite(clashStats.travelStartedAt) and math.max(0, now() - clashStats.travelStartedAt) or nil,
-    travelTargetName = clashStats.travelTarget and (clashStats.travelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
-    deceasedName = clashStats.deceasedId and (clashStats.deceasedId == localPlayer.UserId and "You" or "Opponent") or nil,
-    travelStartedAt = not clashStats.frozen and clashStats.travelStartedAt or nil,
-    lastTravelTime = clashStats.lastTravelTime,
-    lastTravelTarget = clashStats.lastTravelTarget,
-    lastTravelTargetName = clashStats.lastTravelTarget and (clashStats.lastTravelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
-    fatalTravelTime = clashStats.fatalTravelTime,
-    penultimateTravelTime = clashStats.penultimateTravelTime,
-    penultimateTarget = clashStats.penultimateTarget,
-    deceasedId = clashStats.deceasedId,
-  }
-end
 function AutoSpam.getStatus()
   local state = current; local time = utils and now() or 0
   local sample = gameInfo and gameInfo.getSnapshotAt(time); local distance = state and sample and vector(sample.position) and (sample.position - state.root.Position).Magnitude or nil
@@ -767,13 +733,14 @@ function AutoSpam.getStatus()
     lastStopAt = lastStopAt,
     targetId = state and state.target or -1,
     clashPartnerId = state and state.partner or -1,
-    clashStats = clashStatus(),
+    clashStats = clashStatsModule and clashStatsModule.getStatus() or nil,
   }
 end
 
 -- contract
 AutoSpam.__contract = {
   requires = {
+    DeflectGeometry = "deflectgeometry",
     Utils = "utils",
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
@@ -781,6 +748,7 @@ AutoSpam.__contract = {
     Dash = "dash",
   },
   requiresMethods = {
+    DeflectGeometry = { "getPlayerRawRadius", "addLatencyRadius", "getDeflectGeometry", "withSpeedWindowBonus", "projectRadius" },
     Utils = {
       "now",
       "getLocalPlayer",
@@ -803,9 +771,7 @@ AutoSpam.__contract = {
       "isSnapshotValid",
       "getPlayerMotion",
       "getHaunterEvent",
-      "getDeflectGeometry",
       "getLocalDashState",
-      "getPlayerRawRadius",
       "getBallFrozen",
       "getAveragePing",
       "getTargetId",
@@ -813,7 +779,7 @@ AutoSpam.__contract = {
     },
     Cooldown = { "getDeflectCooldownState" },
     Dash = { "tick", "getEstimate" },
-    ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
+    ClashStats = { "getStatus", "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
     "setup",

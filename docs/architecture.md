@@ -49,24 +49,42 @@ executor.
 
 ## GameInfo e estado da bola
 
-`gameinfo.luau` mantém a API pública existente e adapta os objetos e serviços do
-jogo. Duas dependências internas são resolvidas pelo contrato e pelo manifesto:
+`gameinfo.luau` adapta os objetos e serviços do jogo. Sua dependência interna
+BallSync é resolvida pelo contrato e pelo manifesto:
 
 - `logic/aux/ballsync.luau`: fábrica por sessão, validação e decodificação dos
   pacotes, sequência de 16 bits, seleção entre pacote recebido e replicador,
   expiração e instante de recebimento. A aplicação de dados aceitos invalida o
   cache de snapshots através de um callback. Não instala conexões adicionais.
-- `logic/aux/deflectgeometry.luau`: cálculo de raios, antecipação e projeção de
-  defesa, usando a configuração central e as consultas do GameInfo. Não guarda
-  estado da bola nem abre conexões.
+`logic/aux/deflectgeometry.luau` é um serviço independente que depende dos dados
+brutos de GameInfo e Utils. É o único dono das regras e constantes de raio e
+janela. AP, AutoSpam, AutoFierce e AutoDash solicitam essa API diretamente através
+dos contratos. GameInfo não calcula nem encaminha geometria. A API, os fatores e
+os perfis estão em [Geometria de defesa](deflect-geometry.md).
 
 GameInfo continua responsável por treino, descoberta de objetos e habilidades,
 conexões, snapshots e integração com a física fornecida pelo jogo. Cada setup
 cria uma instância nova do estado de pacotes; snapshots e consumidores consultam
-essa mesma instância. Os consumidores de GameInfo não precisam mudar suas APIs.
+essa mesma instância. Os consumidores de geometria declaram a dependência DeflectGeometry.
 
 ## Ferramentas de desenvolvimento
 
 A organização e os comandos da pasta `indeed` estão documentados em
 [`indeed/README.md`](../exodus%20hub/indeed/README.md). O formatter separa regras,
 backend StyLua e pipeline de arquivos, mantendo a entrada `formatter.py`.
+
+## Status e recursos universais
+
+`modules/core/status.luau` centraliza a leitura dos provedores para qualquer
+consumidor. O loader registra os módulos; Utils e a UI consultam o serviço.
+`front/app/status-view.luau` apenas formata observações para a apresentação.
+`clashstats.luau` continua sendo o coletor de estatísticas específico de clash.
+
+Camera e AutoJump ficam em `logic/extras/universal`, pois não dependem de regras
+de combate. As instruções para extras e universal estão em `logic/extras/spec.md`.
+
+## Anti-lag
+
+Padrões, culling visual, piso e opções de clash/texturas estão em
+[Anti-lag](anti-lag.md). O filtro usa DeflectGeometry e AutoSpam para observar
+clash, sem transferir as decisões de combate para o anti-lag.

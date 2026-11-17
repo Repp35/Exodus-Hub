@@ -43,3 +43,34 @@ local result=Runtime.bind(loaded,{'autoparry','autospam'},{},function() error('u
 assert(result.ballSync and result.ballSyncSubscribers==2 and watchers==1 and maintenance==1)
 callback({Sequence=1}); assert(calls[1]=='spam' and calls[2]=='ap')
 ''')
+
+class SharedStatus(unittest.TestCase):
+    def test_provider_failure_is_isolated_and_recovers_without_ui(self):
+        source = (ROOT / 'modules/core/status.luau').read_text()
+        run_lua('''
+local Status=(function()
+''' + source + '''
+end)()
+local reports=0; local fail=true; local calls=0
+local providers={bad={getStatus=function() if fail then error('offline') end return {phase='ready'} end},
+ good={getStatus=function() calls=calls+1; return {count=calls} end}}
+assert(Status.configure(providers,function() reports=reports+1 end))
+assert(Status.get('bad')==nil and Status.get('bad')==nil and reports==1)
+local values=Status.collect(); assert(values.good.count==1 and values.bad==nil)
+fail=false; assert(Status.get('bad').phase=='ready')
+fail=true; assert(Status.get('bad')==nil and reports==2)
+assert(Status.collect({'good'}).good.count==2)
+''')
+
+    def test_reentrant_provider_read_cannot_recurse_forever(self):
+        source = (ROOT / 'modules/core/status.luau').read_text()
+        run_lua('''
+local Status=(function()
+''' + source + '''
+end)()
+local reader;local count=0
+reader=Status.create({self={getStatus=function()
+ count=count+1;assert(reader.get('self')==nil);return {phase='ready'}
+end}})
+assert(reader.get('self').phase=='ready' and count==1)
+''')
