@@ -14,11 +14,10 @@ function Controller.create(context)
   local playerGui = context.playerGui; local Utils = context.deps.Utils
   local AutoSpam = context.deps.AutoSpam; local StatusView = context.deps.StatusView
   local AutoParry = context.deps.AutoParry; local C = context.theme.COLORS
-  local RunService = context.services.RunService
-  local inst = context.inst; local corner = context.corner
-  local twPlay = context.twPlay; local setTextIfChanged = context.setTextIfChanged
-  local trackConn = context.trackConn; local untrackConn = context.untrackConn
-  local safeDisconnect = context.safeDisconnect
+  local RunService = context.services.RunService; local inst = context.inst
+  local corner = context.corner; local twPlay = context.twPlay
+  local setTextIfChanged = context.setTextIfChanged; local trackConn = context.trackConn
+  local untrackConn = context.untrackConn; local safeDisconnect = context.safeDisconnect
   context.refs.informationGui = inst("ScreenGui", {
     Name = "ExodusInformationOverlay",
     DisplayOrder = 2147483647,
@@ -142,10 +141,7 @@ function Controller.create(context)
   local function read(name, provider)
     local ok, value = pcall(provider.getStatus)
     if ok and type(value) == "table" then failures[name] = nil; return value end
-    if not failures[name] then
-      failures[name] = true
-      pcall(Utils.recordError, "Info", name .. ": " .. tostring(ok and "invalid status" or value))
-    end
+    if not failures[name] then failures[name] = true; pcall(Utils.recordError, "Info", name .. ": " .. tostring(ok and "invalid status" or value)) end
     return nil
   end
   local function render(label, show, enabled, lines)
@@ -161,13 +157,12 @@ function Controller.create(context)
       travel = Utils.getConfigValue("ClashTravelTimeVisible") == true,
       distance = Utils.getConfigValue("ClashDistanceVisible") == true,
     }
+
     local data = {}
     if enabled.ap then data.ap = read("AutoParry", AutoParry) end
     if enabled.gates or enabled.travel or enabled.distance then data.autoSpam = read("AutoSpam", AutoSpam) end
-    local panels = StatusView.format(data)
-    render(apLabel, setAPVisible, enabled.ap, panels.ap)
-    render(gateLabel, setGateVisible, enabled.gates, panels.gates)
-    render(travelLabel, setTravelVisible, enabled.travel, panels.travel)
+    local panels = StatusView.format(data); render(apLabel, setAPVisible, enabled.ap, panels.ap)
+    render(gateLabel, setGateVisible, enabled.gates, panels.gates); render(travelLabel, setTravelVisible, enabled.travel, panels.travel)
     render(distanceLabel, setDistanceVisible, enabled.distance, panels.distance)
   end
   local elapsed = 0
