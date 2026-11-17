@@ -133,6 +133,7 @@ local CONFIG = {
     { name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
     { name = "autoparry", path = "modules/logic/autoparry.luau" },
     { name = "dash", path = "modules/logic/aux/dash.luau" },
+    { name = "returnkill", path = "modules/logic/aux/returnkill.luau" },
     { name = "autospam", path = "modules/logic/autospam.luau" },
     { name = "autodash", path = "modules/logic/extras/autodash.luau" },
     { name = "spam", path = "modules/logic/spam.luau" },
