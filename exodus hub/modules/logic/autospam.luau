@@ -377,12 +377,10 @@ local function deathRisk(state, s, time, cd)
   local lateParry = nextHeadroom ~= nil and nextHeadroom <= runtimeBudget + 1 / 25; local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
   local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.returnLeg ~= nil and h.returnLeg <= response
   local recentLeg = h.targetAt ~= nil and time - h.targetAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.lastLeg ~= nil and h.lastLeg <= response
-  local reason
-  if exchangeEvidence and soon then
-    if fastReturn then reason = "return_demand_exceeds_ap"
-    elseif predictedCycle and predictedCycle <= response and (fastLeg or recentLeg) then reason = "return_demand_exceeds_ap"
-    elseif lateParry and predictedCycle and predictedCycle <= response + runtimeBudget then reason = "parry_margin_shrinking" end
-  end
+  local cadenceDanger = fastReturn or (predictedCycle and predictedCycle <= response and (fastLeg or recentLeg))
+  local marginDanger = lateParry and predictedCycle and predictedCycle <= response + runtimeBudget
+  local danger = exchangeEvidence and soon and (cadenceDanger or marginDanger)
+  local reason = danger and "exchange_danger" or nil
   return {
     exchangeEvidence = exchangeEvidence,
     returnLeg = h.returnLeg,
@@ -861,6 +859,7 @@ local function clashStatus()
     travelStartedAt = not clashStats.frozen and clashStats.travelStartedAt or nil,
     lastTravelTime = clashStats.lastTravelTime,
     lastTravelTarget = clashStats.lastTravelTarget,
+    lastTravelTargetName = clashStats.lastTravelTarget and (clashStats.lastTravelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
     fatalTravelTime = clashStats.fatalTravelTime,
     penultimateTravelTime = clashStats.penultimateTravelTime,
     penultimateTarget = clashStats.penultimateTarget,

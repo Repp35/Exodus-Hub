@@ -28,7 +28,7 @@ other.root.Position=v(80);packet(42,0,100)
 packet(99,.1);packet(42,.22);assert(not ap.isActive())
 packet(99,.1);packet(42,.17);local r=ap.getStatus().risk
 assert(r.observedCycle>.26 and r.nextCycle<.23)
-assert(ap.isActive() and r.reason=='return_demand_exceeds_ap')
+assert(ap.isActive() and r.reason=='exchange_danger')
 assert(clicks==1,'activation produced more than one initial request')
 -- Loader evaluates AutoSpam first; the unchanged AP guard sees spam active.
 if not u.isAutoSpamActive() then clicks=clicks+1 end
@@ -39,7 +39,7 @@ assert(clicks==1,'AP and spam both dispatched for the same handoff')''')
 other.root.Position=v(50);packet(99,0,500);packet(42,.01,100)
 defense.lastAcceptedSample={at=tm,ball=ball,distance=14,speed=300,closingSpeed=300}
 heartbeat(.01)
-assert(ap.isActive() and ap.getStatus().risk.reason=='parry_margin_shrinking')''')
+assert(ap.isActive() and ap.getStatus().risk.reason=='exchange_danger')''')
 
     def test_added_gate_does_not_install_recovery_or_restart_controller(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)

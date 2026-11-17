@@ -23,14 +23,18 @@ function StatusView.format(data)
   if positive(speed) then out.distance[#out.distance + 1] = string.format("Speed: %.0f", speed) end
   if positive(stats.currentCps) then out.distance[#out.distance + 1] = string.format("Clash: %.2f CPS", stats.currentCps) end
   if positive(stats.duration) then out.distance[#out.distance + 1] = string.format("Duration: %.2fs", stats.duration) end
-  if stats.frozen == true then
-    if text(stats.deceasedName) then out.travel[#out.travel + 1] = stats.deceasedName .. " died" end
-    if positive(stats.fatalTravelTime) then out.travel[#out.travel + 1] = string.format("Fatal return: %.0f ms", stats.fatalTravelTime * 1000) end
-    if positive(stats.penultimateTravelTime) then out.travel[#out.travel + 1] = string.format("Previous return: %.0f ms", stats.penultimateTravelTime * 1000) end
-  elseif finite(stats.travelElapsed) and stats.travelElapsed >= 0 and text(stats.travelTargetName) then
-    out.travel[#out.travel + 1] = string.format("%s: %.0f ms", stats.travelTargetName, stats.travelElapsed * 1000)
+  local travel = object(data.travel or stats)
+  if finite(travel.travelElapsed) and travel.travelElapsed >= 0 and text(travel.travelTargetName) then
+    out.travel[#out.travel + 1] = string.format("Target (%s): %.0f ms", travel.travelTargetName, travel.travelElapsed * 1000)
   end
-  if positive(stats.lastTravelTime) then out.travel[#out.travel + 1] = string.format("Last return: %.0f ms", stats.lastTravelTime * 1000) end
+  if positive(travel.lastTravelTime) then
+    local who = text(travel.lastTravelTargetName) and (" (" .. travel.lastTravelTargetName .. ")") or ""
+    out.travel[#out.travel + 1] = string.format("Last target%s: %.0f ms", who, travel.lastTravelTime * 1000)
+  end
+  if positive(travel.fatalTravelTime) then
+    local who = text(travel.deceasedName) and (" (" .. travel.deceasedName .. ")") or ""
+    out.travel[#out.travel + 1] = string.format("Last death%s: %.0f ms", who, travel.fatalTravelTime * 1000)
+  end
   return out
 end
 StatusView.__contract = { provides = { "setup", "format" }, requires = {} }
