@@ -3,7 +3,6 @@
 local AutoSpam = {}
 
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
-local returnKill
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -77,9 +76,8 @@ local function clearEvidence(state)
   state.outbound, state.pending, state.close, state.haunter, state.closeArm = nil, nil, nil, nil, nil
 end
 local function resetTargets(state)
-  if state.returnKill then state.returnKill.reset() end
-  state.returnKillCandidate = nil; clearEvidence(state)
-  state.target, state.previousOpponent, state.selfReturn = nil, nil, nil; state.exchangeHistory = nil
+  clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
+  state.exchangeHistory = nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -97,7 +95,6 @@ local function deactivate(state, reason, time)
     and reason ~= "player_died"
     and reason ~= "opponent_left_or_died"
     and reason ~= "cooldown"
-    and reason ~= "return_exchange_timeout"
     and reason ~= "target_redirected_far"
   then
     local opponent = playerPosition(state.partner)
@@ -107,10 +104,10 @@ local function deactivate(state, reason, time)
   end
   time = time or now()
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
-  state.returnExchange = nil; state.sendContinuity = nil
-  state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
-  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
-  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
+  state.sendContinuity = nil; state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason
+  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY; lastStopReason, lastStopAt = reason, time
+  utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
+  return true
 end
 local function monitorCooldown(state) return cooldownInfo.getDeflectCooldownState(), false end
 local function sampleGate(state, s, time)
@@ -172,30 +169,6 @@ local function nearestPartner(state, limit)
     if d and (not distance or d < distance) then best, distance = id, d end
   end
   return best
-end
-local function observeReturnKill(state, s, time)
-  if not state.returnKill then return end
-  if state.active then
-    state.returnKill.reset(); state.returnKillCandidate = nil
-    return
-  end
-  local g = gameInfo.getDeflectGeometry(snapshotSpeed(s), "game", 1, false, networkLatency()); local physics = gameInfo.getDefensePhysics()
-  if not g or not finite(g.fullRadius) then
-    state.returnKill.reset(); state.returnKillCandidate = nil
-    return
-  end
-  local partner = s.targetId ~= localPlayer.UserId and s.targetId or state.previousOpponent
-  state.returnKillCandidate = state.returnKill.observe({
-    at = time,
-    ball = s.ball,
-    me = localPlayer.UserId,
-    targetId = s.targetId,
-    distance = (s.position - state.root.Position).Magnitude,
-    fullRadius = g.fullRadius,
-    killRadius = physics and physics.killRadius or 4,
-    inWindow = ballWindow(state, s, localPlayer.UserId),
-    partnerId = partner and playerIsAlive(partner) and partner or nil,
-  })
 end
 local function observeTarget(state, s, time)
   local target, previous = s.targetId, state.target
@@ -288,12 +261,6 @@ end
 local function activate(state, reason, partner, time, s)
   if state.active then return false end
   state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
-  if reason == "return_kill_cycles" then
-    state.returnExchange = { at = time, target = s.targetId }; state.returnKill.reset()
-    state.returnKillCandidate = nil
-  else
-    state.returnExchange = nil
-  end
   if s.targetId == partner then state.departedAt = state.departedAt or time end
   lastActivationReason, lastActivationAt = reason, time; clashStatsModule.begin(partner, time)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
@@ -363,26 +330,12 @@ local function sendBlocked(state, reason, time)
   if state.lastSendBlockReason ~= reason then state.lastSendBlockReason, state.lastSendBlockAt = reason, time end
   return false
 end
-local function returnExchangeExpired(state, s, time)
-  if state.reason ~= "return_kill_cycles" or not state.returnExchange then return false end
-  local tracker = state.returnExchange; local fresh = freshSnapshot(s, time) and s.ball == state.ball and not s.teleported and not s.resetting and not s.locked
-  if fresh and finite(s.syncSequence) and finite(state.sequence) then fresh = (s.syncSequence - state.sequence) % 65536 < 32768 end
-  if fresh and s.targetId ~= tracker.target then
-    local me = localPlayer.UserId
-    if (tracker.target == me and s.targetId == state.partner) or (tracker.target == state.partner and s.targetId == me) then tracker.at = time end
-    tracker.target = s.targetId
-  end
-  local other = playerPosition(state.partner)
-  if other and (other - state.root.Position).Magnitude <= 5 then return false end
-  return time - tracker.at > 0.1
-end
 local function deactivationReason(state, s, time, cd)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if redirectedFar(state, s, time) then return "target_redirected_far" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
-  if returnExchangeExpired(state, s, time) then return "return_exchange_timeout" end
   local opponent = playerPosition(state.partner)
   if not opponent then state.distanceSince = nil; return nil end
   local distance = (opponent - state.root.Position).Magnitude
@@ -514,7 +467,6 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, s.targetId) then state.gates.haunter = "haunter_ball_outside_window"
     else state.gates.haunter = "ready"; return haunter.reason, haunter.partner end
   end
-  if state.returnKillCandidate then return "return_kill_cycles", state.returnKillCandidate.partner end
 end
 local function sequenceOrder(state, incoming)
   if incoming == nil then return "none" end
@@ -550,15 +502,11 @@ local function evaluate(state, s, time, packet)
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
-    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
-      state.exchangeHistory, state.sendContinuity, state.returnKillCandidate = nil, nil, nil
-      if state.returnKill then state.returnKill.reset() end
-    end
+    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return
   end
-  observeTarget(state, s, time); observeReturnKill(state, s, time)
-  observeExchangeContinuity(state, s, time); rememberSendContinuity(state, s, time)
-  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
+  observeTarget(state, s, time); observeExchangeContinuity(state, s, time)
+  rememberSendContinuity(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
     if stop then deactivate(state, stop, time); return end
@@ -646,7 +594,7 @@ end
 function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash; returnKill = deps.ReturnKill
+  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
@@ -655,7 +603,6 @@ function AutoSpam.bindCharacter(character)
   detach("rebind"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root or not root:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
   local state = {
-    returnKill = returnKill and returnKill.new() or nil,
     character = character,
     root = root,
     connections = {},
@@ -832,7 +779,6 @@ AutoSpam.__contract = {
     ClashStats = "clashstats",
     Cooldown = "cooldown",
     Dash = "dash",
-    ReturnKill = "returnkill",
   },
   requiresMethods = {
     Utils = {
@@ -864,10 +810,8 @@ AutoSpam.__contract = {
       "getAveragePing",
       "getTargetId",
       "getBallSpeedLimits",
-      "getDefensePhysics",
     },
     Cooldown = { "getDeflectCooldownState" },
-    ReturnKill = { "new" },
     Dash = { "tick", "getEstimate" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
