@@ -43,6 +43,8 @@ local g={getSnapshotAt=function() return snap end,isSnapshotValid=function(s) re
  getClashContext=function() end,getDefensePhysics=function() return {killRadius=4} end,
  getAutoSpamDelay=function() return 0 end,getMinimumSpamInterval=function() return .0301 end}
 local c={getDeflectCooldownState=function() return cd end}
+local defense={enabled=true,responseBudget=1/4.73}
+local defender={getDefenseState=function() return defense end}
 local stats
 local st={begin=function(id,t) stats={partnerId=id,startedAt=t,frozen=false} end,get=function() return stats end,
  observe=function() end,finish=function() if stats then stats.frozen=true end end,freeze=function() if stats then stats.frozen=true end end,waitForNextClash=function() end}
@@ -51,7 +53,7 @@ RaycastParams={new=function() return {} end}; Enum={RaycastFilterType={Exclude=1
 local r={fireParry=function(_,guard) if not guard() then return false,'Deflect cancelado' end clicks=clicks+1;return true end}
 '''
 API = '''
-assert(ap.setup({Utils=u,GameInfo=g,Cooldown=c,ClashStats=st,Dash=d}))
+assert(ap.setup({Utils=u,GameInfo=g,Cooldown=c,ClashStats=st,Dash=d,AutoParry=defender}))
 assert(ap.bindCharacter(me.Character))
 assert(spam.setup({Utils=u,GameInfo=g,AutoSpam=ap,Remote=r}))
 local function advance(dt)

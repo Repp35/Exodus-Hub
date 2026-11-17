@@ -9,6 +9,9 @@ local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
+    PRESSURE_REFERENCE_CPS = 4.73,
+    PRESSURE_MAX_AGE = 0.75,
+    PRESSURE_RELEASE_TIME = 0.25,
     RETURN = 0.36,
     SELF_RETURN_MIN_TIME = 0.30,
     SELF_RETURN_MAX_TIME = 0.10,
@@ -75,6 +78,7 @@ end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
   state.killEntryAt, state.riskTarget, state.risk = nil, nil, nil
+  state.pressure, state.recoveredSince = nil, nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -99,6 +103,7 @@ local function deactivate(state, reason, time)
     and reason ~= "player_died"
     and reason ~= "opponent_left_or_died"
     and reason ~= "cooldown"
+    and reason ~= "ap_recovered"
   then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
@@ -277,11 +282,56 @@ local function sphereEntry(delta, velocity, radius)
   if discriminant < 0 then return math.huge end
   return math.max(0, (-b - math.sqrt(discriminant)) / (2 * a))
 end
+-- Observe complete local return cycles. A single target switch is only one leg
+-- and must not be interpreted as the required local click interval.
+local function observePressure(state, s, time, defense)
+  local h = state.pressure
+  if not h then h = {}; state.pressure = h end
+  if h.lastAt and time - h.lastAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+    h = {}; state.pressure = h
+  end
+  h.lastAt = time
+  if h.cycleAt and time - h.cycleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+    h.cycle, h.previousCycle, h.cycleAt = nil, nil, nil
+  end
+  local me = localPlayer.UserId
+  if h.target ~= s.targetId then
+    if s.targetId == me then
+      if h.inboundAt and h.departedAt then
+        local interval = time - h.inboundAt
+        if interval > 0 and interval <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+          h.previousCycle, h.cycle, h.cycleAt = h.cycle, interval, time
+          h.returnLeg = time - h.departedAt
+        end
+      end
+      h.inboundAt, h.departedAt = time, nil
+    elseif h.target == me then
+      h.departedAt = time
+    end
+    h.target = s.targetId
+  end
+  if h.sampleAt and time - h.sampleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+    h.sampleAt, h.headroom, h.previousHeadroom, h.parryDistance, h.idealDistance = nil, nil, nil, nil, nil
+  end
+  local sample = defense and defense.lastAcceptedSample
+  if sample and sample.ball == s.ball and finite(sample.at) and finite(sample.headroom)
+    and time >= sample.at and time - sample.at <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+    and sample.at ~= h.sampleAt then
+    if h.sampleAt and sample.at - h.sampleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+      h.previousHeadroom = h.headroom
+    else
+      h.previousHeadroom = nil
+    end
+    h.sampleAt, h.headroom = sample.at, sample.headroom
+    h.parryDistance, h.idealDistance = sample.distance, sample.idealDistance
+  end
+  return h
+end
 local function deathRisk(state, s, time)
   local physics = gameInfo.getDefensePhysics(); local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
   local grace = physics and finite(physics.grace) and physics.grace or 0.02; local defense = autoParry and autoParry.getDefenseState(s)
-  local response = defense and defense.responseBudget or (0.05 + 2 / 60 + networkLatency())
-  if not finite(response) then response = 0.1 end
+  local response = defense and defense.responseBudget or math.max(1 / CONFIG.ACTIVATION.PRESSURE_REFERENCE_CPS, 0.05 + 2 / 60 + networkLatency())
+  if not finite(response) then response = 1 / CONFIG.ACTIVATION.PRESSURE_REFERENCE_CPS end
   response = math.max(1 / 25, response)
   if defense and defense.blocking then response += math.max(0, defense.cooldownRemaining or 0) end
   if defense and finite(defense.retryAt) then response = math.max(response, defense.retryAt - time + networkLatency()) end
@@ -289,7 +339,7 @@ local function deathRisk(state, s, time)
   if not vector(ownVelocity) then ownVelocity = Vector3.zero end
   local speed = snapshotSpeed(s); local me = localPlayer.UserId
   local partner = s.targetId ~= me and s.targetId or state.previousOpponent
-  if not partner or not playerIsAlive(partner) then partner = nearestPartner(state, 70) end
+  if not partner or not playerIsAlive(partner) then partner = nearestPartner(state, math.huge) end
   local deadline, source = math.huge, "no_intercept"
   if state.riskTarget ~= s.targetId then state.killEntryAt = nil; state.riskTarget = s.targetId end
   if s.targetId == me then
@@ -311,25 +361,62 @@ local function deathRisk(state, s, time)
       end
     end
   end
-  local risky = deadline <= response + 1 / 25
-  if defense and defense.enabled == false then risky = deadline <= response * 2 + 1 / 25 end
-  return {
-    risky = risky,
-    deadline = deadline,
-    response = response,
-    margin = deadline - response,
-    grace = grace,
-    killRadius = kill,
-    source = source,
-    partner = partner,
-    gameMaxCps = 25,
-  }
+  local h = observePressure(state, s, time, defense)
+  local predictedCycle, nextCycle, nextHeadroom
+  local other, otherVelocity = gameInfo.getPlayerMotion(partner)
+  if vector(other) then
+    if not vector(otherVelocity) then otherVelocity = Vector3.zero end
+    local delta = other - own; local separation = delta.Magnitude
+    local closing = separation > 0 and -(otherVelocity - ownVelocity):Dot(delta) / separation or 0
+    -- Look one service interval ahead: approaching/dashing players shorten the
+    -- next cycle even while the current return remains survivable.
+    local nextSeparation = math.max(0, separation - math.max(0, closing) * response)
+    local ownRange = gameInfo.getPlayerRawRadius(me, speed, false) or 8.5
+    local otherRange = gameInfo.getPlayerRawRadius(partner, speed, false) or 8.5
+    predictedCycle = math.max(1 / 25, 2 * math.max(0, nextSeparation - ownRange - otherRange) / math.max(1, math.min(600, speed + 24) + math.max(0, closing)))
+  end
+  if h.cycleAt and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+    nextCycle = h.cycle
+    if h.previousCycle then nextCycle = math.max(1 / 25, h.cycle + math.min(0, h.cycle - h.previousCycle)) end
+  end
+  if h.sampleAt and time - h.sampleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
+    nextHeadroom = h.headroom
+    if h.previousHeadroom then nextHeadroom = h.headroom + math.min(0, h.headroom - h.previousHeadroom) end
+  end
+  local soon = deadline <= 2 * response + 1 / 25
+  local requiredInterval = predictedCycle
+  if nextCycle then requiredInterval = math.min(requiredInterval or math.huge, nextCycle) end
+  local reason
+  if deadline <= response + 1 / 25 then reason = "lethal_deadline"
+  elseif soon and nextHeadroom and nextHeadroom <= response + 1 / 25 then reason = "parry_margin_shrinking"
+  elseif soon and requiredInterval and requiredInterval <= response + 1 / 25 then reason = "return_demand_exceeds_ap" end
+  if defense and defense.enabled == false and soon then reason = "ap_unavailable" end
+  return { risky = reason ~= nil, reason = reason, deadline = deadline, response = response, margin = deadline - response,
+    grace = grace, killRadius = kill, source = source, partner = partner, gameMaxCps = 25,
+    observedCycle = h.cycle, predictedCycle = predictedCycle, nextCycle = nextCycle,
+    requiredCps = requiredInterval and 1 / math.max(1 / 25, requiredInterval) or nil,
+    headroom = h.headroom, nextHeadroom = nextHeadroom,
+    parryDistance = h.parryDistance, idealDistance = h.idealDistance }
+
 end
 local function deactivationReason(state, s, time, cd)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
-  if state.risk and state.risk.risky then state.safeSince = nil; return nil end
+  if state.risk and state.risk.risky then state.safeSince, state.recoveredSince = nil, nil; return nil end
+  local pressureActivation = state.reason == "lethal_deadline" or state.reason == "parry_margin_shrinking"
+    or state.reason == "return_demand_exceeds_ap" or state.reason == "ap_unavailable"
+  if pressureActivation and state.risk then
+    local r = state.risk
+    local comfortable = r.deadline > 2 * r.response + 1 / 25
+      and ((r.requiredCps or 0) < 1 / (1.5 * r.response) or r.deadline > 3 * r.response + 1 / 25)
+    if comfortable then
+      state.recoveredSince = state.recoveredSince or time
+      if time - state.recoveredSince >= CONFIG.ACTIVATION.PRESSURE_RELEASE_TIME then return "ap_recovered" end
+    else
+      state.recoveredSince = nil
+    end
+  end
   if state.risk and state.risk.deadline < math.huge then
     state.safeSince = nil
   else
@@ -504,14 +591,14 @@ local function evaluate(state, s, time, packet)
     state.gates.common, state.lastGate = gate, gate; state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
-    if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
+    if gate == "ball_reset" then resetTargets(state) end
     return
   end
   state.lastValidAt = time; observeTarget(state, s, time)
-  state.risk = deathRisk(state, s, time); state.gates.risk = state.risk.risky and "ap_budget_exceeds_deadline" or "ap_has_time"
+  state.risk = deathRisk(state, s, time); state.gates.risk = state.risk.reason or "ap_has_time"
   if state.risk.risky and state.risk.partner then
     state.safeSince = nil
-    if state.active then state.partner = state.risk.partner else activate(state, "death_risk", state.risk.partner, time, s) end
+    if state.active then state.partner = state.risk.partner else activate(state, state.risk.reason or "death_risk", state.risk.partner, time, s) end
   end
   dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then

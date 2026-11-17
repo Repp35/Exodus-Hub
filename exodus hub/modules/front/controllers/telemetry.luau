@@ -162,7 +162,10 @@ function Controller.create(context)
       local apStatus = AutoParry.getStatus(); local peak = apStatus and apStatus.maxObservedCps
       local lines = { "Game max: 25 CPS" }
       if type(peak) == "number" then lines[#lines + 1] = string.format("AP max observed: %.2f CPS", peak) end
-      if apStatus and type(apStatus.estimatedCapacityCps) == "number" then lines[#lines + 1] = string.format("AP capacity estimate: %.2f CPS", apStatus.estimatedCapacityCps) end
+      if apStatus and type(apStatus.pressureReferenceCps) == "number" then
+        lines[#lines + 1] = string.format("AP clash reference: %.2f CPS", apStatus.pressureReferenceCps)
+      end
+      if apStatus and type(apStatus.estimatedCapacityCps) == "number" then lines[#lines + 1] = string.format("AP clash estimate: %.2f CPS", apStatus.estimatedCapacityCps) end
       setTextIfChanged(apLabel, table.concat(lines, "\n"))
     end
     if not gateEnabled and not travelVisible and not distanceVisible then
@@ -184,6 +187,11 @@ function Controller.create(context)
       local risk = status and status.risk
       if risk and type(risk.deadline) == "number" and risk.deadline < math.huge then
         lines[#lines + 1] = string.format("Deadline: %.0f ms | AP budget: %.0f ms", risk.deadline * 1000, risk.response * 1000)
+        if type(risk.requiredCps) == "number" then lines[#lines + 1] = string.format("Return demand: %.2f CPS", risk.requiredCps) end
+        if type(risk.nextHeadroom) == "number" then lines[#lines + 1] = string.format("Next AP margin: %.0f ms", risk.nextHeadroom * 1000) end
+        if type(risk.parryDistance) == "number" and type(risk.idealDistance) == "number" then
+          lines[#lines + 1] = string.format("AP distance: %.1f | Trigger: %.1f studs", risk.parryDistance, risk.idealDistance)
+        end
       end
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
