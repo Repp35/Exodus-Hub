@@ -52,10 +52,10 @@ local starts=0
 for _,t in ipairs(transitions) do if t[1]=='AutoSpam' and t[3]=='active' then starts=starts+1 end end
 assert(starts==1,'detector created extra activation bursts')''')
 
-    def test_cooldown_send_policy_is_the_original_policy(self):
+    def test_client_cooldown_is_not_a_clash_end_signal(self):
         check('''packet(42,0,2);assert(ap.isActive());cd.blocking=true
-assert(not ap.canSend() and not ap.isActive())
-assert(ap.getStatus().lastStopReason=='cooldown')''')
+assert(ap.canSend() and ap.isActive())
+assert(ap.getStatus().lastStopReason~='cooldown')''')
 
     def test_first_short_cycle_activates_without_artificial_wait(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
