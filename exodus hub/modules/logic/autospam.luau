@@ -3,7 +3,6 @@
 local AutoSpam = {}
 
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
-local smartReturn, autoParry
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -77,9 +76,8 @@ local function clearEvidence(state)
   state.outbound, state.pending, state.close, state.haunter, state.closeArm = nil, nil, nil, nil, nil
 end
 local function resetTargets(state)
-  if state.smartReturn then state.smartReturn.reset() end
-  state.smartCandidate = nil; clearEvidence(state)
-  state.target, state.previousOpponent, state.selfReturn = nil, nil, nil; state.exchangeHistory = nil
+  clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
+  state.exchangeHistory = nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -171,39 +169,6 @@ local function nearestPartner(state, limit)
     if d and (not distance or d < distance) then best, distance = id, d end
   end
   return best
-end
-local function observeSmartReturn(state, s, time)
-  if not state.smartReturn then return end
-  local raw = autoParry and autoParry.getPressureDetector(); local speed = snapshotSpeed(s)
-  local g = gameInfo.getAutoParryGeometry(
-    speed,
-    utils.getConfigValue("AutoParryWindowFactor") or 0.4,
-    raw and raw.frameTime or 1 / 60,
-    raw and raw.ping or gameInfo.getAveragePing()
-  )
-  if not g or not finite(g.fullRadius) then
-    state.smartReturn.reset(); state.smartCandidate = nil
-    return
-  end
-  local partner = s.targetId ~= localPlayer.UserId and s.targetId or state.previousOpponent; local other = partner and playerPosition(partner)
-  local sample = raw and raw.lastAcceptedSample
-  if sample and sample.ball ~= s.ball then sample = nil end
-  local physics = gameInfo.getDefensePhysics()
-  state.smartCandidate = state.smartReturn.observe({
-    at = time,
-    ball = s.ball,
-    targetId = s.targetId,
-    me = localPlayer.UserId,
-    distance = (s.position - state.root.Position).Magnitude,
-    fullRadius = g.fullRadius,
-    killRadius = physics and physics.killRadius or 4,
-    partnerId = partner and playerIsAlive(partner) and partner or nil,
-    partnerDistance = other and (other - state.root.Position).Magnitude or nil,
-    apAt = sample and sample.at,
-    apDistance = sample and sample.distance,
-    apRadius = sample and sample.idealDistance,
-    sensitivity = utils.getConfigValue("SmartReturnSensitivity"),
-  })
 end
 local function observeTarget(state, s, time)
   local target, previous = s.targetId, state.target
@@ -502,7 +467,6 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, s.targetId) then state.gates.haunter = "haunter_ball_outside_window"
     else state.gates.haunter = "ready"; return haunter.reason, haunter.partner end
   end
-  if state.smartCandidate then return "smart_return", state.smartCandidate.partner end
 end
 local function sequenceOrder(state, incoming)
   if incoming == nil then return "none" end
@@ -538,14 +502,10 @@ local function evaluate(state, s, time, packet)
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
-    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
-      state.exchangeHistory, state.sendContinuity, state.smartCandidate = nil, nil, nil
-      if state.smartReturn then state.smartReturn.reset() end
-    end
+    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return
   end
-  observeTarget(state, s, time); observeSmartReturn(state, s, time)
-  observeExchangeContinuity(state, s, time); state.gates.smartReturn = state.smartCandidate and "ready" or "context_not_ready"
+  observeTarget(state, s, time); observeExchangeContinuity(state, s, time)
   rememberSendContinuity(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
@@ -634,7 +594,7 @@ end
 function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash; smartReturn, autoParry = deps.SmartReturn, deps.AutoParry
+  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
@@ -643,7 +603,6 @@ function AutoSpam.bindCharacter(character)
   detach("rebind"); local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root or not root:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
   local state = {
-    smartReturn = smartReturn and smartReturn.new() or nil,
     character = character,
     root = root,
     connections = {},
@@ -820,8 +779,6 @@ AutoSpam.__contract = {
     ClashStats = "clashstats",
     Cooldown = "cooldown",
     Dash = "dash",
-    SmartReturn = "smartreturn",
-    AutoParry = "autoparry",
   },
   requiresMethods = {
     Utils = {
@@ -853,12 +810,8 @@ AutoSpam.__contract = {
       "getAveragePing",
       "getTargetId",
       "getBallSpeedLimits",
-      "getAutoParryGeometry",
-      "getDefensePhysics",
     },
     Cooldown = { "getDeflectCooldownState" },
-    SmartReturn = { "new" },
-    AutoParry = { "getPressureDetector" },
     Dash = { "tick", "getEstimate" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
