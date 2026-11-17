@@ -4,7 +4,8 @@ import unittest
 from test_raw_target_parry import run_lua
 
 SOURCE = (Path(__file__).resolve().parents[2] / 'loader.luau').read_text()
-RELOAD = SOURCE[SOURCE.index('local reloadInFlight = false'):SOURCE.index('local startupPerformed = false')]
+UPDATER = (Path(__file__).resolve().parents[2] / 'modules/core/updater.luau').read_text()
+RELOAD = UPDATER[UPDATER.index('local reloadInFlight = false'):UPDATER.index('local function startUpdateChannel()')]
 
 class ReloadReliability(unittest.TestCase):
     def test_unexpected_failure_releases_lock_and_allows_retry(self):
@@ -36,7 +37,7 @@ local function signatureValid(s) return s=='sig' end
 local function fingerprint() return 'sig' end
 local sourceCache={}
 local function cachedSource() return nil end
-local function requestDelivery() _G.ExodusLoaderSessionToken='new'; return 'source' end
+local function prepareLoader() _G.ExodusLoaderSessionToken='new'; return function() executed=true end end
 local function compile() return function() executed=true end end
 local function waitForClashToEnd() return true end
 local Exodus={Started=true}; local BASE_URL=''; local PROJECT_PATH=''
@@ -111,7 +112,7 @@ assert(requestOnce('url',{})=='ok' and requestState.pending==0)
 class ParallelPreparation(unittest.TestCase):
     def test_downloads_overlap_authorization_and_execution_waits(self):
         start = SOURCE.index('  local urls = buildURLs(version); local authorizationDone')
-        end = SOURCE.index('  printStartup("Exodus: Initializing...")', start)
+        end = SOURCE.index('  local updaterModule =', start)
         preparation = SOURCE[start:end]
         run_lua('''
 local version='revision'; local authorizationTask; local started=false; local downloaded=false

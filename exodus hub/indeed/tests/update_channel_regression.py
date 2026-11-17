@@ -26,9 +26,10 @@ def run(name, script):
     lib.lua_close(state)
     print('PASS', name)
 
-source=(root/'loader.luau').read_text()
-channel=source[source.index('local function startUpdateChannel()'):source.index('local started = startSafely()')]
+source=(root/'modules/core/updater.luau').read_text()
+channel=source[source.index('local function startUpdateChannel()'):source.index('return { reload = reloadLatest')]
 run('polling fallback and safe stop', """
+local deps={onSignatures=function() end}
 local CONFIG={UPDATE_POLL_INTERVAL=0,UPDATE_LOOP_INTERVAL=1}
 local revisionA,revisionB=string.rep('a',40),string.rep('b',40)
 local manifest=revisionA; local polls,reloads=0,0; local thread
@@ -49,6 +50,7 @@ manifest=revisionB; local ok,err=coroutine.resume(thread); assert(ok,err); asser
 _G.ExodusUpdateStop(); ok,err=coroutine.resume(thread); assert(ok,err); assert(polls==2)
 """)
 run('websocket reconnect and manifest authority', """
+local deps={onSignatures=function() end}
 local CONFIG={UPDATE_POLL_INTERVAL=0,UPDATE_LOOP_INTERVAL=1}
 local a,b,c=string.rep('a',40),string.rep('b',40),string.rep('c',40); local manifest=a; local thread; local sockets={}; local reloads=0
 _G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=a
@@ -73,6 +75,7 @@ manifest=b; sockets[2].OnMessage.callback(c); assert(reloads==1)
 _G.ExodusUpdateStop()
 """)
 run('equivalent revision avoids restart after authorization', """
+local deps={onSignatures=function() end}
 local CONFIG={UPDATE_POLL_INTERVAL=0,UPDATE_LOOP_INTERVAL=1}
 local a,b=string.rep('a',40),string.rep('b',40); local thread; local reloads,auth=0,0
 _G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=a
