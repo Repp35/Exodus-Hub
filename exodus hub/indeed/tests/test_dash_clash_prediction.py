@@ -23,12 +23,5 @@ assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='da
             with self.subTest(mutation=mutation):
                 check("other.root.Position=v(40);dash(99,-120);"+mutation+";packet(42);assert(not ap.isActive() and clicks==0)")
 
-    def test_same_valid_dash_can_reactivate_after_short_delay(self):
-        check('''
-dash(99,-120);packet(42,0,50);assert(ap.isActive());ap.stopSpam('stop_spam');heartbeat(.01)
-assert(not ap.isActive(),'rearm delay was skipped')
-heartbeat(.011);assert(ap.isActive(),'valid dash was consumed by earlier activation')
-packet(99,.01,50);packet(42,.05,50);assert(ap.isActive(),'new real return blocked after dash')
-''')
 
 if __name__=='__main__': unittest.main()

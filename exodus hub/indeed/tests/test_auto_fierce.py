@@ -190,12 +190,12 @@ assert(manual==1 and begun==1)
 mod.teardown(); assert(ability.ActivateAndBlock==original)
 ''')
 
-    def test_confirmed_miss_rescues_inside_lingering_clash_and_stops_spam(self):
+    def test_confirmed_miss_rescues_inside_lingering_clash(self):
         self.check('''
 inClash=true; cd.miss=true; cd.windowExpired=true; cd.windowEndsAt=10.03
 step(10); assert(sent==0)
 step(10.031); assert(sent==1,'clash vetoed confirmed miss rescue')
-assert(stoppedAuto==1 and stoppedAll==1 and begun==1,'rescue did not take priority over spam')
+assert(begun==1,'rescue did not acquire AP lock')
 step(10.1); assert(sent==1)
 ''')
 
@@ -232,7 +232,6 @@ step(10.1); assert(sent==1)
         self.check('''
 r.fireFierce=function(guard)
  if not guard() then return false end
- assert(stoppedAuto==1 and stoppedAll==1,'spam still active at Fierce dispatch')
  ability:ActivateAndBlock(); sent=sent+1; return true
 end
 step(10.5); assert(sent==1 and manual==1 and begun==1,'automatic wrapper duplicated AP lock')

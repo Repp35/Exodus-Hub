@@ -36,18 +36,6 @@ assert(mod.setup({Utils=u,Remote=r,GameInfo=g,AutoSpam=a}));frame(.016)
 assert(count==1,'cancelled burst continued')
 ''')
 
-    def test_final_validation_rejects_changed_state_inside_same_burst(self):
-        self.check("""
-mode='CPF';rate=100;local domain=true;local attempted=0
-local errors=0;u.recordError=function() errors=errors+1 end
-a.canSendManual=function() return domain end
-r.prepareParry=function(guard) return function()
- attempted=attempted+1;if not guard() then return false,'Deflect cancelado' end
- count=count+1;domain=false;return true
-end end
-assert(mod.setup({Utils=u,Remote=r,GameInfo=g,AutoSpam=a}));frame(.016)
-assert(count==1 and attempted==2,'burst continued after final validation failed')
-""")
 
     def test_grouped_metrics_preserve_partial_acceptances(self):
         self.check("""

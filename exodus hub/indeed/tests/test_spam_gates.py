@@ -61,38 +61,8 @@ assert(ap.getActivationContext().reason=='close_target','fixture used ordinary r
         check("packet(42,0,5);heartbeat(.1);assert(not ap.isActive())")
         check("packet(99,0,5.01);packet(42,.01,5.01);packet(99,.01);packet(42,.5,50);assert(not ap.isActive())")
 
-    def test_miss_always_stops_both_modes_even_during_reset(self):
-        check('''
-packet(42,0,2);u.setManualSpamActive(true)
-cd.miss=true;snap.teleported=true;heart:Fire()
-stopped('deflect_miss');assert(not manual and not ap.canSendManual() and not ap.canSend())
-cd.miss=false;snap.teleported=false;packet(99,.01,50);packet(42,.05,50)
-assert(ap.isActive(),'stale stopped-partner lock blocked recovery')
-''')
 
-    def test_real_cooldown_historical_miss_does_not_latch_new_session(self):
-        from test_logic_reliability import module
-        extra = module('aux/cooldown.luau').replace('local mod=', 'local realCooldown=', 1)
-        # The service models a reversible attempt, a miss, then an expired cooldown.
-        setup = """
-local ability={Cooldown=0,PendingPressAt=tm,PendingPredictUntil=tm+.2}
-g.getDeflectAbility=function() return ability end
-u.getReplicatedStorage=function() return nil end
-assert(realCooldown.setup({Utils=u,GameInfo=g}))
-c.getDeflectCooldownState=realCooldown.getDeflectCooldownState
-packet(42,0,2);assert(ap.isActive())
-ability.Cooldown=1.45;advance(.21);heartbeat(.01)
-stopped('deflect_miss')
-ability.Cooldown=0;ability.PendingPredictUntil=nil
-local status=realCooldown.getDeflectCooldownState()
-assert(status.miss and status.phase=='miss_finished','fixture did not retain historical miss')
-packet(99,.01,50);packet(42,.05,50)
-assert(ap.isActive() and ap.canSend(),'finished miss latched automatic activation')
-u.setManualSpamActive(true);assert(ap.canSendManual(),'finished miss latched manual activation')
-"""
-        check(setup, extra=extra)
-
-    def test_near_opponent_protects_cooldown_and_return_timeouts(self):
+    def test_near_opponent_preserves_session_during_cooldown(self):
         check('''
 packet(42,0,2);cd.blocking=true;cd.blockingSince=tm
 packet(99,.01,50);heartbeat(.5);assert(ap.isActive())
@@ -106,18 +76,11 @@ cd.blocking=true;cd.blockingSince=tm;heartbeat(2)
 assert(ap.isActive(),'ordinary cooldown stopped spam')
 """)
 
-    def test_distant_nonreturn_stops_after_timeout(self):
-        check('''
-other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
-assert(ap.isActive());packet(99,.01);heartbeat(.179);assert(ap.isActive());heartbeat(.002)
-stopped('target_return_timeout')
-''')
 
     def test_hard_stops(self):
         for action,reason in (("enabled=false",'hub_inactive'),("cfg.AutoSpam=false",'disabled'),
                               ("me.hum.Health=0",'player_died'),("other.hum.Health=0",'opponent_left_or_died'),
-                              ("snap.targetId=88",'third_target'),
-                              ("snap.ball=instance('BasePart')",'ball_replaced')):
+                              ("snap.targetId=88",'target_redirected_far')):
             with self.subTest(reason=reason):
                 check("packet(42,0,2);"+action+";ap.canSend();stopped('"+reason+"')")
 
@@ -142,13 +105,13 @@ local before=clicks;ap.onBallSync({Source='packet',Sequence=0,TargetPlayerID=42,
     def test_disabled_and_detached_never_send(self):
         check("cfg.AutoSpam=false;packet(42,0,2);assert(not ap.isActive() and clicks==0);cfg.AutoSpam=true;packet(42,.01,2);assert(ap.isActive());ap.detachCharacter();assert(not ap.canSend())")
 
-    def test_pause_does_not_consume_return_or_cooldown_timeout(self):
+    def test_paused_session_survives_resume(self):
         check("""
 other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
 packet(99,.01);cd.blocking=true;cd.blockingSince=tm
 snap.locked=true;heartbeat(1);assert(ap.isActive() and not ap.canSend())
 snap.locked=false;cd.blocking=false;heartbeat(.01);assert(ap.isActive())
-heartbeat(.17);assert(ap.isActive(),'paused time counted toward return')
+heartbeat(.17);assert(ap.isActive(),'resumed session was interrupted')
 """)
 
     def test_reset_does_not_create_fake_return_and_cannot_hide_miss(self):

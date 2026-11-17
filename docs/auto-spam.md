@@ -8,7 +8,7 @@ Para uma nova ativação: recurso AutoSpam e hub ligados; personagem local vivo 
 
 Quando existe posição real sincronizada, a divergência permitida da posição usada é `8 + velocidade × (idade da amostra + compensação de rede + 0,15)` studs. Essa verificação evita ativação por posição incoerente, sem impor limites de 0–1000 às coordenadas do mapa. Pacotes duplicados não criam trocas; pacotes antigos e sequências inválidas são ignorados. A sequência aceita a volta de 65535 para 0 e reinicia com uma bola nova.
 
-Uma nova ocorrência de miss desliga auto e manual uma vez. Enquanto o miss estiver em curso, auto e manual permanecem desligados e não podem enviar cliques. `miss_finished` é histórico de um cooldown já encerrado. A classificação do miss continua sendo fornecida pelo módulo Cooldown.
+Miss e cooldown comum não desligam AutoSpam ou Manual Spam. A classificação fornecida pelo Cooldown continua disponível para os outros consumidores, mas não funciona como trava de envio do spam.
 
 ## Geometria
 
@@ -22,7 +22,7 @@ Todos os cálculos de ativação pedem `getDeflectGeometry(..., fator = 1)` com 
 | --- | --- |
 | Dash adversário ou próprio | Dados da bola de até 150 ms; jogador adversário vivo a até 70 studs; bola mirando em você ou nele e dentro da geometria acima; sinal de dash ativo, modelo normal com tempo restante positivo, observação de até 200 ms, posição/velocidade finitas, velocidade entre 70 e 140 studs/s e alinhamento de aproximação ≥ 0,6. A distância projetada no ponto mais próximo precisa ser ≤ `min(35, raio próprio + raio adversário + velocidade da bola × janela efetiva 1×)`. Raycast sem obstrução. Não exige troca de alvo recente, CPS mínimo nem pontuação. O mesmo sinal ainda válido pode voltar a ativar após o intervalo curto; não é marcado como consumido. |
 | Retorno | Sequência real **você → mesmo adversário → você**, sem um terceiro no meio. A passagem pelo adversário dura até **360 ms + compensação de rede**, independentemente da velocidade da bola. O adversário está vivo a até **35 studs** e a bola cabe na geometria completa. A evidência pode aguardar a chegada da bola por até outros 360 ms + compensação, desde que o alvo continue sendo você. Não exige uma segunda troca nem deslocamento da bola entre pacotes. |
-| Bola próxima | A até **2 studs**, bola mirando em você e adversário vivo a até **16 studs** ativam imediatamente. Entre 2 e **5 studs**, a chegada de um remetente observado prepara uma confirmação: a bola precisa ir de você para esse mesmo remetente e voltar para você. Na volta, ativa no próprio pacote, usando a janela completa; não precisa entrar novamente nos 5 studs. Terceiro alvo, reset, miss ou remetente que deixou de estar perto limpam essa preparação. Sem remetente conhecido, a faixa de 2–5 studs não é armada. |
+| Bola próxima | A até **2 studs**, bola mirando em você e adversário vivo a até **16 studs** ativam imediatamente. Entre 2 e **5 studs**, a chegada de um remetente observado prepara uma confirmação: a bola precisa ir de você para esse mesmo remetente e voltar para você. Na volta, ativa no próprio pacote, usando a janela completa; não precisa entrar novamente nos 5 studs. Terceiro alvo, reset ou remetente que deixou de estar perto limpam essa preparação. Sem remetente conhecido, a faixa de 2–5 studs não é armada. |
 | Haunter | Evento real com origem/destino CFrame; habilidades disponíveis; identificação de quem teleportou pela distância de até **5 studs** da origem/destino, ou posição local recente (até 750 ms) para uso próprio. Destino/adversário a até **11 studs**, alvo em você ou nesse adversário e bola dentro da geometria completa. Evidência válida por **150 ms**. Depois de ativado, não existe um timeout especial de confirmação de Haunter durante o clash. |
 
 O dash tem prioridade sobre os demais. Um evento não utilizado deixa no diagnóstico o motivo específico: sem parceiro, fora da janela, sem interceptação, sem retorno completo, adversário distante, bola distante, evidência expirada etc. O painel opcional de gates mostra esses motivos por candidato.
@@ -31,28 +31,36 @@ O dash tem prioridade sobre os demais. Um evento não utilizado deixa no diagnó
 
 | Motivo | Condição |
 | --- | --- |
-| Miss | Nova ocorrência de miss informada pelo Cooldown. Desliga **auto e manual uma vez**, mesmo perto, congelado ou durante reset. O registro `miss_finished` não é um miss ainda ativo. |
-| Controle/lifecycle | Hub ou AutoSpam desligado; personagem local morto/removido/desvinculado; adversário morto/saiu; troca do objeto da bola; parada explícita, inclusive resgate Fierce. |
-| Terceiro alvo | Uma amostra válida informa que o alvo é outro jogador, fora do par atual. |
-| Distância | Adversário a mais de **35 studs por 250 ms contínuos**. O contador pertence à condição de distância e independe do motivo da ativação. |
-| Retorno ausente | Bola permanece mirando no adversário por **180 ms**, **e** adversário fora da proteção de **10–25 studs**. Troca de volta para você zera a espera. |
-| Fuga por dash | **Sem proteção de proximidade.** Bola mirando no adversário, dados de até 150 ms, bola saindo do seu alcance de fuga (janela 0,4×), dash ativo normal de 70–140 studs/s, componente horizontal ≥ 35%, afastamento ≥ 15 studs/s, ganho projetado ≥ 2 studs e separação projetada maior que a soma dos raios + velocidade da bola × janela 0,4×. Exige cooldown conhecido bloqueando por **50 ms** do próprio bloqueio. Vale para dash próprio ou adversário. |
+| Controle/lifecycle | Hub ou AutoSpam desligado; personagem local morto/removido/desvinculado; adversário morto ou indisponível. |
+| Redirecionamento distante | Uma amostra válida e recente informa outro alvo fora do par, a mais de 35 studs. Registra `target_redirected_far`, mesmo com o parceiro anterior próximo. |
+| Distância | Adversário a mais de **35 studs por 250 ms contínuos**. |
 
-Miss, terceiro alvo e fuga por dash não recebem proteção por adversário próximo. O limite de retorno recebe a proteção indicada. Cooldown comum, sozinho, não desliga mais o auto spam.
+A proteção de proximidade de **14 studs** preserva a sessão contra paradas que
+não sejam desligamento, morte/indisponibilidade, cooldown explícito ou
+redirecionamento distante. A troca da bola tenta encerrar a sessão anterior e
+reinicia o histórico de alvos; esse encerramento também passa pela proteção.
+O código atual não usa ausência de retorno ou fuga por dash como motivos
+automáticos de desativação. O resgate Fierce não solicita desligamento do spam.
 
 ## Pausa e retomada
 
-Dados inválidos, antigos, alvo incerto, teleporte, reset, bola travada, Frozen e modo treino impedem novos cliques automáticos enquanto persistirem. Essas pausas não contam como cooldown/retorno expirando. A sessão ativa é preservada durante a pausa, mas o histórico de trocas é limpo no reset/alvo desconhecido. Morte, miss e desligamento continuam sendo monitorados. Uma bola substituída encerra a sessão anterior.
+Dados inválidos, antigos, alvo incerto, teleporte, reset, bola travada, Frozen e
+modo treino impedem novos cliques automáticos enquanto persistirem. Uma sessão
+ativa pode continuar durante a pausa. O histórico é limpo no reset/alvo
+desconhecido; a evidência de continuidade de envios também é limpa nas pausas de
+movimento. Lacunas breves de sincronização podem usar a evidência recente de
+trocas reais quando o parceiro permanece próximo.
 
-Depois de um desligamento real existe apenas um intervalo global de **20 ms**. Ele não é prolongado por chamadas de desligamento quando já está desligado. Após isso, os gatilhos ainda válidos são reavaliados: mesmo oponente, mesmo dash, mesmo retorno ou mesmo Haunter podem ativar novamente. O cooldown comum não veta a avaliação. **Miss é a exceção: a reativação espera o miss terminar**, independentemente do intervalo de 20 ms.
-
-As ações de ligar/desligar são idempotentes: ligar enquanto já está ligado ou desligar enquanto já está desligado não repete a transição. A ativação não consulta o motivo de desligamento nem um histórico de gatilhos usados. Fuga por dash e falta de retorno registram suas próprias ocorrências, sem impedir a ativação. Miss em curso mantém a espera até terminar. Uma ocorrência é reaplicável quando a condição desaparece e volta, ou quando surge um episódio novo; a mesma ocorrência mantida não fica desligando em todo frame. O histórico de ocorrências serve para evitar ações repetidas. A espera por miss consulta o estado atual do cooldown, não esse histórico.
+Após um desligamento efetivo existe um intervalo de **20 ms** antes de reavaliar
+os gatilhos ainda válidos. Chamadas de parada em uma sessão já inativa não
+prolongam esse intervalo. Uma chamada protegida por proximidade não provoca
+um desligamento nem inicia uma nova espera.
 
 ## Envio dos cliques
 
 Ao ativar o auto, CPS/CPF/MS enviam o primeiro clique imediatamente, validando a sessão de novo antes do envio; os seguintes seguem a taxa configurada. Auto mantém o intervalo mínimo e o atraso calculado pelo jogo também para o primeiro clique. Taxa zero/inválida impede o agendador. A trava de envio simultâneo, limite de trabalho por frame e método de clique selecionado continuam valendo. Ativação e aceitação de um clique pelo servidor são estados diferentes.
 
-Manual continua independente da distância/retorno/dash: um miss desliga o botão; tentar religá-lo durante o mesmo miss não permite envio. Personagem indisponível ou hub inativo impede o envio enquanto persistir.
+Manual continua independente da distância, retorno, dash, miss e cooldown. Personagem indisponível ou hub inativo impede o envio enquanto persistir. Um deflect cancelado isoladamente, inclusive durante Fierce, não interrompe a rajada manual.
 
 ## Gates removidos
 
@@ -60,4 +68,8 @@ Foram retirados: janela de retorno que encolhia até cerca de 40 ms em alta velo
 
 ## Validação
 
-Os testes carregam o módulo AutoSpam inteiro junto com o agendador Spam, simulando pacotes, Heartbeat e transporte. Cobrem retornos de 5–350 ms, várias distâncias/velocidades, pacotes entre frames, posições idênticas, ausência de gatilho, dash válido/inválido, sequência antiga/duplicada/wrap, reset, miss, cooldown, reativação e primeiro envio. Também usam o módulo Cooldown real para provar que `miss_finished` não prende uma nova sessão. A cobertura também verifica a retomada em 20 ms, condições mantidas, ocorrências novas e gatilhos independentes. Roblox e o servidor não são executados nesses testes.
+Os testes mantidos cobrem ativação, sequência antiga/duplicada/wrap, dados
+inválidos, reset, continuidade em cooldown e lacunas de sincronização, envio,
+contratos e lifecycle. Os casos que exigiam desligamento por miss, Fierce ou
+regras antigas de saída foram removidos. O histórico dessas decisões está em
+`exodus hub/indeed/tests/README.md`. Os serviços de jogo são simulados nesses testes.

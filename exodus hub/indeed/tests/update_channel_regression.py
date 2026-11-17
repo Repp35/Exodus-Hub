@@ -2,7 +2,7 @@
 
 The shim translates compound assignments in the tested Luau modules and mocks
 Roblox APIs. It does not validate engine scheduling or server-side outcomes.
-Run from any directory: python path/to/parry_runtime_regression.py
+Run from any directory: python path/to/update_channel_regression.py
 """
 import ctypes, pathlib, re
 lib = ctypes.CDLL('liblua5.4.so.0')
