@@ -93,7 +93,9 @@ local CONFIG = {
   MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
   UPDATE_POLL_INTERVAL = 5,
   UPDATE_LOOP_INTERVAL = 1,
-  DOWNLOAD_WORKERS = 8,
+  DOWNLOAD_WORKERS = 12,
+  REQUEST_TIMEOUT = 8,
+  MAX_PENDING_REQUESTS = 24,
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
   AUTHORIZATION_PATH = "security/entitlements.luau",
@@ -209,9 +211,26 @@ local function retryAfter(headers)
   if delay and delay >= 0 then return delay end
   local reset = tonumber(headerValue(headers, "x-ratelimit-reset")); return reset and math.max(0, reset - os.time()) or 5
 end
+local requestState = type(_G.ExodusRequestState) == "table" and _G.ExodusRequestState or { pending = 0 }
+_G.ExodusRequestState = requestState
 local function requestOnce(url, headers)
   if not requestFunction then return nil, "Nenhum serviço HTTP disponível" end
-  local ok, response = pcall(requestFunction, { Url = url, Method = "GET", Headers = headers })
+  local ok, response
+  if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
+    if requestState.pending >= CONFIG.MAX_PENDING_REQUESTS then return nil, "Limite de requisições pendentes atingido" end
+    local finished = false; requestState.pending += 1
+    task.spawn(function()
+      local success, result = pcall(requestFunction, { Url = url, Method = "GET", Headers = headers }); requestState.pending -= 1
+      ok, response, finished = success, result, true
+    end)
+    local deadline = os.clock() + CONFIG.REQUEST_TIMEOUT
+    while not finished and os.clock() < deadline do
+      task.wait()
+    end
+    if not finished then return nil, "Tempo limite da requisição HTTP" end
+  else
+    ok, response = pcall(requestFunction, { Url = url, Method = "GET", Headers = headers })
+  end
   if not ok then return nil, tostring(response) end
   if type(response) ~= "table" then return nil, "Resposta HTTP inválida" end
   local statusCode = tonumber(response.StatusCode or response.status_code); local responseHeaders = response.Headers or response.headers
@@ -877,10 +896,18 @@ local function startInternal()
   if requestedRevision and version ~= requestedRevision then return false, "Loader", "revisão solicitada não é a atual" end
   releaseSignatures = signatures
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
-  local authorized, authorizationError = authorizeRevision(version)
-  if not authorized then return false, "Authorization", authorizationError end
-  local urls = buildURLs(version); local prepared, prepareModule, prepareError = loadModules(urls)
+  local urls = buildURLs(version); local authorizationDone, authorized, authorizationError = false, false, nil
+  task.spawn(function()
+    local ok, result, detail = pcall(authorizeRevision, version); authorized, authorizationError, authorizationDone = ok and result == true, ok and detail or result, true
+  end)
+  local prepared, prepareModule, prepareError = loadModules(urls)
   if not prepared then return false, prepareModule, prepareError end
+  local authorizationDeadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
+  while not authorizationDone and os.clock() < authorizationDeadline do
+    task.wait()
+  end
+  if not authorizationDone then return false, "Authorization", "tempo limite ao verificar autorização" end
+  if not authorized then return false, "Authorization", authorizationError end
   printStartup("Exodus: Initializing...")
   if wasStarted and not requestedRevision then
     local safe = waitForClashToEnd(function() notifyPersistent("Restart queued: waiting for clash to end", "shutdown", "info") end)
