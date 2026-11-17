@@ -78,9 +78,8 @@ local function clearEvidence(state)
 end
 local function resetTargets(state)
   if state.returnKill then state.returnKill.reset() end
-  state.returnKillCandidate = nil
-  clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
-  state.exchangeHistory = nil
+  state.returnKillCandidate = nil; clearEvidence(state)
+  state.target, state.previousOpponent, state.selfReturn = nil, nil, nil; state.exchangeHistory = nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -108,11 +107,10 @@ local function deactivate(state, reason, time)
   end
   time = time or now()
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
-  state.returnExchange = nil
-  state.sendContinuity = nil; state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason
-  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY; lastStopReason, lastStopAt = reason, time
-  utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
-  return true
+  state.returnExchange = nil; state.sendContinuity = nil
+  state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
+  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
+  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
 local function monitorCooldown(state) return cooldownInfo.getDeflectCooldownState(), false end
 local function sampleGate(state, s, time)
@@ -177,15 +175,24 @@ local function nearestPartner(state, limit)
 end
 local function observeReturnKill(state, s, time)
   if not state.returnKill then return end
-  if state.active then state.returnKill.reset(); state.returnKillCandidate = nil; return end
-  local g = gameInfo.getDeflectGeometry(snapshotSpeed(s), "game", 1, false, networkLatency())
-  local physics = gameInfo.getDefensePhysics()
-  if not g or not finite(g.fullRadius) then state.returnKill.reset(); state.returnKillCandidate = nil; return end
+  if state.active then
+    state.returnKill.reset(); state.returnKillCandidate = nil
+    return
+  end
+  local g = gameInfo.getDeflectGeometry(snapshotSpeed(s), "game", 1, false, networkLatency()); local physics = gameInfo.getDefensePhysics()
+  if not g or not finite(g.fullRadius) then
+    state.returnKill.reset(); state.returnKillCandidate = nil
+    return
+  end
   local partner = s.targetId ~= localPlayer.UserId and s.targetId or state.previousOpponent
   state.returnKillCandidate = state.returnKill.observe({
-    at = time, ball = s.ball, me = localPlayer.UserId, targetId = s.targetId,
+    at = time,
+    ball = s.ball,
+    me = localPlayer.UserId,
+    targetId = s.targetId,
     distance = (s.position - state.root.Position).Magnitude,
-    fullRadius = g.fullRadius, killRadius = physics and physics.killRadius or 4,
+    fullRadius = g.fullRadius,
+    killRadius = physics and physics.killRadius or 4,
     inWindow = ballWindow(state, s, localPlayer.UserId),
     partnerId = partner and playerIsAlive(partner) and partner or nil,
   })
@@ -282,9 +289,11 @@ local function activate(state, reason, partner, time, s)
   if state.active then return false end
   state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
   if reason == "return_kill_cycles" then
-    state.returnExchange = { at = time, target = s.targetId }
-    state.returnKill.reset(); state.returnKillCandidate = nil
-  else state.returnExchange = nil end
+    state.returnExchange = { at = time, target = s.targetId }; state.returnKill.reset()
+    state.returnKillCandidate = nil
+  else
+    state.returnExchange = nil
+  end
   if s.targetId == partner then state.departedAt = state.departedAt or time end
   lastActivationReason, lastActivationAt = reason, time; clashStatsModule.begin(partner, time)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
@@ -356,8 +365,7 @@ local function sendBlocked(state, reason, time)
 end
 local function returnExchangeExpired(state, s, time)
   if state.reason ~= "return_kill_cycles" or not state.returnExchange then return false end
-  local tracker = state.returnExchange
-  local fresh = freshSnapshot(s, time) and s.ball == state.ball and not s.teleported and not s.resetting and not s.locked
+  local tracker = state.returnExchange; local fresh = freshSnapshot(s, time) and s.ball == state.ball and not s.teleported and not s.resetting and not s.locked
   if fresh and finite(s.syncSequence) and finite(state.sequence) then fresh = (s.syncSequence - state.sequence) % 65536 < 32768 end
   if fresh and s.targetId ~= tracker.target then
     local me = localPlayer.UserId
@@ -549,8 +557,8 @@ local function evaluate(state, s, time, packet)
     return
   end
   observeTarget(state, s, time); observeReturnKill(state, s, time)
-  observeExchangeContinuity(state, s, time)
-  rememberSendContinuity(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
+  observeExchangeContinuity(state, s, time); rememberSendContinuity(state, s, time)
+  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
     if stop then deactivate(state, stop, time); return end
@@ -638,8 +646,7 @@ end
 function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
-  returnKill = deps.ReturnKill
+  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash; returnKill = deps.ReturnKill
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
