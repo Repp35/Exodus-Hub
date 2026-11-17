@@ -88,7 +88,14 @@ local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
   if type(reason) == "string" and (reason:find("window", 1, true) or reason:find("outside_window", 1, true)) then state.lastGate = "window_ignored"; return false end
   if reason == "deflect_miss" or reason == "miss" or reason == "parry_miss" then state.lastGate = "miss_ignored"; return false end
-  if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "cooldown" and reason ~= "target_redirected_far" then
+  if
+    reason ~= "disabled"
+    and reason ~= "hub_inactive"
+    and reason ~= "player_died"
+    and reason ~= "opponent_left_or_died"
+    and reason ~= "cooldown"
+    and reason ~= "target_redirected_far"
+  then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
       state.lastGate = "near_opponent_protected"; return false
@@ -96,10 +103,10 @@ local function deactivate(state, reason, time)
   end
   time = time or now()
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
-  state.sendContinuity = nil
-  state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
-  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
-  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
+  state.sendContinuity = nil; state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason
+  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY; lastStopReason, lastStopAt = reason, time
+  utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
+  return true
 end
 local function monitorCooldown(state) return cooldownInfo.getDeflectCooldownState(), false end
 local function sampleGate(state, s, time)
@@ -399,8 +406,6 @@ local function deathRisk(state, s, time, cd)
     idealDistance = h.idealDistance,
   }
 end
--- An explicit fresh redirect ends local spam immediately, even while the old
--- opponent remains inside the proximity protection radius.
 local function redirectedFar(state, s, time)
   if not freshSnapshot(s, time) or s.ball ~= state.ball or s.teleported or s.resetting or s.locked then return false end
   local target = userId(s.targetId)
@@ -409,17 +414,13 @@ local function redirectedFar(state, s, time)
     local delta = (s.syncSequence - state.sequence) % 65536
     if delta >= 32768 then return false end
   end
-  local position = playerPosition(target)
-  return position ~= nil and (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE
+  local position = playerPosition(target); return position ~= nil and (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE
 end
--- Retain evidence of actual rapid local exchanges independently of soft target
--- uncertainty, which may clear the activation detector's history.
 local function rememberSendContinuity(state, s, time)
   local h = state.pressure
   if not state.active or not h or not finite(h.cycle) or h.cycle <= 0 or h.cycle > CONFIG.ACTIVATION.RETURN then return end
   if not finite(h.exchangeAt) or time < h.exchangeAt or time - h.exchangeAt > CONFIG.ACTIVATION.RETURN then return end
-  local horizon = math.clamp(h.cycle + networkLatency() + 2 / 60, 0.08, 0.2)
-  state.sendContinuity = { ball = s.ball, exchangeAt = h.exchangeAt, expiresAt = h.exchangeAt + horizon }
+  local horizon = math.clamp(h.cycle + networkLatency() + 2 / 60, 0.08, 0.2); state.sendContinuity = { ball = s.ball, exchangeAt = h.exchangeAt, expiresAt = h.exchangeAt + horizon }
 end
 local function canBridgeSend(state, s, time)
   local evidence = state.sendContinuity
@@ -430,8 +431,21 @@ local function canBridgeSend(state, s, time)
   local opponent = playerPosition(state.partner)
   if not opponent or (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.PROTECTION_RADIUS then return false end
   if gameInfo.getBallFrozen() == true then return false end
-  if s and (s.ball ~= state.ball or s.teleported or s.resetting or s.locked or s.mode == "training"
-    or s.ballCanMove == false or s.ballValid == false or s.valid == false) then return false end
+  if
+    s
+    and (
+      s.ball ~= state.ball
+      or s.teleported
+      or s.resetting
+      or s.locked
+      or s.mode == "training"
+      or s.ballCanMove == false
+      or s.ballValid == false
+      or s.valid == false
+    )
+  then
+    return false
+  end
   return true
 end
 local function sendBlocked(state, reason, time)
@@ -592,8 +606,6 @@ end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
   state.gates = {}; local cd = monitorCooldown(state)
-  -- Ability cooldown is not evidence that a clash ended; the client queues presses.
-  -- Keep automatic requests subject to the same ability/remote handling as manual spam.
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
@@ -602,8 +614,8 @@ local function evaluate(state, s, time, packet)
   end
   if s and s.ball and s.ball ~= state.ball then
     if state.ball then deactivate(state, "ball_replaced", time) end
-    state.sendContinuity = nil
-    state.ball, state.sequence = s.ball, nil; resetTargets(state)
+    state.sendContinuity = nil; state.ball, state.sequence = s.ball, nil
+    resetTargets(state)
   end
   local order = sequenceOrder(state, s and s.syncSequence)
   if order == "old" or order == "invalid" then state.lastGate = "packet_" .. order; return end
@@ -620,8 +632,8 @@ local function evaluate(state, s, time, packet)
     return
   end
   observeTarget(state, s, time); state.risk = deathRisk(state, s, time, cd)
-  rememberSendContinuity(state, s, time)
-  state.gates.risk = state.risk.reason or "ap_has_time"; dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
+  rememberSendContinuity(state, s, time); state.gates.risk = state.risk.reason or "ap_has_time"
+  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
     if stop then deactivate(state, stop, time); return end
@@ -795,11 +807,15 @@ function AutoSpam.canSend()
   local time = now(); local cd = monitorCooldown(state)
   local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd)
   if stop then deactivate(state, stop, time); return sendBlocked(state, stop, time) end
-  local order = sequenceOrder(state, s and s.syncSequence)
-  local gate = (order == "old" or order == "invalid") and ("packet_" .. order) or sampleGate(state, s, time)
+  local order = sequenceOrder(state, s and s.syncSequence); local gate = (order == "old" or order == "invalid") and ("packet_" .. order) or sampleGate(state, s, time)
   if gate == nil then return true end
-  local transient = gate == "target_unknown" or gate == "snapshot_invalid" or gate == "snapshot_stale"
-    or gate == "position_disagreement" or gate == "position_invalid" or gate == "ball_data_invalid" or gate == "packet_old"
+  local transient = gate == "target_unknown"
+    or gate == "snapshot_invalid"
+    or gate == "snapshot_stale"
+    or gate == "position_disagreement"
+    or gate == "position_invalid"
+    or gate == "ball_data_invalid"
+    or gate == "packet_old"
   if transient and canBridgeSend(state, s, time) then state.lastBridgedSendAt = time; return true end
   return sendBlocked(state, gate, time)
 end
