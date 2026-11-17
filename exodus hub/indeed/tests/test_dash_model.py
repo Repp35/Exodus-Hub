@@ -24,13 +24,13 @@ local character={Parent=true,FindFirstChild=function() return root end}; root.Pa
 local player={UserId=7,Parent=true,Character=character,CharacterAdded=sig()}
 local players={PlayerAdded=sig(),PlayerRemoving=sig(),GetPlayers=function() return {player} end,GetPlayerByUserId=function(_,id) if id==7 then return player end end}
 local utils={getPlayers=function() return players end,now=function() return now end,trackGlobal=function() end,untrackGlobal=function() end}
-local dashing=true; local gameInfo={isPlayerDashing=function() return dashing end}
+local dashing=true; local gameInfo={isPlayerDashing=function() return dashing end,getPlayerDashKind=function() return 'normal','native' end}
 local dash=(function()\n''' + source + '''\nend)()
 assert(dash.setup({Utils=utils,GameInfo=gameInfo}))
 local profiles=dash.getProfiles(); assert(profiles.normal.nominalDistance==24)
 assert(profiles.wind==nil)
 local event; dash.setHandler(function(e) event=e end); dash.tick(now)
-assert(event and event.confirmed and event.estimate.ability=='unknown')
+assert(event and event.confirmed and event.estimate.ability=='normal')
 assert(event.estimate.guaranteedRemainingDistance==0)
 assert(math.abs(event.estimate.normalModel.estimatedRemainingDistance-24)<1e-8)
 now=10.05; root.Position=v(6); dash.tick(now)

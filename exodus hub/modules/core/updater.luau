@@ -28,76 +28,66 @@ function Updater.create(deps)
   local sameRuntimeSignatures = deps.sameRuntimeSignatures; local authorizeRevision = deps.authorizeRevision
   local buildURLs = deps.buildURLs; local releaseSignatures = deps.signatures
   local reloadInFlight = false
+  local reloadJob
   local function reloadLatest(onFailure, requestedRevision, automatic)
-    local function fail(message)
-      warn("[Exodus Reload] " .. tostring(message))
-      if automatic then clearPersistent("update"); notifyPersistent("Update failed. Check the console.", "critical", "critical") end
-      if automatic and type(_G.ExodusUIRestore) == "function" then pcall(_G.ExodusUIRestore, message) end
-      if type(onFailure) == "function" then task.defer(onFailure, message) end
-      reloadInFlight = false
+    if reloadJob and (automatic or not reloadJob.automatic) then return false, "reload already in progress" end
+    local job = { automatic = automatic == true, session = _G.ExodusLoaderSessionToken }; reloadJob, reloadInFlight = job, true
+    local function owns() return reloadJob == job end
+    local function current() return owns() and _G.ExodusLoaderSessionToken == job.session and Exodus.Started == true end
+    local function finish()
+      if owns() then reloadJob, reloadInFlight = nil, false end
     end
-    if reloadInFlight then return false, "reload already in progress" end
-    reloadInFlight = true
-    if automatic then notifyPersistent("Updating...", "update", "info") end
-    local sessionToken = _G.ExodusLoaderSessionToken
+    local function fail(message)
+      if not owns() then return end
+      finish(); warn("[Exodus Reload] " .. tostring(message))
+      if automatic then
+        clearPersistent("update"); notifyPersistent("Update failed. Check the console.", "critical", "critical")
+        if type(_G.ExodusUIRestore) == "function" then pcall(_G.ExodusUIRestore, message) end
+      end
+      if type(onFailure) == "function" then task.defer(onFailure, message) end
+    end
+    if automatic then notifyPersistent("Updating...", "update", "info") else clearPersistent("update") end
     task.spawn(function()
       local completed, unexpected = xpcall(function()
         local revision, revisionError, _, signatures = resolveLatestRevision()
+        if not current() then finish(); return end
         if not revision then fail(revisionError or "Version manifest unavailable"); return end
-        if validRevision(requestedRevision) and revision:lower() ~= requestedRevision:lower() then fail("Requested revision is no longer current"); return end
-        if
-          automatic
-          and (
-            (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
-            or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
-          )
-        then
-          clearPersistent("update"); reloadInFlight = false
+        if automatic and validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower() then
+          clearPersistent("update"); finish()
           return
         end
         local chunk, prepareError = prepareLoader(revision, signatures)
+        if not current() then finish(); return end
         if not chunk then fail(prepareError); return end
-        if
-          automatic
-          and (
-            (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
-            or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
+        if automatic then
+          local ready, waited = waitForMatchToEnd(
+            function() notifyPersistent("Update queued: waiting until you leave the match", "update", "info") end,
+            current
           )
-        then
-          clearPersistent("update"); reloadInFlight = false
-          return
+          if not ready or not current() then finish(); return end
+          if not waitForClashToEnd(function() notifyPersistent("Update queued: waiting for clash to end", "update", "info") end, current) or not current() then finish(); return end
+          if waited then
+            local latest, err, _, latestSignatures = resolveLatestRevision()
+            if not current() then finish(); return end
+            if not latest then fail(err); return end
+            if latest ~= revision then revision, signatures = latest, latestSignatures; chunk, prepareError = prepareLoader(revision, signatures) end
+            if not chunk then fail(prepareError); return end
+          end
+          if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
         end
-        if
-          automatic
-          and not waitForMatchToEnd(function()
-            if automatic then notifyPersistent("Update queued: waiting for match to end", "update", "info") end
-          end)
-        then
-          if automatic then clearPersistent("update") end
-          reloadInFlight = false; return
-        end
-        if
-          not waitForClashToEnd(
-            function() notifyPersistent(automatic and "Update queued: waiting for clash to end" or "Restart queued: waiting for clash to end", "update", "info") end
-          )
-        then
-          if automatic then clearPersistent("update") end
-          reloadInFlight = false; return
-        end
-        if _G.ExodusLoaderSessionToken ~= sessionToken or Exodus.Started ~= true then reloadInFlight = false; return end
-        if automatic and type(_G.ExodusUIFadeOut) == "function" then
-          local faded, fadeError = pcall(_G.ExodusUIFadeOut)
-          if not faded then warn("[Exodus Reload] Fade out failed: " .. tostring(fadeError)) end
-        end
+        if not current() then finish(); return end
         _G.ExodusRequestedRevision = revision
-        local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
+        local ok, result = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
         if not ok then
-          _G.ExodusRequestedRevision = nil; fail(executionError)
+          _G.ExodusRequestedRevision = nil; fail(result)
           return
         end
-        reloadInFlight = false
+        finish()
       end, function(err) return debug.traceback(tostring(err), 2) end)
-      if not completed then _G.ExodusRequestedRevision = nil; fail(unexpected) end
+      if not completed then
+        if owns() then _G.ExodusRequestedRevision = nil end
+        fail(unexpected)
+      end
     end)
     return true
   end

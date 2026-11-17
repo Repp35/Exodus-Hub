@@ -20,6 +20,9 @@ local trainingObservers = {}
 local trainingParryAt
 local trainingDataModule, trainingData
 local snapshotCache, snapshotCacheAt = nil, -math.huge
+local presence, presenceConnections, presenceDeath = {}, {}, nil
+local presenceHumanoid, lobbyRegion, lobbySearchAt
+local updatePresence
 local dashStateCache = setmetatable({}, { __mode = "k" })
 
 -- configuration
@@ -105,6 +108,78 @@ function GameInfo.fireTrainingParry()
   local endpoint = child(child(child(storage(), "Training"), "Remotes"), "Block"); local camera = world.CurrentCamera
   if not endpoint or not endpoint:IsA("RemoteEvent") or not camera then return false, "bloqueio de treino indisponível" end
   endpoint:FireServer(camera.CFrame.Position, camera.CFrame.LookVector); return true
+end
+
+-- membership
+local function inLobby(root)
+  if not root then return true end
+  local time = os.clock()
+  if not lobbyRegion or not lobbyRegion.Parent then
+    if not lobbySearchAt or time >= lobbySearchAt then lobbySearchAt = time + 0.5; lobbyRegion = world:FindFirstChild("Lobby Area", true) end
+  end
+  local function inside(region)
+    if not region or not region:IsA("BasePart") then return false end
+    local point = region.CFrame:PointToObjectSpace(root.Position); local half = region.Size * 0.5
+    return math.abs(point.X) <= half.X and math.abs(point.Y) <= half.Y and math.abs(point.Z) <= half.Z
+  end
+  return inside(lobbyRegion) or inside(child(child(child(world, "Training"), "Areas"), "SafeArea"))
+end
+local function stopPresence()
+  if presenceDeath then presenceDeath:Disconnect(); presenceDeath = nil end
+  for _, connection in ipairs(presenceConnections) do
+    if utils and type(utils.untrackGlobal) == "function" then utils.untrackGlobal(connection) end
+    connection:Disconnect()
+  end
+  presenceConnections, presenceHumanoid = {}, nil
+end
+updatePresence = function()
+  if not players or not world then return end
+  local player = players.LocalPlayer; local character = player and player.Character
+  local root = character and character:FindFirstChild("HumanoidRootPart")
+  local humanoid = character and type(character.FindFirstChildOfClass) == "function" and character:FindFirstChildOfClass("Humanoid") or nil; local round = world:GetAttribute("MatchStatus") == 6
+  local lives = player and player:GetAttribute("Lives"); local playing = player and player:GetAttribute("Playing")
+  if humanoid ~= presenceHumanoid then
+    if presenceDeath then presenceDeath:Disconnect(); presenceDeath = nil end
+    presenceHumanoid = humanoid
+    if humanoid and humanoid.Died then
+      presenceDeath = humanoid.Died:Connect(function()
+        if presenceHumanoid == humanoid and player.Character == character and world:GetAttribute("MatchStatus") == 6 then presence.eliminated, presence.entered = true, false end
+      end)
+    end
+  end
+  if presence.round == nil then presence.needsTeleport = not round end
+  if not round then
+    if presence.round == true then presence.entryProof = false end
+    presence.eliminated, presence.entered, presence.needsTeleport = false, false, true
+  elseif presence.round == true and presence.entered and presence.character and presence.character ~= character then
+    presence.eliminated, presence.entered = true, false
+  end
+  if root and presence.position and (root.Position - presence.position).Magnitude >= 24 then presence.entryProof = true end
+  local alive = humanoid ~= nil and humanoid.Health > 0 and root ~= nil and root.Parent ~= nil
+  if round and ((humanoid and humanoid.Health <= 0) or (finite(presence.lives) and presence.lives > 0 and finite(lives) and lives <= 0)) then presence.eliminated = true end
+  local candidate = round and alive and finite(lives) and lives > 0 and playing ~= false and not inLobby(root)
+  if presence.entered and not candidate then
+    if not alive or playing == false or not finite(lives) or lives <= 0 then presence.eliminated = true end
+    presence.needsTeleport, presence.entryProof = true, false
+  end
+  presence.entered = candidate and not presence.eliminated and (not presence.needsTeleport or presence.entryProof == true) or false
+  presence.round, presence.character, presence.position, presence.lives = round, character, root and root.Position, lives
+end
+local function startPresence()
+  presence, lobbyRegion, lobbySearchAt = {}, nil, nil; updatePresence()
+  local function track(connection)
+    presenceConnections[#presenceConnections + 1] = connection
+    if type(utils.trackGlobal) == "function" then utils.trackGlobal(connection) end
+  end
+  if type(world.GetAttributeChangedSignal) == "function" then track(world:GetAttributeChangedSignal("MatchStatus"):Connect(updatePresence)) end
+  local runService = type(utils.getRunService) == "function" and utils.getRunService()
+  if runService and runService.Heartbeat then
+    local elapsed = 0
+    track(runService.Heartbeat:Connect(function(dt)
+      elapsed += dt
+      if elapsed >= 0.1 then elapsed = 0; updatePresence() end
+    end))
+  end
 end
 
 -- abilities
@@ -299,10 +374,10 @@ function GameInfo.startMaintenance(options)
   return true
 end
 function GameInfo.stopMaintenance()
-  maintenance += 1; disconnectSync()
-  disconnect(trainingConnection); disconnect(trainingEventConnection)
-  trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil; trainingEventConnection, trainingEventRemote = nil, nil
-  resetTrainingBall(false)
+  stopPresence(); maintenance += 1
+  disconnectSync(); disconnect(trainingConnection)
+  disconnect(trainingEventConnection); trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
+  trainingEventConnection, trainingEventRemote = nil, nil; resetTrainingBall(false)
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
@@ -317,7 +392,7 @@ function GameInfo.setup(deps)
   trainingZone = nil; snapshotCache, snapshotCacheAt = nil, -math.huge
   table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
   errors = {}; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
-  return true
+  startPresence(); return true
 end
 function GameInfo.getBall() return getBall() end
 function GameInfo.getBallPosition(value) return value.Position end
@@ -354,15 +429,14 @@ local MATCH_STATUSES = {
 
 local GAME_MODES = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
 function GameInfo.getGameContext()
-  local player = players and players.LocalPlayer; local placeId = game.PlaceId
-  local matchStatus = world and world:GetAttribute("MatchStatus"); local modeId = world and world:GetAttribute("CurGamemode")
-  local lives = player and player:GetAttribute("Lives"); local playing = player and player:GetAttribute("Playing")
-  local afk = player and player:GetAttribute("AFK")
+  updatePresence(); local player = players and players.LocalPlayer
+  local placeId = game.PlaceId; local matchStatus = world and world:GetAttribute("MatchStatus")
+  local modeId = world and world:GetAttribute("CurGamemode"); local lives = player and player:GetAttribute("Lives")
+  local playing = player and player:GetAttribute("Playing"); local afk = player and player:GetAttribute("AFK")
   local roundActive
   if finite(matchStatus) then roundActive = matchStatus == 6 end
-  local inMatch
-  if finite(matchStatus) and matchStatus ~= 6 then inMatch = false elseif roundActive and finite(lives) then inMatch = lives > 0 and playing ~= false end
-  local training = inTrainingArea(); local area = "unknown"
+  local inMatch = presence.entered == true; local training = inTrainingArea()
+  local area = "unknown"
   if placeId == 12979690461 then
     if inMatch then area = "match" elseif training then area = "training" elseif player and finite(lives) then area = "lobby" end
   end
@@ -370,6 +444,8 @@ function GameInfo.getGameContext()
     area = area,
     placeId = placeId,
     inMatch = inMatch,
+    eliminated = presence.eliminated == true,
+    alive = presenceHumanoid ~= nil and presenceHumanoid.Health > 0,
     roundActive = roundActive,
     training = training,
     playing = playing,
@@ -448,6 +524,32 @@ function GameInfo.getLocalDashState()
   local ability = GameInfo.getDashAbility()
   if not ability then return false end
   return ability.Dashing == true, tonumber(ability.DashSpeed), tonumber(ability.DashTime)
+end
+function GameInfo.getPlayerDashKind(player)
+  if not player then return "unknown" end
+  if player == players.LocalPlayer then
+    local list = getAbilities(); local wind = list and list[22]
+    if wind and (wind.Dashing == true or wind.Controlling == true) then return "wind", "native" end
+    local ability = GameInfo.getDashAbility()
+    if ability and ability.Dashing == true and ability.DashSpeed == 120 and ability.DashTime == 0.2 and ability.DashTime2 == nil then return "normal", "native" end
+    return "unknown"
+  end
+  local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
+  if not root then return "unknown" end
+  local effect = root:FindFirstChild("WindDash")
+  if effect then
+    local objects = { effect }
+    for _, item in ipairs(effect:GetDescendants()) do
+      objects[#objects + 1] = item
+    end
+    for _, item in ipairs(objects) do
+      if (item:IsA("ParticleEmitter") or item:IsA("Beam") or item:IsA("Trail")) and item.Enabled then return "wind", "effect" end
+    end
+  end
+  local signal = character:GetAttribute("IsDashing")
+  if signal ~= true and signal ~= 1 and signal ~= "true" then return "unknown" end
+  if root.AssemblyLinearVelocity.Magnitude > 140 then return "wind", "speed" end
+  return "normal", "shared"
 end
 function GameInfo.isPlayerDashing(player)
   if not player then return false end
@@ -758,6 +860,7 @@ GameInfo.__contract = {
     "getDashAbility",
     "getLocalDashState",
     "isPlayerDashing",
+    "getPlayerDashKind",
     "getFierceDeflectAbility",
     "getDarkSealAbility",
     "getDarkSealEventId",

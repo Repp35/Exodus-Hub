@@ -94,6 +94,9 @@ local function createOptimizer(services, initialConfig)
   local Heartbeat = services.RunService.Heartbeat; local options = table.clone(initialConfig)
   local controller = {}; local enabled, alive, destroying = false, true, false
   local journal, records = {}, {}; local connections = {}
+  local textureParking = Instance.new("Folder"); textureParking.Name = "ExodusTextureParking"
+  local emptyTextureContent
+  pcall(function() emptyTextureContent = Content.none end)
   local pending, queued, head, tail = {}, {}, 1, 0; local scan = {}
   local dirty = {}; local delayed = false
   local workerRunning = false; local generation = 0
@@ -122,7 +125,8 @@ local function createOptimizer(services, initialConfig)
     return false
   end
   local function isProtectedVisual(object)
-    local ancestor = object
+    local entry = journal[object]; local saved = entry and entry.properties.Parent
+    local ancestor = object.Parent == textureParking and saved and saved.original or object
     while ancestor and ancestor ~= Workspace do
       if ancestor.Name == "GameBall" or ancestor.Name == "TrainingBall" or ancestor:GetAttribute("AntiLagKeepVisible") == true then return true end
       if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return true end
@@ -189,7 +193,7 @@ local function createOptimizer(services, initialConfig)
     elseif object:IsA("SpecialMesh") then
       if options.RemoveTextures and not isProtectedVisual(object) then target.TextureId = "" end
     elseif object:IsA("SurfaceAppearance") then
-      if options.RemoveTextures and not isProtectedVisual(object) then target.ColorMap, target.NormalMap, target.RoughnessMap, target.MetalnessMap = "", "", "", "" end
+      if options.RemoveTextures and not isProtectedVisual(object) then target.Parent = textureParking end
     elseif object:IsA("BasePart") then
       watch = false
       if options.Shadows then target.CastShadow = false end
@@ -199,7 +203,10 @@ local function createOptimizer(services, initialConfig)
           local ok, physical = read(object, "CurrentPhysicalProperties")
           if ok and physical then target.CustomPhysicalProperties = physical end
           target.Material, target.MaterialVariant = Enum.Material.SmoothPlastic, ""
-          if object:IsA("MeshPart") then target.TextureID = "" end
+          if object:IsA("MeshPart") then
+            target.TextureID = ""
+            if emptyTextureContent then target.TextureContent = emptyTextureContent end
+          end
         end
         if options.HideTaggedDecorations and CollectionService:HasTag(object, "AntiLagDecoration") then target.LocalTransparencyModifier = 1 end
       end
@@ -254,8 +261,9 @@ local function createOptimizer(services, initialConfig)
     end)
   end
   process = function(object)
-    local special = object == services.GameSettings
-    if not enabled or (not special and not inScope(object)) then
+    local special = object == services.GameSettings; local savedParent = journal[object] and journal[object].properties.Parent
+    local parked = options.RemoveTextures and object.Parent == textureParking and savedParent and savedParent.original and inScope(savedParent.original)
+    if not enabled or (not special and not inScope(object) and not parked) then
       if journal[object] then restoreEntry(journal[object]) end
       return
     end
@@ -322,6 +330,7 @@ local function createOptimizer(services, initialConfig)
       connection:Disconnect()
     end
     connections, dirty, pending, queued, scan = {}, {}, {}, {}, {}
+    if #textureParking:GetChildren() == 0 then textureParking:Destroy() end
   end
   scheduleWorker = function()
     if workerRunning or not alive then return end
@@ -359,6 +368,9 @@ local function createOptimizer(services, initialConfig)
   end
   restartScan = function()
     generation += 1; scan = { { items = table.clone(roots), index = 1 } }
+    for _, entry in ipairs(records) do
+      if entry.properties.Parent and entry.object.Parent == textureParking then enqueue(entry.object) end
+    end
     if services.GameSettings then enqueue(services.GameSettings) end
     if options.LowestGraphics and not services.GameSettings then reportUnavailable("UserGameSettings.SavedQualityLevel") end
     scheduleWorker()

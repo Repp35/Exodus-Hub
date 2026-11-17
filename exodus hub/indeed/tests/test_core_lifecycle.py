@@ -14,7 +14,7 @@ local Updater=(function()
 ''' + source + '''
 end)()
 local failures=0
-local instance=Updater.create({Exodus={Started=true},validRevision=function() return false end,
+local instance=Updater.create({Exodus={Started=true},clearPersistent=function() end,validRevision=function() return false end,
  resolveLatestRevision=function() error('offline') end})
 assert(spawned==0)
 assert(instance.reload(function() failures=failures+1 end))

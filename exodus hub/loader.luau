@@ -646,8 +646,8 @@ local function clashInProgress(loaded)
   local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   if humanoid and humanoid.Health <= 0 then return false end
   if type(loaded.gameinfo) == "table" then
-    if type(loaded.gameinfo.getDefensePhysics) == "function" then
-      local ok, physics = pcall(loaded.gameinfo.getDefensePhysics)
+    if type(loaded.deflectgeometry) == "table" and type(loaded.deflectgeometry.getDefensePhysics) == "function" then
+      local ok, physics = pcall(loaded.deflectgeometry.getDefensePhysics)
       if ok and type(physics) == "table" and physics.inClash == true then return true end
     end
     if type(loaded.gameinfo.getClashContext) == "function" then
@@ -664,28 +664,29 @@ end
 local function matchInProgress()
   local loaded = Exodus.Context
   if type(loaded) ~= "table" or type(loaded.gameinfo) ~= "table" or type(loaded.gameinfo.getGameContext) ~= "function" then return false end
-  local ok, context = pcall(loaded.gameinfo.getGameContext); return ok and type(context) == "table" and (context.roundActive == true or context.inMatch == true or context.area == "match")
+  local ok, context = pcall(loaded.gameinfo.getGameContext); return ok and type(context) == "table" and (context.inMatch == true)
 end
-local function waitForMatchToEnd(onWaiting)
+local function waitForMatchToEnd(onWaiting, isCurrent)
   local waiting, clearSince = false, nil
-  while Exodus.Started == true do
+  while Exodus.Started == true and (not isCurrent or isCurrent()) do
     if matchInProgress() then
       if not waiting and type(onWaiting) == "function" then onWaiting() end
       waiting, clearSince = true, nil
     else
-      if not waiting then return true end
+      if not waiting then return true, false end
       clearSince = clearSince or os.clock()
-      if os.clock() - clearSince >= 0.75 then return true end
+      if os.clock() - clearSince >= 0.1 then return true, true end
     end
     task.wait(0.1)
   end
   return false
 end
-local function waitForClashToEnd(onWaiting)
+local function waitForClashToEnd(onWaiting, isCurrent)
   local loaded = Exodus.Context
   if type(loaded) ~= "table" or type(loaded.utils) ~= "table" then return true end
   local waiting, clearSince = false, nil
-  while loaded.utils.isActive() and Exodus.Context == loaded do
+  while loaded.utils.isActive() and Exodus.Context == loaded and (not isCurrent or isCurrent()) do
+    if not matchInProgress() then return true end
     if clashInProgress(loaded) then
       if not waiting and type(onWaiting) == "function" then onWaiting() end
       waiting, clearSince = true, nil
@@ -744,13 +745,7 @@ local function startInternal()
     signatures = releaseSignatures,
     onSignatures = function(signatures) releaseSignatures = signatures end,
   })
-  printStartup("Exodus: Initializing...")
-  if wasStarted and not requestedRevision then
-    local safe = waitForClashToEnd(function() notifyPersistent("Restart queued: waiting for clash to end", "shutdown", "info") end)
-    clearPersistent("shutdown")
-    if not safe then return false, "Loader", "runtime stopped while waiting for clash" end
-  end
-  _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
+  printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
   _G.ExodusShutdownReason = nil; startupPerformed = true
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)

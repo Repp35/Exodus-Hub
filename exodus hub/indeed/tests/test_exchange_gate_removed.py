@@ -12,10 +12,10 @@ for i=1,20 do packet(i%2==1 and 42 or 99,.04,100) end
 assert(not ap.isActive() and clicks==0,'removed gate still activated')
 assert(ap.getStatus().risk==nil)''')
 
-    def test_near_spawn_has_only_original_proximity_rules(self):
+    def test_near_receipt_uses_the_five_stud_proximity_rule(self):
         check('''other.root.Position=v(13);packet(42,0,5)
 for i=1,10 do heartbeat(.01) end
-assert(not ap.isActive() and clicks==0)''')
+assert(ap.isActive() and clicks>0)''')
 
     def test_original_instant_close_candidate_still_activates(self):
         check('''packet(42,0,2)

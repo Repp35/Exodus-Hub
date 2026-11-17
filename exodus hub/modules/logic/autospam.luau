@@ -10,12 +10,8 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.36,
-    SELF_RETURN_MIN_TIME = 0.30,
-    SELF_RETURN_MAX_TIME = 0.10,
-    SELF_RETURN_DIRECTION_RATIO = 0.12,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
-    CLOSE_INSTANT_DISTANCE = 2,
     CLOSE_OPPONENT_DISTANCE = 16,
     MAX_CLASH_DISTANCE = 35,
     RADIUS_FACTOR = 1,
@@ -78,7 +74,7 @@ local function clearEvidence(state)
 end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
-  state.exchangeHistory = nil
+  state.exchangeHistory, state.exchange = nil, nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -167,18 +163,14 @@ local function nearestPartner(state, limit)
   end
   return best
 end
-local function observeTarget(state, s, time)
+local function observeTarget(state, s, time, packet)
+  if not packet then return end
   local target, previous = s.targetId, state.target
   if target == previous then return end
-  local me = localPlayer.UserId; state.close, state.pending = nil, nil
-  local arm = state.closeArm
-  if arm then
-    if previous == me and target == arm.partner then arm.stage = "outbound"
-    elseif previous == arm.partner and target == me and arm.stage == "outbound" then arm.stage = "confirmed"
-    elseif target ~= me or previous ~= arm.partner then state.closeArm = nil end
-  end
+  local me = localPlayer.UserId; state.close, state.pending, state.exchange = nil, nil, nil
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.target, state.lastSwitchAt = target, time
+  if previous and ((previous == me and target ~= me) or (target == me and previous ~= me)) then state.exchange = { partner = previous == me and target or previous, at = time } end
   if previous == me and target ~= me then
     state.outbound = { partner = target, at = time }; state.departedAt = time
   elseif target == me then
@@ -187,7 +179,12 @@ local function observeTarget(state, s, time)
       state.pending = { partner = previous, at = time }
     end
     state.outbound, state.departedAt = nil, nil; local partner = previous and previous ~= me and previous or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-    state.close = partner and { partner = partner, at = time } or nil
+    if
+      (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+      and nearPartner(state, partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+    then
+      state.close = { partner = partner, at = time }
+    end
   else
     state.outbound, state.departedAt = nil, nil
   end
@@ -357,6 +354,7 @@ local function dashPrediction(state, s, time)
     local function model(sample, relative, reason)
       if
         not sample
+        or sample.ability ~= "normal"
         or not sample.signalActive
         or not sample.normalModel
         or not vector(sample.velocity)
@@ -365,6 +363,8 @@ local function dashPrediction(state, s, time)
       then
         return nil
       end
+      local exchange = state.exchange
+      if not exchange or exchange.partner ~= partner or exchange.at < sample.observedAt or exchange.at > time or exchange.at - sample.observedAt > 0.2 then return nil end
       local age, magnitude, remaining = time - sample.observedAt, sample.velocity.Magnitude, sample.normalModel.estimatedRemaining; local distance = relative.Magnitude
       if age < 0 or age > 0.2 or magnitude < 70 or magnitude > 140 or not finite(remaining) or remaining <= 0 or distance <= 0.05 then return nil end
       local closing = sample.velocity:Dot(relative) / distance
@@ -400,37 +400,7 @@ local function dashPrediction(state, s, time)
   end
   return nil, lastGate
 end
-local function consistentSelfReturn(state, s, time)
-  local me = localPlayer.UserId; local tracker = state.selfReturn
-  if s.targetId ~= me or not vector(s.position) or not vector(s.velocity) then state.selfReturn = nil; return nil end
-  local speed = snapshotSpeed(s); local low, high = gameInfo.getBallSpeedLimits()
-  if not speed or not finite(low) or not finite(high) or high <= low then return nil end
-  local delta = state.root.Position - s.position; local distance = delta.Magnitude
-  if distance < 0.1 then return nil end
-  local radial = s.velocity:Dot(delta) / distance; local direction = radial > speed * CONFIG.ACTIVATION.SELF_RETURN_DIRECTION_RATIO and "incoming"
-    or radial < -speed * CONFIG.ACTIVATION.SELF_RETURN_DIRECTION_RATIO and "outgoing"
-    or nil
-  if not direction then return nil end
-  if not tracker or tracker.ball ~= s.ball or time - tracker.lastAt > 0.15 then
-    tracker = { ball = s.ball, direction = direction, lastAt = time, switches = 0 }; state.selfReturn = tracker
-    return nil
-  end
-  tracker.lastAt = time
-  if direction ~= tracker.direction then
-    if tracker.direction == "outgoing" and direction == "incoming" then tracker.returnAt = time; tracker.switches += 1 end
-    tracker.direction = direction
-  end
-  local fraction = math.clamp((speed - low) / (high - low), 0, 1)
-  local duration = CONFIG.ACTIVATION.SELF_RETURN_MIN_TIME + (CONFIG.ACTIVATION.SELF_RETURN_MAX_TIME - CONFIG.ACTIVATION.SELF_RETURN_MIN_TIME) * fraction
-  if direction ~= "incoming" or tracker.switches < 1 or not tracker.returnAt or time - tracker.returnAt < duration then return nil end
-  if not ballWindow(state, s, me) then return nil end
-  local partner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
-    or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
-  return partner
-end
 local function chooseActivation(state, s, time)
-  local selfReturnPartner = consistentSelfReturn(state, s, time); state.gates.selfReturn = selfReturnPartner and "ready" or "self_return_waiting"
-  if selfReturnPartner then return "consistent_self_return", selfReturnPartner end
   local prediction, dashGate = dashPrediction(state, s, time); state.dashPrediction, state.gates.dash = prediction, dashGate
   if prediction then return prediction.reason, prediction.partner, prediction.at end
   local pending = state.pending; state.gates.returnTarget = not pending and "return_no_round_trip" or "return_expired"
@@ -440,21 +410,14 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, localPlayer.UserId) then state.gates.returnTarget = "return_ball_outside_window"
     else state.gates.returnTarget = "ready"; return "return_target", pending.partner end
   end
-  local distance = (s.position - state.root.Position).Magnitude; local closePartner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-    or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-  state.gates.close = "close_not_target"
-  if s.targetId == localPlayer.UserId then
-    if distance <= CONFIG.ACTIVATION.CLOSE_INSTANT_DISTANCE and closePartner then state.gates.close = "ready"; return "close_target", closePartner end
-    local arm = state.closeArm
-    if arm and not nearPartner(state, arm.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE) then state.closeArm = nil; arm = nil end
-    if not arm and distance <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
-      local sender = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-      if sender then arm = { partner = sender, stage = "incoming" }; state.closeArm = arm end
-    end
-    state.gates.close = not arm and "close_no_sender_or_distance" or "close_wait_exchange"
-    if arm and arm.stage == "confirmed" then
-      if ballWindow(state, s, localPlayer.UserId) then state.gates.close = "ready"; return "close_target", arm.partner end
-      state.gates.close = "close_return_outside_window"
+  local close = state.close; state.gates.close = "close_no_target_receipt"
+  if close and s.targetId == localPlayer.UserId and time - close.at <= 0.1 then
+    if
+      nearPartner(state, close.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+      and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+    then
+      state.close = nil; state.gates.close = "ready"
+      return "close_target", close.partner
     end
   end
   local haunter = state.haunter; state.gates.haunter = not haunter and "haunter_no_event" or "haunter_expired"
@@ -502,7 +465,7 @@ local function evaluate(state, s, time, packet)
     if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return
   end
-  observeTarget(state, s, time); observeExchangeContinuity(state, s, time)
+  observeTarget(state, s, time, packet); observeExchangeContinuity(state, s, time)
   rememberSendContinuity(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)

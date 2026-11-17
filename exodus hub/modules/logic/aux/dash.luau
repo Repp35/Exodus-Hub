@@ -9,6 +9,8 @@ local generation, lastTick = 0, -math.huge
 -- configuration
 local CONFIG = {
   MIN_SPEED = 70,
+  NORMAL_CONFIRM_TIME = 0.06,
+  WIND_BLOCK_TIME = 0.85,
   MAX_MEASURED_SPEED = 400,
   MAX_SAMPLE_GAP = 0.15,
   SIGNAL_GRACE = 0.22,
@@ -49,7 +51,7 @@ local function estimate(record, time)
   end
   local elapsed = time - record.observedAt; local remaining = math.max(0, PROFILES.normal.duration - elapsed)
   return {
-    ability = "unknown",
+    ability = record.normalConfirmed and "normal" or (record.kind == "wind" and "wind" or "unknown"),
     observedAt = record.observedAt,
     sampledAt = record.positionAt,
     signalActive = record.signalActive,
@@ -57,7 +59,7 @@ local function estimate(record, time)
     velocity = record.velocity,
     observedDisplacement = (record.position - record.observedPosition).Magnitude,
     guaranteedRemainingDistance = 0,
-    normalModel = {
+    normalModel = record.normalConfirmed and {
       duration = PROFILES.normal.duration,
       elapsedSinceObserved = elapsed,
       estimatedRemaining = remaining,
@@ -89,8 +91,9 @@ end
 
 -- sampling
 local function resetCharacter(record, character)
-  record.character = character; record.root, record.position, record.positionAt = nil, nil, nil
-  record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil; record.observedAt, record.observedPosition, record.velocity = nil, nil, nil
+  record.kind, record.normalConfirmed, record.windUntil = nil, false, nil; record.character = character
+  record.root, record.position, record.positionAt = nil, nil, nil; record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
+  record.observedAt, record.observedPosition, record.velocity = nil, nil, nil
 end
 local function observe(player, record, time, suppliedRoot)
   local character = player.Character
@@ -109,9 +112,17 @@ local function observe(player, record, time, suppliedRoot)
   local signal = gameInfo.isPlayerDashing(player)
   if signal and not record.signalActive then record.signalAt, record.observedAt, record.observedPosition = time, time, position end
   record.signalActive = signal; local speed = velocity.Magnitude
-  local fast = speed >= CONFIG.MIN_SPEED; local signaled = signal or time - record.signalAt <= CONFIG.SIGNAL_GRACE
+  local kind, proof = gameInfo.getPlayerDashKind(player)
+  if kind == "wind" or (signal and speed > 140) then record.windUntil = time + CONFIG.WIND_BLOCK_TIME end
+  if record.windUntil and time < record.windUntil then kind = "wind" end
+  record.kind = kind; record.normalConfirmed = signal
+      and kind == "normal"
+      and speed >= CONFIG.MIN_SPEED
+      and speed <= 140
+      and (proof == "native" or (record.observedAt and time - record.observedAt >= CONFIG.NORMAL_CONFIRM_TIME))
+    or false
   record.position, record.positionAt, record.velocity = position, time, velocity
-  if signaled and fast then emit(player, record, position, velocity, previous, time, true) end
+  if record.normalConfirmed then emit(player, record, position, velocity, previous, time, true) end
 end
 
 -- player-tracking
@@ -226,7 +237,7 @@ Dash.__contract = {
   requires = { Utils = "utils", GameInfo = "gameinfo" },
   requiresMethods = {
     Utils = { "apiVersion", "getPlayers", "now", "trackGlobal", "untrackGlobal" },
-    GameInfo = { "isPlayerDashing" },
+    GameInfo = { "isPlayerDashing", "getPlayerDashKind" },
   },
   provides = { "setup", "setHandler", "tick", "resetState", "teardown", "getStatus", "getProfiles", "getEstimate" },
 }

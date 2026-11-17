@@ -18,10 +18,10 @@ heartbeat(2);assert(ap.isActive() and stops('deflect_cooldown_timeout')==0)
 """)
 
 
-    def test_old_close_handoff_is_not_a_lock_when_ball_is_near(self):
+    def test_ball_approaching_without_new_target_receipt_does_not_activate(self):
         check('''
 packet(42,0,50);heartbeat(.5);snap.position=v(2);heartbeat(.01)
-assert(ap.isActive(),'old handoff expiry blocked current close danger')
+assert(not ap.isActive(),'later approach created a false target receipt')
 ''')
 
 

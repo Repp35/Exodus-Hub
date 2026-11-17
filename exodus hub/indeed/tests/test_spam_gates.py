@@ -37,30 +37,21 @@ for _,factor in ipairs(geometryFactors) do assert(factor==1) end
             with self.subTest(case=case):
                 check(case+"\nassert(not ap.isActive() and clicks==0,'unrelated approach started spam')")
 
-    def test_close_ball_two_studs_is_immediate(self):
-        check("packet(42,0,2);assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='close_target')")
-        check("packet(42,0,2.01);assert(not ap.isActive())")
-        check("other.root.Position=v(17);packet(42,0,2);assert(not ap.isActive(),'distant bystander triggered close gate')")
+    def test_close_receipt_is_immediate_up_to_five_studs(self):
+        check("packet(42,0,5);assert(ap.isActive() and clicks==1);assert(ap.getActivationContext().reason=='close_target')")
+        check("packet(42,0,5.01);assert(not ap.isActive())")
+        check("other.root.Position=v(17);packet(42,0,5);assert(not ap.isActive(),'distant bystander triggered close gate')")
 
-    def test_five_stud_receipt_waits_for_same_sender_roundtrip(self):
-        check("""
-packet(99,0,5);packet(42,.01,5)
-assert(not ap.isActive() and clicks==0,'first five-stud receipt activated')
-packet(99,.01,5);assert(not ap.isActive(),'outgoing leg activated')
-packet(42,.5,50)
-assert(ap.isActive() and clicks==1,'confirmed return did not send immediately')
-assert(ap.getActivationContext().reason=='close_target','fixture used ordinary return instead')
-""")
+    def test_later_approach_and_outgoing_switch_do_not_trigger_proximity(self):
+        check("packet(42,0,50);snap.position=v(2);heartbeat(.01);assert(not ap.isActive())")
+        check("packet(42,0,50);packet(99,.01,2);assert(not ap.isActive(),'outgoing leg activated proximity')")
 
-    def test_five_stud_receipt_cannot_use_third_party_or_reset(self):
-        for interrupt in ("packet(88,.01,5)","snap.teleported=true;heartbeat(.01);snap.teleported=false"):
-            with self.subTest(interrupt=interrupt):
-                check("packet(99,0,5);packet(42,.01,5);packet(99,.01,5);"+interrupt+";packet(42,.5,5);assert(not ap.isActive() and clicks==0)")
+    def test_proximity_is_measured_at_the_incoming_target_switch(self):
+        check("packet(99,0,50);packet(42,.01,5);assert(ap.isActive() and ap.getActivationContext().reason=='close_target')")
+        check("packet(99,0,50);packet(42,.01,5.01);snap.position=v(2);heartbeat(.01);assert(not ap.isActive())")
 
-    def test_five_stud_arm_requires_observed_sender_and_actual_distance(self):
-        check("packet(42,0,5);heartbeat(.1);assert(not ap.isActive())")
-        check("packet(99,0,5.01);packet(42,.01,5.01);packet(99,.01);packet(42,.5,50);assert(not ap.isActive())")
-
+    def test_velocity_reversal_without_real_target_return_does_not_activate(self):
+        check("packet(42,0,50);for i=1,10 do snap.velocity=v(i%2==0 and -600 or 600);heartbeat(.1) end;assert(not ap.isActive())")
 
     def test_near_opponent_preserves_session_during_cooldown(self):
         check('''

@@ -28,13 +28,17 @@ def module(path):
     if path == 'aux/gameinfo.luau':
         dependencies = (module('aux/ballsync.luau').replace('local mod=', 'local TestBallSync=', 1)
                         + module('aux/deflectgeometry.luau').replace('local mod=', 'local TestGeometry=', 1))
-        source = source.replace('function GameInfo.setup(deps)',
-            'function GameInfo.setup(deps)\n deps.BallSync=TestBallSync')
-        start = source.index('function GameInfo.setup(deps)')
-        end = source.index('function GameInfo.getBall()', start)
-        setup = source[start:end].replace('  return true\nend',
-            '  GameInfo._geometry=TestGeometry; return TestGeometry.setup({GameInfo=GameInfo,Utils=deps.Utils})\nend')
-        source = dependencies + source[:start] + setup + source[end:]
+        wrapper = """
+local originalSetup=GameInfo.setup
+function GameInfo.setup(deps)
+ deps.BallSync=TestBallSync
+ local ok,err=originalSetup(deps)
+ if not ok then return ok,err end
+ GameInfo._geometry=TestGeometry
+ return TestGeometry.setup({GameInfo=GameInfo,Utils=deps.Utils})
+end
+"""
+        source = dependencies + source.replace('return GameInfo', wrapper+'return GameInfo')
     if path in ('autoparry.luau', 'autospam.luau', 'extras/autofierce.luau', 'extras/autodash.luau'):
         # Existing fixtures provide geometry doubles alongside game data. Production
         # obtains a separate service through Permissions.resolve.

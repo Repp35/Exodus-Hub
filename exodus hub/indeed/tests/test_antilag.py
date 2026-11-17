@@ -83,6 +83,7 @@ class TexturePolicy(unittest.TestCase):
         desired = desired.replace('if options.TransparentWater then 1 else 0', '(options.TransparentWater and 1 or 0)')
         run_lua('''
 local Workspace={};local Lighting={};local services={GameSettings={}}
+local journal={};local textureParking={};local emptyTextureContent=nil
 local function read(object,property) return true,object[property] end
 local options={RemoveTextures=true};local Enum={Material={SmoothPlastic='smooth'}}
 local function object(class)
@@ -97,7 +98,7 @@ assert(target.TextureID=='' and target.Material=='smooth' and target.Color==nil)
 assert(target.CanCollide==nil and target.CanTouch==nil and target.CanQuery==nil and target.Anchored==nil and target.MeshId==nil)
 assert(part.Color=='red' and part.CanCollide and part.CanTouch and part.CanQuery)
 local decal=desiredFor(object('Decal'));assert(decal.Transparency==1)
-local appearance=desiredFor(object('SurfaceAppearance'));assert(appearance.ColorMap=='' and appearance.NormalMap=='')
+local appearance=desiredFor(object('SurfaceAppearance'));assert(appearance.Parent==textureParking and appearance.ColorMap==nil)
 part.Name='GameBall';assert(desiredFor(part).TextureID==nil,'combat indicator was stripped')
 options.RemoveTextures=false;local restored=desiredFor(object('MeshPart'));assert(next(restored)==nil)
 ''')

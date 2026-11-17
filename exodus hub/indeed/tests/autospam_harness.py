@@ -68,7 +68,7 @@ local function packet(target,dt,pos,seq)
  ap.onBallSync({Source='packet',Sequence=snap.syncSequence,TargetPlayerID=target,Speed=snap.syncSpeed})
 end
 local function dash(id,velocity)
- local p=people[id];dashSamples[id]={signalActive=true,observedAt=tm,position=p.root.Position,velocity=v(velocity),normalModel={estimatedRemaining=.2}}
+ local p=people[id];dashSamples[id]={ability="normal",signalActive=true,observedAt=tm,position=p.root.Position,velocity=v(velocity),normalModel={estimatedRemaining=.2}}
 end
 local function stopped(reason) assert(not ap.isActive(),reason);assert(ap.getStatus().lastStopReason==reason,ap.getStatus().lastStopReason) end
 '''
