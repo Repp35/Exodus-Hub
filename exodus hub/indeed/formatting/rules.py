@@ -1,0 +1,939 @@
+"""Pure source transformations and formatting policy."""
+from __future__ import annotations
+import re
+from pathlib import Path
+from typing import Iterable, Sequence
+
+LUA_SUFFIXES = {".luau"}
+SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "target",
+}
+TITLE_RE = re.compile(r"^--\s*\[\[.*?\]\]\s*$")
+UNINITIALIZED_LOCAL_RE = re.compile(
+    r"^local\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*$"
+)
+PLAIN_SECTION_RE = re.compile(r"^--\s*(\S+)\s*$")
+BRACKET_SECTION_RE = re.compile(r"^--\s*\[\s*(\S+)\s*\]\s*$")
+DECORATED_SECTION_RE = re.compile(r"^--\s*=+\s*(\S+)\s*=+\s*--\s*$")
+SECTION_PATTERNS = (DECORATED_SECTION_RE, BRACKET_SECTION_RE, PLAIN_SECTION_RE)
+SECTION_PART_RE = re.compile(r"[/-]")
+# Shared section labels are canonicalized across modules. Unlisted section
+# names remain valid and are kept as module-specific headings.
+STANDARD_SECTION_ALIASES = {
+    "tunning": "tuning",
+    "helper": "helpers",
+    "utility": "helpers",
+    "utilities": "helpers",
+    "states": "state",
+    "dependency": "dependencies",
+    "service": "services",
+    "config": "configuration",
+    "configuration": "configuration",
+    "configurations": "configuration",
+    "init": "setup",
+    "initialization": "setup",
+    "run-time": "runtime",
+    "life-cycle": "lifecycle",
+    "clean-up": "cleanup",
+}
+BLOCK_WORD_RE = re.compile(
+    r"\b(?:if|then|elseif|else|end|for|while|repeat|until|function|do)\b"
+)
+ASSIGNMENT_RE = re.compile(
+    r"^(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*(?:(?:\s*\.\s*|\s*:\s*)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*"
+    r"(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*(?:(?:\s*\.\s*|\s*:\s*)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*)*\s*(?:[+\-*/%^]?=)\s*\S"
+)
+CALL_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|:)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*\s*\("
+)
+CONTINUATION_START_RE = re.compile(r"^(?:and|or|not)\b|^[+*/%^~=<>.,]")
+RETURN_RE = re.compile(r"^(?:return|break|continue)(?:\s|$)")
+IF_HEADER_RE = re.compile(r"^if\b.*\bthen\s*$")
+ELSEIF_HEADER_RE = re.compile(r"^elseif\b.*\bthen\s*$")
+LOCAL_TABLE_RE = re.compile(r"^\s*(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{")
+DIRECTIVE_RE = re.compile(r"^--![A-Za-z][A-Za-z0-9_-]*(?:\s+\d+)?\s*$")
+
+
+CONFIG_DECLARATION_RE = re.compile(r"(?m)^local\s+CONFIG\s*=\s*\{")
+
+TUNING_HEADING_RE = re.compile(r"(?m)^--\s+(?:configuration|config|tuning)\s*$")
+
+POSSIBLE_TUNING_RE = re.compile(
+    r"^local\s+([A-Z][A-Z0-9_]{2,})\s*=\s*(.+?)\s*$"
+)
+
+LITERAL_TUNING_RE = re.compile(
+    r"""(?:true|false|nil|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"""
+)
+
+class FormatterError(Exception):
+    """An actionable formatter input or execution error."""
+
+def normalized_title(file_name: str) -> str:
+    return Path(file_name).stem.lower().strip() or "arquivo"
+
+def valid_section(value: str) -> bool:
+    if not value or len(value) > 36 or " " in value:
+        return False
+    if value.endswith((".", ",", ":", ";", "!", "?")):
+        return False
+    parts = SECTION_PART_RE.split(value)
+    return bool(parts) and all(
+        part and part[0].isalpha() and all(char.isalnum() for char in part[1:])
+        for part in parts
+    )
+
+def section_from_comment(comment: str) -> str | None:
+    stripped = comment.strip()
+    if TITLE_RE.fullmatch(stripped):
+        return None
+    for pattern in SECTION_PATTERNS:
+        match = pattern.fullmatch(stripped)
+        if match and valid_section(match.group(1)):
+            return f"-- {match.group(1)}"
+    return None
+
+def section_name_from_comment(comment: str) -> str | None:
+    stripped = comment.strip()
+    if TITLE_RE.fullmatch(stripped):
+        return None
+    for pattern in SECTION_PATTERNS:
+        match = pattern.fullmatch(stripped)
+        if match and valid_section(match.group(1)):
+            return match.group(1)
+    return None
+
+def canonical_section_name(name: str) -> str:
+    normalized = name.strip().casefold()
+    return STANDARD_SECTION_ALIASES.get(normalized, normalized)
+
+def configuration_section_is_tuning(lines: Sequence[str], index: int) -> bool:
+    """Treat configuration headings as tuning when they introduce constants."""
+    for table_index in range(index + 1, len(lines)):
+        line = lines[table_index]
+        if section_from_comment(line):
+            return False
+
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+
+        table_match = re.match(
+            r"^local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{",
+            stripped,
+        )
+        if not table_match:
+            return False
+
+        table_name = table_match.group(1)
+        if table_name == "T":
+            return True
+
+        constant_keys = 0
+        field_count = 0
+        for field_line in lines[table_index + 1 : table_index + 40]:
+            if not field_line[:1].isspace() and field_line.strip() == "}":
+                break
+            field_match = re.match(r"^\s+([A-Za-z_][A-Za-z0-9_]*)\s*=", field_line)
+            if field_match:
+                field_count += 1
+                constant_keys += field_match.group(1).isupper()
+                if field_count >= 5:
+                    break
+        return field_count >= 2 and constant_keys >= 2
+
+    return False
+
+def normalize_section_case(
+    source: str,
+    exceptions: Sequence[str] = (),
+) -> str:
+    """Lowercase section headings while keeping the file title untouched."""
+    exception_names = {name.casefold() for name in exceptions}
+    lines = source.splitlines()
+    normalized_lines = []
+
+    for index, line in enumerate(lines):
+        name = section_name_from_comment(line)
+        base_name = canonical_section_name(name) if name else ""
+        canonical_name = base_name
+        if (
+            not name
+            or name.casefold() in exception_names
+            or base_name in exception_names
+            or canonical_name in exception_names
+        ):
+            normalized_lines.append(line)
+            continue
+
+        stripped = line.strip()
+        for pattern in SECTION_PATTERNS:
+            match = pattern.fullmatch(stripped)
+            if match:
+                indentation = line[: len(line) - len(line.lstrip())]
+                normalized = (
+                    stripped[: match.start(1)]
+                    + canonical_name
+                    + stripped[match.end(1) :]
+                )
+                normalized_lines.append(indentation + normalized)
+                break
+        else:
+            normalized_lines.append(line)
+
+    return finish_source(normalized_lines)
+
+def long_bracket_open(source: str, index: int) -> tuple[int, str] | None:
+    if index >= len(source) or source[index] != "[":
+        return None
+    cursor = index + 1
+    while cursor < len(source) and source[cursor] == "=":
+        cursor += 1
+    if cursor >= len(source) or source[cursor] != "[":
+        return None
+    equals = source[index + 1 : cursor]
+    return cursor + 1, "]" + equals + "]"
+
+def quoted_string_end(source: str, start: int, quote: str) -> int:
+    cursor = start + 1
+    while cursor < len(source):
+        if source[cursor] == "\\":
+            cursor += 2
+        elif source[cursor] == quote:
+            return cursor + 1
+        else:
+            cursor += 1
+    return len(source)
+
+def strip_unwanted_comments(source: str, preserve_sections: bool = True) -> str:
+    """Remove non-section comments without treating comment-like strings as comments."""
+    output: list[str] = []
+    index = 0
+    line_start = 0
+    line_has_code = False
+
+    while index < len(source):
+        char = source[index]
+
+        if char == "\n":
+            output.append(char)
+            index += 1
+            line_start = index
+            line_has_code = False
+            continue
+
+        if char in {'"', "'", "`"}:
+            end = quoted_string_end(source, index, char)
+            literal = source[index:end]
+            output.append(literal)
+            if "\n" in literal:
+                line_start = source.rfind("\n", index, end) + 1
+                line_has_code = bool(literal.rsplit("\n", 1)[-1].strip())
+            else:
+                line_has_code = True
+            index = end
+            continue
+
+        if char == "[":
+            opening = long_bracket_open(source, index)
+            if opening:
+                content_start, closing = opening
+                close_at = source.find(closing, content_start)
+                end = len(source) if close_at < 0 else close_at + len(closing)
+                literal = source[index:end]
+                output.append(literal)
+                if "\n" in literal:
+                    line_start = source.rfind("\n", index, end) + 1
+                    line_has_code = bool(literal.rsplit("\n", 1)[-1].strip())
+                else:
+                    line_has_code = True
+                index = end
+                continue
+
+        if source.startswith("--", index):
+            opening = long_bracket_open(source, index + 2)
+            if opening:
+                content_start, closing = opening
+                close_at = source.find(closing, content_start)
+                if close_at < 0:
+                    # Leave malformed comments for StyLua to diagnose.
+                    output.append(source[index:])
+                    break
+                end = close_at + len(closing)
+                comment = source[index:end]
+                output.append(" ")
+                output.extend("\n" for value in comment if value == "\n")
+                if "\n" in comment:
+                    line_start = source.rfind("\n", index, end) + 1
+                    line_has_code = False
+                index = end
+                continue
+
+            end = source.find("\n", index)
+            if end < 0:
+                end = len(source)
+            comment = source[index:end]
+            prefix = source[line_start:index]
+            if not line_has_code:
+                if TITLE_RE.fullmatch(comment.strip()) or DIRECTIVE_RE.fullmatch(comment.strip()):
+                    kept = comment.strip()
+                else:
+                    kept = section_from_comment(comment) if preserve_sections else None
+                line_output_start = len(output)
+                while line_output_start and output[line_output_start - 1] != "\n":
+                    line_output_start -= 1
+                del output[line_output_start:]
+                if kept:
+                    indent = prefix[: len(prefix) - len(prefix.lstrip(" \t"))]
+                    output.append(indent + kept)
+                elif end < len(source) and source[end] == "\n":
+                    index = end + 1
+                    line_start = index
+                    line_has_code = False
+                    continue
+            else:
+                while output and output[-1] in " \t":
+                    output.pop()
+            index = end
+            continue
+
+        output.append(char)
+        if not char.isspace():
+            line_has_code = True
+        index += 1
+
+    return "".join(output)
+
+def add_section_spacing(source: str) -> str:
+    lines = source.splitlines()
+    result: list[str] = []
+    for line in lines:
+        if section_from_comment(line) and result:
+            while result and not result[-1].strip():
+                result.pop()
+            if result:
+                result.append("")
+        result.append(line.rstrip())
+    return finish_source(result)
+
+def finish_source(lines: Sequence[str]) -> str:
+    content = "\n".join(lines).rstrip()
+    return content + "\n" if content else ""
+
+def remove_empty_lines(source: str) -> str:
+    lines: list[str] = []
+    for line in source.splitlines():
+        if line.strip():
+            lines.append(line.rstrip())
+        elif lines and TITLE_RE.fullmatch(lines[-1].strip()):
+            # Keep the visual separation after the file title.
+            lines.append("")
+    return finish_source(lines)
+
+def add_initial_dependency_spacing(source: str) -> str:
+    """Separate the first group of uninitialized module dependencies."""
+    lines = source.splitlines()
+    index = 0
+    while index < len(lines):
+        if section_from_comment(lines[index]):
+            break
+
+        match = UNINITIALIZED_LOCAL_RE.fullmatch(lines[index].strip())
+        if not match:
+            index += 1
+            continue
+
+        start = index
+        dependency_count = len(match.group(1).split(","))
+        end = index + 1
+        while end < len(lines) and not section_from_comment(lines[end]):
+            next_match = UNINITIALIZED_LOCAL_RE.fullmatch(lines[end].strip())
+            if not next_match:
+                break
+            dependency_count += len(next_match.group(1).split(","))
+            end += 1
+
+        if dependency_count > 1 and start > 0 and lines[start - 1].strip():
+            lines.insert(start, "")
+        break
+
+    return finish_source(lines)
+
+def brace_delta(line: str) -> int:
+    code = mask_literals(line)
+    comment_at = code.find("--")
+    if comment_at >= 0:
+        code = code[:comment_at]
+    return code.count("{") - code.count("}")
+
+def add_table_spacing(source: str) -> str:
+    lines = source.splitlines()
+    result: list[str] = []
+    depth = 0
+    table_depth: int | None = None
+
+    for index, line in enumerate(lines):
+        starts_table = table_depth is None and depth == 0 and LOCAL_TABLE_RE.match(mask_literals(line))
+        if starts_table:
+            table_depth = depth
+
+        before = depth
+        result.append(line.rstrip())
+        depth += brace_delta(line)
+
+        if table_depth is not None and depth <= table_depth and (before > table_depth or starts_table):
+            add_gap = before > table_depth
+            table_depth = None
+            next_index = index + 1
+            while next_index < len(lines) and not lines[next_index].strip():
+                next_index += 1
+            if (add_gap and index + 1 < len(lines) and lines[index + 1].strip()
+                    and (next_index >= len(lines) or not section_from_comment(lines[next_index]))):
+                result.append("")
+
+    return finish_source(result)
+
+def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_width: int = 4) -> str:
+    """Keep top-level CONFIG fields on separate lines after StyLua."""
+    indentation = "\t" if indent_type.lower() == "tabs" else " " * indent_width
+    pattern = re.compile(r"^(\s*)local\s+CONFIG\s*=\s*\{(.*)\}\s*$")
+    output: list[str] = []
+    for line in source.splitlines():
+        match = pattern.fullmatch(line)
+        if not match or not match.group(2).strip():
+            output.append(line)
+            continue
+        inside = match.group(2)
+        fields: list[str] = []
+        start = 0
+        stack: list[str] = []
+        quote: str | None = None
+        escaped = False
+        for index, char in enumerate(inside):
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+            elif char in ('"', "'"):
+                quote = char
+            elif char in "([{":
+                stack.append(char)
+            elif char in ")]}":
+                if stack:
+                    stack.pop()
+            elif char == "," and not stack:
+                field = inside[start:index].strip()
+                if field:
+                    fields.append(field)
+                start = index + 1
+        last = inside[start:].strip()
+        if last:
+            fields.append(last)
+        if len(fields) < 2 or any(not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields):
+            output.append(line)
+            continue
+        prefix = match.group(1)
+        output.append(prefix + "local CONFIG = {")
+        for field in fields:
+            output.append(prefix + indentation + field.rstrip(",") + ",")
+        output.append(prefix + "}")
+    return finish_source(output)
+
+def expand_dense_named_tables(source: str, indent_type: str, indent_width: int) -> str:
+    """Expand long, single-line named-field tables nested in an existing block."""
+    indentation = "\t" if indent_type.lower() == "tabs" else " " * indent_width
+    output: list[str] = []
+    for line in source.splitlines():
+        masked = mask_literals(line)
+        match = re.fullmatch(r"([ \t]+)[A-Za-z_][A-Za-z_0-9]*\s*=\s*\{(.*)\}([,;]?)\s*", masked)
+        if not match or len(line.expandtabs(indent_width)) <= 80:
+            output.append(line)
+            continue
+        start, end = match.span(2)
+        inside = masked[start:end]
+        stack: list[str] = []
+        cuts: list[int] = []
+        pairs = {")": "(", "]": "[", "}": "{"}
+        valid = True
+        for index, char in enumerate(inside):
+            if char in "([{":
+                stack.append(char)
+            elif char in ")]}":
+                if not stack or stack.pop() != pairs[char]:
+                    valid = False
+                    break
+            elif char == "," and not stack:
+                cuts.append(index)
+        bounds = [-1, *cuts, len(inside)]
+        fields = [line[start + a + 1:start + b].strip() for a, b in zip(bounds, bounds[1:])]
+        fields = [field for field in fields if field]
+        if not valid or stack or len(fields) < 2 or any(
+            not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields
+        ):
+            output.append(line)
+            continue
+        prefix = match.group(1)
+        output.append(line[:start].rstrip())
+        output.extend(prefix + indentation + field + "," for field in fields)
+        output.append(prefix + "}" + match.group(3))
+    return finish_source(output)
+
+def audit_module_config(source: str, source_path: Path) -> list[str]:
+    """Check the local configuration structure; only warn about likely missed constants."""
+    declarations = list(CONFIG_DECLARATION_RE.finditer(source))
+    heading = TUNING_HEADING_RE.search(source)
+    if len(declarations) != 1:
+        raise FormatterError(
+            f"{source_path}: esperado exatamente um 'local CONFIG = {{...}}' "
+            f"(encontrados: {len(declarations)})."
+        )
+    if heading is None or heading.start() > declarations[0].start():
+        raise FormatterError(
+            f"{source_path}: a seção '-- configuration' (ou '-- tuning') deve aparecer antes da tabela CONFIG."
+        )
+
+    warnings: list[str] = []
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        match = POSSIBLE_TUNING_RE.fullmatch(line)
+        if not match:
+            continue
+        key, expression = match.groups()
+        if key == "CONFIG":
+            continue
+        expression = expression.split("--", 1)[0].strip()
+        if LITERAL_TUNING_RE.fullmatch(expression):
+            warnings.append(
+                f"{source_path}:{line_number}: possível configuração fora de CONFIG: "
+                f"{key} (somente aviso; não foi movida)."
+            )
+    return warnings
+
+def add_final_return_spacing(source: str) -> str:
+    lines = source.splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if not line_indent(lines[index]) and re.match(r"^return(?:\s|$)", lines[index].strip()):
+            if index and lines[index - 1].strip():
+                lines.insert(index, "")
+            break
+    return finish_source(lines)
+
+def add_title(source: str, file_name: str, custom_title: str | None = None) -> str:
+    """Require exactly one leading title; never guess the title from the filename."""
+    lines = source.splitlines()
+    titles = [index for index, line in enumerate(lines) if TITLE_RE.fullmatch(line.strip())]
+    if len(titles) > 1:
+        raise FormatterError(f"{file_name}: mais de um título encontrado.")
+    title_text = custom_title if custom_title is not None else (lines[titles[0]].strip()[5:-3].strip() if titles else normalized_title(file_name))
+    title = f"-- [[ {title_text} ]]"
+    if titles:
+        del lines[titles[0]]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    directive_end = 0
+    while directive_end < len(lines) and DIRECTIVE_RE.fullmatch(lines[directive_end].strip()):
+        directive_end += 1
+    lines[directive_end:directive_end] = [title, ""]
+    return finish_source(lines)
+
+def require_sections(source: str, file_name: str) -> str:
+    """Add a generic section when a file does not already have one."""
+    sections = {
+        canonical_section_name(name)
+        for line in source.splitlines()
+        if (name := section_name_from_comment(line))
+    }
+    if not sections:
+        lines = source.splitlines()
+        title = next((i for i, line in enumerate(lines) if TITLE_RE.fullmatch(line.strip())), -1)
+        lines[title + 1:title + 1] = ["", "-- code"]
+        return finish_source(lines)
+    return source
+
+def organize_literal_constants(source: str) -> str:
+    """Group a consecutive run of simple constants while preserving local names."""
+    if re.search(r"\bCONFIG\b", source):
+        return source
+    starts = set()
+    index = 0
+    while index < len(source):
+        if index == 0 or source[index - 1] == "\n":
+            starts.add(index)
+        if source.startswith("--", index):
+            opening = long_bracket_open(source, index + 2)
+            if opening:
+                end = source.find(opening[1], opening[0])
+                index = len(source) if end < 0 else end + len(opening[1])
+            else:
+                end = source.find("\n", index)
+                index = len(source) if end < 0 else end
+        elif source[index] in {'"', "'", "`"}:
+            index = quoted_string_end(source, index, source[index])
+        elif source[index] == "[" and (opening := long_bracket_open(source, index)):
+            end = source.find(opening[1], opening[0])
+            index = len(source) if end < 0 else end + len(opening[1])
+        else:
+            index += 1
+
+    pattern = re.compile(r"^(\s*)local\s+([A-Z][A-Z0-9_]+)\s*=\s*(true|false|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*$")
+    lines = source.splitlines(keepends=True)
+    offset = 0
+    for i, line in enumerate(lines):
+        match = pattern.fullmatch(line.rstrip("\r\n")) if offset in starts else None
+        offset += len(line)
+        if not match:
+            continue
+        indent = match.group(1)
+        group = [match]
+        j = i + 1
+        while j < len(lines) and offset in starts:
+            next_match = pattern.fullmatch(lines[j].rstrip("\r\n"))
+            if not next_match or next_match.group(1) != indent:
+                break
+            group.append(next_match)
+            offset += len(lines[j]); j += 1
+        names = [item.group(2) for item in group]
+        if len(set(names)) != len(names):
+            return source
+        replacement = [indent + "local CONFIG = {\n"]
+        replacement.extend(indent + "  " + item.group(2) + " = " + item.group(3) + ",\n" for item in group)
+        replacement.append(indent + "}\n")
+        replacement.extend(indent + "local " + name + " = CONFIG." + name + "\n" for name in names)
+        return "".join(lines[:i] + replacement + lines[j:])
+    return source
+
+def apply_directives(source: str, requested: Sequence[str]) -> str:
+    lines = source.splitlines()
+    existing = []
+    body = []
+    for line in lines:
+        if DIRECTIVE_RE.fullmatch(line.strip()):
+            directive = line.strip()
+            if directive not in existing:
+                existing.append(directive)
+        else:
+            body.append(line)
+
+    requested_modes = {"strict", "nonstrict", "nocheck"}.intersection(requested)
+    if requested_modes:
+        existing = [
+            directive
+            for directive in existing
+            if directive.removeprefix("--!") not in {"strict", "nonstrict", "nocheck"}
+        ]
+
+    for directive in requested:
+        normalized = directive if directive.startswith("--!") else f"--!{directive}"
+        if normalized not in existing:
+            existing.append(normalized)
+
+    return finish_source([*existing, *body])
+
+def parse_section_specs(values: Sequence[str]) -> list[tuple[str, str]]:
+    sections = []
+    for value in values:
+        name, separator, marker = value.partition("=")
+        name = name.strip()
+        marker = marker.strip()
+        if not separator or not valid_section(name) or not marker or "\n" in marker:
+            raise FormatterError(
+                f"Seção inválida: {value!r}. Use NOME=TRECHO_DE_CÓDIGO."
+            )
+        sections.append((name, marker))
+    return sections
+
+def parse_section_edits(values: Sequence[str]) -> list[tuple[str, str]]:
+    edits = []
+    for value in values:
+        old_name, separator, new_name = value.partition("=")
+        old_name = old_name.strip()
+        new_name = new_name.strip()
+        if not separator or not valid_section(old_name) or not valid_section(new_name):
+            raise FormatterError(
+                f"Edição de seção inválida: {value!r}. Use NOME_ATUAL=NOVO_NOME."
+            )
+        edits.append((old_name, new_name))
+    return edits
+
+def edit_sections(
+    source: str,
+    edits: Sequence[tuple[str, str]],
+    removals: Sequence[str],
+    file_path: Path,
+) -> str:
+    lines = source.splitlines()
+
+    for old_name, new_name in edits:
+        found = False
+        for index, line in enumerate(lines):
+            current_name = section_name_from_comment(line)
+            if current_name and canonical_section_name(current_name) == canonical_section_name(old_name):
+                lines[index] = f"{line_indent(line)}-- {new_name}"
+                found = True
+        if not found:
+            raise FormatterError(
+                f"Seção {old_name!r} não encontrada em {file_path}."
+            )
+
+    for name in removals:
+        found = False
+        remaining = []
+        for line in lines:
+            current_name = section_name_from_comment(line)
+            if current_name and canonical_section_name(current_name) == canonical_section_name(name):
+                found = True
+                continue
+            remaining.append(line)
+        if not found:
+            raise FormatterError(f"Seção {name!r} não encontrada em {file_path}.")
+        lines = remaining
+
+    return finish_source(lines)
+
+def insert_sections(
+    source: str,
+    sections: Sequence[tuple[str, str]],
+    file_path: Path,
+) -> str:
+    lines = source.splitlines()
+    insertions: dict[int, list[str]] = {}
+
+    for name, marker in sections:
+        anchor = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if marker in line and not line.lstrip().startswith("--")
+            ),
+            None,
+        )
+        if anchor is None:
+            raise FormatterError(
+                f"Âncora da seção {name!r} não encontrada em {file_path}: {marker!r}"
+            )
+        previous = section_name_from_comment(lines[anchor - 1]) if anchor > 0 else None
+        if previous and canonical_section_name(previous) == canonical_section_name(name):
+            continue
+        insertions.setdefault(anchor, []).append(f"-- {name}")
+
+    output = []
+    for index, line in enumerate(lines):
+        output.extend(insertions.get(index, ()))
+        output.append(line)
+    return finish_source(output)
+
+def mask_literals(line: str) -> str:
+    """Hide string contents before checking a candidate for safe compaction."""
+    chars = list(line)
+    index = 0
+    while index < len(line):
+        end = index
+        if line[index] in {'"', "'", "`"}:
+            end = quoted_string_end(line, index, line[index])
+        elif line[index] == "[":
+            opening = long_bracket_open(line, index)
+            if opening:
+                content_start, closing = opening
+                close_at = line.find(closing, content_start)
+                end = len(line) if close_at < 0 else close_at + len(closing)
+
+        if end > index:
+            for position in range(index, end):
+                chars[position] = " "
+            chars[index] = "x"
+            index = end
+        else:
+            index += 1
+    return "".join(chars)
+
+def delimiters_balanced(code: str) -> bool:
+    stack: list[str] = []
+    pairs = {")": "(", "]": "[", "}": "{"}
+    for char in code:
+        if char in "([{":
+            stack.append(char)
+        elif char in ")]}" and (not stack or stack.pop() != pairs[char]):
+            return False
+    return not stack
+
+def simple_statement(line: str, allow_terminal: bool = False) -> bool:
+    code = mask_literals(line).strip()
+    if not code or ";" in code or "--" in code:
+        return False
+    if BLOCK_WORD_RE.search(code) or CONTINUATION_START_RE.search(code):
+        return False
+    if RETURN_RE.match(code):
+        return allow_terminal and delimiters_balanced(code)
+    if not (ASSIGNMENT_RE.match(code) or CALL_RE.match(code)):
+        return False
+    if code.endswith(("=", ",", ".", "+", "-", "*", "/", "..", "and", "or", "not")):
+        return False
+    return delimiters_balanced(code)
+
+def line_indent(line: str) -> str:
+    return line[: len(line) - len(line.lstrip(" \t"))]
+
+def compact_statement_runs(
+    source: str,
+    max_width: int,
+    max_statements: int,
+    tab_width: int,
+) -> str:
+    """Join adjacent, simple assignments/calls without crossing block syntax."""
+    lines = source.splitlines()
+    result: list[str] = []
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        indent = line_indent(line)
+        if not indent or not simple_statement(line):
+            result.append(line)
+            index += 1
+            continue
+
+        run = [line.strip()]
+        cursor = index + 1
+        while cursor < len(lines) and len(run) < max_statements:
+            candidate = lines[cursor]
+            if line_indent(candidate) != indent:
+                break
+            candidate_code = mask_literals(candidate).strip()
+            terminal = bool(RETURN_RE.match(candidate_code))
+            if not simple_statement(candidate, allow_terminal=terminal):
+                break
+            proposed = indent + "; ".join((*run, candidate.strip()))
+            if len(proposed.expandtabs(tab_width)) > max_width:
+                break
+            run.append(candidate.strip())
+            cursor += 1
+            if terminal:
+                break
+
+        if len(run) > 1:
+            result.append(indent + "; ".join(run))
+            index = cursor
+        else:
+            result.append(line)
+            index += 1
+
+    return finish_source(result)
+
+def compact_if_at(
+    lines: Sequence[str],
+    start: int,
+    max_width: int,
+    max_statements: int,
+    tab_width: int,
+    indent_unit: str,
+) -> tuple[int, list[str]] | None:
+    opening = lines[start]
+    indent = line_indent(opening)
+    opening_code = mask_literals(opening).strip()
+    if "--" in opening_code or not IF_HEADER_RE.fullmatch(opening_code):
+        return None
+
+    branches: list[tuple[str, list[str]]] = [(opening.strip(), [])]
+    current = branches[-1][1]
+    saw_else = False
+    end_index: int | None = None
+
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        stripped = mask_literals(line).strip()
+        current_indent = line_indent(line)
+        if not stripped:
+            continue
+
+        if current_indent == indent:
+            if stripped == "end":
+                end_index = index
+                break
+            if stripped == "else" or ELSEIF_HEADER_RE.fullmatch(stripped):
+                if "--" in stripped or saw_else:
+                    return None
+                if stripped == "else":
+                    saw_else = True
+                branches.append((line.strip(), []))
+                current = branches[-1][1]
+                continue
+            return None
+
+        current.append(line)
+
+    if end_index is None:
+        return None
+
+    compact_branches = []
+    inline_branches = []
+    for header, body in branches:
+        if not body or len(body) > max_statements:
+            return None
+        expected_indent = indent + indent_unit
+        if any(line_indent(item) != expected_indent for item in body):
+            return None
+        if any(not simple_statement(item, allow_terminal=True) for item in body):
+            return None
+        if any(RETURN_RE.match(mask_literals(item).strip()) for item in body[:-1]):
+            return None
+
+        statements = "; ".join(item.strip() for item in body)
+        compact_line = indent + header + " " + statements
+        if len(compact_line.expandtabs(tab_width)) > max_width:
+            return None
+        compact_branches.append(compact_line)
+        inline_branches.append(header + " " + statements)
+
+    inline_line = indent + " ".join(inline_branches) + " end"
+    if len(inline_line.expandtabs(tab_width)) <= max_width:
+        return end_index, [inline_line]
+
+    # Keep each branch together when the full conditional would be too wide.
+    if len((compact_branches[-1] + " end").expandtabs(tab_width)) <= max_width:
+        compact_branches[-1] += " end"
+        return end_index, compact_branches
+    return None
+
+def compact_simple_if_blocks(
+    source: str,
+    max_width: int,
+    max_statements: int,
+    tab_width: int,
+    indent_type: str,
+) -> str:
+    lines = source.splitlines()
+    indent_unit = "\t" if indent_type == "Tabs" else " " * tab_width
+
+    while True:
+        candidates = [
+            (len(line_indent(line).expandtabs(tab_width)), index)
+            for index, line in enumerate(lines)
+            if IF_HEADER_RE.fullmatch(mask_literals(line).strip())
+        ]
+        changed = False
+        for _, start in sorted(candidates, reverse=True):
+            compacted = compact_if_at(
+                lines,
+                start,
+                max_width,
+                max_statements,
+                tab_width,
+                indent_unit,
+            )
+            if compacted is not None:
+                end_index, replacement = compacted
+                lines[start : end_index + 1] = replacement
+                changed = True
+                break
+        if not changed:
+            break
+
+    return finish_source(lines)

@@ -64,3 +64,9 @@ GameInfo continua responsável por treino, descoberta de objetos e habilidades,
 conexões, snapshots e integração com a física fornecida pelo jogo. Cada setup
 cria uma instância nova do estado de pacotes; snapshots e consumidores consultam
 essa mesma instância. Os consumidores de GameInfo não precisam mudar suas APIs.
+
+## Ferramentas de desenvolvimento
+
+A organização e os comandos da pasta `indeed` estão documentados em
+[`indeed/README.md`](../exodus%20hub/indeed/README.md). O formatter separa regras,
+backend StyLua e pipeline de arquivos, mantendo a entrada `formatter.py`.

@@ -4,7 +4,7 @@ on:
     paths:
       - '**.luau'
       - 'exodus hub/indeed/formatter.py'
-      - 'exodus hub/indeed/stylua.toml'
+      - 'exodus hub/indeed/formatting/**'
       - 'exodus hub/indeed/tests/test_formatter_*.py'
       - '.github/workflows/format-luau.yml'
   workflow_dispatch:

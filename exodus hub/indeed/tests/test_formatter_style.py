@@ -11,7 +11,7 @@ import formatter
 
 class FormatterStyleTests(unittest.TestCase):
     def test_module_sections_are_top_level(self):
-        for path in sorted((formatter.HUB_ROOT.parent / "modules").rglob("*.luau")):
+        for path in sorted((formatter.HUB_ROOT / "modules").rglob("*.luau")):
             with self.subTest(path=path):
                 for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     self.assertFalse(

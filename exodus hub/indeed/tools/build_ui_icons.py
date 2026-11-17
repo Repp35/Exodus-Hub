@@ -7,7 +7,7 @@ import hashlib
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'modules/front/library/icons.luau'
 NAMES = ('settings', 'chevron', 'minimize')
 
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     expected = generated(current)
     if args.check:
         if expected != current:
-            raise SystemExit('UI PNG payloads are stale; run indeed/build_ui_icons.py')
+            raise SystemExit('UI PNG payloads are stale; run indeed/tools/build_ui_icons.py')
         print('UI PNG payloads match their source assets.')
     elif current != expected:
         MODULE.write_text(expected)

@@ -18,7 +18,7 @@ A suíte cobre contagem em múltiplas taxas de frames e modos, primeiro clique, 
 Para repetir a comparação com o código anterior:
 
 ```sh
-python3 "exodus hub/indeed/benchmark_clicks.py"
+python3 "exodus hub/indeed/benchmarks/benchmark_clicks.py"
 ```
 
 O benchmark carrega o agendador e o emissor reais em Lua 5.4, usando serviços/clientes simulados. Executa 1.200 ciclos a 100 CPF, equivalentes a 20 segundos simulados a 60 FPS. A coleta de lixo é pausada apenas durante a medição, para contabilizar as alocações, e não é alterada no hub.
