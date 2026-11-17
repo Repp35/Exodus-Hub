@@ -39,7 +39,11 @@ local CONFIG = {
     RETURN_PROTECTION_RADIUS = 10,
     RETURN_PROTECTION_MAX_SPEED_RADIUS = 25,
   },
-  SHARED = { EXCHANGE_HISTORY_MAX_AGE = 0.75, SNAPSHOT_MAX_AGE = 0.5, RUNTIME_TICK_INTERVAL = 1 / 120 },
+  SHARED = {
+    EXCHANGE_HISTORY_MAX_AGE = 0.75,
+    SNAPSHOT_MAX_AGE = 0.5,
+    RUNTIME_TICK_INTERVAL = 1 / 120,
+  },
 }
 
 local function finite(x) return type(x) == "number" and x == x and x > -math.huge and x < math.huge end
@@ -262,15 +266,10 @@ local function activate(state, reason, partner, time, s)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason); return true
 end
--- Observe real target cycles only to preserve existing active-send continuity.
--- This collector cannot activate spam and does not read AP telemetry.
 local function observeExchangeContinuity(state, s, time)
   local h = state.exchangeHistory
-  if not h or (h.lastAt and time - h.lastAt > CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE) then
-    h = {}; state.exchangeHistory = h
-  end
-  h.lastAt = time
-  local me = localPlayer.UserId
+  if not h or (h.lastAt and time - h.lastAt > CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE) then h = {}; state.exchangeHistory = h end
+  h.lastAt = time; local me = localPlayer.UserId
   if h.target ~= s.targetId then
     if h.target and (h.target == me or s.targetId == me) then h.exchangeAt = time end
     if s.targetId == me then
@@ -503,14 +502,11 @@ local function evaluate(state, s, time, packet)
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
-    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
-      state.exchangeHistory, state.sendContinuity = nil, nil
-    end
+    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return
   end
   observeTarget(state, s, time); observeExchangeContinuity(state, s, time)
-  rememberSendContinuity(state, s, time)
-  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
+  rememberSendContinuity(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
     if stop then deactivate(state, stop, time); return end
