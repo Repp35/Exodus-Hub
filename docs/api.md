@@ -1,0 +1,100 @@
+# API interna
+
+Os módulos são declarados no manifesto de `exodus hub/loader.luau`.
+`__contract` descreve métodos exportados, dependências e métodos consumidos.
+`Permissions.resolve` entrega somente as APIs declaradas. A ordem de setup segue
+o grafo de dependências; ciclos são rejeitados. As assinaturas completas estão
+nos contratos dos próprios módulos.
+
+Conexões devem ser registradas em Utils e encerradas no teardown. Código de
+combate pertence a `logic`; adaptação dos serviços do jogo, a GameInfo; componentes
+visuais, a `front/library`; ações e apresentação, a `front/app`. Camera e AutoJump
+são extras universais. `extras/spec.md` contém as restrições de execução desses
+recursos.
+
+## Dados, geometria e status
+
+- **GameInfo**: objetos, habilidades, regiões, contexto pessoal da rodada,
+  sincronização e snapshots. `getGameContext().inMatch` indica participação;
+  `roundActive` indica apenas o estado global.
+- **BallSync**: estado por sessão, decodificação, ordem e expiração dos pacotes.
+- **DeflectGeometry**: constantes e cálculos de alcance, janela, resiliência,
+  latência, treino e projeção. AP, AutoSpam e extras consomem essa API diretamente.
+- **Status** (`core/status.luau`): `get(nome)` consulta um produtor e
+  `collect(nomes)` coleta vários. Isola falhas e leituras recursivas. O loader
+  configura os provedores; diagnósticos e UI usam a mesma API. `ClashStats`
+  registra métricas do clash e também exporta `getStatus()`.
+- **StatusView**: apenas formatação das observações para a UI.
+
+```lua
+local geometry = DeflectGeometry.resolve(speed, {
+  window = 0.4, -- opcional: consulta a janela do jogo se omitido
+  factor = 0.3,
+  latency = ping,
+})
+local window = DeflectGeometry.getWindow(speed, { factor = 0.3 })
+local rawWindow = DeflectGeometry.getWindow(speed, { raw = true })
+local rawRadius = DeflectGeometry.getRadius(speed, { component = "raw" })
+```
+
+`resolve` devolve a geometria completa. `getRadius` aceita os componentes `full`,
+`base`, `raw`, `resilience`, `window` e `ping`. No perfil comum, o raio é
+`alcance bruto + velocidade × (janela + latência) × fator`: o fator não reduz o
+alcance fixo. `latencyFactor` permite outro fator para o ping. `windowScale` e
+`windowOffset` ajustam a janela daquela consulta; `resilience = false` usa o
+alcance base e `ping = false` desconsidera latência.
+
+`profile = "autoParry"` aplica as regras de antecipação por frame e latência;
+`profile = "training"`, as regras do treino. O AP escolhe o fator adaptativo e
+solicita a recomposição por `withAutoParryFactor`. `compose` combina parcelas
+explícitas; `projectRadius` fornece o cálculo numérico sem alocar uma tabela.
+
+## AutoSpam
+
+O manual é independente. A ativação automática usa:
+
+- Retorno real `você → mesmo oponente → você`, dentro do intervalo permitido e
+  da geometria calculada.
+- Proximidade de até 5 studs **no pacote em que você vira alvo**. Aproximação
+  posterior e envio da bola a outro jogador não qualificam esse gatilho.
+- Haunter com evento de teleporte e condições geométricas válidas.
+- Dash normal confirmado, com uma troca entre você e o mesmo oponente ocorrida
+  durante esse dash. Velocidade/animação ou alvo sozinho não bastam; WindDash e
+  tipo desconhecido são rejeitados.
+
+Sequências antigas/duplicadas não criam trocas. Mudança de direção sem troca de
+alvo não é retorno. As regras de continuidade do clash, miss e cooldown são
+independentes da aquisição dessas evidências de ativação.
+
+## Carregamento e atualização
+
+O manifesto de publicação contém a revisão do repositório e checksums por
+arquivo. O cache reutiliza fontes com checksum correspondente e recompila as
+instâncias por sessão. O checksum detecta diferenças de conteúdo; não é uma
+assinatura criptográfica.
+
+O loader autoriza e prepara os módulos antes de substituir o runtime. Runtime
+centraliza watchers e distribuição de BallSync. Updater observa publicações via
+WebSocket e polling; uma revisão com os mesmos arquivos executáveis pode ser
+registrada sem reiniciar. Atualização automática aguarda a participação pessoal
+terminar. Reload manual substitui uma espera automática e não aguarda rodada ou
+clash. Animar a troca de interface pertence ao controller lifecycle.
+
+## Anti-lag
+
+| Configuração | Padrão | Efeito |
+| --- | --- | --- |
+| AntiLagEnabled | false | Ativa o otimizador e seu journal reversível. |
+| AntiLagRenderDistance | 128 | Distância de renderização do cenário. |
+| AntiLagFloorCull | true | Usa a menor altura pisada, com margem de 5 studs; mantém peças potencialmente visíveis no campo de visão. |
+| AntiLagClashCull | false | Limita o cenário a 60 studs por direção do personagem e ao piso durante clash. |
+| AntiLagRemoveTextures | false | Oculta texturas do cenário, preservando cores, geometria e física. |
+
+O culling usa limites de cada peça e planos da câmera com margem. Indexação,
+ocultação e restauração têm orçamento por tick. Personagens, bolas e objetos
+marcados com `AntiLagKeepVisible` são preservados. O filtro não desliga colisões,
+toque ou consulta física. Uma peça grande que cruza um limite é mantida inteira.
+
+Decals/textures são ocultados, texturas de mesh são limpas por suas propriedades
+compatíveis e SurfaceAppearance é estacionado temporariamente fora da cena.
+O journal restaura os objetos e valores ao desligar a opção ou a sessão.
