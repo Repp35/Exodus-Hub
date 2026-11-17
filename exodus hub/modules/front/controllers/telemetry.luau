@@ -85,11 +85,11 @@ function Controller.create(context)
     Position = UDim2.new(0.5, 0, 0, 0),
     BackgroundColor3 = C.header,
     BackgroundTransparency = 0.2,
-    Text = "Current SPD: —\nClash: —\nCPS: —",
+    Text = "",
     TextColor3 = C.text,
     TextSize = 14,
     Font = Enum.Font.GothamSemibold,
-    Visible = Utils.getConfigValue("ClashDistanceVisible") == true,
+    Visible = false,
     ZIndex = 20,
     Parent = context.refs.informationGui,
   })
@@ -100,11 +100,11 @@ function Controller.create(context)
     Position = UDim2.new(0.5, 0, 1, -20),
     BackgroundColor3 = C.header,
     BackgroundTransparency = 0.2,
-    Text = "Ball travel time: —",
+    Text = "",
     TextColor3 = C.text,
     TextSize = 14,
     Font = Enum.Font.GothamSemibold,
-    Visible = Utils.getConfigValue("ClashTravelTimeVisible") == true,
+    Visible = false,
     ZIndex = 20,
     Parent = context.refs.informationGui,
   })
@@ -138,115 +138,92 @@ function Controller.create(context)
   })
   local setAPVisible = compactInformation(apLabel); local setDistanceVisible = compactInformation(distanceLabel)
   local setTravelVisible = compactInformation(travelLabel); local setGateVisible = compactInformation(gateLabel)
-  local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
-  local function validGate(value)
-    return type(value) == "string" and value ~= "" and value ~= "null" and value ~= "nil" and value ~= "inactive" and value ~= "detached"
+  local function finite(value)
+    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
   end
-  local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
-  local function getTelemetry(time)
-    if time < telemetryAt or time - telemetryAt >= 1 / 30 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
-    return telemetryStatus, telemetrySnapshot
-  end
-  local function formatSpeed(snapshot)
-    if not GameInfo.isSnapshotValid(snapshot) then return nil end
-    local speed = tonumber(snapshot.syncSpeed)
-    if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
-    return type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or nil
-  end
+  local function positive(value) return finite(value) and value > 0 end
+  local reasons = {
+    lethal_deadline = "Incoming deadline",
+    parry_margin_shrinking = "AP losing margin",
+    return_demand_exceeds_ap = "Return faster than AP",
+    ap_unavailable = "AP unavailable",
+    return_target = "Fast target return",
+    close_target = "Close exchange",
+    consistent_self_return = "Repeated return",
+    dash_incoming = "Incoming dash",
+    dash_self = "Approaching dash",
+    haunter = "Haunter",
+    haunter_self = "Haunter",
+  }
   local function updateInformation()
     if not context.refs.informationGui.Parent then return end
-    local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
-    local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true; local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
-    local apVisible = Utils.getConfigValue("APMaxCpsVisible") == true; setAPVisible(apVisible)
-    if apVisible then
-      local apStatus = AutoParry.getStatus(); local peak = apStatus and apStatus.maxObservedCps
-      local lines = { "Game max: 25 CPS" }
-      if type(peak) == "number" then lines[#lines + 1] = string.format("AP max observed: %.2f CPS", peak) end
-      if apStatus and type(apStatus.pressureReferenceCps) == "number" then lines[#lines + 1] = string.format("AP clash reference: %.2f CPS", apStatus.pressureReferenceCps) end
-      if apStatus and type(apStatus.estimatedCapacityCps) == "number" then lines[#lines + 1] = string.format("AP clash estimate: %.2f CPS", apStatus.estimatedCapacityCps) end
-      setTextIfChanged(apLabel, table.concat(lines, "\n"))
+    local time = os.clock()
+    local apEnabled = Utils.getConfigValue("APMaxCpsVisible") == true
+    local apStatus = apEnabled and AutoParry.getStatus() or nil
+    local peak = apStatus and apStatus.maxObservedCps
+    local apText = positive(peak) and string.format("AP max: %.2f CPS", peak) or ""
+    if apText == "" then apLabel.Visible = false end
+    setTextIfChanged(apLabel, apText); setAPVisible(apEnabled and apText ~= "")
+    local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
+    local travelEnabled = Utils.getConfigValue("ClashTravelTimeVisible") == true
+    local distanceEnabled = Utils.getConfigValue("ClashDistanceVisible") == true
+    if not gateEnabled and not travelEnabled and not distanceEnabled then
+      setTextIfChanged(gateLabel, ""); setTextIfChanged(travelLabel, ""); setTextIfChanged(distanceLabel, "")
+      gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false
+      setGateVisible(false); setTravelVisible(false); setDistanceVisible(false); return
     end
-    if not gateEnabled and not travelVisible and not distanceVisible then
-      setGateVisible(false); setTravelVisible(false)
-      setDistanceVisible(false); return
-    end
-    if gateEnabled and time >= nextGateUpdate then
-      nextGateUpdate = time + 0.1; local status = getTelemetry(time)
-      local lines = { "AutoSpam: " .. (status and status.active == true and "ACTIVE" or "WAITING") }
-      if status and validGate(status.lastGate) then lines[#lines + 1] = "State: " .. status.lastGate end
-      if status and type(status.gates) == "table" then
-        for _, key in ipairs({ "common", "risk", "dash", "returnTarget", "close", "haunter" }) do
-          local reason = status.gates[key]
-          if validGate(reason) then lines[#lines + 1] = key .. ": " .. reason end
-        end
+    local status, snapshot = AutoSpam.getStatus(), GameInfo.getSnapshotAt(time)
+    local valid = GameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.resetting
+      and not snapshot.locked and not snapshot.targetUncertain and snapshot.valid ~= false and snapshot.ballValid ~= false and snapshot.mode ~= "training" and snapshot.ballCanMove ~= false
+      and (snapshot.syncAt == nil or (finite(snapshot.syncAt) and time >= snapshot.syncAt and time - snapshot.syncAt <= 0.5))
+    local active = status and status.active == true
+    local stats = status and status.clashStats
+    local live = valid and stats and not stats.frozen and (active or Utils.isManualSpamActive())
+    local risk = valid and status and status.risk
+    local gateLines = {}
+    if gateEnabled and valid then
+      if active then
+        local activation = status.activationReason or status.lastActivationReason
+        gateLines[#gateLines + 1] = "Auto Spam: " .. (reasons[activation] or "Active")
       end
-      if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
-      if status and validGate(status.lastStopReason) then lines[#lines + 1] = "Deactivation: " .. status.lastStopReason end
-      local risk = status and status.risk
-      if risk and type(risk.deadline) == "number" and risk.deadline < math.huge then
-        lines[#lines + 1] = string.format("Deadline: %.0f ms | AP budget: %.0f ms", risk.deadline * 1000, risk.response * 1000)
-        if type(risk.requiredCps) == "number" then lines[#lines + 1] = string.format("Return demand: %.2f CPS", risk.requiredCps) end
-        if type(risk.nextHeadroom) == "number" then lines[#lines + 1] = string.format("Next AP margin: %.0f ms", risk.nextHeadroom * 1000) end
-        if type(risk.parryDistance) == "number" and type(risk.idealDistance) == "number" then
-          lines[#lines + 1] = string.format("AP distance: %.1f | Trigger: %.1f studs", risk.parryDistance, risk.idealDistance)
+      if risk and risk.exchangeEvidence == true then
+        if positive(risk.observedCycle) then gateLines[#gateLines + 1] = string.format("Return: %.0f ms", risk.observedCycle * 1000) end
+        if positive(risk.nextCycle) and (not positive(risk.observedCycle) or math.abs(risk.nextCycle - risk.observedCycle) > 0.001) then
+          gateLines[#gateLines + 1] = string.format("Next return: %.0f ms", risk.nextCycle * 1000)
         end
+        if #gateLines > 0 and positive(risk.response) then gateLines[#gateLines + 1] = string.format("AP budget: %.0f ms", risk.response * 1000) end
+        if finite(risk.nextHeadroom) then gateLines[#gateLines + 1] = string.format("AP margin: %.0f ms", risk.nextHeadroom * 1000) end
       end
-      setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
-    local gateVisible = gateEnabled and gateLabel.Text ~= ""; setGateVisible(gateVisible)
-    if travelVisible and time >= nextTravelUpdate then
-      nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
-      local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
-      local lines = {}
-      if speedText then lines[#lines + 1] = "Current SPD: " .. speedText end
-      if stats then
+    local travelLines, distanceLines = {}, {}
+    if live then
+      if travelEnabled then
         local me = Players.LocalPlayer and Players.LocalPlayer.UserId
-        if stats.frozen then
-          if stats.deceasedId then
-            lines[#lines + 1] = (stats.deceasedId == me and "You" or "Opponent") .. " died"
-            if type(stats.fatalTravelTime) == "number" then lines[#lines + 1] = string.format("Target time to death: %.0f ms", stats.fatalTravelTime * 1000) end
-            if type(stats.penultimateTravelTime) == "number" and stats.penultimateTarget then
-              local who = stats.penultimateTarget == me and "you"
-                or (stats.penultimateTarget == stats.partnerId and "opponent" or tostring(stats.penultimateTarget))
-              lines[#lines + 1] = string.format("Previous (%s): %.0f ms", who, stats.penultimateTravelTime * 1000)
-            end
-          else
-            lines[#lines + 1] = "Clash ended"
-          end
-        else
-          if stats.travelTarget and stats.travelStartedAt then
-            local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or tostring(stats.travelTarget))
-            lines[#lines + 1] = string.format("Target: %s | Time: %.0f ms", who, math.max(0, time - stats.travelStartedAt) * 1000)
-          end
-          if stats.lastTravelTarget and type(stats.lastTravelTime) == "number" then
-            local who = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or tostring(stats.lastTravelTarget))
-            lines[#lines + 1] = string.format("Last exchange (%s): %.0f ms", who, stats.lastTravelTime * 1000)
-          end
+        if positive(stats.travelStartedAt) and positive(stats.travelTarget) and time >= stats.travelStartedAt then
+          local who = stats.travelTarget == me and "You" or "Opponent"
+          travelLines[#travelLines + 1] = string.format("%s: %.0f ms", who, (time - stats.travelStartedAt) * 1000)
         end
+        if positive(stats.lastTravelTime) then travelLines[#travelLines + 1] = string.format("Last return: %.0f ms", stats.lastTravelTime * 1000) end
       end
-      setTextIfChanged(travelLabel, table.concat(lines, "\n"))
-    end
-    setTravelVisible(travelVisible and travelLabel.Text ~= "")
-    if distanceVisible and time >= nextDistanceUpdate then
-      nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
-      local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
-      local lines = {}
-      if speedText then lines[#lines + 1] = "Current SPD: " .. speedText end
-      if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
-        local function addSample(name, sample)
-          if not sample then return end
-          local parts = {}
-          if type(sample.distance) == "number" then parts[#parts + 1] = string.format("%.1f studs", sample.distance) end
-          if type(sample.speed) == "number" then parts[#parts + 1] = string.format("SPD %.0f", sample.speed) end
-          if #parts > 0 then lines[#lines + 1] = name .. ": " .. table.concat(parts, " | ") end
+      if distanceEnabled then
+        local sample = stats.endSample
+        if sample and finite(sample.distance) and sample.distance >= 0 then
+          distanceLines[#distanceLines + 1] = string.format("Distance: %.1f studs", sample.distance)
         end
-        addSample("Start", stats.startSample); addSample(stats.frozen and "Player died" or "Current", stats.endSample)
-        if type(stats.currentCps) == "number" then lines[#lines + 1] = string.format("Current CPS: %.2f", stats.currentCps) end
-        if type(stats.duration) == "number" then lines[#lines + 1] = string.format("Duration: %.2fs", stats.duration) end
+        local speed = snapshot.syncSpeed
+        if not positive(speed) then speed = snapshot.speed end
+        if positive(speed) then distanceLines[#distanceLines + 1] = string.format("Speed: %.0f", speed) end
+        if positive(stats.currentCps) then distanceLines[#distanceLines + 1] = string.format("Clash: %.2f CPS", stats.currentCps) end
       end
-      setTextIfChanged(distanceLabel, table.concat(lines, "\n"))
     end
-    setDistanceVisible(distanceVisible and distanceLabel.Text ~= "")
+    local function render(label, show, enabled, lines)
+      local text = table.concat(lines, "\n")
+      if text == "" then label.Visible = false end
+      setTextIfChanged(label, text); show(enabled and text ~= "")
+    end
+    render(gateLabel, setGateVisible, gateEnabled, gateLines)
+    render(travelLabel, setTravelVisible, travelEnabled, travelLines)
+    render(distanceLabel, setDistanceVisible, distanceEnabled, distanceLines)
   end
   local elapsed = 0
   trackConn(RunService.Heartbeat:Connect(function(dt)

@@ -1,16 +1,19 @@
 """Real AutoSpam/Spam: anticipate service saturation, not just lethal contact."""
 import unittest
-from autospam_harness import check
+from autospam_harness import check as run_exchange_case
+
+def check(case):
+    # A known opponent target precedes the local receipt; spawn-only cases are separate.
+    run_exchange_case("packet(99,0,500)\n" + case)
 import test_adaptive_parry as adaptive
 
 class PressureHandoff(unittest.TestCase):
-    def test_predict_next_cycle_while_current_return_has_time(self):
+    def test_geometry_alone_does_not_establish_return_pressure(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
 other.root.Position=v(50);packet(42,0,100)
 local r=ap.getStatus().risk
 assert(r.deadline>r.response+.04,'fixture already lethal')
-assert(ap.isActive() and r.reason=='return_demand_exceeds_ap')
-assert(r.requiredCps>4.73 and clicks>0,'spam failed to take over')''')
+assert(not ap.isActive() and not r.risky,'geometry invented a fast return')''')
 
     def test_two_late_parries_predict_shrinking_headroom(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
@@ -40,15 +43,16 @@ assert(ap.getStatus().risk.observedCycle==nil,'one leg counted as local demand')
 other.root.Position=v(80);defense.lastAcceptedSample={at=tm-1,ball=ball,headroom=.001}
 packet(42,0,100);assert(not ap.isActive(),'expired lateness contaminated new episode')''')
 
-    def test_first_fast_approach_needs_no_history(self):
+    def test_approach_with_late_ap_needs_no_completed_cycle(self):
         for own, other in [(0,-120),(120,0),(-16,-120)]:
             check(f'''me.root.AssemblyLinearVelocity=v({own});other.root.AssemblyLinearVelocity=v({other})
-other.root.Position=v(60);packet(42,0,150)
+other.root.Position=v(60);defense.lastAcceptedSample={{at=tm,ball=ball,headroom=.18}}
+packet(42,0,150)
 assert(ap.isActive(),'dash/approach needed completed cycles')''')
 
     def test_imminent_incoming_does_not_require_a_nearby_sender(self):
         check('''other.root.Position=v(100);third.root.Position=v(150)
-packet(42,0,80);assert(ap.isActive(),'distance gate blocked imminent first receipt')''')
+packet(42,0,40);assert(ap.isActive(),'distance gate blocked imminent first receipt')''')
 
     def test_missing_partner_is_safe(self):
         check('''other.hum.Health=0;third.hum.Health=0

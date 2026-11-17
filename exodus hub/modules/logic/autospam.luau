@@ -78,6 +78,7 @@ end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
   state.killEntryAt, state.riskTarget, state.risk = nil, nil, nil; state.pressure, state.recoveredSince = nil, nil
+  state.pressureEpoch = now()
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -289,6 +290,7 @@ local function observePressure(state, s, time, defense)
   if h.cycleAt and time - h.cycleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.cycle, h.previousCycle, h.cycleAt = nil, nil, nil end
   local me = localPlayer.UserId
   if h.target ~= s.targetId then
+    if h.target and (h.target == me or s.targetId == me) then h.exchangeAt = time end
     if s.targetId == me then
       if h.inboundAt and h.departedAt then
         local interval = time - h.inboundAt
@@ -309,6 +311,7 @@ local function observePressure(state, s, time, defense)
     and finite(sample.headroom)
     and time >= sample.at
     and time - sample.at <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+    and sample.at >= (state.pressureEpoch or 0)
     and sample.at ~= h.sampleAt
   then
     if h.sampleAt and sample.at - h.sampleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.previousHeadroom = h.headroom else h.previousHeadroom = nil end
@@ -370,12 +373,26 @@ local function deathRisk(state, s, time)
   end
   local soon = deadline <= 2 * response + 1 / 25; local requiredInterval = predictedCycle
   if nextCycle then requiredInterval = math.min(requiredInterval or math.huge, nextCycle) end
+  local exchangeEvidence = h.exchangeAt ~= nil and time >= h.exchangeAt
+    and time - h.exchangeAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+  local runtimeBudget = defense and defense.runtimeResponseBudget or (0.05 + 2 / 60 + networkLatency())
+  if not finite(runtimeBudget) then runtimeBudget = 0.05 + 2 / 60 end
+  local lateParry = nextHeadroom ~= nil and nextHeadroom <= response + 1 / 25
+  local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
+  local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+    and h.returnLeg ~= nil and h.returnLeg <= response + 1 / 25
   local reason
-  if deadline <= response + 1 / 25 then reason = "lethal_deadline"
-  elseif soon and nextHeadroom and nextHeadroom <= response + 1 / 25 then reason = "parry_margin_shrinking"
-  elseif soon and requiredInterval and requiredInterval <= response + 1 / 25 then reason = "return_demand_exceeds_ap" end
-  if defense and defense.enabled == false and soon then reason = "ap_unavailable" end
+  -- Proximity and an imagined immediate redirect cannot establish an exchange.
+  if exchangeEvidence then
+    if soon and lateParry then reason = "parry_margin_shrinking"
+    elseif soon and fastReturn then reason = "return_demand_exceeds_ap"
+    elseif soon and fastLeg and predictedCycle and predictedCycle <= response + 1 / 25 then reason = "return_demand_exceeds_ap"
+    elseif s.targetId == me and deadline <= runtimeBudget + 1 / 25 then reason = "lethal_deadline" end
+    if defense and defense.enabled == false and soon then reason = "ap_unavailable" end
+  end
   return {
+    exchangeEvidence = exchangeEvidence,
+    returnLeg = h.returnLeg,
     risky = reason ~= nil,
     reason = reason,
     deadline = deadline,
@@ -589,6 +606,9 @@ local function evaluate(state, s, time, packet)
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" then resetTargets(state) end
+    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
+      state.pressure, state.risk, state.pressureEpoch = nil, nil, time
+    end
     return
   end
   state.lastValidAt = time; observeTarget(state, s, time)
@@ -842,6 +862,7 @@ function AutoSpam.getStatus()
     risk = state and state.risk or nil,
     dashPrediction = state and state.dashPrediction or nil,
     dashEscape = state and state.dashEscape or nil,
+    activationReason = state and state.active and state.reason or nil,
     lastActivationReason = lastActivationReason,
     lastActivationAt = lastActivationAt,
     lastStopReason = lastStopReason,

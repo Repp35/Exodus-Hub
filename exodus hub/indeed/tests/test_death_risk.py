@@ -1,6 +1,10 @@
 """Exercise real activation and dispatch against deadline and handoff scenarios."""
 import unittest
-from autospam_harness import check
+from autospam_harness import check as run_exchange_case
+
+def check(case):
+    # A known opponent target precedes the local receipt; spawn-only cases are separate.
+    run_exchange_case("packet(99,0,500)\n" + case)
 
 class DeathRisk(unittest.TestCase):
     def test_incoming_before_first_round_trip(self):
@@ -8,7 +12,8 @@ class DeathRisk(unittest.TestCase):
 assert(ap.getStatus().risk.source=='incoming');assert(clicks>0)''')
 
     def test_outbound_predicts_immediate_return(self):
-        check('''other.root.Position=v(25);snap.position=v(20);snap.velocity=v(600)
+        check('''packet(42,0,500);defense.lastAcceptedSample={at=tm,ball=ball,headroom=.03}
+other.root.Position=v(25);snap.position=v(20);snap.velocity=v(600)
 packet(99);assert(ap.isActive(),'outbound return not anticipated')
 assert(ap.getStatus().risk.source=='possible_return')''')
 
