@@ -160,7 +160,12 @@ function Controller.create(context)
     local apVisible = Utils.getConfigValue("APMaxCpsVisible") == true; setAPVisible(apVisible)
     if apVisible then
       local apStatus = AutoParry.getStatus(); local peak = apStatus and apStatus.maxObservedCps
-      setTextIfChanged(apLabel, "AP max CPS (observed): " .. (type(peak) == "number" and string.format("%.2f", peak) or "—"))
+      local lines = { "Game max: 25 CPS" }
+      if type(peak) == "number" then lines[#lines + 1] = string.format("AP max observed: %.2f CPS", peak) end
+      if apStatus and type(apStatus.estimatedCapacityCps) == "number" then
+        lines[#lines + 1] = string.format("AP capacity estimate: %.2f CPS", apStatus.estimatedCapacityCps)
+      end
+      setTextIfChanged(apLabel, table.concat(lines, "\n"))
     end
     if not gateEnabled and not travelVisible and not distanceVisible then
       setGateVisible(false); setTravelVisible(false)
@@ -171,13 +176,17 @@ function Controller.create(context)
       local lines = { "AutoSpam: " .. (status and status.active == true and "ACTIVE" or "WAITING") }
       if status and validGate(status.lastGate) then lines[#lines + 1] = "State: " .. status.lastGate end
       if status and type(status.gates) == "table" then
-        for _, key in ipairs({ "common", "dash", "returnTarget", "close", "haunter" }) do
+        for _, key in ipairs({ "common", "risk", "dash", "returnTarget", "close", "haunter" }) do
           local reason = status.gates[key]
           if validGate(reason) then lines[#lines + 1] = key .. ": " .. reason end
         end
       end
       if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
       if status and validGate(status.lastStopReason) then lines[#lines + 1] = "Deactivation: " .. status.lastStopReason end
+      local risk = status and status.risk
+      if risk and type(risk.deadline) == "number" and risk.deadline < math.huge then
+        lines[#lines + 1] = string.format("Deadline: %.0f ms | AP budget: %.0f ms", risk.deadline * 1000, risk.response * 1000)
+      end
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
     local gateVisible = gateEnabled and gateLabel.Text ~= ""; setGateVisible(gateVisible)

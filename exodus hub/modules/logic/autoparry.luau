@@ -4,6 +4,7 @@
 local AutoParry = {}
 local utils, gameInfo, remote, cooldownInfo
 local maxObservedCps = nil
+local syncInterval, lastSyncAt = nil, nil
 local state = {
   phase = "detached",
   reason = "initial",
@@ -126,6 +127,7 @@ end
 
 -- lifecycle
 local function resetTracking()
+  syncInterval, lastSyncAt = nil, nil
   state.fired, state.awaySeen, state.cycle = false, false, 0; state.target, state.targetKnown, state.lastTargeted = -1, false, false
   state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
@@ -167,7 +169,7 @@ local function activeWindowFactor() return configuredFactor() end
 local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
   state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt = now
-  if state.autoParryCps > 0 then maxObservedCps = math.max(maxObservedCps or 0, state.autoParryCps) end
+  if state.autoParryCps > 0 then maxObservedCps = math.max(maxObservedCps or 0, math.min(25, state.autoParryCps)) end
 end
 local function trainingGeometry(speed, factor)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
@@ -734,6 +736,14 @@ function AutoParry.onBallSync(data)
   local order = sequenceOrder(sequence)
   if order == "old" then return true end
   if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
+  if data.Source == "packet" or data.Source == nil then
+    local receivedAt = clock()
+    if lastSyncAt and receivedAt > lastSyncAt then
+      local interval = receivedAt - lastSyncAt
+      if interval <= CONFIG.SNAPSHOT_MAX_AGE then syncInterval = math.max(interval, (syncInterval or interval) * 0.9) end
+    end
+    lastSyncAt = receivedAt
+  end
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
     state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
@@ -773,6 +783,9 @@ function AutoParry.getDefenseState(value)
   samplePing(); local cooldown = safeCooldown()
   local timing = value and AutoParry.getTiming(value)
   return {
+    responseBudget = math.max(1 / 25, CONFIG.FRAME_BASE + state.frameAllowance + (syncInterval or 0.05) + state.ping + CONFIG.SERVER_FRAME_MARGIN),
+    syncInterval = syncInterval,
+    cooldownRemaining = cooldown and cooldown.remaining or 0,
     enabled = state.alive and state.bound and utils.getConfigValue("AutoParry") ~= false,
     armed = not state.fired,
     fired = state.fired,
@@ -973,6 +986,9 @@ function AutoParry.getStatus()
     },
     cps = state.autoParryCps,
     maxObservedCps = maxObservedCps,
+    gameMaxCps = 25,
+    estimatedCapacityCps = math.min(25, 1 / math.max(1 / 25, CONFIG.FRAME_BASE + state.frameAllowance + (syncInterval or 0.05) + state.ping + CONFIG.SERVER_FRAME_MARGIN)),
+    measuredSyncInterval = syncInterval,
     windowFactor = state.windowFactor,
     cpsGate = {
       adaptive = false,

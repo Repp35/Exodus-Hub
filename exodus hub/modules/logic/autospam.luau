@@ -3,6 +3,7 @@
 local AutoSpam = {}
 
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
+local autoParry
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -52,7 +53,7 @@ local function snapshotSpeed(s)
   local speed = s.syncSpeed ~= nil and s.syncSpeed or s.speed; return validSpeed(speed) and speed or nil
 end
 local function networkLatency()
-  local ping = gameInfo.getAveragePing(); return finite(ping) and math.clamp(ping * 0.5, 0, 0.25) or 0
+  local ping = gameInfo.getAveragePing(); return finite(ping) and math.clamp(ping, 0, 0.25) or 0
 end
 local function playerIsAlive(id)
   local player = id and players:GetPlayerByUserId(id); local character = player and player.Character
@@ -73,6 +74,7 @@ local function clearEvidence(state)
 end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
+  state.killEntryAt, state.riskTarget, state.risk = nil, nil, nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -84,7 +86,8 @@ local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
   if type(reason) == "string" and (reason:find("window", 1, true) or reason:find("outside_window", 1, true)) then state.lastGate = "window_ignored"; return false end
   if reason == "deflect_miss" or reason == "miss" or reason == "parry_miss" then state.lastGate = "miss_ignored"; return false end
-  if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "cooldown" then
+  local lifecycle = reason == "detach" or reason == "teardown" or reason == "rebind" or reason == "setup" or reason == "character_removed" or reason == "ball_replaced"
+  if not lifecycle and reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "cooldown" then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
       state.lastGate = "near_opponent_protected"; return false
@@ -253,11 +256,87 @@ local function activate(state, reason, partner, time, s)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason); return true
 end
+-- Time until a moving ball reaches a moving sphere (seconds).
+local function sphereEntry(delta, velocity, radius)
+  local c = delta:Dot(delta) - radius * radius
+  if c <= 0 then return 0 end
+  local a = velocity:Dot(velocity); local b = 2 * delta:Dot(velocity)
+  if a <= 0.000001 or b >= 0 then return math.huge end
+  local discriminant = b * b - 4 * a * c
+  if discriminant < 0 then return math.huge end
+  return math.max(0, (-b - math.sqrt(discriminant)) / (2 * a))
+end
+local function deathRisk(state, s, time)
+  local physics = gameInfo.getDefensePhysics()
+  local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
+  local grace = physics and finite(physics.grace) and physics.grace or 0.02
+  local defense = autoParry and autoParry.getDefenseState(s)
+  local response = defense and defense.responseBudget or (0.05 + 2 / 60 + networkLatency())
+  if not finite(response) then response = 0.1 end
+  response = math.max(1 / 25, response)
+  if defense and defense.blocking then response += math.max(0, defense.cooldownRemaining or 0) end
+  if defense and finite(defense.retryAt) then response = math.max(response, defense.retryAt - time + networkLatency()) end
+  local own, ownVelocity = state.root.Position, state.root.AssemblyLinearVelocity
+  if not vector(ownVelocity) then ownVelocity = Vector3.zero end
+  local speed = snapshotSpeed(s); local me = localPlayer.UserId
+  local partner = s.targetId ~= me and s.targetId or state.previousOpponent
+  if not partner or not playerIsAlive(partner) then partner = nearestPartner(state, 70) end
+  local deadline, source = math.huge, "no_intercept"
+  if state.riskTarget ~= s.targetId then state.killEntryAt = nil; state.riskTarget = s.targetId end
+  if s.targetId == me then
+    local entry = sphereEntry(s.position - own, s.velocity - ownVelocity, kill)
+    -- Homing/curving can invalidate a straight-line miss. Also evaluate the
+    -- earliest arrival allowed by speed and movement, without requiring alignment.
+    local earliest = math.max(0, (s.position - own).Magnitude - kill) / math.max(1, speed + ownVelocity.Magnitude)
+    entry = math.min(entry, earliest)
+    if entry == 0 or s.grace == true then
+      local age = finite(s.syncAt) and math.max(0, time - s.syncAt) or 0
+      state.killEntryAt = state.killEntryAt or (time - age - networkLatency())
+    end
+    local remainingGrace = math.max(0, grace - (state.killEntryAt and time - state.killEntryAt or 0))
+    deadline, source = state.killEntryAt and remainingGrace or entry + remainingGrace, "incoming"
+  else
+    state.killEntryAt = nil
+    local other, otherVelocity = gameInfo.getPlayerMotion(s.targetId)
+    if vector(other) then
+      if not vector(otherVelocity) then otherVelocity = Vector3.zero end
+      local radius = gameInfo.getPlayerRawRadius(s.targetId, speed, false)
+      local g = geometry(s, 1)
+      -- Earliest legal opponent parry, followed by an immediate redirect to us.
+      local reach = (radius or 8.5) + speed * (g and g.effectiveWindow or 0)
+      local intercept = sphereEntry(s.position - other, s.velocity - otherVelocity, reach)
+      local earliest = math.max(0, (s.position - other).Magnitude - reach) / math.max(1, speed + otherVelocity.Magnitude)
+      intercept = math.min(intercept, earliest)
+      if intercept < math.huge then
+        local separation = ((other + otherVelocity * intercept) - (own + ownVelocity * intercept)).Magnitude
+        local relative = otherVelocity - ownVelocity
+        local toward = separation > 0 and -relative:Dot(other - own) / math.max((other - own).Magnitude, 0.001) or 0
+        local returnSpeed = math.min(600, speed + 12)
+        deadline = intercept + math.max(0, separation - kill) / math.max(1, returnSpeed + toward) + grace
+        source, partner = "possible_return", s.targetId
+      end
+    end
+  end
+  local risky = deadline <= response + 1 / 25
+  if defense and defense.enabled == false then risky = deadline <= response * 2 + 1 / 25 end
+  return { risky = risky, deadline = deadline, response = response, margin = deadline - response,
+    grace = grace, killRadius = kill, source = source, partner = partner, gameMaxCps = 25 }
+end
 local function deactivationReason(state, s, time, cd)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
-  if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
+  if state.risk and state.risk.risky then state.safeSince = nil; return nil end
+  if state.risk and state.risk.deadline < math.huge then
+    state.safeSince = nil
+  else
+    state.safeSince = state.safeSince or time
+    if time - state.safeSince >= 0.25 then return "threat_cleared" end
+  end
+  if not playerIsAlive(state.partner) then
+    local replacement = nearestPartner(state, 35)
+    if replacement then state.partner = replacement else return "opponent_left_or_died" end
+  end
   local opponent = playerPosition(state.partner)
   if not opponent then state.distanceSince = nil; return nil end
   local distance = (opponent - state.root.Position).Magnitude
@@ -404,7 +483,7 @@ end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
   state.gates = {}; local cd = monitorCooldown(state)
-  if state.active and cd and cd.blocking == true then deactivate(state, "cooldown", time); return end
+  -- Cooldown is a transport/ability state, not evidence that the clash ended.
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
@@ -426,7 +505,16 @@ local function evaluate(state, s, time, packet)
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
     return
   end
-  observeTarget(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
+  state.lastValidAt = time
+  observeTarget(state, s, time)
+  state.risk = deathRisk(state, s, time)
+  state.gates.risk = state.risk.risky and "ap_budget_exceeds_deadline" or "ap_has_time"
+  if state.risk.risky and state.risk.partner then
+    state.safeSince = nil
+    if state.active then state.partner = state.risk.partner
+    else activate(state, "death_risk", state.risk.partner, time, s) end
+  end
+  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
     if stop then deactivate(state, stop, time); return end
@@ -515,6 +603,7 @@ function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
   utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
+  autoParry = deps.AutoParry
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
@@ -566,7 +655,7 @@ function AutoSpam.bindCharacter(character)
 end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
-  detach("teardown"); clashStats = nil
+  detach("teardown"); clashStats = nil; autoParry = nil
   utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo = nil, nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
@@ -598,13 +687,17 @@ function AutoSpam.canSend()
   local state = current
   if not state or not state.active then return false end
   local time = now(); local cd = monitorCooldown(state)
-  if cd and cd.blocking == true then deactivate(state, "cooldown", time); return false end
+  -- Preserve the same continuous send policy as manual spam during cooldown.
   if not state.active then return false end
   local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd)
   if stop then deactivate(state, stop, time); return false end
   local order = sequenceOrder(state, s and s.syncSequence)
   if order == "old" or order == "invalid" then return false end
-  return sampleGate(state, s, time) == nil
+  local gate = sampleGate(state, s, time)
+  if gate == nil then state.lastValidAt = time; return true end
+  if gate == "ball_reset" or gate == "ball_paused" or gate == "player_died" or gate == "hub_inactive" then return false end
+  local transient = gate == "target_unknown" or gate == "snapshot_invalid" or gate == "snapshot_stale" or gate == "position_disagreement"
+  return transient and state.lastValidAt ~= nil and time - state.lastValidAt <= 0.1
 end
 function AutoSpam.stopSpam(reason)
   if current then deactivate(current, reason or "stop_spam", now()) end
@@ -665,6 +758,7 @@ function AutoSpam.getStatus()
     snapshotAge = sample and finite(sample.syncAt) and time - sample.syncAt or nil,
     windowFactor = 1,
     gates = state and table.clone(state.gates) or {},
+    risk = state and state.risk or nil,
     dashPrediction = state and state.dashPrediction or nil,
     dashEscape = state and state.dashEscape or nil,
     lastActivationReason = lastActivationReason,
@@ -685,6 +779,7 @@ AutoSpam.__contract = {
     ClashStats = "clashstats",
     Cooldown = "cooldown",
     Dash = "dash",
+    AutoParry = "autoparry",
   },
   requiresMethods = {
     Utils = {
@@ -716,7 +811,9 @@ AutoSpam.__contract = {
       "getAveragePing",
       "getTargetId",
       "getBallSpeedLimits",
+      "getDefensePhysics",
     },
+    AutoParry = { "getDefenseState" },
     Cooldown = { "getDeflectCooldownState" },
     Dash = { "tick", "getEstimate" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },

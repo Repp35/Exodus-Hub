@@ -37,7 +37,7 @@ local g={getSnapshotAt=function() return snap end,isSnapshotValid=function(s) re
  getPlayerRawRadius=function() return 8.5 end,getDeflectGeometry=function(speed,_,factor)
   geometryFactors[#geometryFactors+1]=factor
   local window=.2
-  return {noWindowParryRadius=8.5,fullRadius=8.5+speed*window*factor,effectiveWindow=window*factor,deflectWindow=window} end,
+  return {noWindowParryRadius=8.5,fullRadius=8.5+speed*window*factor,effectiveWindow=window*factor,leadTime=window*factor,deflectWindow=window} end,
  getBallFrozen=function() return frozen end,getLocalDashState=function() return false,120,.2 end,
  getHaunterEvent=function() end,areAbilitiesEnabled=function() return true end,getTargetId=function() return snap.targetId end,
  getClashContext=function() end,getDefensePhysics=function() return {killRadius=4} end,
