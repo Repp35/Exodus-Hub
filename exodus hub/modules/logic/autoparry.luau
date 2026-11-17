@@ -127,17 +127,17 @@ end
 
 -- lifecycle
 local function resetTracking()
-  syncInterval, lastSyncAt = nil, nil
-  state.fired, state.awaySeen, state.cycle = false, false, 0; state.target, state.targetKnown, state.lastTargeted = -1, false, false
-  state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
-  state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
-  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge; state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
-  state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
-  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil; state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil
-  state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
-  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
-  state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
-  table.clear(state.clicks); table.clear(state.returns)
+  syncInterval, lastSyncAt = nil, nil; state.fired, state.awaySeen, state.cycle = false, false, 0
+  state.target, state.targetKnown, state.lastTargeted = -1, false, false; state.teleported, state.teleportSequence, state.sequence = false, nil, nil
+  state.mode = nil; state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
+  state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge
+  state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
+  state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
+  state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
+  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
+  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil
+  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -987,7 +987,10 @@ function AutoParry.getStatus()
     cps = state.autoParryCps,
     maxObservedCps = maxObservedCps,
     gameMaxCps = 25,
-    estimatedCapacityCps = math.min(25, 1 / math.max(1 / 25, CONFIG.FRAME_BASE + state.frameAllowance + (syncInterval or 0.05) + state.ping + CONFIG.SERVER_FRAME_MARGIN)),
+    estimatedCapacityCps = math.min(
+      25,
+      1 / math.max(1 / 25, CONFIG.FRAME_BASE + state.frameAllowance + (syncInterval or 0.05) + state.ping + CONFIG.SERVER_FRAME_MARGIN)
+    ),
     measuredSyncInterval = syncInterval,
     windowFactor = state.windowFactor,
     cpsGate = {

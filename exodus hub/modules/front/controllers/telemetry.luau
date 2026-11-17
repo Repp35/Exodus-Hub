@@ -162,9 +162,7 @@ function Controller.create(context)
       local apStatus = AutoParry.getStatus(); local peak = apStatus and apStatus.maxObservedCps
       local lines = { "Game max: 25 CPS" }
       if type(peak) == "number" then lines[#lines + 1] = string.format("AP max observed: %.2f CPS", peak) end
-      if apStatus and type(apStatus.estimatedCapacityCps) == "number" then
-        lines[#lines + 1] = string.format("AP capacity estimate: %.2f CPS", apStatus.estimatedCapacityCps)
-      end
+      if apStatus and type(apStatus.estimatedCapacityCps) == "number" then lines[#lines + 1] = string.format("AP capacity estimate: %.2f CPS", apStatus.estimatedCapacityCps) end
       setTextIfChanged(apLabel, table.concat(lines, "\n"))
     end
     if not gateEnabled and not travelVisible and not distanceVisible then
