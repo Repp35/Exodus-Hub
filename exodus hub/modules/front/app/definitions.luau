@@ -115,7 +115,14 @@ local CONFIG = {
           title = "Parry & Camera",
           column = 1,
           components = {
-            { kind = "number", title = "Smart Return Sensitivity", key = "SmartReturnSensitivity", min = 0, max = 100, description = "0–100. Maior valor antecipa a ativação por retornos rápidos e parries profundos. Padrão: 50 (200 ms)." },
+            {
+              kind = "number",
+              title = "Smart Return Sensitivity",
+              key = "SmartReturnSensitivity",
+              min = 0,
+              max = 100,
+              description = "0–100. Maior valor antecipa a ativação por retornos rápidos e parries profundos. Padrão: 50 (200 ms).",
+            },
             { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
           },
         },
