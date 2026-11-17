@@ -115,6 +115,7 @@ local CONFIG = {
           title = "Parry & Camera",
           column = 1,
           components = {
+            { kind = "number", title = "Smart Return Sensitivity", key = "SmartReturnSensitivity", min = 0, max = 100, description = "0–100. Maior valor antecipa a ativação por retornos rápidos e parries profundos. Padrão: 50 (200 ms)." },
             { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
           },
         },
@@ -384,6 +385,7 @@ local CONFIG = {
       AutoParryWindowFactor = "rate",
       AutoParryFactor08Applied = "boolean",
       AutoParryFactor03Applied = "boolean",
+      SmartReturnSensitivity = "rate",
       CameraSensitivity = "rate",
       AntiAFK = "boolean",
       ParryBallVisible = "boolean",
@@ -444,6 +446,7 @@ local CONFIG = {
       AutoParryWindowFactor = 0.3,
       AutoParryFactor08Applied = true,
       AutoParryFactor03Applied = true,
+      SmartReturnSensitivity = 50,
       CameraSensitivity = 1.5,
       AntiAFK = true,
       ParryBallVisible = false,
