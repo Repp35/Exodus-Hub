@@ -138,6 +138,7 @@ function Controller.create(context)
   local setAPVisible = compactInformation(apLabel); local setDistanceVisible = compactInformation(distanceLabel)
   local setTravelVisible = compactInformation(travelLabel); local setGateVisible = compactInformation(gateLabel)
   local failures = {}
+  local lastActivation, lastStop = nil, nil
   local function read(name, provider)
     local ok, value = pcall(provider.getStatus)
     if ok and type(value) == "table" then failures[name] = nil; return value end
@@ -161,6 +162,15 @@ function Controller.create(context)
     local data = {}
     if enabled.ap then data.ap = read("AutoParry", AutoParry) end
     if enabled.gates or enabled.travel or enabled.distance then data.autoSpam = read("AutoSpam", AutoSpam) end
+    if type(data.autoSpam) == "table" then
+      local status = data.autoSpam
+      if type(status.lastActivationReason) == "string" and status.lastActivationReason ~= "" and status.lastActivationReason ~= "nil" and status.lastActivationReason ~= "null" then lastActivation = status.lastActivationReason end
+      if type(status.lastStopReason) == "string" and status.lastStopReason ~= "" and status.lastStopReason ~= "nil" and status.lastStopReason ~= "null" then lastStop = status.lastStopReason end
+    end
+    -- Retain recorded events during temporary status-provider failures.
+    local status = type(data.autoSpam) == "table" and table.clone(data.autoSpam) or {}
+    status.lastActivationReason, status.lastStopReason = lastActivation, lastStop
+    data.autoSpam = status
     local panels = StatusView.format(data); render(apLabel, setAPVisible, enabled.ap, panels.ap)
     render(gateLabel, setGateVisible, enabled.gates, panels.gates); render(travelLabel, setTravelVisible, enabled.travel, panels.travel)
     render(distanceLabel, setDistanceVisible, enabled.distance, panels.distance)

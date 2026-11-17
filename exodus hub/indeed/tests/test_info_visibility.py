@@ -44,22 +44,23 @@ apStatus.maxObservedCps=math.huge;tick();empty('APMaxCps')''')
 status={active=true,clashStats={currentCps=0/0,lastTravelTime=math.huge,endSample={distance=0/0}},
  risk={exchangeEvidence=true,observedCycle=math.huge,nextCycle=0/0,response=math.huge,nextHeadroom=0/0}}
 tick();empty('ClashDistance');empty('ClashTravelTime')
-assert(label('AutoSpamGateInfo').Text=='Auto Spam: Active')''')
+empty('AutoSpamGateInfo')''')
 
     def test_new_module_values_replace_previous_values_and_absent_data_clears_them(self):
         self.check('''valid=true;snapshot={speed=300}
-status={active=true,activationReason='return_demand_exceeds_ap',
+status={active=true,lastActivationReason='return_demand_exceeds_ap',
  clashStats={endSample={distance=12,speed=300},lastTravelTime=.18,currentCps=5},
  risk={exchangeEvidence=true,observedCycle=.27,nextCycle=.22,response=.211}}
 tick();assert(label('ClashDistance').Text:find('12.0 studs',1,true))
-assert(label('AutoSpamGateInfo').Text:find('270 ms',1,true))
+assert(label('AutoSpamGateInfo').Text=='Last activation: return_demand_exceeds_ap')
 status.clashStats.endSample.speed=400;status.clashStats.endSample.distance=8
 status.risk.observedCycle=.2;status.risk.nextCycle=.16;tick()
 assert(not label('ClashDistance').Text:find('12.0 studs',1,true))
 assert(label('ClashDistance').Text:find('Speed: 400',1,true))
 assert(not label('AutoSpamGateInfo').Text:find('270 ms',1,true))
 status={};tick()
-for _,name in ipairs({'AutoSpamGateInfo','ClashDistance','ClashTravelTime'}) do empty(name) end''')
+for _,name in ipairs({'ClashDistance','ClashTravelTime'}) do empty(name) end
+assert(label('AutoSpamGateInfo').Text=='Last activation: return_demand_exceeds_ap')''')
 
     def test_collected_final_result_is_visible_without_live_ball(self):
         self.check('''status={clashStats={frozen=true,deceasedName='You',fatalTravelTime=.07,
@@ -68,11 +69,18 @@ tick();empty('AutoSpamGateInfo')
 assert(label('ClashDistance').Text:find('Final distance: 5.0 studs',1,true))
 assert(label('ClashTravelTime').Text:find('Fatal return: 70 ms',1,true))''')
 
-    def test_gate_status_survives_snapshot_unavailability(self):
-        self.check('''status={lastGate='target_unknown',gates={selfReturn='ready',common='target_unknown'}}
-tick()
-assert(label('AutoSpamGateInfo').Text:find('selfReturn: ready',1,true))
-assert(label('AutoSpamGateInfo').Text:find('target_unknown',1,true))''')
+    def test_latest_gate_events_are_retained_and_replaced(self):
+        self.check('''status={lastActivationReason='return_target',gates={selfReturn='ready'},risk={observedCycle=.2}}
+tick();assert(label('AutoSpamGateInfo').Text=='Last activation: return_target')
+status={lastActivationReason='return_target',lastStopReason='target_redirected_far'};tick()
+assert(label('AutoSpamGateInfo').Text=='Last activation: return_target\\nLast deactivation: target_redirected_far')
+status={lastActivationReason='dash_incoming',lastStopReason='target_redirected_far'};tick()
+assert(label('AutoSpamGateInfo').Text=='Last activation: dash_incoming\\nLast deactivation: target_redirected_far')
+deps.AutoSpam.getStatus=function() error('temporary') end;tick()
+assert(label('AutoSpamGateInfo').Visible)
+assert(label('AutoSpamGateInfo').Text=='Last activation: dash_incoming\\nLast deactivation: target_redirected_far')
+deps.AutoSpam.getStatus=function() return {lastActivationReason='null'} end;tick()
+assert(label('AutoSpamGateInfo').Text=='Last activation: dash_incoming\\nLast deactivation: target_redirected_far')''')
 
     def test_provider_failure_does_not_break_other_panels_and_recovers(self):
         self.check('''apStatus.maxObservedCps=4.73
