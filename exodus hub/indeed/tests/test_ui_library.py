@@ -48,7 +48,7 @@ function table.freeze(t) return t end
 function math.clamp(x,a,b) return math.max(a,math.min(b,x)) end
 '''
 MOCK = (Path(__file__).parent / 'fixtures/roblox_ui.txt').read_text()
-MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uidisplay', 'uicontrols', 'uiinputs', 'uiselection', 'uidropdown', 'uikit', 'uipages', 'uiconfig', 'uinotifications', 'uiactions', 'uicontext', 'uiwindow', 'uifloating', 'uinotificationview', 'uitelemetry', 'uiinput', 'uilifecycle', 'ui'))
+MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uidisplay', 'uicontrols', 'uiinputs', 'uiselection', 'uidropdown', 'uikit', 'uipages', 'uiconfig', 'uinotifications', 'uiactions', 'uicontext', 'uiwindow', 'uifloating', 'uinotificationview', 'uistatus', 'uitelemetry', 'uiinput', 'uilifecycle', 'ui'))
 SETUP = '''
 assert(uitheme.setup())
 assert(uiruntime.setup({Theme=uitheme}))
@@ -99,7 +99,7 @@ local function newKit(extra)
 end
 local function fullDeps()
  return {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},AutoParry={getStatus=function() return {} end},
-  UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,NotificationPolicy=uinotifications,Context=uicontext,Window=uiwindow,Floating=uifloating,Notifications=uinotificationview,Telemetry=uitelemetry,Input=uiinput,Lifecycle=uilifecycle,Controls={}}
+  UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,NotificationPolicy=uinotifications,Context=uicontext,Window=uiwindow,Floating=uifloating,Notifications=uinotificationview,StatusView=uistatus,Telemetry=uitelemetry,Input=uiinput,Lifecycle=uilifecycle,Controls={}}
 end
 '''
 

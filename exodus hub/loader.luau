@@ -143,6 +143,7 @@ local CONFIG = {
     { name = "uiwindow", path = "modules/front/controllers/window.luau" },
     { name = "uifloating", path = "modules/front/controllers/floating.luau" },
     { name = "uinotificationview", path = "modules/front/controllers/notifications.luau" },
+    { name = "uistatus", path = "modules/front/app/status.luau" },
     { name = "uitelemetry", path = "modules/front/controllers/telemetry.luau" },
     { name = "uiinput", path = "modules/front/controllers/input.luau" },
     { name = "uilifecycle", path = "modules/front/controllers/lifecycle.luau" },

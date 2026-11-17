@@ -46,25 +46,46 @@ status={active=true,clashStats={currentCps=0/0,lastTravelTime=math.huge,endSampl
 tick();empty('ClashDistance');empty('ClashTravelTime')
 assert(label('AutoSpamGateInfo').Text=='Auto Spam: Active')''')
 
-    def test_new_values_replace_previous_values_and_reset_clears_them(self):
+    def test_new_module_values_replace_previous_values_and_absent_data_clears_them(self):
         self.check('''valid=true;snapshot={speed=300}
 status={active=true,activationReason='return_demand_exceeds_ap',
- clashStats={endSample={distance=12},lastTravelTime=.18,currentCps=5},
+ clashStats={endSample={distance=12,speed=300},lastTravelTime=.18,currentCps=5},
  risk={exchangeEvidence=true,observedCycle=.27,nextCycle=.22,response=.211}}
 tick();assert(label('ClashDistance').Text:find('12.0 studs',1,true))
 assert(label('AutoSpamGateInfo').Text:find('270 ms',1,true))
-snapshot.speed=400;status.clashStats.endSample.distance=8
+status.clashStats.endSample.speed=400;status.clashStats.endSample.distance=8
 status.risk.observedCycle=.2;status.risk.nextCycle=.16;tick()
 assert(not label('ClashDistance').Text:find('12.0 studs',1,true))
 assert(label('ClashDistance').Text:find('Speed: 400',1,true))
 assert(not label('AutoSpamGateInfo').Text:find('270 ms',1,true))
-snapshot.resetting=true;tick()
+status={};tick()
 for _,name in ipairs({'AutoSpamGateInfo','ClashDistance','ClashTravelTime'}) do empty(name) end''')
 
-    def test_completed_clash_does_not_leave_old_fields_on_screen(self):
-        self.check('''valid=true;snapshot={speed=600}
-status={clashStats={frozen=true,lastTravelTime=.1,endSample={distance=5},currentCps=20},
- lastActivationReason='return_target',lastStopReason='ap_recovered'}
-tick();empty('AutoSpamGateInfo');empty('ClashDistance');empty('ClashTravelTime')''')
+    def test_collected_final_result_is_visible_without_live_ball(self):
+        self.check('''status={clashStats={frozen=true,deceasedName='You',fatalTravelTime=.07,
+ penultimateTravelTime=.09,lastTravelTime=.1,endSample={distance=5,speed=600},currentCps=20}}
+tick();empty('AutoSpamGateInfo')
+assert(label('ClashDistance').Text:find('Final distance: 5.0 studs',1,true))
+assert(label('ClashTravelTime').Text:find('Fatal return: 70 ms',1,true))''')
+
+    def test_gate_status_survives_snapshot_unavailability(self):
+        self.check('''status={lastGate='target_unknown',gates={selfReturn='ready',common='target_unknown'}}
+tick()
+assert(label('AutoSpamGateInfo').Text:find('selfReturn: ready',1,true))
+assert(label('AutoSpamGateInfo').Text:find('target_unknown',1,true))''')
+
+    def test_provider_failure_does_not_break_other_panels_and_recovers(self):
+        self.check('''apStatus.maxObservedCps=4.73
+deps.AutoSpam.getStatus=function() error('temporary provider failure') end
+tick();assert(label('APMaxCps').Visible);empty('ClashDistance')
+deps.AutoSpam.getStatus=function() return {clashStats={endSample={distance=13}}} end
+tick();assert(label('ClashDistance').Text=='Distance: 13.0 studs')''')
+
+    def test_travel_uses_collected_elapsed_not_ui_clock(self):
+        self.check('''status={clashStats={travelElapsed=.123,travelTargetName='You'}}
+tick();assert(label('ClashTravelTime').Text=='You: 123 ms')
+tm=tm+10;tick();assert(label('ClashTravelTime').Text=='You: 123 ms')
+status.clashStats.travelElapsed=.2;tick()
+assert(label('ClashTravelTime').Text=='You: 200 ms')''')
 
 if __name__=='__main__':unittest.main()
