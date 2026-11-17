@@ -138,9 +138,7 @@ function Controller.create(context)
   })
   local setAPVisible = compactInformation(apLabel); local setDistanceVisible = compactInformation(distanceLabel)
   local setTravelVisible = compactInformation(travelLabel); local setGateVisible = compactInformation(gateLabel)
-  local function finite(value)
-    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
-  end
+  local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
   local function positive(value) return finite(value) and value > 0 end
   local reasons = {
     lethal_deadline = "Incoming deadline",
@@ -155,37 +153,37 @@ function Controller.create(context)
     haunter = "Haunter",
     haunter_self = "Haunter",
   }
+
   local function updateInformation()
     if not context.refs.informationGui.Parent then return end
-    local time = os.clock()
-    local apEnabled = Utils.getConfigValue("APMaxCpsVisible") == true
-    local apStatus = apEnabled and AutoParry.getStatus() or nil
-    local peak = apStatus and apStatus.maxObservedCps
+    local time = os.clock(); local apEnabled = Utils.getConfigValue("APMaxCpsVisible") == true
+    local apStatus = apEnabled and AutoParry.getStatus() or nil; local peak = apStatus and apStatus.maxObservedCps
     local apText = positive(peak) and string.format("AP max: %.2f CPS", peak) or ""
     if apText == "" then apLabel.Visible = false end
     setTextIfChanged(apLabel, apText); setAPVisible(apEnabled and apText ~= "")
-    local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
-    local travelEnabled = Utils.getConfigValue("ClashTravelTimeVisible") == true
+    local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true; local travelEnabled = Utils.getConfigValue("ClashTravelTimeVisible") == true
     local distanceEnabled = Utils.getConfigValue("ClashDistanceVisible") == true
     if not gateEnabled and not travelEnabled and not distanceEnabled then
-      setTextIfChanged(gateLabel, ""); setTextIfChanged(travelLabel, ""); setTextIfChanged(distanceLabel, "")
-      gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false
-      setGateVisible(false); setTravelVisible(false); setDistanceVisible(false); return
+      setTextIfChanged(gateLabel, ""); setTextIfChanged(travelLabel, "")
+      setTextIfChanged(distanceLabel, ""); gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false
+      setGateVisible(false); setTravelVisible(false)
+      setDistanceVisible(false); return
     end
-    local status, snapshot = AutoSpam.getStatus(), GameInfo.getSnapshotAt(time)
-    local valid = GameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.resetting
-      and not snapshot.locked and not snapshot.targetUncertain and snapshot.valid ~= false and snapshot.ballValid ~= false and snapshot.mode ~= "training" and snapshot.ballCanMove ~= false
+    local status, snapshot = AutoSpam.getStatus(), GameInfo.getSnapshotAt(time); local valid = GameInfo.isSnapshotValid(snapshot)
+      and not snapshot.teleported
+      and not snapshot.resetting
+      and not snapshot.locked
+      and not snapshot.targetUncertain
+      and snapshot.valid ~= false
+      and snapshot.ballValid ~= false
+      and snapshot.mode ~= "training"
+      and snapshot.ballCanMove ~= false
       and (snapshot.syncAt == nil or (finite(snapshot.syncAt) and time >= snapshot.syncAt and time - snapshot.syncAt <= 0.5))
-    local active = status and status.active == true
-    local stats = status and status.clashStats
-    local live = valid and stats and not stats.frozen and (active or Utils.isManualSpamActive())
-    local risk = valid and status and status.risk
+    local active = status and status.active == true; local stats = status and status.clashStats
+    local live = valid and stats and not stats.frozen and (active or Utils.isManualSpamActive()); local risk = valid and status and status.risk
     local gateLines = {}
     if gateEnabled and valid then
-      if active then
-        local activation = status.activationReason or status.lastActivationReason
-        gateLines[#gateLines + 1] = "Auto Spam: " .. (reasons[activation] or "Active")
-      end
+      if active then local activation = status.activationReason or status.lastActivationReason; gateLines[#gateLines + 1] = "Auto Spam: " .. (reasons[activation] or "Active") end
       if risk and risk.exchangeEvidence == true then
         if positive(risk.observedCycle) then gateLines[#gateLines + 1] = string.format("Return: %.0f ms", risk.observedCycle * 1000) end
         if positive(risk.nextCycle) and (not positive(risk.observedCycle) or math.abs(risk.nextCycle - risk.observedCycle) > 0.001) then
@@ -200,16 +198,13 @@ function Controller.create(context)
       if travelEnabled then
         local me = Players.LocalPlayer and Players.LocalPlayer.UserId
         if positive(stats.travelStartedAt) and positive(stats.travelTarget) and time >= stats.travelStartedAt then
-          local who = stats.travelTarget == me and "You" or "Opponent"
-          travelLines[#travelLines + 1] = string.format("%s: %.0f ms", who, (time - stats.travelStartedAt) * 1000)
+          local who = stats.travelTarget == me and "You" or "Opponent"; travelLines[#travelLines + 1] = string.format("%s: %.0f ms", who, (time - stats.travelStartedAt) * 1000)
         end
         if positive(stats.lastTravelTime) then travelLines[#travelLines + 1] = string.format("Last return: %.0f ms", stats.lastTravelTime * 1000) end
       end
       if distanceEnabled then
         local sample = stats.endSample
-        if sample and finite(sample.distance) and sample.distance >= 0 then
-          distanceLines[#distanceLines + 1] = string.format("Distance: %.1f studs", sample.distance)
-        end
+        if sample and finite(sample.distance) and sample.distance >= 0 then distanceLines[#distanceLines + 1] = string.format("Distance: %.1f studs", sample.distance) end
         local speed = snapshot.syncSpeed
         if not positive(speed) then speed = snapshot.speed end
         if positive(speed) then distanceLines[#distanceLines + 1] = string.format("Speed: %.0f", speed) end
@@ -221,8 +216,7 @@ function Controller.create(context)
       if text == "" then label.Visible = false end
       setTextIfChanged(label, text); show(enabled and text ~= "")
     end
-    render(gateLabel, setGateVisible, gateEnabled, gateLines)
-    render(travelLabel, setTravelVisible, travelEnabled, travelLines)
+    render(gateLabel, setGateVisible, gateEnabled, gateLines); render(travelLabel, setTravelVisible, travelEnabled, travelLines)
     render(distanceLabel, setDistanceVisible, distanceEnabled, distanceLines)
   end
   local elapsed = 0

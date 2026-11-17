@@ -373,16 +373,12 @@ local function deathRisk(state, s, time)
   end
   local soon = deadline <= 2 * response + 1 / 25; local requiredInterval = predictedCycle
   if nextCycle then requiredInterval = math.min(requiredInterval or math.huge, nextCycle) end
-  local exchangeEvidence = h.exchangeAt ~= nil and time >= h.exchangeAt
-    and time - h.exchangeAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+  local exchangeEvidence = h.exchangeAt ~= nil and time >= h.exchangeAt and time - h.exchangeAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
   local runtimeBudget = defense and defense.runtimeResponseBudget or (0.05 + 2 / 60 + networkLatency())
   if not finite(runtimeBudget) then runtimeBudget = 0.05 + 2 / 60 end
-  local lateParry = nextHeadroom ~= nil and nextHeadroom <= response + 1 / 25
-  local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
-  local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
-    and h.returnLeg ~= nil and h.returnLeg <= response + 1 / 25
+  local lateParry = nextHeadroom ~= nil and nextHeadroom <= response + 1 / 25; local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
+  local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.returnLeg ~= nil and h.returnLeg <= response + 1 / 25
   local reason
-  -- Proximity and an imagined immediate redirect cannot establish an exchange.
   if exchangeEvidence then
     if soon and lateParry then reason = "parry_margin_shrinking"
     elseif soon and fastReturn then reason = "return_demand_exceeds_ap"
@@ -606,9 +602,7 @@ local function evaluate(state, s, time, packet)
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" then resetTargets(state) end
-    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
-      state.pressure, state.risk, state.pressureEpoch = nil, nil, time
-    end
+    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.pressure, state.risk, state.pressureEpoch = nil, nil, time end
     return
   end
   state.lastValidAt = time; observeTarget(state, s, time)
