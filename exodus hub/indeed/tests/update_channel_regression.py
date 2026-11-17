@@ -35,6 +35,7 @@ local manifest=revisionA; local polls,reloads=0,0; local thread
 _G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=revisionA
 local Exodus={Started=true,Revision=revisionA}; local reloadInFlight=false; local UPDATE_WS_URL='unused'; WebSocket=nil
 local function validRevision(x) return type(x)=='string' and #x==40 end
+local function sameRuntimeSignatures() return false end
 local function closeUpdateChannel() if _G.ExodusUpdateStop then _G.ExodusUpdateStop() end end
 local function resolveLatestRevision() polls=polls+1; return manifest end
 local function reloadLatest(_,rev,automatic) assert(automatic and rev==revisionB); reloads=reloads+1 end
@@ -53,6 +54,7 @@ local a,b,c=string.rep('a',40),string.rep('b',40),string.rep('c',40); local mani
 _G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=a
 local Exodus={Started=true,Revision=a}; local reloadInFlight=false; local UPDATE_WS_URL='unused'
 local function validRevision(x) return type(x)=='string' and #x==40 end
+local function sameRuntimeSignatures() return false end
 local function closeUpdateChannel() if _G.ExodusUpdateStop then _G.ExodusUpdateStop() end end
 local function resolveLatestRevision() return manifest end
 local function reloadLatest(_,rev) assert(rev==b,'trusted unverified message'); reloads=reloads+1 end
@@ -68,5 +70,26 @@ sockets[1].OnClose.callback(); local ok,err=coroutine.resume(thread); assert(ok,
 -- Reconnect attempts are throttled; simulate the deadline without sleeping.
 os.clock=function() return 10 end; ok,err=coroutine.resume(thread); assert(ok,err); assert(#sockets==2,'no reconnect')
 manifest=b; sockets[2].OnMessage.callback(c); assert(reloads==1)
+_G.ExodusUpdateStop()
+""")
+run('equivalent revision avoids restart after authorization', """
+local CONFIG={UPDATE_POLL_INTERVAL=0,UPDATE_LOOP_INTERVAL=1}
+local a,b=string.rep('a',40),string.rep('b',40); local thread; local reloads,auth=0,0
+_G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=a
+local Exodus={Started=true,Revision=a}; local reloadInFlight=false; local UPDATE_WS_URL='unused'; WebSocket=nil
+local releaseSignatures={}; local signatures={}
+local function validRevision(x) return type(x)=='string' and #x==40 end
+local function closeUpdateChannel() if _G.ExodusUpdateStop then _G.ExodusUpdateStop() end end
+local function resolveLatestRevision() return b,nil,nil,signatures end
+local function sameRuntimeSignatures(x,y) return x==releaseSignatures and y==signatures end
+local function authorizeRevision(rev) assert(rev==b); auth=auth+1; return true end
+local function buildURLs() return {} end
+local function reloadLatest() reloads=reloads+1 end
+local task={}
+function task.spawn(fn) local co=coroutine.create(fn); local ok,err=coroutine.resume(co); assert(ok,err); if coroutine.status(co)~='dead' then thread=co end end
+function task.wait() coroutine.yield() end
+"""+channel+"""
+assert(startUpdateChannel()); assert(auth==1 and reloads==0 and Exodus.Revision==b and _G.ExodusLastLoadedRevision==b)
+local ok,err=coroutine.resume(thread); assert(ok,err); assert(auth==1 and reloads==0)
 _G.ExodusUpdateStop()
 """)

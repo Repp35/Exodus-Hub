@@ -262,6 +262,24 @@ local function fingerprint(source)
 end
 local function signatureFor(path) return type(releaseSignatures) == "table" and releaseSignatures["exodus hub/" .. path] or nil end
 local function signatureValid(value) return type(value) == "string" and #value == 8 and value:match("^[%x]+$") ~= nil end
+local sourceCache = type(_G.ExodusSourceCache) == "table" and _G.ExodusSourceCache or {}
+_G.ExodusSourceCache = sourceCache
+local function cachedSource(path, signature)
+  local source = sourceCache[path]
+  if type(source) == "string" and fingerprint(source) == signature then return source end
+  sourceCache[path] = nil; return nil
+end
+local function sameRuntimeSignatures(left, right)
+  if type(left) ~= "table" or type(right) ~= "table" then return false end
+  local function matches(path)
+    local a, b = left[path], right[path]; return signatureValid(a) and signatureValid(b) and a == b
+  end
+  if not matches("exodus hub/loader.luau") then return false end
+  for _, entry in ipairs(MODULE_MANIFEST) do
+    if not matches("exodus hub/" .. entry.path) then return false end
+  end
+  return true
+end
 
 -- registry
 local function register(name, module)
@@ -385,9 +403,9 @@ end
 local function loadModule(name, relativePath, url)
   local signature = signatureFor(relativePath)
   if not signatureValid(signature) then return nil, "assinatura inválida: " .. relativePath end
-  local source, fetchError
-  if url then source, fetchError = requestDelivery(url) end
-  local sourceKind = "delivery"
+  local cacheKey = "exodus hub/" .. relativePath; local source, fetchError = cachedSource(cacheKey, signature), nil
+  local sourceKind = source and "cache" or "delivery"
+  if not source and url then source, fetchError = requestDelivery(url) end
   if not source then
     local fallbackURL = buildCDNURL(deliveryFallbackURL(url) or url)
     if fallbackURL then
@@ -398,7 +416,7 @@ local function loadModule(name, relativePath, url)
   if source then
     if fingerprint(source) ~= signature then return nil, "assinatura divergente: " .. relativePath end
     local chunk, compileError = compile(name, source)
-    if chunk then return chunk, nil, sourceKind end
+    if chunk then sourceCache[cacheKey] = source; return chunk, nil, sourceKind end
     fetchError = compileError
   end
   return nil, fetchError or "origem remota indisponível"
@@ -786,10 +804,9 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
   local sessionToken = _G.ExodusLoaderSessionToken
   task.spawn(function()
     local completed, unexpected = xpcall(function()
-      local revision = validRevision(requestedRevision) and requestedRevision
-      local revisionError
-      if not revision then revision, revisionError = resolveLatestRevision() end
+      local revision, revisionError, _, signatures = resolveLatestRevision()
       if not revision then fail(revisionError or "Version manifest unavailable"); return end
+      if validRevision(requestedRevision) and revision:lower() ~= requestedRevision:lower() then fail("Requested revision is no longer current"); return end
       if
         automatic
         and (
@@ -800,8 +817,13 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
         clearPersistent("update"); reloadInFlight = false
         return
       end
-      local source, fetchError = requestDelivery(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
+      local loaderKey = "exodus hub/loader.luau"; local signature = type(signatures) == "table" and signatures[loaderKey] or nil
+      if not signatureValid(signature) then fail("Invalid loader signature"); return end
+      local source, fetchError = cachedSource(loaderKey, signature), nil
+      if not source then source, fetchError = requestDelivery(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau") end
       if not source then fail(fetchError); return end
+      if fingerprint(source) ~= signature then fail("Loader signature mismatch"); return end
+      sourceCache[loaderKey] = source
       if
         automatic
         and (
@@ -997,12 +1019,29 @@ local function startUpdateChannel()
     if not active() or checking or reloadInFlight then return end
     checking = true
     task.spawn(function()
-      local ok, revision = pcall(resolveLatestRevision); checking = false
-      if not ok or not active() or not validRevision(revision) then return end
-      local current, last = Exodus.Revision, _G.ExodusLastLoadedRevision
-      if validRevision(current) and revision:lower() == current:lower() then return end
-      if validRevision(last) and revision:lower() == last:lower() then return end
-      reloadLatest(nil, revision, true)
+      local ok, revision, _, _, signatures = pcall(resolveLatestRevision)
+      if not ok or not active() or not validRevision(revision) then checking = false; return end
+      local current = Exodus.Revision
+      if validRevision(current) and revision:lower() == current:lower() then checking = false; return end
+      if sameRuntimeSignatures(releaseSignatures, signatures) then
+        local authorized, allowed = pcall(authorizeRevision, revision)
+        if not active() or reloadInFlight then checking = false; return end
+        if authorized and allowed then
+          local urls = buildURLs(revision)
+          if
+            Exodus.Utils
+            and type(Exodus.Utils.setModuleURLs) == "function"
+            and Exodus.Utils.setModuleURLs(urls)
+            and type(Exodus.Utils.getModuleURLsSnapshot) == "function"
+          then
+            Exodus.ModuleURLs = Exodus.Utils.getModuleURLsSnapshot()
+          end
+          releaseSignatures = signatures; Exodus.Revision = revision
+          _G.ExodusLastLoadedRevision = revision; checking = false
+          return
+        end
+      end
+      checking = false; reloadLatest(nil, revision, true)
     end)
   end
   local function connectSocket()
