@@ -29,6 +29,7 @@ def run(name, script):
 source=(root/'loader.luau').read_text()
 channel=source[source.index('local function startUpdateChannel()'):source.index('local started = startSafely()')]
 run('polling fallback and safe stop', """
+local CONFIG={UPDATE_POLL_INTERVAL=0,UPDATE_LOOP_INTERVAL=1}
 local revisionA,revisionB=string.rep('a',40),string.rep('b',40)
 local manifest=revisionA; local polls,reloads=0,0; local thread
 _G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=revisionA
@@ -47,6 +48,7 @@ manifest=revisionB; local ok,err=coroutine.resume(thread); assert(ok,err); asser
 _G.ExodusUpdateStop(); ok,err=coroutine.resume(thread); assert(ok,err); assert(polls==2)
 """)
 run('websocket reconnect and manifest authority', """
+local CONFIG={UPDATE_POLL_INTERVAL=0,UPDATE_LOOP_INTERVAL=1}
 local a,b,c=string.rep('a',40),string.rep('b',40),string.rep('c',40); local manifest=a; local thread; local sockets={}; local reloads=0
 _G.ExodusLoaderSessionToken='session'; _G.ExodusLastLoadedRevision=a
 local Exodus={Started=true,Revision=a}; local reloadInFlight=false; local UPDATE_WS_URL='unused'
@@ -62,7 +64,9 @@ function task.spawn(fn) local co=coroutine.create(fn); local ok,err=coroutine.re
 function task.wait(_) coroutine.yield() end
 """+channel+"""
 assert(startUpdateChannel()); assert(#sockets==1); sockets[1].OnMessage.callback(c); assert(reloads==0)
-sockets[1].OnClose.callback(); local ok,err=coroutine.resume(thread); assert(ok,err); assert(#sockets==2,'no reconnect')
+sockets[1].OnClose.callback(); local ok,err=coroutine.resume(thread); assert(ok,err)
+-- Reconnect attempts are throttled; simulate the deadline without sleeping.
+os.clock=function() return 10 end; ok,err=coroutine.resume(thread); assert(ok,err); assert(#sockets==2,'no reconnect')
 manifest=b; sockets[2].OnMessage.callback(c); assert(reloads==1)
 _G.ExodusUpdateStop()
 """)

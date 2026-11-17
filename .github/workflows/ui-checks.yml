@@ -27,7 +27,9 @@ jobs:
       - name: Validate bundled PNG icons
         run: python3 "exodus hub/indeed/build_ui_icons.py" --check
       - name: Validate close and reload transitions
-        run: python3 "exodus hub/indeed/tests/ui_transition_regression.py"
+        run: |
+          python3 "exodus hub/indeed/tests/ui_transition_regression.py"
+          python3 "exodus hub/indeed/tests/update_channel_regression.py"
       - name: Check Luau syntax and formatting
         run: |
           chmod +x "exodus hub/indeed/stylua-linux-x86_64"

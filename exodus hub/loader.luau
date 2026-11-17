@@ -468,39 +468,42 @@ local function orderModulesByDependencies(loaded)
     MODULE_ORDER[#MODULE_ORDER + 1] = name
   end
 end
-local function loadModules(urls)
-  local loaded, results = {}, {}
-  local function load(name)
-    local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name])
-    results[name] = { chunk = chunk, error = loadError }
-  end
-  if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
-    local pending, nextIndex, cancelled = #MODULE_MANIFEST, 1, false; local deadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
-    for _ = 1, math.min(CONFIG.DOWNLOAD_WORKERS, #MODULE_MANIFEST) do
-      task.spawn(function()
-        while not cancelled do
-          local entry = MODULE_MANIFEST[nextIndex]; nextIndex += 1
-          if not entry then return end
-          local name = entry.name
-          local ok, err = xpcall(function() load(name) end, function(value) return debug.traceback(tostring(value), 2) end)
-          if cancelled then return end
-          if not ok then results[name] = { error = err } end
-          pending -= 1
-        end
-      end)
+local function loadModules(urls, prepared)
+  local loaded, results = {}, prepared or {}
+  if not prepared then
+    local function load(name)
+      local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name])
+      results[name] = { chunk = chunk, error = loadError }
     end
-    while pending > 0 do
-      if os.clock() >= deadline then cancelled = true; return nil, "Loader", "tempo limite ao baixar os módulos" end
-      task.wait()
+    if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
+      local pending, nextIndex, cancelled = #MODULE_MANIFEST, 1, false; local deadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
+      for _ = 1, math.min(CONFIG.DOWNLOAD_WORKERS, #MODULE_MANIFEST) do
+        task.spawn(function()
+          while not cancelled do
+            local entry = MODULE_MANIFEST[nextIndex]; nextIndex += 1
+            if not entry then return end
+            local name = entry.name
+            local ok, err = xpcall(function() load(name) end, function(value) return debug.traceback(tostring(value), 2) end)
+            if cancelled then return end
+            if not ok then results[name] = { error = err } end
+            pending -= 1
+          end
+        end)
+      end
+      while pending > 0 do
+        if os.clock() >= deadline then cancelled = true; return nil, "Loader", "tempo limite ao baixar os módulos" end
+        task.wait()
+      end
+    else
+      for _, entry in ipairs(MODULE_MANIFEST) do
+        load(entry.name)
+      end
     end
-  else
     for _, entry in ipairs(MODULE_MANIFEST) do
-      load(entry.name)
+      local result = results[entry.name]
+      if not result or not result.chunk then return nil, entry.name, result and result.error or "carregamento incompleto" end
     end
-  end
-  for _, entry in ipairs(MODULE_MANIFEST) do
-    local result = results[entry.name]
-    if not result or not result.chunk then error(("%s: %s"):format(entry.name, tostring(result and result.error or "carregamento incompleto")), 2) end
+    return results
   end
   local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions)
   loaded.permissions = register("permissions", permissions)
@@ -780,64 +783,68 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
   if reloadInFlight then return false, "reload already in progress" end
   reloadInFlight = true
   if automatic then notifyPersistent("Updating...", "update", "info") end
+  local sessionToken = _G.ExodusLoaderSessionToken
   task.spawn(function()
-    local revision = validRevision(requestedRevision) and requestedRevision
-    local revisionError
-    if not revision then revision, revisionError = resolveLatestRevision() end
-    if not revision then fail(revisionError or "Version manifest unavailable"); return end
-    if
-      automatic
-      and (
-        (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
-        or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
-      )
-    then
-      clearPersistent("update"); reloadInFlight = false
-      return
-    end
-    local source, fetchError = requestDelivery(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
-    if not source then fail(fetchError); return end
-    if
-      automatic
-      and (
-        (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
-        or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
-      )
-    then
-      clearPersistent("update"); reloadInFlight = false
-      return
-    end
-    if
-      automatic
-      and not waitForMatchToEnd(function()
-        if automatic then notifyPersistent("Update queued: waiting for match to end", "update", "info") end
-      end)
-    then
-      if automatic then clearPersistent("update") end
-      reloadInFlight = false; return
-    end
-    if
-      automatic
-      and not waitForClashToEnd(function()
-        if automatic then notifyPersistent("Update queued: waiting for clash to end", "update", "info") end
-      end)
-    then
-      if automatic then clearPersistent("update") end
-      reloadInFlight = false; return
-    end
-    if automatic and type(_G.ExodusUIFadeOut) == "function" then
-      local faded, fadeError = pcall(_G.ExodusUIFadeOut)
-      if not faded then warn("[Exodus Reload] Fade out failed: " .. tostring(fadeError)) end
-    end
-    local chunk, compileError = compile("reload loader", source)
-    if not chunk then fail(compileError); return end
-    _G.ExodusRequestedRevision = revision
-    local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
-    if not ok then
-      _G.ExodusRequestedRevision = nil; fail(executionError)
-      return
-    end
-    reloadInFlight = false
+    local completed, unexpected = xpcall(function()
+      local revision = validRevision(requestedRevision) and requestedRevision
+      local revisionError
+      if not revision then revision, revisionError = resolveLatestRevision() end
+      if not revision then fail(revisionError or "Version manifest unavailable"); return end
+      if
+        automatic
+        and (
+          (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
+          or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
+        )
+      then
+        clearPersistent("update"); reloadInFlight = false
+        return
+      end
+      local source, fetchError = requestDelivery(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
+      if not source then fail(fetchError); return end
+      if
+        automatic
+        and (
+          (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
+          or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
+        )
+      then
+        clearPersistent("update"); reloadInFlight = false
+        return
+      end
+      if
+        automatic
+        and not waitForMatchToEnd(function()
+          if automatic then notifyPersistent("Update queued: waiting for match to end", "update", "info") end
+        end)
+      then
+        if automatic then clearPersistent("update") end
+        reloadInFlight = false; return
+      end
+      if
+        not waitForClashToEnd(
+          function() notifyPersistent(automatic and "Update queued: waiting for clash to end" or "Restart queued: waiting for clash to end", "update", "info") end
+        )
+      then
+        if automatic then clearPersistent("update") end
+        reloadInFlight = false; return
+      end
+      local chunk, compileError = compile("reload loader", source)
+      if not chunk then fail(compileError); return end
+      if _G.ExodusLoaderSessionToken ~= sessionToken or Exodus.Started ~= true then reloadInFlight = false; return end
+      if automatic and type(_G.ExodusUIFadeOut) == "function" then
+        local faded, fadeError = pcall(_G.ExodusUIFadeOut)
+        if not faded then warn("[Exodus Reload] Fade out failed: " .. tostring(fadeError)) end
+      end
+      _G.ExodusRequestedRevision = revision
+      local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
+      if not ok then
+        _G.ExodusRequestedRevision = nil; fail(executionError)
+        return
+      end
+      reloadInFlight = false
+    end, function(err) return debug.traceback(tostring(err), 2) end)
+    if not completed then _G.ExodusRequestedRevision = nil; fail(unexpected) end
   end)
   return true
 end
@@ -850,7 +857,9 @@ local function startInternal()
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
-  startupPerformed = true; printStartup("Exodus: Initializing...")
+  local urls = buildURLs(version); local prepared, prepareModule, prepareError = loadModules(urls)
+  if not prepared then return false, prepareModule, prepareError end
+  printStartup("Exodus: Initializing...")
   if wasStarted and not requestedRevision then
     local safe = waitForClashToEnd(function() notifyPersistent("Restart queued: waiting for clash to end", "shutdown", "info") end)
     clearPersistent("shutdown")
@@ -858,10 +867,10 @@ local function startInternal()
   end
   _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
-  _G.ExodusShutdownReason = nil; clearRegistry()
-  local playerReady, playerError = waitForLocalPlayer(10)
+  _G.ExodusShutdownReason = nil; startupPerformed = true
+  clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
   if not playerReady then return false, "Loader", playerError end
-  local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
+  local loaded, moduleName, loadError = loadModules(urls, prepared)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
@@ -1034,7 +1043,7 @@ local function startUpdateChannel()
   task.spawn(function()
     while active() do
       connectSocket(); local time = os.clock()
-      if not socket and time >= nextRevisionCheck then nextRevisionCheck = time + CONFIG.UPDATE_POLL_INTERVAL; checkRevision() end
+      if time >= nextRevisionCheck then nextRevisionCheck = time + CONFIG.UPDATE_POLL_INTERVAL; checkRevision() end
       task.wait(CONFIG.UPDATE_LOOP_INTERVAL)
     end
   end)

@@ -54,7 +54,9 @@ local function build(action)
  local Controls={onClose=function() calls=calls+1 end,onReload=function() calls=calls+1 end}
  local function showPersistentNotification() end; local function restoreAfterReloadFailure() end
 """+transition+"""
- local co=coroutine.create(function() animateClose(action) end); local ok,why=coroutine.resume(co); assert(ok,why);assert(why=='waiting' and calls==0)
+ local co=coroutine.create(function() animateClose(action) end); local ok,why=coroutine.resume(co); assert(ok,why)
+ if action=='reload' then assert(calls==1 and coroutine.status(co)=='dead'); return end
+ assert(why=='waiting' and calls==0)
  assert(faded.screen and faded.information and faded.other); assert((faded.update==true)==(action=='close'))
  ok,why=coroutine.resume(co); assert(ok,why); assert(calls==1 and destroyed.other)
  assert((destroyed.update==true)==(action=='close'))
