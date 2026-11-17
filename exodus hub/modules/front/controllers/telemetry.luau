@@ -138,8 +138,7 @@ function Controller.create(context)
   local setAPVisible = compactInformation(apLabel); local setDistanceVisible = compactInformation(distanceLabel)
   local setTravelVisible = compactInformation(travelLabel); local setGateVisible = compactInformation(gateLabel)
   local failures = {}; local lastActivation, lastStop = nil, nil
-  local lastPeak, lastDistance = nil, {}
-  local lastTravel = {}
+  local lastPeak, lastDistance = nil, {}; local lastTravel = {}
   local function finite(v) return type(v) == "number" and v == v and v > -math.huge and v < math.huge end
   local function validText(v) return type(v) == "string" and v ~= "" and v ~= "nil" and v ~= "null" end
   local function read(name, provider)
@@ -178,26 +177,19 @@ function Controller.create(context)
       if type(status.lastStopReason) == "string" and status.lastStopReason ~= "" and status.lastStopReason ~= "nil" and status.lastStopReason ~= "null" then lastStop = status.lastStopReason end
     end
     local status = type(data.autoSpam) == "table" and table.clone(data.autoSpam) or {}; status.lastActivationReason, status.lastStopReason = lastActivation, lastStop
-    data.autoSpam = status
-    local peak = type(data.ap) == "table" and data.ap.maxObservedCps
+    data.autoSpam = status; local peak = type(data.ap) == "table" and data.ap.maxObservedCps
     if finite(peak) and peak > 0 and (not lastPeak or peak > lastPeak) then lastPeak = peak end
-    data.ap = { maxObservedCps = lastPeak }
-    local stats = type(status.clashStats) == "table" and status.clashStats or {}
+    data.ap = { maxObservedCps = lastPeak }; local stats = type(status.clashStats) == "table" and status.clashStats or {}
     if finite(stats.travelElapsed) and stats.travelElapsed >= 0 and validText(stats.travelTargetName) then
       lastTravel.travelElapsed, lastTravel.travelTargetName = stats.travelElapsed, stats.travelTargetName
     end
-    if finite(stats.lastTravelTime) and stats.lastTravelTime > 0 then
-      lastTravel.lastTravelTime, lastTravel.lastTravelTargetName = stats.lastTravelTime, stats.lastTravelTargetName
-    end
-    if finite(stats.fatalTravelTime) and stats.fatalTravelTime > 0 then
-      lastTravel.fatalTravelTime, lastTravel.deceasedName = stats.fatalTravelTime, stats.deceasedName
-    end
-    data.travel = lastTravel
-    local panels = StatusView.format(data)
+    if finite(stats.lastTravelTime) and stats.lastTravelTime > 0 then lastTravel.lastTravelTime, lastTravel.lastTravelTargetName = stats.lastTravelTime, stats.lastTravelTargetName end
+    if finite(stats.fatalTravelTime) and stats.fatalTravelTime > 0 then lastTravel.fatalTravelTime, lastTravel.deceasedName = stats.fatalTravelTime, stats.deceasedName end
+    data.travel = lastTravel; local panels = StatusView.format(data)
     if #panels.distance > 0 then lastDistance = panels.distance end
-    panels.distance = lastDistance
-    render(apLabel, setAPVisible, enabled.ap, panels.ap); render(gateLabel, setGateVisible, enabled.gates, panels.gates)
-    render(travelLabel, setTravelVisible, enabled.travel, panels.travel); render(distanceLabel, setDistanceVisible, enabled.distance, panels.distance)
+    panels.distance = lastDistance; render(apLabel, setAPVisible, enabled.ap, panels.ap)
+    render(gateLabel, setGateVisible, enabled.gates, panels.gates); render(travelLabel, setTravelVisible, enabled.travel, panels.travel)
+    render(distanceLabel, setDistanceVisible, enabled.distance, panels.distance)
   end
   local elapsed = 0
   trackConn(RunService.Heartbeat:Connect(function(dt)

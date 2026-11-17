@@ -32,8 +32,7 @@ function StatusView.format(data)
     out.travel[#out.travel + 1] = string.format("Last target%s: %.0f ms", who, travel.lastTravelTime * 1000)
   end
   if positive(travel.fatalTravelTime) then
-    local who = text(travel.deceasedName) and (" (" .. travel.deceasedName .. ")") or ""
-    out.travel[#out.travel + 1] = string.format("Last death%s: %.0f ms", who, travel.fatalTravelTime * 1000)
+    local who = text(travel.deceasedName) and (" (" .. travel.deceasedName .. ")") or ""; out.travel[#out.travel + 1] = string.format("Last death%s: %.0f ms", who, travel.fatalTravelTime * 1000)
   end
   return out
 end

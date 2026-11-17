@@ -378,8 +378,7 @@ local function deathRisk(state, s, time, cd)
   local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.returnLeg ~= nil and h.returnLeg <= response
   local recentLeg = h.targetAt ~= nil and time - h.targetAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.lastLeg ~= nil and h.lastLeg <= response
   local cadenceDanger = fastReturn or (predictedCycle and predictedCycle <= response and (fastLeg or recentLeg))
-  local marginDanger = lateParry and predictedCycle and predictedCycle <= response + runtimeBudget
-  local danger = exchangeEvidence and soon and (cadenceDanger or marginDanger)
+  local marginDanger = lateParry and predictedCycle and predictedCycle <= response + runtimeBudget; local danger = exchangeEvidence and soon and (cadenceDanger or marginDanger)
   local reason = danger and "exchange_danger" or nil
   return {
     exchangeEvidence = exchangeEvidence,
