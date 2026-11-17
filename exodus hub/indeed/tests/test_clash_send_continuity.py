@@ -14,7 +14,7 @@ c.getDeflectCooldownState=realCooldown.getDeflectCooldownState
 '''
 START = '''
 other.root.Position=v(13);cfg.CPS=25
-packet(99,0,50);packet(42,.04,50)
+packet(42,0,50);packet(99,.04,50);packet(42,.04,50)
 assert(ap.isActive(),'fixture did not start auto spam')
 local began=tm
 '''

@@ -8,6 +8,6 @@ AutoSpam's existing clash-status accessor now publishes travelElapsed and partic
 
 Gate output contains exactly the last activation reason and last deactivation reason, each retained until its next event. AP output contains only the highest collected AP CPS. Clash Distance retains its most recent populated panel. Ball Travel retains independently the elapsed time/name of the observed target, time/name of the last completed target, and time/name of the last death. Starting a new clash does not erase a recorded death. Missing or invalid inputs never erase previous valid observations. Explicitly disabling a panel still hides it.
 
-The added danger gate has one activation identifier, `exchange_danger`. Return cadence and dispatch margin are inputs to one combined decision, rather than two separately named activation reasons. Existing activation candidates retain their rules.
+The added danger activation gate has been removed at the user's request. Existing activation candidates retain their rules.
 
 Regression tests exercise the actual UI for missing/invalid values, independent provider failure/recovery, gates without a valid ball snapshot, current value replacement, frozen collected results and producer-supplied elapsed time. The loader dependency contract includes the new module. Firing and gate behavior are outside this refactor.

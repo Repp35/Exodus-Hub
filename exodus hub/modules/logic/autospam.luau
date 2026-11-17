@@ -3,14 +3,11 @@
 local AutoSpam = {}
 
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
-local autoParry
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
-    PRESSURE_REFERENCE_CPS = 4.73,
-    PRESSURE_MAX_AGE = 0.75,
     RETURN = 0.36,
     SELF_RETURN_MIN_TIME = 0.30,
     SELF_RETURN_MAX_TIME = 0.10,
@@ -42,7 +39,7 @@ local CONFIG = {
     RETURN_PROTECTION_RADIUS = 10,
     RETURN_PROTECTION_MAX_SPEED_RADIUS = 25,
   },
-  SHARED = { SNAPSHOT_MAX_AGE = 0.5, RUNTIME_TICK_INTERVAL = 1 / 120 },
+  SHARED = { EXCHANGE_HISTORY_MAX_AGE = 0.75, SNAPSHOT_MAX_AGE = 0.5, RUNTIME_TICK_INTERVAL = 1 / 120 },
 }
 
 local function finite(x) return type(x) == "number" and x == x and x > -math.huge and x < math.huge end
@@ -76,7 +73,7 @@ local function clearEvidence(state)
 end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
-  state.killEntryAt, state.riskTarget, state.risk, state.pressure = nil, nil, nil, nil; state.pressureEpoch = now()
+  state.exchangeHistory = nil
 end
 local function eventOnce(state, reason, condition, token)
   if not condition then state.stopEvents[reason] = nil; return false end
@@ -265,30 +262,21 @@ local function activate(state, reason, partner, time, s)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason); return true
 end
-local function sphereEntry(delta, velocity, radius)
-  local c = delta:Dot(delta) - radius * radius
-  if c <= 0 then return 0 end
-  local a = velocity:Dot(velocity); local b = 2 * delta:Dot(velocity)
-  if a <= 0.000001 or b >= 0 then return math.huge end
-  local discriminant = b * b - 4 * a * c
-  if discriminant < 0 then return math.huge end
-  return math.max(0, (-b - math.sqrt(discriminant)) / (2 * a))
-end
-local function observePressure(state, s, time, defense)
-  local h = state.pressure
-  if not h then h = {}; state.pressure = h end
-  if h.lastAt and time - h.lastAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h = {}; state.pressure = h end
+-- Observe real target cycles only to preserve existing active-send continuity.
+-- This collector cannot activate spam and does not read AP telemetry.
+local function observeExchangeContinuity(state, s, time)
+  local h = state.exchangeHistory
+  if not h or (h.lastAt and time - h.lastAt > CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE) then
+    h = {}; state.exchangeHistory = h
+  end
   h.lastAt = time
-  if h.cycleAt and time - h.cycleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.cycle, h.previousCycle, h.cycleAt = nil, nil, nil end
   local me = localPlayer.UserId
   if h.target ~= s.targetId then
-    if h.targetAt and time > h.targetAt then h.lastLeg = time - h.targetAt end
-    h.targetAt = time
     if h.target and (h.target == me or s.targetId == me) then h.exchangeAt = time end
     if s.targetId == me then
       if h.inboundAt and h.departedAt then
         local interval = time - h.inboundAt
-        if interval > 0 and interval <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.previousCycle, h.cycle, h.cycleAt = h.cycle, interval, time; h.returnLeg = time - h.departedAt end
+        if interval > 0 and interval <= CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE then h.cycle = interval end
       end
       h.inboundAt, h.departedAt = time, nil
     elseif h.target == me then
@@ -296,112 +284,6 @@ local function observePressure(state, s, time, defense)
     end
     h.target = s.targetId
   end
-  if h.sampleAt and time - h.sampleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.sampleAt, h.headroom, h.previousHeadroom, h.parryDistance, h.idealDistance = nil, nil, nil, nil, nil end
-  local sample = defense and defense.lastAcceptedSample
-  if sample and finite(sample.distance) and finite(sample.speed) then
-    local physics = gameInfo.getDefensePhysics(); local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
-    local grace = physics and finite(physics.grace) and physics.grace or 0.02; sample = table.clone(sample)
-    sample.headroom = math.max(0, sample.distance - kill) / math.max(1, sample.speed, sample.closingSpeed or 0)
-      + grace
-      - (defense and finite(defense.ping) and math.max(0, defense.ping) or 0)
-  end
-  if
-    sample
-    and sample.ball == s.ball
-    and finite(sample.at)
-    and finite(sample.headroom)
-    and time >= sample.at
-    and time - sample.at <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
-    and sample.at >= (state.pressureEpoch or 0)
-    and sample.at ~= h.sampleAt
-  then
-    if h.sampleAt and sample.at - h.sampleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.previousHeadroom = h.headroom else h.previousHeadroom = nil end
-    h.sampleAt, h.headroom = sample.at, sample.headroom; h.parryDistance, h.idealDistance = sample.distance, sample.idealDistance
-  end
-  return h
-end
-local function deathRisk(state, s, time, cd)
-  local physics = gameInfo.getDefensePhysics(); local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
-  local grace = physics and finite(physics.grace) and physics.grace or 0.02; local defense = autoParry and autoParry.getPressureDetector()
-  local ping = defense and finite(defense.ping) and math.max(0, defense.ping) or 0; local frame = defense and finite(defense.frameTime) and math.max(0, defense.frameTime) or 1 / 60
-  local sync = defense and finite(defense.syncInterval) and math.max(0, defense.syncInterval) or 0.05; local runtimeBudget = math.max(1 / 25, frame + sync + ping + 1 / 60)
-  local response = math.max(1 / CONFIG.ACTIVATION.PRESSURE_REFERENCE_CPS, runtimeBudget)
-  if cd and cd.blocking and finite(cd.remaining) then response += math.max(0, cd.remaining) end
-  if defense and finite(defense.retryAt) then response = math.max(response, defense.retryAt - time + ping) end
-  local own, ownVelocity = state.root.Position, state.root.AssemblyLinearVelocity
-  if not vector(ownVelocity) then ownVelocity = Vector3.zero end
-  local speed = snapshotSpeed(s); local me = localPlayer.UserId
-  local partner = s.targetId ~= me and s.targetId or state.previousOpponent
-  if not partner or not playerIsAlive(partner) then partner = nearestPartner(state, math.huge) end
-  local deadline, source = math.huge, "no_intercept"
-  if state.riskTarget ~= s.targetId then state.killEntryAt = nil; state.riskTarget = s.targetId end
-  if s.targetId == me then
-    local entry = sphereEntry(s.position - own, s.velocity - ownVelocity, kill); local earliest = math.max(0, (s.position - own).Magnitude - kill) / math.max(1, speed + ownVelocity.Magnitude)
-    entry = math.min(entry, earliest)
-    if entry == 0 or s.grace == true then local age = finite(s.syncAt) and math.max(0, time - s.syncAt) or 0; state.killEntryAt = state.killEntryAt or (time - age - networkLatency()) end
-    local remainingGrace = math.max(0, grace - (state.killEntryAt and time - state.killEntryAt or 0)); deadline, source = state.killEntryAt and remainingGrace or entry + remainingGrace, "incoming"
-  else
-    state.killEntryAt = nil; local other, otherVelocity = gameInfo.getPlayerMotion(s.targetId)
-    if vector(other) then
-      if not vector(otherVelocity) then otherVelocity = Vector3.zero end
-      local radius = gameInfo.getPlayerRawRadius(s.targetId, speed, false); local g = geometry(s, 1)
-      local reach = (radius or 8.5) + speed * (g and g.effectiveWindow or 0); local intercept = sphereEntry(s.position - other, s.velocity - otherVelocity, reach)
-      local earliest = math.max(0, (s.position - other).Magnitude - reach) / math.max(1, speed + otherVelocity.Magnitude); intercept = math.min(intercept, earliest)
-      if intercept < math.huge then
-        local separation = ((other + otherVelocity * intercept) - (own + ownVelocity * intercept)).Magnitude; local relative = otherVelocity - ownVelocity
-        local toward = separation > 0 and -relative:Dot(other - own) / math.max((other - own).Magnitude, 0.001) or 0; local returnSpeed = math.min(600, speed + 12)
-        deadline = intercept + math.max(0, separation - kill) / math.max(1, returnSpeed + toward) + grace; source, partner = "possible_return", s.targetId
-      end
-    end
-  end
-  local h = observePressure(state, s, time, defense)
-  local predictedCycle, nextCycle, nextHeadroom
-  local other, otherVelocity = gameInfo.getPlayerMotion(partner)
-  if vector(other) then
-    if not vector(otherVelocity) then otherVelocity = Vector3.zero end
-    local delta = other - own; local separation = delta.Magnitude
-    local closing = separation > 0 and -(otherVelocity - ownVelocity):Dot(delta) / separation or 0; local nextSeparation = math.max(0, separation - math.max(0, closing) * response)
-    predictedCycle = math.max(1 / 25, 2 * math.max(0, nextSeparation - kill) / math.max(1, math.min(600, speed + 24) + math.max(0, closing)))
-  end
-  if h.cycleAt and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
-    nextCycle = h.cycle
-    if h.previousCycle then nextCycle = math.max(1 / 25, h.cycle + math.min(0, h.cycle - h.previousCycle)) end
-  end
-  if h.sampleAt and time - h.sampleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
-    nextHeadroom = h.headroom
-    if h.previousHeadroom then nextHeadroom = h.headroom + math.min(0, h.headroom - h.previousHeadroom) end
-  end
-  local soon = deadline <= 2 * response + 1 / 25; local requiredInterval = predictedCycle
-  if nextCycle then requiredInterval = math.min(requiredInterval or math.huge, nextCycle) end
-  local exchangeEvidence = h.exchangeAt ~= nil and time >= h.exchangeAt and time - h.exchangeAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
-  local lateParry = nextHeadroom ~= nil and nextHeadroom <= runtimeBudget + 1 / 25; local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
-  local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.returnLeg ~= nil and h.returnLeg <= response
-  local recentLeg = h.targetAt ~= nil and time - h.targetAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.lastLeg ~= nil and h.lastLeg <= response
-  local cadenceDanger = fastReturn or (predictedCycle and predictedCycle <= response and (fastLeg or recentLeg))
-  local marginDanger = lateParry and predictedCycle and predictedCycle <= response + runtimeBudget; local danger = exchangeEvidence and soon and (cadenceDanger or marginDanger)
-  local reason = danger and "exchange_danger" or nil
-  return {
-    exchangeEvidence = exchangeEvidence,
-    returnLeg = h.returnLeg,
-    risky = reason ~= nil,
-    reason = reason,
-    deadline = deadline,
-    response = response,
-    margin = deadline - response,
-    grace = grace,
-    killRadius = kill,
-    source = source,
-    partner = partner,
-    gameMaxCps = 25,
-    observedCycle = h.cycle,
-    predictedCycle = predictedCycle,
-    nextCycle = nextCycle,
-    requiredCps = requiredInterval and 1 / math.max(1 / 25, requiredInterval) or nil,
-    headroom = h.headroom,
-    nextHeadroom = nextHeadroom,
-    parryDistance = h.parryDistance,
-    idealDistance = h.idealDistance,
-  }
 end
 local function redirectedFar(state, s, time)
   if not freshSnapshot(s, time) or s.ball ~= state.ball or s.teleported or s.resetting or s.locked then return false end
@@ -414,7 +296,7 @@ local function redirectedFar(state, s, time)
   local position = playerPosition(target); return position ~= nil and (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE
 end
 local function rememberSendContinuity(state, s, time)
-  local h = state.pressure
+  local h = state.exchangeHistory
   if not state.active or not h or not finite(h.cycle) or h.cycle <= 0 or h.cycle > CONFIG.ACTIVATION.RETURN then return end
   if not finite(h.exchangeAt) or time < h.exchangeAt or time - h.exchangeAt > CONFIG.ACTIVATION.RETURN then return end
   local horizon = math.clamp(h.cycle + networkLatency() + 2 / 60, 0.08, 0.2); state.sendContinuity = { ball = s.ball, exchangeAt = h.exchangeAt, expiresAt = h.exchangeAt + horizon }
@@ -586,8 +468,6 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, s.targetId) then state.gates.haunter = "haunter_ball_outside_window"
     else state.gates.haunter = "ready"; return haunter.reason, haunter.partner end
   end
-  local risk = state.risk
-  if risk and risk.risky and risk.partner then return risk.reason, risk.partner end
 end
 local function sequenceOrder(state, incoming)
   if incoming == nil then return "none" end
@@ -624,12 +504,12 @@ local function evaluate(state, s, time, packet)
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
     if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
-      state.pressure, state.risk, state.pressureEpoch, state.sendContinuity = nil, nil, time, nil
+      state.exchangeHistory, state.sendContinuity = nil, nil
     end
     return
   end
-  observeTarget(state, s, time); state.risk = deathRisk(state, s, time, cd)
-  rememberSendContinuity(state, s, time); state.gates.risk = state.risk.reason or "ap_has_time"
+  observeTarget(state, s, time); observeExchangeContinuity(state, s, time)
+  rememberSendContinuity(state, s, time)
   dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
@@ -718,7 +598,7 @@ end
 function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash; autoParry = deps.AutoParry
+  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
@@ -771,7 +651,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
   detach("teardown"); clashStats = nil
-  autoParry = nil; utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo = nil, nil, nil, nil, nil, nil, nil, nil
+  utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo = nil, nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -879,7 +759,6 @@ function AutoSpam.getStatus()
     snapshotAge = sample and finite(sample.syncAt) and time - sample.syncAt or nil,
     windowFactor = 1,
     gates = state and table.clone(state.gates) or {},
-    risk = state and state.risk or nil,
     dashPrediction = state and state.dashPrediction or nil,
     dashEscape = state and state.dashEscape or nil,
     activationReason = state and state.active and state.reason or nil,
@@ -904,7 +783,6 @@ AutoSpam.__contract = {
     ClashStats = "clashstats",
     Cooldown = "cooldown",
     Dash = "dash",
-    AutoParry = "autoparry",
   },
   requiresMethods = {
     Utils = {
@@ -936,9 +814,7 @@ AutoSpam.__contract = {
       "getAveragePing",
       "getTargetId",
       "getBallSpeedLimits",
-      "getDefensePhysics",
     },
-    AutoParry = { "getPressureDetector" },
     Cooldown = { "getDeflectCooldownState" },
     Dash = { "tick", "getEstimate" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
