@@ -3,9 +3,7 @@
 -- module
 local AutoParry = {}
 local utils, gameInfo, remote, cooldownInfo
-local maxObservedCps = nil
-local syncInterval, lastSyncAt = nil, nil
-local lastAcceptedSample = nil
+local maxObservedCps, syncInterval, lastSyncAt, lastAcceptedSample
 local state = {
   phase = "detached",
   reason = "initial",
@@ -73,7 +71,6 @@ local state = {
 
 -- configuration
 local CONFIG = {
-  PRESSURE_REFERENCE_CPS = 4.73,
   DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.85,
   MATCH_WINDOW_FACTOR = 0.4,
@@ -129,17 +126,17 @@ end
 
 -- lifecycle
 local function resetTracking()
-  syncInterval, lastSyncAt, lastAcceptedSample = nil, nil, nil; state.fired, state.awaySeen, state.cycle = false, false, 0
-  state.target, state.targetKnown, state.lastTargeted = -1, false, false; state.teleported, state.teleportSequence, state.sequence = false, nil, nil
-  state.mode = nil; state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
-  state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge
-  state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
-  state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
-  state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil
-  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
-  table.clear(state.returns)
+  syncInterval, lastSyncAt, lastAcceptedSample = nil, nil, nil
+  state.fired, state.awaySeen, state.cycle = false, false, 0; state.target, state.targetKnown, state.lastTargeted = -1, false, false
+  state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
+  state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge; state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
+  state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
+  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil; state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil
+  state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -173,10 +170,6 @@ local function recordAutoParryRequest()
   state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt = now
   if state.autoParryCps > 0 then maxObservedCps = math.max(maxObservedCps or 0, math.min(25, state.autoParryCps)) end
 end
-local function runtimeResponseBudget()
-  return math.max(1 / 25, CONFIG.FRAME_BASE + state.frameAllowance + (syncInterval or 0.05) + state.ping + CONFIG.SERVER_FRAME_MARGIN)
-end
-local function pressureServiceInterval() return math.max(1 / CONFIG.PRESSURE_REFERENCE_CPS, runtimeResponseBudget()) end
 local function trainingGeometry(speed, factor)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
   local progress = span > 0 and math.clamp((speed - CONFIG.TRAINING_BASE_SPEED) / span, 0, 1) or 1
@@ -466,18 +459,13 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
+  -- Passive dispatch observation: no timing, retry or send decision changes.
   if expectedMode ~= "training" then
-    local physics = type(gameInfo.getDefensePhysics) == "function" and gameInfo.getDefensePhysics() or nil; local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
-    local grace = physics and finite(physics.grace) and physics.grace or 0.02; local closing = math.max(speed, state.closingSpeed, 1)
     lastAcceptedSample = {
-      at = firedAt,
-      ball = expectedBall,
-      distance = distance,
-      speed = speed,
+      at = firedAt, ball = expectedBall, cycle = cycle, targetId = state.target,
+      distance = distance, speed = speed, closingSpeed = state.closingSpeed,
       idealDistance = trainingThreshold,
-      headroom = math.max(0, distance - kill) / closing + grace - state.ping,
     }
-
   end
   if state.mode == "training" then cooldownInfo.recordTrainingDeflectAttempt(firedAt) else state.retryPending = true; cooldownInfo.recordDeflectAttempt(firedAt, speed) end
   local factor = state.mode == "training" and activeWindowFactor(firedAt) or math.max(activeWindowFactor(firedAt), state.adaptiveFactor)
@@ -797,17 +785,22 @@ function AutoParry.getTargetStatus()
     cooldown = gameInfo and cooldownInfo.getDeflectCooldownState() or nil,
   }
 end
+-- Read-only detector. AutoSpam owns the interpretation and activation gate.
+function AutoParry.getPressureDetector()
+  return {
+    enabled = state.alive and state.bound and utils ~= nil and utils.getConfigValue("AutoParry") ~= false,
+    ball = state.lastBall, targetId = state.target, cycle = state.cycle,
+    firedForTarget = state.fired, attemptAt = state.lastFireAt,
+    frameTime = CONFIG.FRAME_BASE + state.frameAllowance,
+    syncInterval = syncInterval, ping = state.ping, retryAt = state.nextAttemptAt,
+    lastAcceptedSample = lastAcceptedSample and table.clone(lastAcceptedSample) or nil,
+  }
+end
 function AutoParry.getDefenseState(value)
   if not utils or not gameInfo then return nil end
   samplePing(); local cooldown = safeCooldown()
   local timing = value and AutoParry.getTiming(value)
   return {
-    responseBudget = pressureServiceInterval(),
-    runtimeResponseBudget = runtimeResponseBudget(),
-    pressureReferenceCps = CONFIG.PRESSURE_REFERENCE_CPS,
-    lastAcceptedSample = lastAcceptedSample and table.clone(lastAcceptedSample) or nil,
-    syncInterval = syncInterval,
-    cooldownRemaining = cooldown and cooldown.remaining or 0,
     enabled = state.alive and state.bound and utils.getConfigValue("AutoParry") ~= false,
     armed = not state.fired,
     fired = state.fired,
@@ -1008,11 +1001,6 @@ function AutoParry.getStatus()
     },
     cps = state.autoParryCps,
     maxObservedCps = maxObservedCps,
-    gameMaxCps = 25,
-    estimatedCapacityCps = 1 / pressureServiceInterval(),
-    pressureReferenceCps = CONFIG.PRESSURE_REFERENCE_CPS,
-    pressureServiceInterval = pressureServiceInterval(),
-    measuredSyncInterval = syncInterval,
     windowFactor = state.windowFactor,
     cpsGate = {
       adaptive = false,
@@ -1071,7 +1059,6 @@ AutoParry.__contract = {
       "getRootPosition",
       "getDeflectGeometry",
       "getAutoParryGeometry",
-      "getDefensePhysics",
       "getDeflectRangeParameters",
       "getProjectedDeflectRadius",
       "getAutoSpamDelay",
@@ -1091,6 +1078,7 @@ AutoParry.__contract = {
   },
   provides = {
     "getDefenseState",
+    "getPressureDetector",
     "setup",
     "bindCharacter",
     "detachCharacter",

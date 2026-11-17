@@ -1,82 +1,87 @@
-"""Real AutoSpam/Spam: anticipate service saturation, not just lethal contact."""
+"""The pressure feature is an activation candidate; AP only exposes raw observations."""
 import unittest
-from autospam_harness import check as run_exchange_case
-
-def check(case):
-    # A known opponent target precedes the local receipt; spawn-only cases are separate.
-    run_exchange_case("packet(99,0,500)\n" + case)
+from autospam_harness import check
 import test_adaptive_parry as adaptive
 
 class PressureHandoff(unittest.TestCase):
-    def test_geometry_alone_does_not_establish_return_pressure(self):
+    def test_late_current_ap_with_safe_next_exchange_does_not_double_click(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
-other.root.Position=v(50);packet(42,0,100)
-local r=ap.getStatus().risk
-assert(r.deadline>r.response+.04,'fixture already lethal')
-assert(not ap.isActive() and not r.risky,'geometry invented a fast return')''')
+other.root.Position=v(80);packet(99,0,500);packet(42,.01,100)
+assert(not ap.isActive())
+-- Model the precise AP dispatch for the current visit, after AutoSpam evaluated.
+clicks=clicks+1
+snap.position=v(20)
+defense.lastAcceptedSample={at=tm,ball=ball,distance=20,speed=300,closingSpeed=300}
+for i=1,8 do heartbeat(.01) end
+assert(clicks==1,'current AP dispatch was followed by an extra spam click')
+assert(not ap.isActive() and not ap.getStatus().risk.risky)
+assert(ap.getStatus().risk.nextHeadroom<.1,'fixture was not a late AP click')''')
 
-    def test_two_late_parries_predict_shrinking_headroom(self):
-        check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
-other.root.Position=v(60);packet(42,0,100);assert(not ap.isActive())
-defense.lastAcceptedSample={at=tm,ball=ball,headroom=.35,distance=30,idealDistance=50}
-heartbeat(.01);assert(not ap.isActive())
-defense.lastAcceptedSample={at=tm,ball=ball,headroom=.27,distance=22,idealDistance=50}
-heartbeat(.01);local r=ap.getStatus().risk
-assert(r.deadline>r.response+.04 and r.nextHeadroom<r.response)
-assert(ap.isActive() and r.reason=='parry_margin_shrinking')''')
+    def test_current_near_ball_is_not_next_exchange_pressure(self):
+        check('''other.root.Position=v(100);snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
+packet(99,0,500);packet(42,.01,10)
+assert(not ap.isActive(),'current proximity triggered extra click without next-return pressure')''')
 
-    def test_target_round_trip_trend_anticipates_next_local_return(self):
+    def test_real_return_trend_activates_before_next_demand_exceeds_capacity(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
 other.root.Position=v(80);packet(42,0,100)
-packet(99,.1);packet(42,.22);assert(not ap.isActive(),'320ms cycle should fit')
+packet(99,.1);packet(42,.22);assert(not ap.isActive())
 packet(99,.1);packet(42,.17);local r=ap.getStatus().risk
-assert(r.observedCycle>.26 and r.nextCycle<.23,'local cycle trend missing')
-assert(ap.isActive() and r.reason=='return_demand_exceeds_ap')''')
+assert(r.observedCycle>.26 and r.nextCycle<.23)
+assert(ap.isActive() and r.reason=='return_demand_exceeds_ap')
+assert(clicks==1,'activation produced more than one initial request')
+-- Loader evaluates AutoSpam first; the unchanged AP guard sees spam active.
+if not u.isAutoSpamActive() then clicks=clicks+1 end
+assert(clicks==1,'AP and spam both dispatched for the same handoff')''')
 
-    def test_one_target_leg_is_not_a_local_roundtrip(self):
+    def test_late_ap_only_matters_when_next_geometry_is_also_dangerous(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
-other.root.Position=v(80);packet(42,0,100);packet(99,.05)
-assert(ap.getStatus().risk.observedCycle==nil,'one leg counted as local demand')''')
+other.root.Position=v(50);packet(99,0,500);packet(42,.01,100)
+defense.lastAcceptedSample={at=tm,ball=ball,distance=14,speed=300,closingSpeed=300}
+heartbeat(.01)
+assert(ap.isActive() and ap.getStatus().risk.reason=='parry_margin_shrinking')''')
 
-    def test_old_late_sample_cannot_trigger_a_new_clash(self):
+    def test_added_gate_does_not_install_recovery_or_restart_controller(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
-other.root.Position=v(80);defense.lastAcceptedSample={at=tm-1,ball=ball,headroom=.001}
-packet(42,0,100);assert(not ap.isActive(),'expired lateness contaminated new episode')''')
+other.root.Position=v(80);packet(42,0,100)
+packet(99,.1);packet(42,.22);packet(99,.1);packet(42,.17)
+assert(ap.isActive());other.root.Position=v(10)
+packet(42,.01,500)
+for i=1,6 do heartbeat(.05);assert(ap.isActive(),'new gate stopped existing spam session') end
+local starts=0
+for _,t in ipairs(transitions) do if t[1]=='AutoSpam' and t[3]=='active' then starts=starts+1 end end
+assert(starts==1,'detector created extra activation bursts')''')
 
-    def test_approach_with_late_ap_needs_no_completed_cycle(self):
-        for own, other in [(0,-120),(120,0),(-16,-120)]:
-            check(f'''me.root.AssemblyLinearVelocity=v({own});other.root.AssemblyLinearVelocity=v({other})
-other.root.Position=v(60);defense.lastAcceptedSample={{at=tm,ball=ball,headroom=.18}}
-packet(42,0,150)
-assert(ap.isActive(),'dash/approach needed completed cycles')''')
+    def test_cooldown_send_policy_is_the_original_policy(self):
+        check('''packet(42,0,2);assert(ap.isActive());cd.blocking=true
+assert(not ap.canSend() and not ap.isActive())
+assert(ap.getStatus().lastStopReason=='cooldown')''')
 
-    def test_imminent_incoming_does_not_require_a_nearby_sender(self):
-        check('''other.root.Position=v(100);third.root.Position=v(150)
-packet(42,0,40);assert(ap.isActive(),'distance gate blocked imminent first receipt')''')
+    def test_first_short_cycle_activates_without_artificial_wait(self):
+        check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
+other.root.Position=v(80);packet(42,0,100)
+packet(99,.1);packet(42,.08)
+assert(ap.isActive() and clicks==1,'gate installed an extra wait after observing dangerous return')
+assert(ap.getStatus().risk.observedCycle<.19)''')
 
-    def test_missing_partner_is_safe(self):
-        check('''other.hum.Health=0;third.hum.Health=0
-packet(42,0,500);assert(not ap.isActive())''')
+    def test_slow_previous_exchange_does_not_hide_sudden_short_return(self):
+        check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
+other.root.Position=v(80);packet(42,0,100)
+packet(99,.3);packet(42,.3);assert(not ap.isActive())
+packet(99,.1);packet(42,.12)
+assert(ap.isActive() and ap.getStatus().risk.nextCycle<.22)''')
 
-    def test_stable_recovery_returns_control_to_ap(self):
-        check('''packet(42,0,40);assert(ap.isActive())
-packet(42,.01,500);heartbeat(.1);assert(ap.isActive(),'released on one safe sample')
-heartbeat(.16);assert(not ap.isActive(),'failed to return control after stable recovery')
-assert(ap.getStatus().lastStopReason=='ap_recovered')''')
-
-    def test_pressure_resets_recovery_hysteresis(self):
-        check('''packet(42,0,40);packet(42,.01,500);heartbeat(.2)
-packet(42,.01,40);packet(42,.01,500);heartbeat(.1)
-assert(ap.isActive(),'old safe timer released during renewed pressure')''')
-
-    def test_real_ap_reports_reference_and_dispatch_headroom(self):
+    def test_detector_getter_does_not_send_or_change_ap_timing(self):
         adaptive.AdaptiveParry().check('''
-gameBall.ApplyClashPressureGrace=function() return .02 end
 clashing=true;pressure=1;publish(8,600);frame:Fire(1/60)
-local d=ap.getDefenseState(gi.getParrySnapshot(tm))
-assert(d.responseBudget>=1/4.73 and d.pressureReferenceCps==4.73)
+assert(fires==1)
+local d=ap.getPressureDetector()
 assert(d.lastAcceptedSample and d.lastAcceptedSample.distance>4)
-assert(d.lastAcceptedSample.ball==ball and d.lastAcceptedSample.headroom<d.responseBudget)
-''')
+assert(d.lastAcceptedSample.headroom==nil and d.responseBudget==nil,'AP interpreted danger instead of observing')
+local distance=d.lastAcceptedSample.distance
+d.lastAcceptedSample.distance=999
+for i=1,100 do ap.getPressureDetector() end
+assert(fires==1 and ap.getPressureDetector().lastAcceptedSample.distance==distance)
+frame:Fire(1/60);assert(fires==1,'same visit created a second AP click')''')
 
-if __name__=='__main__': unittest.main()
+if __name__=='__main__':unittest.main()

@@ -44,7 +44,7 @@ local g={getSnapshotAt=function() return snap end,isSnapshotValid=function(s) re
  getAutoSpamDelay=function() return 0 end,getMinimumSpamInterval=function() return .0301 end}
 local c={getDeflectCooldownState=function() return cd end}
 local defense={enabled=true,responseBudget=1/4.73}
-local defender={getDefenseState=function() return defense end}
+local defender={getPressureDetector=function() return defense end}
 local stats
 local st={begin=function(id,t) stats={partnerId=id,startedAt=t,frozen=false} end,get=function() return stats end,
  observe=function() end,finish=function() if stats then stats.frozen=true end end,freeze=function() if stats then stats.frozen=true end end,waitForNextClash=function() end}

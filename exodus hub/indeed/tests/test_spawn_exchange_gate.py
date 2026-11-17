@@ -32,12 +32,11 @@ assert(ap.isActive() and risk.reason=='return_demand_exceeds_ap')
 assert(risk.observedCycle>.26 and risk.nextCycle<.23)
 assert(risk.deadline>risk.response+.04,'waited for present lethal deadline')''')
 
-    def test_real_late_ap_after_exchange_triggers_takeover(self):
+    def test_real_late_ap_and_short_next_return_trigger_takeover(self):
         check('''snap.speed=300;snap.syncSpeed=300;snap.velocity=v(-300)
-other.root.Position=v(60);packet(99,0,100);packet(42,.01,100)
-defense.lastAcceptedSample={ball=ball,at=tm,headroom=.35};heartbeat(.01)
-assert(not ap.isActive())
-defense.lastAcceptedSample={ball=ball,at=tm,headroom=.27};heartbeat(.01)
+other.root.Position=v(50);packet(99,0,500);packet(42,.01,100)
+defense.lastAcceptedSample={ball=ball,at=tm,distance=14,speed=300,closingSpeed=300}
+heartbeat(.01)
 assert(ap.isActive() and ap.getStatus().risk.reason=='parry_margin_shrinking')''')
 
     def test_pause_clears_only_added_gate_evidence(self):

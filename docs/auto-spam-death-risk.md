@@ -1,68 +1,39 @@
-# Auto Spam: deadline prediction
+# Additional activation gate: danger in the next exchange
 
-The supplied SrcDump_olym4 sources confirm:
+The feature is one additional candidate in AutoSpam.chooseActivation, after the existing return, close, self-return, dash and haunter candidates. It has no sender, delayed action, recovery controller or special active-session lifecycle. A selected candidate starts the existing Spam module through the original activate function. The original cooldown, send validation, deactivation rules and reactivation behavior are preserved.
 
-- GameBall.GetKillDistance: 4 studs; base/max speed: 16/600.
-- StandardBall.GetTargetGrace: clamp(ping + 75 ms, 75 ms, 350 ms), with PressDelay + 50 ms extending the upper bound to 450 ms.
-- GameBall.ApplyClashPressureGrace reduces grace toward 20 ms. ApplyClashPressure reduces the deflection window toward 30 ms. Pressure grows after two seconds over eight seconds, provided the clash has at least two hits.
-- StandardBall.CheckDeadOrParry starts a grace countdown on lethal contact. It checks an active DeflectingWindow before killing. Leaving the radius does not restart an already running grace countdown.
-- BallReplicator simulates steering, bounces and movement in substeps. Straight-line interception alone cannot rule out danger.
-- 25 effective CPS (40 ms) is the user-supplied game ceiling; the dump also has client call throttling and queued presses, so calls sent are not proof of server-accepted parries.
+## Passive AP detector
 
-## Detection
+AutoParry.getPressureDetector returns raw observations: the last accepted dispatch timestamp, ball, local target cycle, distance, speed, radial closing speed, trigger distance, frame duration, sync-gap envelope, ping and existing retry timestamp. It returns copies of dispatch samples. AP still makes its original firing, range, timing, retry and cancellation decisions. It performs no danger interpretation and sends no additional click for the detector. The session peak CPS is passive telemetry.
 
-The priority gate compares the earliest plausible lethal deadline with the AP response budget plus a 40 ms dispatch margin. Incoming prediction uses sphere intersection with relative velocity and a conservative homing arrival bound. Outbound prediction estimates the opponent's earliest legal deflection and immediate return, including speed gain and relative player movement. These are conservative bounds, not a complete recreation of server physics.
+The 4.73 CPS stressed-clash observation belongs to AutoSpam's interpretation, where its reciprocal (approximately 211 ms) is a conservative service-capacity reference. This is not a new AP click interval, polling interval or cooldown. Frames, sync and network timing can increase the estimated service budget.
 
-The AP response budget includes observed frame duration, an envelope of sync gaps, one-way latency, a server-frame allowance, retry deadlines and blocking cooldown. With no sync measurement, the initial sync allowance is 50 ms. CPS observed during ordinary play is displayed separately and is never used as an AP capacity limit. AP estimates and observed peaks are capped at 25 CPS. No benchmark injects artificial clicks during a match.
+## Evidence and prediction
 
-Once local lethal contact or replicated Grace is observed, grace remains latched until target/reset changes. Replicated grace has no authoritative expiry timestamp; its remaining time is conservatively reduced by snapshot age and uplink latency. The server may already have started grace before the client sees it.
+The gate tracks complete local return cycles (`local -> other target(s) -> local`), recent individual flight legs, and AP dispatch distances. A local target transition must have been observed; a newly generated ball simply appearing nearby is not evidence of a clash. Reset, pause and stopped-ball observations clear the added detector's history. Existing gates retain their own original rules, including the two-stud instant close gate.
 
-## Continuity fixes
+The next cycle forecast includes the trend in observed cycle duration and an estimate from ball speed, player separation and relative approach velocity. The geometric estimate uses travel between players, rather than treating overlapping parry windows as an instantaneous round trip. This prevents a nearby slow ball from implying 25 required clicks per second. A stable short observed return and a sudden transition from slow to fast can both supply pressure evidence without an artificial wait for repeated confirmations.
 
-Cooldown no longer turns off automatic spam or suppresses its calls, matching manual spam's continuous send policy. The ability/server can still reject a call. A dangerous third-player handoff changes the tracked partner without stopping spam. Brief uncertain/stale packet states can bridge at most 100 ms from the last valid sample; death, pause, teleport and reset never use this bridge. Lifecycle teardown now clears the spam flag even near an opponent.
+Estimated AP headroom is calculated in AutoSpam from dispatch distance: nonnegative travel distance to the four-stud kill radius divided by closing speed, plus grace, minus uplink delay. A declining headroom forecast is corroborating evidence only when the next geometric exchange is also tight. A late current AP click or short current lethal deadline alone does not start spam.
 
-Existing return, dash and haunter evidence remains available as fallback. Risk is evaluated first, so a first dangerous approach does not need a confirmed round trip. The Info overlay exposes deadline versus AP budget and separates game maximum, observed AP peak and estimated AP capacity.
+When the next return is approaching, the additional gate may activate from:
 
-## Validation and limits
+- A measured/predicted local return cycle shorter than the AP service budget plus dispatch allowance.
+- A short future geometric cycle corroborated by a recently observed fast flight leg.
+- A small forecast AP margin combined with a tight future geometric cycle.
 
-Tests execute the production AutoSpam and Spam code with simulated engine/network inputs: first approach, possible return, movement and dash-speed approach, third-player handoff, cooldown, uncertainty expiration, reset/pause, curved directions, latched grace, teardown and a 36-scenario speed/grace/frame-phase grid. AP timing, contracts and UI suites are checked separately. These tests do not prove survival against a live server, packet loss, unknown abilities or misses.
+A candidate is evaluated immediately in the existing chooser. There is no extra timer, minimum click count, mandatory wait for the next target update, or separate handoff/recovery state machine. Active spam continues according to the original rules, regardless of whether this candidate is true on the next frame.
 
-Some legacy gate tests demand delayed activation until a round trip or stopping on a miss; those expectations conflict with continuous spam and early risk activation. The legacy suite also fails on the original checkout. No 100% survival guarantee follows from the reported match percentages or from the 25 CPS ceiling. In particular, 20 ms grace alone is shorter than a 40 ms click interval: an already active defense window and anticipation matter.
+## Duplicate-click regression
 
-## Revision: 4.73 CPS observed under clash pressure
+The previous implementation could take a late AP dispatch or current proximity as a fresh instruction to start spam, and also added active-session recovery and sending-policy changes. A regression scenario reproduced two requests for one AP receipt on the previous main: the AP had already dispatched, while the next exchange was still safely outside its capacity limit. With future-exchange-only detection the same scenario produces only the original AP request. Actual dangerous returns still activate the existing spam sender immediately.
 
-The user clarified that 4.73 CPS was the fastest cadence observed with high ball speed and the opponent inside the window, just before death. Its reciprocal, approximately 211.4 ms, is now the initial conservative effective service interval for a stressed AP. It is not evidence that frames, sync or ball perception literally occur every 211 ms. Ordinary quiet-play click intervals must not be used to measure processing capacity. The service budget is the larger of this reference and the frame/sync/network budget; slower live conditions can increase it.
+Scope verification compares original AP firing/timing/guard functions, Spam and Remote, and the original existing activation/send/deactivation policies against commit 3a99342. The only firing-path AP addition records raw successful-dispatch observations.
 
-### Capacity, demand and remaining margin
+## Physics and practical limits
 
-A complete sequence `local target -> other target(s) -> local target` supplies one observed local return cycle. One target switch supplies only a leg. The next observed cycle is forecast as `latest + min(0, latest - previous)`, with stale evidence expiring after 750 ms. Third-player changes do not discard an ongoing local return episode.
+The supplied dump confirms base/max ball speed 16/600 studs per second and a kill radius of 4 studs. StandardBall.GetTargetGrace starts with ping + 75 ms, with PressDelay affecting the cap; clash pressure can reduce grace toward 20 ms and the deflection window toward 30 ms. The grace countdown does not restart merely because the ball leaves the kill radius. The supplied 25 CPS ceiling corresponds to a 40 ms interval, but a client request is not proof of a server-accepted parry. Curves, abilities, replication and server rejection prevent a guaranteed survival claim from these estimates alone.
 
-The physical forecast also projects player separation one service interval ahead and estimates the cycle between legal parry ranges using relative approach velocity and the next ball speed. This is deliberately conservative and can activate earlier than necessary. Raw player velocity captures ordinary approach and dash movement, including an opponent catching a retreating local player. Existing dash-event prediction remains a fallback before velocity replication is available.
+Info continues to display only measured peaks and useful current exchange data. Empty, invalid, non-finite and stale fields are hidden.
 
-Each accepted AP dispatch now records ball identity, timestamp, distance, trigger distance and estimated headroom: `(distance - kill radius) / closing speed + grace - uplink`, with nonnegative travel distance. This is dispatch telemetry, not confirmation that the server accepted the parry. Consecutive samples allow forecasting a further loss of headroom instead of waiting for the final failing return. Rejected requests and training clicks do not supply these samples.
-
-Auto Spam takes over if any of these conditions holds:
-
-1. The present lethal deadline is within the AP service budget plus the existing 40 ms dispatch allowance.
-2. A return is approaching within two service budgets and its forecast cycle demands a cadence beyond the AP budget plus allowance.
-3. A return is approaching and the next estimated AP headroom falls within that budget plus allowance.
-
-For example, local return cycles of 320 ms then 270 ms forecast approximately 220 ms on the next exchange. A 211 ms AP has almost no reserve there; waiting to observe a 200 ms failed exchange would be late. Likewise, headroom samples of 350 ms then 270 ms forecast 190 ms remaining on the next comparable dispatch. These are examples, not required sample patterns or a fixed 'penultimate parry' counter.
-
-The takeover starts the existing Spam sender immediately. AP requests already have a dispatch guard against spam; the two consumers share the same remote without intentionally issuing competing requests. Spam keeps ownership while risk persists. A pressure-triggered session can return control after comfortable margins remain stable for 250 ms, with wider release thresholds to prevent toggling. Any renewed pressure resets that recovery timer. Reset, pause and death protections remain in force.
-
-The Info overlay exposes the externally reported reference separately from the session peak and runtime-adjusted clash estimate, along with required return cadence, forecast headroom and dispatch/trigger distances. The earlier statement that the AP model uses only frame/sync timing is superseded by this revision. No 100% survival guarantee or exact inference of the final two parries is possible from these measurements alone.
-
-### Additional validation
-
-Behavioral tests cover predictive takeover while the current return is still outside the lethal threshold, shrinking dispatch margins, full local cycle trends, rejection of single-leg CPS inference, expiration of old evidence, first fast approaches without history, actual AP dispatch sampling, stable release back to AP and renewed-pressure cancellation of release. They complement the original 36-condition deadline grid. No live game session was available for validation.
-
-## Revision: spawn false positives and useful Info only
-
-The previous added gate could declare pressure from geometry alone: a newly created nearby ball, overlapping parry ranges and an imagined instant redirect produced a short deadline without any actual exchange. This was a false-positive path. It now requires a recently observed target transition involving the local player before it can activate. The fastest-clash cadence reference is used with measured local return cycles, a measured fast return leg or a fresh late AP dispatch. The current lethal-deadline rescue path uses the frame/sync/network response budget and also requires exchange evidence. Geometry alone no longer establishes pressure. Generation/reset, pause and stopped-ball signals clear only the new gate's exchange evidence and establish a fresh timestamp barrier for AP samples.
-
-All pre-existing activation gates are preserved: return-target, close-target, consistent-self-return, dash and haunter logic is unchanged. In particular, the original instant close-target gate may still activate at two studs; the fix prevents the added risk gate from inventing exchanges on spawn, without rewriting that existing rule. Info displays the actual initiating gate so these cases can be distinguished.
-
-Info now shows only a finite measured AP peak, current activation reason, measured return and distinct forecast, and valid live clash values. Idle waiting/failure candidate dumps, fixed reference/ceiling values, duplicate estimates, placeholders, frozen clash output and historical activation/deactivation messages are omitted. Invalid, non-finite and stale data clears the corresponding fields on the next 20 Hz refresh; empty panels are hidden. Live values are rebuilt rather than retained in throttled text caches.
-
-Regression coverage explicitly checks spawn at 5, 10 and 30 studs across speeds 16, 100, 300 and 600; the unchanged two-stud legacy activation; real return-trend takeover before lethal contact; shrinking AP margin after a real exchange; same-instance respawn and pause evidence reset. UI tests execute the actual controller for idle/invalid values, measured peaks, replacement with newer values and clearing after a reset or completed clash. Earlier simulation cases now establish a known sender before the local receipt; spawn-only cases are tested separately rather than treated as exchanges.
+Tests execute the actual AP detector and AutoSpam/Spam code with explicit engine/network doubles: the reported double-click path, a safe next exchange despite a late current AP click, first short returns, slow-to-fast changes, return trends, tight next exchanges, preservation of original cooldown/lifecycle behavior, and repeated pure detector reads. These tests do not substitute for a live match.

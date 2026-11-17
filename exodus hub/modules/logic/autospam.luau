@@ -11,7 +11,6 @@ local CONFIG = {
   ACTIVATION = {
     PRESSURE_REFERENCE_CPS = 4.73,
     PRESSURE_MAX_AGE = 0.75,
-    PRESSURE_RELEASE_TIME = 0.25,
     RETURN = 0.36,
     SELF_RETURN_MIN_TIME = 0.30,
     SELF_RETURN_MAX_TIME = 0.10,
@@ -56,7 +55,7 @@ local function snapshotSpeed(s)
   local speed = s.syncSpeed ~= nil and s.syncSpeed or s.speed; return validSpeed(speed) and speed or nil
 end
 local function networkLatency()
-  local ping = gameInfo.getAveragePing(); return finite(ping) and math.clamp(ping, 0, 0.25) or 0
+  local ping = gameInfo.getAveragePing(); return finite(ping) and math.clamp(ping * 0.5, 0, 0.25) or 0
 end
 local function playerIsAlive(id)
   local player = id and players:GetPlayerByUserId(id); local character = player and player.Character
@@ -77,7 +76,7 @@ local function clearEvidence(state)
 end
 local function resetTargets(state)
   clearEvidence(state); state.target, state.previousOpponent, state.selfReturn = nil, nil, nil
-  state.killEntryAt, state.riskTarget, state.risk = nil, nil, nil; state.pressure, state.recoveredSince = nil, nil
+  state.killEntryAt, state.riskTarget, state.risk, state.pressure = nil, nil, nil, nil
   state.pressureEpoch = now()
 end
 local function eventOnce(state, reason, condition, token)
@@ -90,21 +89,7 @@ local function deactivate(state, reason, time)
   if current ~= state or not state.active then return false end
   if type(reason) == "string" and (reason:find("window", 1, true) or reason:find("outside_window", 1, true)) then state.lastGate = "window_ignored"; return false end
   if reason == "deflect_miss" or reason == "miss" or reason == "parry_miss" then state.lastGate = "miss_ignored"; return false end
-  local lifecycle = reason == "detach"
-    or reason == "teardown"
-    or reason == "rebind"
-    or reason == "setup"
-    or reason == "character_removed"
-    or reason == "ball_replaced"
-  if
-    not lifecycle
-    and reason ~= "disabled"
-    and reason ~= "hub_inactive"
-    and reason ~= "player_died"
-    and reason ~= "opponent_left_or_died"
-    and reason ~= "cooldown"
-    and reason ~= "ap_recovered"
-  then
+  if reason ~= "disabled" and reason ~= "hub_inactive" and reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "cooldown" then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
       state.lastGate = "near_opponent_protected"; return false
@@ -290,6 +275,8 @@ local function observePressure(state, s, time, defense)
   if h.cycleAt and time - h.cycleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.cycle, h.previousCycle, h.cycleAt = nil, nil, nil end
   local me = localPlayer.UserId
   if h.target ~= s.targetId then
+    if h.targetAt and time > h.targetAt then h.lastLeg = time - h.targetAt end
+    h.targetAt = time
     if h.target and (h.target == me or s.targetId == me) then h.exchangeAt = time end
     if s.targetId == me then
       if h.inboundAt and h.departedAt then
@@ -304,6 +291,14 @@ local function observePressure(state, s, time, defense)
   end
   if h.sampleAt and time - h.sampleAt > CONFIG.ACTIVATION.PRESSURE_MAX_AGE then h.sampleAt, h.headroom, h.previousHeadroom, h.parryDistance, h.idealDistance = nil, nil, nil, nil, nil end
   local sample = defense and defense.lastAcceptedSample
+  if sample and finite(sample.distance) and finite(sample.speed) then
+    local physics = gameInfo.getDefensePhysics()
+    local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
+    local grace = physics and finite(physics.grace) and physics.grace or 0.02
+    sample = table.clone(sample)
+    sample.headroom = math.max(0, sample.distance - kill) / math.max(1, sample.speed, sample.closingSpeed or 0)
+      + grace - (defense and finite(defense.ping) and math.max(0, defense.ping) or 0)
+  end
   if
     sample
     and sample.ball == s.ball
@@ -319,14 +314,16 @@ local function observePressure(state, s, time, defense)
   end
   return h
 end
-local function deathRisk(state, s, time)
+local function deathRisk(state, s, time, cd)
   local physics = gameInfo.getDefensePhysics(); local kill = physics and finite(physics.killRadius) and physics.killRadius or 4
-  local grace = physics and finite(physics.grace) and physics.grace or 0.02; local defense = autoParry and autoParry.getDefenseState(s)
-  local response = defense and defense.responseBudget or math.max(1 / CONFIG.ACTIVATION.PRESSURE_REFERENCE_CPS, 0.05 + 2 / 60 + networkLatency())
-  if not finite(response) then response = 1 / CONFIG.ACTIVATION.PRESSURE_REFERENCE_CPS end
-  response = math.max(1 / 25, response)
-  if defense and defense.blocking then response += math.max(0, defense.cooldownRemaining or 0) end
-  if defense and finite(defense.retryAt) then response = math.max(response, defense.retryAt - time + networkLatency()) end
+  local grace = physics and finite(physics.grace) and physics.grace or 0.02; local defense = autoParry and autoParry.getPressureDetector()
+  local ping = defense and finite(defense.ping) and math.max(0, defense.ping) or 0
+  local frame = defense and finite(defense.frameTime) and math.max(0, defense.frameTime) or 1 / 60
+  local sync = defense and finite(defense.syncInterval) and math.max(0, defense.syncInterval) or 0.05
+  local runtimeBudget = math.max(1 / 25, frame + sync + ping + 1 / 60)
+  local response = math.max(1 / CONFIG.ACTIVATION.PRESSURE_REFERENCE_CPS, runtimeBudget)
+  if cd and cd.blocking and finite(cd.remaining) then response += math.max(0, cd.remaining) end
+  if defense and finite(defense.retryAt) then response = math.max(response, defense.retryAt - time + ping) end
   local own, ownVelocity = state.root.Position, state.root.AssemblyLinearVelocity
   if not vector(ownVelocity) then ownVelocity = Vector3.zero end
   local speed = snapshotSpeed(s); local me = localPlayer.UserId
@@ -360,8 +357,7 @@ local function deathRisk(state, s, time)
     if not vector(otherVelocity) then otherVelocity = Vector3.zero end
     local delta = other - own; local separation = delta.Magnitude
     local closing = separation > 0 and -(otherVelocity - ownVelocity):Dot(delta) / separation or 0; local nextSeparation = math.max(0, separation - math.max(0, closing) * response)
-    local ownRange = gameInfo.getPlayerRawRadius(me, speed, false) or 8.5; local otherRange = gameInfo.getPlayerRawRadius(partner, speed, false) or 8.5
-    predictedCycle = math.max(1 / 25, 2 * math.max(0, nextSeparation - ownRange - otherRange) / math.max(1, math.min(600, speed + 24) + math.max(0, closing)))
+    predictedCycle = math.max(1 / 25, 2 * math.max(0, nextSeparation - kill) / math.max(1, math.min(600, speed + 24) + math.max(0, closing)))
   end
   if h.cycleAt and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE then
     nextCycle = h.cycle
@@ -374,17 +370,19 @@ local function deathRisk(state, s, time)
   local soon = deadline <= 2 * response + 1 / 25; local requiredInterval = predictedCycle
   if nextCycle then requiredInterval = math.min(requiredInterval or math.huge, nextCycle) end
   local exchangeEvidence = h.exchangeAt ~= nil and time >= h.exchangeAt and time - h.exchangeAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
-  local runtimeBudget = defense and defense.runtimeResponseBudget or (0.05 + 2 / 60 + networkLatency())
-  if not finite(runtimeBudget) then runtimeBudget = 0.05 + 2 / 60 end
-  local lateParry = nextHeadroom ~= nil and nextHeadroom <= response + 1 / 25; local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
-  local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE and h.returnLeg ~= nil and h.returnLeg <= response + 1 / 25
+  local lateParry = nextHeadroom ~= nil and nextHeadroom <= runtimeBudget + 1 / 25
+  local fastReturn = nextCycle ~= nil and nextCycle <= response + 1 / 25
+  local fastLeg = h.cycleAt ~= nil and time - h.cycleAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+    and h.returnLeg ~= nil and h.returnLeg <= response
+  local recentLeg = h.targetAt ~= nil and time - h.targetAt <= CONFIG.ACTIVATION.PRESSURE_MAX_AGE
+    and h.lastLeg ~= nil and h.lastLeg <= response
   local reason
-  if exchangeEvidence then
-    if soon and lateParry then reason = "parry_margin_shrinking"
-    elseif soon and fastReturn then reason = "return_demand_exceeds_ap"
-    elseif soon and fastLeg and predictedCycle and predictedCycle <= response + 1 / 25 then reason = "return_demand_exceeds_ap"
-    elseif s.targetId == me and deadline <= runtimeBudget + 1 / 25 then reason = "lethal_deadline" end
-    if defense and defense.enabled == false and soon then reason = "ap_unavailable" end
+  -- Activation candidate only. A late current AP dispatch is not by itself
+  -- evidence that the next exchange needs spam.
+  if exchangeEvidence and soon then
+    if fastReturn then reason = "return_demand_exceeds_ap"
+    elseif predictedCycle and predictedCycle <= response and (fastLeg or recentLeg) then reason = "return_demand_exceeds_ap"
+    elseif lateParry and predictedCycle and predictedCycle <= response + runtimeBudget then reason = "parry_margin_shrinking" end
   end
   return {
     exchangeEvidence = exchangeEvidence,
@@ -413,30 +411,7 @@ local function deactivationReason(state, s, time, cd)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
-  if state.risk and state.risk.risky then state.safeSince, state.recoveredSince = nil, nil; return nil end
-  local pressureActivation = state.reason == "lethal_deadline"
-    or state.reason == "parry_margin_shrinking"
-    or state.reason == "return_demand_exceeds_ap"
-    or state.reason == "ap_unavailable"
-  if pressureActivation and state.risk then
-    local r = state.risk; local comfortable = r.deadline > 2 * r.response + 1 / 25 and ((r.requiredCps or 0) < 1 / (1.5 * r.response) or r.deadline > 3 * r.response + 1 / 25)
-    if comfortable then
-      state.recoveredSince = state.recoveredSince or time
-      if time - state.recoveredSince >= CONFIG.ACTIVATION.PRESSURE_RELEASE_TIME then return "ap_recovered" end
-    else
-      state.recoveredSince = nil
-    end
-  end
-  if state.risk and state.risk.deadline < math.huge then
-    state.safeSince = nil
-  else
-    state.safeSince = state.safeSince or time
-    if time - state.safeSince >= 0.25 then return "threat_cleared" end
-  end
-  if not playerIsAlive(state.partner) then
-    local replacement = nearestPartner(state, 35)
-    if replacement then state.partner = replacement else return "opponent_left_or_died" end
-  end
+  if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   local opponent = playerPosition(state.partner)
   if not opponent then state.distanceSince = nil; return nil end
   local distance = (opponent - state.root.Position).Magnitude
@@ -568,6 +543,8 @@ local function chooseActivation(state, s, time)
     elseif not ballWindow(state, s, s.targetId) then state.gates.haunter = "haunter_ball_outside_window"
     else state.gates.haunter = "ready"; return haunter.reason, haunter.partner end
   end
+  local risk = state.risk
+  if risk and risk.risky and risk.partner then return risk.reason, risk.partner end
 end
 local function sequenceOrder(state, incoming)
   if incoming == nil then return "none" end
@@ -583,6 +560,7 @@ end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
   state.gates = {}; local cd = monitorCooldown(state)
+  if state.active and cd and cd.blocking == true then deactivate(state, "cooldown", time); return end
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
@@ -601,16 +579,15 @@ local function evaluate(state, s, time, packet)
     state.gates.common, state.lastGate = gate, gate; state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
-    if gate == "ball_reset" then resetTargets(state) end
-    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.pressure, state.risk, state.pressureEpoch = nil, nil, time end
+    if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
+    if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then
+      state.pressure, state.risk, state.pressureEpoch = nil, nil, time
+    end
     return
   end
-  state.lastValidAt = time; observeTarget(state, s, time)
-  state.risk = deathRisk(state, s, time); state.gates.risk = state.risk.reason or "ap_has_time"
-  if state.risk.risky and state.risk.partner then
-    state.safeSince = nil
-    if state.active then state.partner = state.risk.partner else activate(state, state.risk.reason or "death_risk", state.risk.partner, time, s) end
-  end
+  observeTarget(state, s, time)
+  state.risk = deathRisk(state, s, time, cd)
+  state.gates.risk = state.risk.reason or "ap_has_time"
   dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd)
@@ -699,7 +676,8 @@ end
 function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.Dash then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash; autoParry = deps.AutoParry
+  utils, gameInfo, clashStatsModule, cooldownInfo, dashInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown, deps.Dash
+  autoParry = deps.AutoParry
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   clashStats = clashStatsModule.get(); return true
@@ -751,8 +729,8 @@ function AutoSpam.bindCharacter(character)
 end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
-  detach("teardown"); clashStats = nil
-  autoParry = nil; utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo = nil, nil, nil, nil, nil, nil, nil, nil
+  detach("teardown"); clashStats = nil; autoParry = nil
+  utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo = nil, nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -783,16 +761,13 @@ function AutoSpam.canSend()
   local state = current
   if not state or not state.active then return false end
   local time = now(); local cd = monitorCooldown(state)
+  if cd and cd.blocking == true then deactivate(state, "cooldown", time); return false end
   if not state.active then return false end
   local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd)
   if stop then deactivate(state, stop, time); return false end
   local order = sequenceOrder(state, s and s.syncSequence)
   if order == "old" or order == "invalid" then return false end
-  local gate = sampleGate(state, s, time)
-  if gate == nil then state.lastValidAt = time; return true end
-  if gate == "ball_reset" or gate == "ball_paused" or gate == "player_died" or gate == "hub_inactive" then return false end
-  local transient = gate == "target_unknown" or gate == "snapshot_invalid" or gate == "snapshot_stale" or gate == "position_disagreement"
-  return transient and state.lastValidAt ~= nil and time - state.lastValidAt <= 0.1
+  return sampleGate(state, s, time) == nil
 end
 function AutoSpam.stopSpam(reason)
   if current then deactivate(current, reason or "stop_spam", now()) end
@@ -909,7 +884,7 @@ AutoSpam.__contract = {
       "getBallSpeedLimits",
       "getDefensePhysics",
     },
-    AutoParry = { "getDefenseState" },
+    AutoParry = { "getPressureDetector" },
     Cooldown = { "getDeflectCooldownState" },
     Dash = { "tick", "getEstimate" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
