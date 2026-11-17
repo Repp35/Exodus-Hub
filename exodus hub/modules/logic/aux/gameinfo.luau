@@ -5,8 +5,7 @@ local GameInfo = {}
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
-local receivedSequence
+local ballSync, geometry
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 local minimumSpeed, maximumSpeed, speedAt
@@ -68,7 +67,6 @@ minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function validBallSpeed(value) return finite(value) and value >= 0 and value <= 1000 end
 local function finiteVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
-local EMPTY_OPTIONS = {}
 local function invalidateSnapshotCache()
   snapshotCache, snapshotCacheAt = nil, -math.huge
 end
@@ -154,20 +152,7 @@ local function getReplicator()
   end
   return replicator
 end
-local function syncData(provider)
-  if provider == nil then provider = getReplicator() end
-  if packet and os.clock() - packetAt > CONFIG.PACKET_AGE then packet = nil end
-  if packet then
-    local sequence = provider and provider.hasState == true and provider.lastSeq
-    if type(sequence) ~= "number" or (packet.Sequence ~= sequence and (packet.Sequence - sequence) % 65536 < 32768) then return packet end
-    packet = nil
-  end
-  local sequence = provider and provider.hasState == true and provider.lastSeq
-  if lastSync and receivedSequence and (not finite(sequence) or (receivedSequence ~= sequence and (receivedSequence - sequence) % 65536 < 32768)) then return lastSync end
-  local data = provider and provider.hasState == true and provider.syncData or lastSync
-  if type(data) ~= "table" then data = provider and provider.syncData end
-  return type(data) == "table" and data or nil
-end
+local function syncData(provider) return ballSync and ballSync.getData(provider) or nil end
 
 -- targeting
 function GameInfo.getBallTargetAttribute() return world:GetAttribute("GameBallTarget") end
@@ -330,16 +315,25 @@ function GameInfo.stopMaintenance()
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
+  if
+    type(deps.BallSync) ~= "table"
+    or type(deps.BallSync.create) ~= "function"
+    or type(deps.DeflectGeometry) ~= "table"
+    or type(deps.DeflectGeometry.create) ~= "function"
+  then
+    return false, "dependências ausentes: BallSync ou DeflectGeometry"
+  end
   GameInfo.stopMaintenance(); utils = deps.Utils
-  players, world = utils.getPlayers(), utils.getWorkspace()
+  ballSync = deps.BallSync.create({ getReplicator = getReplicator, invalidateSnapshotCache = invalidateSnapshotCache, packetAge = CONFIG.PACKET_AGE })
+  geometry = deps.DeflectGeometry.create(GameInfo, CONFIG); players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
-  abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
-  receivedSequence = nil; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
-  trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil; trainingZone = nil
-  snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
-  minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
-  pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; return true
+  abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil
+  sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
+  trainingZone = nil; snapshotCache, snapshotCacheAt = nil, -math.huge
+  table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
+  errors = {}; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
+  return true
 end
 function GameInfo.getBall() return getBall() end
 function GameInfo.getBallPosition(value) return value.Position end
@@ -526,121 +520,10 @@ end
 function GameInfo.getFierceDeflectAbility() return getAbility(CONFIG.GAME_IDS.FIERCE, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent") end
 function GameInfo.getSyncData() return syncData() end
-local function syncSequence(current, provider)
-  if packet and current == packet then return packet.Sequence end
-  local sequence = provider and provider.hasState == true and provider.lastSeq or nil
-  if not finite(sequence) then return receivedSequence end
-  if receivedSequence and (receivedSequence - sequence) % 65536 < 32768 then return receivedSequence end
-  return sequence
-end
+local function syncSequence(current, provider) return ballSync.getSequence(current, provider) end
 function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
-function GameInfo.applyPacket(value)
-  if type(value) ~= "table" then return false end
-  if value.Speed ~= nil and not validBallSpeed(value.Speed) then return false end
-  if value.MaxSpeed ~= nil and not validBallSpeed(value.MaxSpeed) then return false end
-  if value.RealPosition ~= nil and not finiteVector(value.RealPosition) then return false end
-  local sequence = value.Sequence
-  if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
-  if receivedSequence ~= nil then
-    local delta = (sequence - receivedSequence) % 65536
-    if delta == 0 or delta >= 32768 then return false end
-  end
-  local provider = getReplicator(); local previous = provider and provider.hasState == true and provider.lastSeq
-  if finite(previous) and (sequence - previous) % 65536 >= 32768 then return false end
-  packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt
-  receivedSequence, lastSync = sequence, packet; invalidateSnapshotCache()
-  return true
-end
-local function decodeBallPacketFallback(value)
-  if typeof(value) ~= "buffer" or buffer.len(value) < 92 then return nil end
-  local flags = buffer.readu8(value, 0); local serverTime = buffer.readf64(value, 3)
-  local x, y, z = buffer.readf32(value, 11), buffer.readf32(value, 15), buffer.readf32(value, 19); local dx, dy, dz = buffer.readf32(value, 23), buffer.readf32(value, 27), buffer.readf32(value, 31)
-  local speed, accel, maximum = buffer.readf32(value, 35), buffer.readf32(value, 39), buffer.readf32(value, 43); local curve, curveMax = buffer.readf32(value, 47), buffer.readf32(value, 51)
-  local target, highlight, possessor = buffer.readf64(value, 55), buffer.readf64(value, 63), buffer.readf64(value, 83)
-  if
-    not finite(serverTime)
-    or not finite(x)
-    or not finite(y)
-    or not finite(z)
-    or not finite(dx)
-    or not finite(dy)
-    or not finite(dz)
-    or not validBallSpeed(speed)
-    or not finite(accel)
-    or not validBallSpeed(maximum)
-    or not finite(curve)
-    or curve < 0
-    or not finite(curveMax)
-    or curveMax < 0
-    or not finite(target)
-    or not finite(highlight)
-    or not finite(possessor)
-  then
-    return nil
-  end
-  return {
-    seq = buffer.readu16(value, 1),
-    serverTime = serverTime,
-    position = Vector3.new(x, y, z),
-    direction = Vector3.new(dx, dy, dz),
-    speed = speed,
-    accel = accel,
-    maxSpeed = maximum,
-    targetId = target,
-    highlightId = highlight,
-    possessorId = possessor,
-    teleported = bit32.btest(flags, 1),
-    locked = bit32.btest(flags, 2),
-    grace = bit32.btest(flags, 4),
-    oldGrace = bit32.btest(flags, 8),
-    possessed = bit32.btest(flags, 32),
-    forceDirection = bit32.btest(flags, 16),
-    curveTime = curve,
-    curveTimeMax = curveMax,
-    curveAxis = Vector3.new(buffer.readf32(value, 71), buffer.readf32(value, 75), buffer.readf32(value, 79)),
-    bouncesLeft = buffer.readu8(value, 91),
-    flightTime = buffer.len(value) >= 96 and buffer.readf32(value, 92) or nil,
-    noSpeedFeel = bit32.btest(flags, 128),
-  }
-end
-function GameInfo.decodeBallPacket(value)
-  local ok, provider = pcall(getReplicator)
-  local decoded
-  if ok and provider and type(provider.Decode) == "function" then
-    local success, result = pcall(provider.Decode, provider, value)
-    if success then decoded = result else decoded = decodeBallPacketFallback(value) end
-  else
-    decoded = decodeBallPacketFallback(value)
-  end
-  if type(decoded) ~= "table" then decoded = decodeBallPacketFallback(value) end
-  if type(decoded) ~= "table" then return nil end
-  if not finiteVector(decoded.position) or not finiteVector(decoded.direction) or not validBallSpeed(decoded.speed) then return nil end
-  if decoded.maxSpeed ~= nil and not validBallSpeed(decoded.maxSpeed) then return nil end
-  return {
-    Sequence = decoded.seq,
-    ServerTime = decoded.serverTime,
-    TeleportSequence = decoded.seq,
-    Teleported = decoded.teleported,
-    Locked = decoded.locked,
-    Grace = decoded.grace,
-    OldGrace = decoded.oldGrace,
-    TargetPlayerID = decoded.targetId,
-    HighlightTargetPlayerID = decoded.highlightId,
-    PossessorId = decoded.possessed and decoded.possessorId or 0,
-    RealPosition = decoded.position,
-    ForcedDirection = decoded.direction,
-    Speed = decoded.speed,
-    Accel = decoded.accel,
-    MaxSpeed = decoded.maxSpeed,
-    ForceDirection = decoded.forceDirection,
-    CurveTime = decoded.curveTime,
-    CurveTimeMax = decoded.curveTimeMax,
-    CurveAxis = decoded.curveAxis,
-    BouncesLeft = decoded.bouncesLeft,
-    FlightTime = decoded.flightTime,
-    NoSpeedFeel = decoded.noSpeedFeel,
-  }
-end
+function GameInfo.applyPacket(value) return ballSync.applyPacket(value) end
+function GameInfo.decodeBallPacket(value) return ballSync.decodeBallPacket(value) end
 function GameInfo.getTargetId() return targetId(syncData()) end
 
 -- snapshots
@@ -700,6 +583,7 @@ local function snapshot(time)
   end
   if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
   local target = targetId(sync); local frozen = GameInfo.getBallFrozen() == true
+  local syncReceivedAt = ballSync.getReceivedAt()
   local result = {
     schema = 2,
     generatedAt = time,
@@ -795,32 +679,7 @@ function GameInfo.isSnapshotValid(value)
     and finite(value.targetId)
     and type(value.targeted) == "boolean"
 end
-function GameInfo.applySync(value)
-  local explicit = value ~= nil
-  if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
-  local provider = getReplicator()
-  if type(value) ~= "table" then value = provider and provider.syncData end
-  if type(value) ~= "table" then return nil end
-  if value.Speed ~= nil and not validBallSpeed(value.Speed) then return nil end
-  if value.MaxSpeed ~= nil and not validBallSpeed(value.MaxSpeed) then return nil end
-  if value.RealPosition ~= nil and not finiteVector(value.RealPosition) then return nil end
-  if value.Sequence ~= nil and not finite(value.Sequence) then return nil end
-  local sequence = value.Sequence or (provider and provider.hasState == true and provider.lastSeq)
-  if finite(sequence) then
-    if sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return nil end
-    if receivedSequence ~= nil then
-      local delta = (sequence - receivedSequence) % 65536
-      if delta >= 32768 then return nil end
-      if delta == 0 then return nil end
-    end
-    receivedSequence = sequence
-  elseif not explicit then
-    return syncData(provider)
-  end
-  lastSync, packet, syncReceivedAt = table.clone(value), nil, os.clock()
-  if finite(sequence) then lastSync.Sequence = sequence end
-  invalidateSnapshotCache(); return lastSync
-end
+function GameInfo.applySync(value) return ballSync.applySync(value) end
 function GameInfo.installBallWatcher(track)
   if type(track) ~= "function" then return false, "trackConnection invalido" end
   track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
@@ -887,76 +746,9 @@ function GameInfo.getBallFrozen()
   if not ballData then return nil end
   return ballData:GetAttribute("Frozen") == true
 end
-function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyOverride, options)
-  if not validBallSpeed(speed) then return nil end
-  options = type(options) == "table" and options or EMPTY_OPTIONS; local includeResilience = options.resilience ~= false
-  local range = includeResilience and GameInfo.getDeflectRange() or CONFIG.RANGE_BASE
-  if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
-  if window == "ap" then
-    local low, high = GameInfo.getBallSpeedLimits()
-    if not finite(low) or not finite(high) or high <= low then return nil end
-    local fraction = math.clamp((speed - low) / (high - low), 0, 1); local actual = GameInfo.getDeflectWindow(speed, includeResilience)
-    if not finite(actual) then return nil end
-    window = math.max(
-      0,
-      actual
-        + (CONFIG.AP_WINDOW_LOW_SPEED - CONFIG.WINDOW_BASE) * (1 - fraction)
-        + (CONFIG.AP_WINDOW_HIGH_SPEED - (CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD)) * fraction
-    )
-  elseif not finite(window) then
-    window = GameInfo.getDeflectWindow(speed, includeResilience)
-    if finite(window) then local minimum = finite(options.minimumWindow) and math.max(0, options.minimumWindow) or 0; window = math.max(window, minimum) end
-  end
-  if not finite(window) or window < 0 then return nil end
-  local latency = options.ping == false and 0 or (finite(latencyOverride) and latencyOverride or GameInfo.getAveragePing())
-  if not finite(latency) or latency < 0 then latency = 0 end
-  factor = finite(factor) and math.max(0, factor) or 1; local base = range
-  return {
-    fullRadius = base + speed * (window + latency) * factor,
-    pureRadius = CONFIG.RANGE_BASE,
-    noWindowParryRadius = range,
-    resilienceBonus = range - CONFIG.RANGE_BASE,
-    pingRadius = speed * latency * factor,
-    deflectWindow = window,
-    effectiveWindow = (window + latency) * factor,
-    leadTime = window + latency,
-    windowFactor = factor,
-  }
-end
-function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride)
-  if not validBallSpeed(speed) then return nil end
-  local low, high = GameInfo.getBallSpeedLimits()
-  if not finite(low) or not finite(high) or high <= low then return nil end
-  local window = GameInfo.getDeflectWindow(speed, false); local range = GameInfo.getDeflectRange()
-  if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
-  if not finite(window) or window < 0 then return nil end
-  local latency = finite(latencyOverride) and math.max(0, latencyOverride) or GameInfo.getAveragePing()
-  if not finite(latency) then latency = 0 end
-  local factorValue = finite(factor) and math.clamp(factor, 0, 1) or 0.3; local frame = finite(frameLead) and math.clamp(frameLead, 0, 0.15) or 1 / 60
-  local networkLead = latency + frame; local lead = latency + math.min(window * factorValue + frame, window * 0.95)
-  return {
-    fullRadius = range + CONFIG.AUTO_PARRY_TRIGGER_PADDING + speed * lead,
-    pureRadius = CONFIG.RANGE_BASE,
-    noWindowParryRadius = range,
-    resilienceBonus = range - CONFIG.RANGE_BASE,
-    pingRadius = speed * latency,
-    deflectWindow = window,
-    effectiveWindow = lead,
-    leadTime = lead,
-    serverLeadTime = window + latency,
-    windowFactor = factorValue,
-    triggerPadding = CONFIG.AUTO_PARRY_TRIGGER_PADDING,
-    networkLead = networkLead,
-    uplinkLead = latency,
-    frameLead = frame,
-    autoParry = true,
-    killRadius = 4,
-  }
-end
-function GameInfo.getProjectedDeflectRadius(geometry, closingSpeed)
-  if type(geometry) ~= "table" or not finite(geometry.noWindowParryRadius) or not finite(geometry.effectiveWindow) or not finite(closingSpeed) then return nil end
-  return geometry.noWindowParryRadius + math.max(0, closingSpeed) * geometry.effectiveWindow
-end
+function GameInfo.getDeflectGeometry(...) return geometry.getDeflectGeometry(...) end
+function GameInfo.getAutoParryGeometry(...) return geometry.getAutoParryGeometry(...) end
+function GameInfo.getProjectedDeflectRadius(...) return geometry.getProjectedDeflectRadius(...) end
 function GameInfo.isBallWithinDeflectRadius(factor)
   local snapshot = GameInfo.getSnapshotAt()
   if not GameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false end
@@ -1010,8 +802,14 @@ end
 
 -- contract
 GameInfo.__contract = {
-  requires = { Utils = "utils" },
+  requires = {
+    Utils = "utils",
+    BallSync = "ballsync",
+    DeflectGeometry = "deflectgeometry",
+  },
   requiresMethods = {
+    BallSync = { "create" },
+    DeflectGeometry = { "create" },
     Utils = {
       "now",
       "apiVersion",

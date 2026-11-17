@@ -46,3 +46,21 @@ Execute a suíte Python em `exodus hub/indeed/tests`, os harnesses
 ícones e `formatter.py --check`. Os harnesses executam Lua com serviços simulados;
 eles verificam regras de lifecycle e contratos, sem substituir a validação do
 executor.
+
+## GameInfo e estado da bola
+
+`gameinfo.luau` mantém a API pública existente e adapta os objetos e serviços do
+jogo. Duas dependências internas são resolvidas pelo contrato e pelo manifesto:
+
+- `logic/aux/ballsync.luau`: fábrica por sessão, validação e decodificação dos
+  pacotes, sequência de 16 bits, seleção entre pacote recebido e replicador,
+  expiração e instante de recebimento. A aplicação de dados aceitos invalida o
+  cache de snapshots através de um callback. Não instala conexões adicionais.
+- `logic/aux/deflectgeometry.luau`: cálculo de raios, antecipação e projeção de
+  defesa, usando a configuração central e as consultas do GameInfo. Não guarda
+  estado da bola nem abre conexões.
+
+GameInfo continua responsável por treino, descoberta de objetos e habilidades,
+conexões, snapshots e integração com a física fornecida pelo jogo. Cada setup
+cria uma instância nova do estado de pacotes; snapshots e consumidores consultam
+essa mesma instância. Os consumidores de GameInfo não precisam mudar suas APIs.

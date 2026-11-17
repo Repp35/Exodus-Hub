@@ -25,6 +25,12 @@ def run_case(script):
 
 def module(path):
     source = (ROOT / path).read_text()
+    if path == 'aux/gameinfo.luau':
+        # Compose real dependencies for fixtures that instantiate GameInfo directly.
+        dependencies = (module('aux/ballsync.luau').replace('local mod=', 'local TestBallSync=', 1)
+                        + module('aux/deflectgeometry.luau').replace('local mod=', 'local TestGeometry=', 1))
+        source = dependencies + source.replace('function GameInfo.setup(deps)',
+            'function GameInfo.setup(deps)\n deps.BallSync=TestBallSync; deps.DeflectGeometry=TestGeometry')
     if not os.environ.get('LUAU_BIN'):
         source = re.sub(
             r'([A-Za-z_][\w.]*) ([+\-*/%])= ([^;\n]+?)(?=;|\n| end| else\b)',

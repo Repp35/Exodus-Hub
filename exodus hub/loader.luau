@@ -107,6 +107,8 @@ local CONFIG = {
     { name = "uinotifications", path = "modules/front/app/notification-policy.luau" },
     { name = "uiactions", path = "modules/front/app/actions.luau" },
     { name = "utils", path = "modules/logic/aux/utils.luau" },
+    { name = "ballsync", path = "modules/logic/aux/ballsync.luau" },
+    { name = "deflectgeometry", path = "modules/logic/aux/deflectgeometry.luau" },
     { name = "gameinfo", path = "modules/logic/aux/gameinfo.luau" },
     { name = "cooldown", path = "modules/logic/aux/cooldown.luau" },
     { name = "clashstats", path = "modules/logic/aux/clashstats.luau" },

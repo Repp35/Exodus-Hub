@@ -261,7 +261,7 @@ cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 """)
 
     def test_single_window_exact_boundaries_and_speed_limits(self):
-        geometry_source = (ROOT / "aux/gameinfo.luau").read_text()
+        geometry_source = (ROOT / "aux/deflectgeometry.luau").read_text().replace("function Geometry.", "function GameInfo.")
         geometry_source = geometry_source[geometry_source.index("function GameInfo.getAutoParryGeometry("):geometry_source.index("function GameInfo.getProjectedDeflectRadius(")]
         for speed, window in ((16, 0.85), (308, 0.525), (600, 0.2)):
             with self.subTest(speed=speed):
