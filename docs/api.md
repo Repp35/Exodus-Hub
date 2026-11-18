@@ -101,8 +101,10 @@ o alvo de rede é um oponente vivo. Não há corte fixo de 5 studs: o raio de pe
 parte do alcance bruto desse oponente (incluindo resiliência) e acrescenta a
 distância percorrida pela bola na janela efetiva de antecipação e na latência.
 A janela usa fator 0,3 e é limitada pelo orçamento de 240 ms mais latência.
-A devolução também precisa ter TTI inferior a esse orçamento. A bola deve chegar
-ao alcance do oponente dentro do orçamento; fora do raio precisa se aproximar.
+A devolução também precisa ter TTI inferior a esse orçamento. A rajada só começa quando falta até a menor entre a janela efetiva e 80 ms,
+mais latência, para a bola entrar no alcance do oponente. O orçamento de 240 ms
+continua avaliando o risco da devolução, sem iniciar a rajada com tanta antecedência.
+Fora do raio, a bola precisa se aproximar.
 
 `GameInfo.getDeflectTargetPrediction(id)` compara os candidatos pela direção da
 câmera replicada do oponente, com fallback de orientação do personagem, como a

@@ -12,6 +12,7 @@ local CONFIG = {
     RETURN = 0.36,
     EXTREME_TARGET_DELAY = 0.24,
     EXTREME_WINDOW_FACTOR = 0.3,
+    EXTREME_MAX_LEAD = 0.08,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
     CLOSE_OPPONENT_DISTANCE = 16,
@@ -490,8 +491,8 @@ local function extremeReturn(state, s, time)
   local distance = delta.Magnitude; local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0
   local contactRadius = deflectGeometry.addLatencyRadius(otherRadius, speed, latency)
   if distance > contactRadius and closing <= 0 then return nil end
-  local entry = distance <= contactRadius and 0 or (distance - contactRadius) / closing
-  if entry > budget or distance > contactRadius + speed * budget then return nil end
+  local entry = distance <= contactRadius and 0 or (distance - contactRadius) / closing; local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency)
+  if entry > lead or distance > contactRadius + speed * lead then return nil end
   return partner
 end
 local function chooseActivation(state, s, time)

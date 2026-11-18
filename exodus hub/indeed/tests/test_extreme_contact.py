@@ -45,6 +45,13 @@ packet(99,0,30)
 assert(ap.isActive()==({speed}==600),'anticipation still used fixed studs')
 ''')
 
+    def test_waits_until_opponent_defense_is_imminent_before_burst(self):
+        check('''
+other.root.Position=v(20);snap.syncSpeed=600;snap.speed=600;snap.velocity=v(-600)
+packet(99,0,100);assert(not ap.isActive(),'burst started over 100ms before opponent contact')
+packet(99,.01,50);assert(ap.isActive(),'tighter lead lost imminent return protection')
+''')
+
     def test_wrong_facing_or_ambiguous_selection_blocks_and_cancels(self):
         for target in ('99','nil'):
             with self.subTest(target=target):
