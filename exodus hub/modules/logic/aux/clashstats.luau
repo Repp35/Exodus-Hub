@@ -2,7 +2,7 @@
 
 -- module
 local ClashStats = {}
-local utils, gameInfo, players, localPlayer
+local utils, gameInfo, players, localPlayer, deflectGeometry
 local stats
 
 -- configuration
@@ -45,13 +45,14 @@ end
 -- lifecycle
 function ClashStats.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes" end
-  ClashStats.teardown(); utils, gameInfo = deps.Utils, deps.GameInfo
+  if type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
+  ClashStats.teardown(); utils, gameInfo, deflectGeometry = deps.Utils, deps.GameInfo, deps.DeflectGeometry
   players, localPlayer = utils.getPlayers(), utils.getLocalPlayer()
   if not players or not localPlayer then return false, "serviços indisponíveis" end
   stats = nil; return true
 end
 function ClashStats.teardown()
-  stats = nil; utils, gameInfo, players, localPlayer = nil, nil, nil, nil
+  stats = nil; utils, gameInfo, players, localPlayer, deflectGeometry = nil, nil, nil, nil, nil
 end
 
 -- recording
@@ -63,7 +64,19 @@ function ClashStats.finish(reason, time)
 end
 function ClashStats.begin(partner, time)
   if stats and not stats.frozen then ClashStats.finish("novo clash", stats.lastObserved) end
+  local previous = stats
+    and {
+      ball = stats.incomingBall,
+      target = stats.travelObservedTarget,
+      last = stats.lastIncomingTTI,
+      penultimate = stats.previousIncomingTTI,
+      at = stats.incomingRecordedAt,
+    }
   stats = stats or {}; table.clear(stats)
+  if previous then
+    stats.incomingBall, stats.travelObservedTarget = previous.ball, previous.target
+    stats.lastIncomingTTI, stats.previousIncomingTTI, stats.incomingRecordedAt = previous.last, previous.penultimate, previous.at
+  end
   stats.partnerId, stats.cps, stats.lastObserved = partner, 0, time; stats.startedAt, stats.startedDate = time, os.date("!%Y-%m-%d %H:%M:%S")
   stats.totalSwitches, stats.frozen = 0, false
 end
@@ -72,7 +85,7 @@ end
 function ClashStats.observe(session, snapshot, time, fresh)
   local partner = session.active and session.partner
   if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end
-  local target = userId(snapshot.targetId)
+  local target = userId(snapshot.exchangeTargetId or snapshot.targetId)
   if
     not partner
     and stats
@@ -98,12 +111,28 @@ function ClashStats.observe(session, snapshot, time, fresh)
   if observeTarget and target then
     local me = localPlayer.UserId
     if fresh then
-      local previousTarget = stats.travelObservedTarget
-      if previousTarget and previousTarget ~= target then
-        if stats.travelTarget == previousTarget and stats.travelStartedAt then stats.lastTravelTime, stats.lastTravelTarget = math.max(0, time - stats.travelStartedAt), previousTarget
-        else stats.lastTravelTime, stats.lastTravelTarget = nil, nil end
-        if (previousTarget == me or previousTarget == partner) and (target == me or target == partner) then stats.travelTarget, stats.travelStartedAt = target, time
-        else stats.travelTarget, stats.travelStartedAt = nil, nil end
+      if stats.incomingBall ~= snapshot.ball or snapshot.teleported or snapshot.resetting then
+        stats.travelObservedTarget = nil
+        if stats.incomingBall ~= snapshot.ball then stats.lastIncomingTTI, stats.previousIncomingTTI, stats.incomingRecordedAt = nil, nil, nil end
+        stats.incomingBall = snapshot.ball
+      end
+      if target == me and stats.travelObservedTarget ~= me and not snapshot.teleported and not snapshot.resetting and not snapshot.locked then
+        local root = session.root; local position = typeof(snapshot.realPosition) == "Vector3" and snapshot.realPosition or snapshot.position
+        local velocity = snapshot.velocity
+        local tti
+        if root and root.Parent and typeof(position) == "Vector3" and typeof(velocity) == "Vector3" then
+          local delta = root.Position - position; local distance = delta.Magnitude
+          local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics()); local remaining = math.max(0, distance - kill)
+          local rootVelocity = typeof(root.AssemblyLinearVelocity) == "Vector3" and root.AssemblyLinearVelocity or Vector3.zero
+          local closing = distance > 0 and (velocity - rootVelocity):Dot(delta) / distance or 0
+          if remaining == 0 then
+            tti = 0
+          elseif finite(closing) and closing > 0 then
+            local acceleration = finite(snapshot.syncAcceleration) and math.max(0, snapshot.syncAcceleration) or 0
+            tti = acceleration > 0.0001 and 2 * remaining / (closing + math.sqrt(closing * closing + 2 * acceleration * remaining)) or remaining / closing
+          end
+        end
+        stats.previousIncomingTTI, stats.lastIncomingTTI = stats.lastIncomingTTI, finite(tti) and tti >= 0 and tti or nil; stats.incomingRecordedAt = time
       end
       stats.travelObservedTarget = target
     end
@@ -140,11 +169,8 @@ function ClashStats.observe(session, snapshot, time, fresh)
 end
 function ClashStats.freeze(playerId, session)
   if not stats or stats.frozen or (playerId ~= localPlayer.UserId and playerId ~= stats.partnerId) then return end
-  local time = utils.now()
-  if stats.travelTarget == playerId and stats.travelStartedAt then
-    stats.fatalTravelTime = math.max(0, time - stats.travelStartedAt); stats.penultimateTravelTime, stats.penultimateTarget = stats.lastTravelTime, stats.lastTravelTarget
-  end
-  stats.deceasedId = playerId; local sample = stats.endSample
+  local time = utils.now(); stats.deceasedId = playerId
+  local sample = stats.endSample
   if sample and session and session.root and session.root.Parent then
     local other = gameInfo.getPlayerMotion(stats.partnerId); sample.own, sample.opponent = session.root.Position, other
     if typeof(other) == "Vector3" then sample.distance = (other - sample.own).Magnitude end
@@ -171,25 +197,23 @@ function ClashStats.getStatus()
     speed = stats.speed,
     frozen = stats.frozen,
     duration = duration,
-    travelTarget = stats.travelTarget,
-    travelElapsed = not stats.frozen and finite(stats.travelStartedAt) and math.max(0, utils.now() - stats.travelStartedAt) or nil,
-    travelTargetName = stats.travelTarget and (stats.travelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
+    lastIncomingTTI = stats.lastIncomingTTI,
+    previousIncomingTTI = stats.previousIncomingTTI,
+    incomingRecordedAt = stats.incomingRecordedAt,
     deceasedName = stats.deceasedId and (stats.deceasedId == localPlayer.UserId and "You" or "Opponent") or nil,
-    travelStartedAt = not stats.frozen and stats.travelStartedAt or nil,
-    lastTravelTime = stats.lastTravelTime,
-    lastTravelTarget = stats.lastTravelTarget,
-    lastTravelTargetName = stats.lastTravelTarget and (stats.lastTravelTarget == localPlayer.UserId and "You" or "Opponent") or nil,
-    fatalTravelTime = stats.fatalTravelTime,
-    penultimateTravelTime = stats.penultimateTravelTime,
-    penultimateTarget = stats.penultimateTarget,
     deceasedId = stats.deceasedId,
   }
 end
 
 -- contract
 ClashStats.__contract = {
-  requires = { Utils = "utils", GameInfo = "gameinfo" },
+  requires = {
+    Utils = "utils",
+    GameInfo = "gameinfo",
+    DeflectGeometry = "deflectgeometry",
+  },
   requiresMethods = {
+    DeflectGeometry = { "getKillRadius", "getDefensePhysics" },
     Utils = { "getLocalPlayer", "getPlayers", "now" },
     GameInfo = { "getClashContext", "getPlayerMotion" },
   },

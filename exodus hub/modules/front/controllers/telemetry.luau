@@ -173,6 +173,10 @@ function Controller.create(context)
     data.autoSpam = status; local peak = type(data.ap) == "table" and data.ap.maxObservedCps
     if finite(peak) and peak > 0 and (not lastPeak or peak > lastPeak) then lastPeak = peak end
     data.ap = { maxObservedCps = lastPeak }; local stats = type(status.clashStats) == "table" and status.clashStats or {}
+    if finite(stats.incomingRecordedAt) then
+      lastTravel.incomingRecordedAt, lastTravel.lastIncomingTTI, lastTravel.previousIncomingTTI =
+        stats.incomingRecordedAt, stats.lastIncomingTTI, stats.previousIncomingTTI
+    end
     if finite(stats.travelElapsed) and stats.travelElapsed >= 0 and validText(stats.travelTargetName) then
       lastTravel.travelElapsed, lastTravel.travelTargetName = stats.travelElapsed, stats.travelTargetName
     end

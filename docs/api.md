@@ -94,6 +94,20 @@ A autorização de alvo não ignora alcance, cooldown, congelamento ou personage
 morto. As leituras compartilham o cache curto de GameInfo, sem varrer a árvore
 inteira do jogo a cada frame.
 
+## TTI recebido no clash
+
+ClashStats registra `lastIncomingTTI` e `previousIncomingTTI` ao receber uma troca
+real de alvo para o jogador local; frames ou pacotes repetindo o mesmo alvo não
+refazem a amostra. `incomingRecordedAt` identifica a medição. O painel Travel
+mostra essas duas estimativas em milissegundos, inclusive após a morte.
+
+O TTI é estimado no recebimento pela distância até o raio de impacto, velocidade
+de aproximação relativa ao jogador e aceleração positiva disponível. Não é um
+cronômetro de tempo como alvo, nem o intervalo entre dois deflects. Trajetórias
+sem aproximação válida ficam indisponíveis, sem produzir infinito. Curvas e
+mudanças posteriores de velocidade podem alterar o tempo efetivo de impacto.
+Reiniciar o AutoSpam preserva as últimas amostras da mesma bola.
+
 ## AutoSpam
 
 O manual é independente. A ativação automática usa:

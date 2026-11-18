@@ -91,6 +91,14 @@ tick();assert(label('APMaxCps').Visible);empty('ClashDistance')
 deps.AutoSpam.getStatus=function() return {clashStats={endSample={distance=13}}} end
 tick();assert(label('ClashDistance').Text=='Distance: 13.0 studs')''')
 
+    def test_latest_and_previous_incoming_tti_are_fixed_after_death(self):
+        self.check('''status={clashStats={incomingRecordedAt=10,lastIncomingTTI=.3,previousIncomingTTI=.1,frozen=true}}
+tick();local saved=label('ClashTravelTime').Text
+assert(saved=='Last target TTI: 300 ms\\nPrevious target TTI: 100 ms')
+tm=tm+60;tick();assert(label('ClashTravelTime').Text==saved)
+status={};tick();assert(label('ClashTravelTime').Text==saved)
+''')
+
     def test_travel_uses_collected_elapsed_not_ui_clock(self):
         self.check('''status={clashStats={travelElapsed=.123,travelTargetName='You'}}
 tick();assert(label('ClashTravelTime').Text=='Target (You): 123 ms')
