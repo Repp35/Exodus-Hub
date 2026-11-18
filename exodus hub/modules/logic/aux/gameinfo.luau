@@ -460,6 +460,13 @@ function GameInfo.getGameContext()
   }
 end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
+function GameInfo.getNativeButtonAnimations()
+  local root = ts(); local module = child(child(root, "UI"), "ButtonAnimations")
+  if not module then return nil end
+  local value = load(module, "ButtonAnimations"); local animations = value and value.ButtonAnimations
+  if type(animations) == "table" and type(animations.Bind) == "function" and type(animations.Unbind) == "function" then return animations end
+  return nil
+end
 function GameInfo.getAbilityAvailability(name)
   local ids = { dark = CONFIG.GAME_IDS.DARK, dash = CONFIG.GAME_IDS.DASH, fierce = CONFIG.GAME_IDS.FIERCE }; local labels = { dark = "Dark Seal", dash = "Dash", fierce = "Fierce Deflect" }
   local id = ids[name]
@@ -951,6 +958,7 @@ GameInfo.__contract = {
     "getAveragePing",
     "areAbilitiesEnabled",
     "getAbilityAvailability",
+    "getNativeButtonAnimations",
     "observeAbilityMode",
     "getPlayerDistance",
     "getPlayerMotion",
