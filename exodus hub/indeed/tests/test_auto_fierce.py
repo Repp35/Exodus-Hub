@@ -11,13 +11,13 @@ local enabled,active,abilities=true,true,true
 local player={UserId=42}; local ball={}
 local snap={ball=ball,mode='match',syncAt=tm,targetId=42}
 local fresh,valid,frozen=true,true,false
-local cd={source='local',blocking=true,blockingSince=10,episode=1,miss=false}
+local cd={source='local',blocking=true,blockingSince=10,episode=1,miss=false,remaining=1}
 local sent,begun,cancelled,manual=0,0,0,0
 local stoppedAuto,stoppedAll=0,0
 local ability={Cooldown=0,ActivateAndBlock=function() manual=manual+1 end}
 local original=ability.ActivateAndBlock
 local approaching,distance=true,10
-local killTime,entry,rawRadius
+local killTime,entry,rawRadius=.2,nil,nil
 local window,ping=0.2,0.05
 local inClash=false
 local beforeGuard,failSend
@@ -216,12 +216,24 @@ cd.remaining=.001; killTime=.3
 step(10.02); assert(sent==0,'Fierce spent despite cooldown recovering before danger')
 ''')
 
-    def test_stationary_ball_inside_raw_range_still_allows_rescue(self):
+    def test_stationary_ball_inside_raw_range_does_not_spend_fierce(self):
         self.check('''
 approaching=false; distance=6; rawRadius=8.5; frozen=nil
 cd.miss=true; cd.windowExpired=true; inClash=true
-step(10.1); assert(sent==1)
+step(10.1); assert(sent==0)
 ''')
+
+    def test_miss_requires_danger_before_cooldown_recovers(self):
+        self.check('''
+inClash=true; cd.miss=true; cd.windowExpired=true; cd.windowEndsAt=10.01
+cd.remaining=.1; killTime=1; step(10.1); assert(sent==0,'slow ball spent Fierce')
+killTime=nil; step(10.2); assert(sent==0,'unknown danger spent Fierce')
+killTime=.08; snap.resetting=true; step(10.3); assert(sent==0,'reset ball spent Fierce')
+snap.resetting=false; step(10.4); assert(sent==1,'imminent danger failed to trigger')
+''')
+
+    def test_danger_is_rechecked_before_send(self):
+        self.check("beforeGuard=function() killTime=2 end; step(10.5); assert(sent==0)")
 
     def test_unavailable_or_dead_owner_cannot_spend_fierce(self):
         for method in ('IsOwnerAlive', 'IsAvailable'):

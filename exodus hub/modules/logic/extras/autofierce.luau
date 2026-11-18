@@ -57,7 +57,16 @@ local function bindManualFierce()
 end
 local function validTargetSnapshot(now)
   local snapshot = type(gameInfo.getParrySnapshot) == "function" and gameInfo.getParrySnapshot(now) or gameInfo.getSnapshotAt(now)
-  if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked or snapshot.targetUncertain then return nil end
+  if
+    not gameInfo.isSnapshotValid(snapshot)
+    or snapshot.teleported
+    or snapshot.locked
+    or snapshot.resetting
+    or snapshot.ballCanMove == false
+    or snapshot.targetUncertain
+  then
+    return nil
+  end
   if localUserId == nil or snapshot.targetId ~= localUserId or gameInfo.getBallFrozen() == true then return nil end
   if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or now < snapshot.syncAt or now - snapshot.syncAt > CONFIG.SYNC_MAX_AGE then return nil end
   return snapshot
@@ -65,7 +74,7 @@ end
 local function incomingInWindow(snapshot, now)
   local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR)
   if not timing or not finite(timing.distance) or not finite(timing.triggerDistance) or timing.distance > timing.triggerDistance then return nil end
-  local inside = finite(timing.noWindowParryRadius) and timing.distance <= timing.noWindowParryRadius; return (timing.approaching or inside) and timing or nil
+  return timing.approaching and timing or nil
 end
 local function sustainedCooldown(cooldown, now, timing)
   if not cooldown or cooldown.blocking ~= true then return false end
@@ -109,10 +118,13 @@ end
 local function update()
   if pendingEpisode ~= nil then return end
   local now = os.clock(); local cooldown = cooldownInfo.getDeflectCooldownState()
-  local sustained = sustainedCooldown(cooldown, now)
+  sustainedCooldown(cooldown, now)
   if not enabled() or not fierceReady() then return end
   local snapshot = validTargetSnapshot(now); local timing = snapshot and incomingInWindow(snapshot, now)
-  if not timing or not (sustained or sustainedCooldown(cooldown, now, timing)) or cooldown.episode <= lastFierceEpisode then return end
+  if not timing or not finite(timing.timeToKill) or timing.timeToKill < 0 or not cooldown or not finite(cooldown.remaining) or cooldown.remaining <= 0 then return end
+  local ping = gameInfo.getAveragePing()
+  if not finite(ping) or ping < 0 or timing.timeToKill > cooldown.remaining + ping + CONFIG.SERVER_FRAME_MARGIN then return end
+  if not sustainedCooldown(cooldown, now, timing) or cooldown.episode <= lastFierceEpisode then return end
   local episode, ball, token = cooldown.episode, snapshot.ball, nil; local owner = epoch
   pendingEpisode = episode
   local ok, sent = pcall(function()
@@ -121,7 +133,14 @@ local function update()
       local currentSnapshot = validTargetSnapshot(os.clock())
       if not currentSnapshot or currentSnapshot.ball ~= ball then return false end
       local current = cooldownInfo.getDeflectCooldownState(); local currentTiming = incomingInWindow(currentSnapshot, os.clock())
-      if not current or current.episode ~= episode or not currentTiming or not sustainedCooldown(current, os.clock(), currentTiming) then return false end
+      if not current or current.episode ~= episode or not currentTiming or not finite(currentTiming.timeToKill) or currentTiming.timeToKill < 0 then return false end
+      local currentPing = gameInfo.getAveragePing()
+      if not finite(current.remaining) or current.remaining <= 0 or not finite(currentPing) or currentPing < 0 then return false end
+      if
+        currentTiming.timeToKill > current.remaining + currentPing + CONFIG.SERVER_FRAME_MARGIN or not sustainedCooldown(current, os.clock(), currentTiming)
+      then
+        return false
+      end
       if not token then token = autoParry.beginFierce() end
       return true
     end)
