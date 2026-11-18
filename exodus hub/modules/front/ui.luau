@@ -85,6 +85,7 @@ function ExodusUI.setup(deps, preview)
   })
   context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIConfig.pages, {
     desktop = context.state.desktop,
+    capabilities = { clashPrediction = deps.AutoSpam.hasClashPrediction() },
     read = deps.Utils.getConfigValue,
     resolve = context.actions.resolve,
     onComponent = context.actions.attach,
@@ -157,7 +158,7 @@ ExodusUI.__contract = {
       "areAbilitiesEnabled",
       "observeAbilityMode",
     },
-    AutoSpam = { "getStatus" },
+    AutoSpam = { "getStatus", "hasClashPrediction" },
     AutoParry = { "getStatus" },
     UIKit = { "create" },
     UIPages = { "create" },

@@ -59,9 +59,13 @@ function Pages.create(kit, parent, definitions, context)
       inst("Frame", { Name = name, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 6 }, parent)
     list(root); return root
   end
-  local function included(definition) return not (context.desktop and definition.mobileOnly) and not (not context.desktop and definition.desktopOnly) end
+  local function included(definition)
+    if definition.requiresCapability and not (context.capabilities and context.capabilities[definition.requiresCapability]) then return false end
+    return not (context.desktop and definition.mobileOnly) and not (not context.desktop and definition.desktopOnly)
+  end
   for _, definition in ipairs(definitions) do
-    local root = inst("Frame", {
+    local root = inst("CanvasGroup", {
+      GroupTransparency = 1,
       Name = "Page_" .. definition.id,
       Size = UDim2.fromOffset(width, height),
       Position = origin,
@@ -158,6 +162,7 @@ function Pages.create(kit, parent, definitions, context)
   local function settle()
     for id, page in pairs(registry) do
       page.Root.Visible = id == active; page.Root.Position = origin
+      page.Root.GroupTransparency = id == active and 0 or 1
     end
     transitioning = false; shield.Visible = false
   end
@@ -172,39 +177,38 @@ function Pages.create(kit, parent, definitions, context)
     if not alive or kit.suspended or (id == active and animated ~= false) then return end
     kit.dismiss(); cancel()
     local old = active; local oldIndex, nextIndex = table.find(normal, old), table.find(normal, id)
-    local direction = oldIndex and nextIndex and (nextIndex > oldIndex and 1 or -1) or (nextIndex and -1 or 1)
     if oldIndex and not nextIndex then returnId = old end
+    local outgoing
+    for _, page in pairs(registry) do
+      if page.Root.Visible then
+        if not outgoing then outgoing = page.Root else page.Root.Visible = false end
+      end
+    end
     active = id
-    if not old or animated == false then
+    if not outgoing or animated == false or outgoing == registry[id].Root then
       settle(); notify()
       return
     end
     transitioning = true; shield.Visible = true
     notify(); local revision = generation
-    local pending = 0; local targets = {}
-    for key, page in pairs(registry) do
-      local root = page.Root
-      if key == active then
-        if not root.Visible then root.Position = UDim2.fromOffset(T.PAD + T.PAGE_OFFSET * direction, T.TITLE_H + T.PAD) end
-        root.Visible = true; targets[#targets + 1] = { root = root, position = origin, transparency = 0 }
-      elseif root.Visible then
-        targets[#targets + 1] = { root = root, position = UDim2.fromOffset(T.PAD - T.PAGE_OFFSET * direction, T.TITLE_H + T.PAD), transparency = 1 }
-      end
-    end
-    pending = #targets
-    local function complete()
+    local function reveal()
       if not alive or revision ~= generation then return end
-      pending -= 1
-      if pending == 0 then
-        tweens = {}; settle()
-        notify()
+      for _, page in pairs(registry) do
+        page.Root.Visible = false; page.Root.GroupTransparency = 1
+        page.Root.Position = origin
       end
-    end
-    for _, target in ipairs(targets) do
-      local tween = motion.play(target.root, "page", { Position = target.position }, complete)
+      local incoming = registry[active].Root; incoming.Visible = true
+      local tween = motion.play(incoming, "page", { GroupTransparency = 0 }, function()
+        if alive and revision == generation then
+          tweens = {}; settle()
+          notify()
+        end
+      end)
       if tween then tweens[#tweens + 1] = tween end
     end
-    task.delay(0.6, function()
+    local tween = motion.play(outgoing, "page", { GroupTransparency = 1 }, reveal)
+    if tween then tweens[#tweens + 1] = tween end
+    task.delay(0.8, function()
       if alive and revision == generation and transitioning then
         cancel(); settle()
         notify()

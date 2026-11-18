@@ -339,9 +339,9 @@ imediatamente. A visão é avaliada em `PreRender`; objetos ocultos que entram n
 visão são restaurados na atualização da câmera, sem a antiga fila de 48 por
 passagem. A indexação e os cortes restantes continuam incrementais.
 
-As páginas usam frames comuns com transição de posição, evitando um render
-target de CanvasGroup para cada página inteira. Um finalizador por revisão
-garante a visibilidade da página ativa quando uma transição não completa.
+As páginas usam fade sequencial: a página atual desaparece antes da próxima
+aparecer, com apenas um CanvasGroup de página visível por vez. Uma revisão por
+transição cancela callbacks antigos e um finalizador garante a página ativa.
 Notificações persistentes e de falha de inicialização reaplicam texto branco
 sem RichText, inclusive ao reutilizar cartões existentes.
 
@@ -355,3 +355,22 @@ membro ausente em `requiresMethods`/`requiresData` e interrompem o build.
 O verificador não amplia permissões nem remove a proteção de runtime. Acessos
 computados e repasses arbitrários de tabelas continuam dependendo da validação
 de runtime em `permissions.luau`; a análise estática não prova esses casos.
+
+## Separação de plataforma e customização
+
+O UIKit identifica mobile/desktop pelas capacidades de entrada e pela opção
+`ForcePCUI`. A API recusa componentes com `desktopOnly` em mobile e vice-versa;
+seletores `keybind` são exclusivos de desktop e atalhos visuais não são criados
+no mobile. O seletor do Dynamic está marcado `desktopOnly`. O layout mobile
+continua acessível pelo botão de toque, sem ativação pela tecla de PC; a opção
+PC UI é a exceção explícita.
+
+`AutoSpamClashPrediction` controla somente a ativação antecipada por previsão,
+com padrão true. A opção filha de AutoSpam é renderizada quando a capability
+`clashPrediction`, fornecida por `AutoSpam.hasClashPrediction()`, está presente.
+Geometria de segurança e demais gates continuam independentes dessa opção.
+
+`Player.MobileLayoutEditing`, confirmado no MobileLayout do dump, suspende o
+Dynamic e restaura imediatamente o componente Block e suas referências durante
+a edição. Ao sair, o substituto é recriado com o tamanho e a posição ajustados,
+se Dynamic Parry ainda estiver habilitado. A edição não dispara o Dynamic.

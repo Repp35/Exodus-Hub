@@ -5,6 +5,7 @@ local Dynamic = {}
 local utils, gameInfo, autoSpam, remote
 local connections, uiConnections = {}, {}
 local binding, session, held, pressedAt, protectedUntil
+local editing = false
 local active, pulseUntil, epoch = false, 0, 0
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("DynamicParry") == true end
 local function connect(list, signal, callback)
@@ -25,7 +26,7 @@ local function matches(input)
   local key = utils.getConfigValue("DynamicParryKey"); return key ~= nil and key ~= Enum.KeyCode.Unknown and (input.KeyCode == key or input.UserInputType == key)
 end
 local function press(input)
-  if not enabled() or held then return end
+  if not enabled() or editing or held then return end
   if active then stop(); return end
   held, pressedAt, pulseUntil = input, os.clock(), os.clock() + 0.12; local owner = epoch
   remote.fireNativeParry(function() return enabled() and epoch == owner end)
@@ -90,7 +91,8 @@ local function attach(ability)
   end
   local animations = gameInfo.getNativeButtonAnimations(); local oldKey = ability.OnKeyDown
   local function hook(self, input, processed)
-    if enabled() and matches(input) then return end
+    local service = game:GetService("UserInputService"); local desktop = service.KeyboardEnabled or service.MouseEnabled or not service.TouchEnabled or utils.getConfigValue("ForcePCUI") == true
+    if enabled() and desktop and matches(input) then return end
     return oldKey(self, input, processed)
   end
   local visible = original.Visible
@@ -155,8 +157,21 @@ function Dynamic.setup(deps)
   Dynamic.teardown(); utils, gameInfo, autoSpam, remote = deps.Utils, deps.GameInfo, deps.AutoSpam, deps.Remote
   local input = game:GetService("UserInputService")
   connect(connections, input.InputBegan, function(event, processed)
-    if not processed and not input:GetFocusedTextBox() and matches(event) then press(event) end
+    local desktop = input.KeyboardEnabled or input.MouseEnabled or not input.TouchEnabled or utils.getConfigValue("ForcePCUI") == true
+    if desktop and not processed and not input:GetFocusedTextBox() and matches(event) then press(event) end
   end)
+  local player = utils.getLocalPlayer()
+  local function updateEditing()
+    local value = player:GetAttribute("MobileLayoutEditing") == true
+    if value and not editing then
+      held = nil; epoch += 1
+      stop(); restore()
+      local ability = gameInfo.getDeflectAbility(); local frame = ability and ability.Interface and ability.Interface.MobileUIAbilityFrame
+      if frame and frame.Parent then frame.Visible = true end
+    end
+    editing = value
+  end
+  connect(connections, player:GetAttributeChangedSignal("MobileLayoutEditing"), updateEditing); updateEditing()
   connect(connections, input.InputEnded, release)
   connect(connections, input.WindowFocusReleased, function()
     held = nil; epoch += 1
@@ -174,6 +189,7 @@ function Dynamic.setup(deps)
       stop(); restore()
       return
     end
+    if editing then return end
     local ability = gameInfo.getDeflectAbility()
     if not ability then
       stop(); restore()
@@ -191,7 +207,7 @@ function Dynamic.setup(deps)
     if not binding then attach(ability) end
     if active then Dynamic.canSend() end
     if binding then
-      binding.original.Visible = false; local mobile = input.TouchEnabled and not input.KeyboardEnabled and not input.GamepadEnabled
+      binding.original.Visible = false; local mobile = input.TouchEnabled and not input.KeyboardEnabled and not input.GamepadEnabled and utils.getConfigValue("ForcePCUI") ~= true
       binding.clone.Visible = mobile; local on = active or held ~= nil or os.clock() < pulseUntil
       binding.state.Text = on and "ON" or "OFF"; binding.state.TextColor3 = Color3.new(1, 1, 1)
       binding.image.Image = ""; binding.image.Visible = false
@@ -199,7 +215,7 @@ function Dynamic.setup(deps)
       if binding.button.BackgroundTransparency < 1 then binding.button.BackgroundColor3 = binding.button.BackgroundColor3:Lerp(body, 0.65) end
     end
   end)
-  if enabled() then attach(gameInfo.getDeflectAbility()) end
+  if enabled() and not editing then attach(gameInfo.getDeflectAbility()) end
   return true
 end
 function Dynamic.teardown()

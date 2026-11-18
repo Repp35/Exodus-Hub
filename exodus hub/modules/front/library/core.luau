@@ -46,9 +46,12 @@ end
 -- library
 function UIKit.create(options)
   options = options or {}; local scope = Runtime.scope()
+  local desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
+  if options.read and options.read("ForcePCUI") == true then desktop = true end
   local motion = Runtime.motion(scope, options.reducedMotion); local C, FONT, TEXT = Theme.COLORS, Theme.FONT, Theme.TEXT
   local bindings, components, drags, observers = {}, {}, {}, {}; local feedback = {}
   local popup, capture, capturedInput = {}, nil, nil; local kit = { icon = Icons.create, Theme = Theme, Components = components, scope = scope, motion = motion, suspended = false }
+  function kit.isDesktop() return desktop end
   local motions = { [motion] = true }
   function kit.createMotion(lifetime)
     local owned = Runtime.motion(lifetime, options.reducedMotion); motions[owned] = true
@@ -231,7 +234,8 @@ function UIKit.create(options)
     end
   end)
   local function control(parent, definition, height, class)
-    definition = definition or {}
+    definition = definition or {}; assert(not definition.desktopOnly or desktop, "Desktop-only UI is unavailable in mobile mode")
+    assert(not definition.mobileOnly or not desktop, "Mobile-only UI is unavailable in desktop mode")
     local root = inst(class or "Frame", {
       Name = definition.name or definition.key or definition.kind or "Control",
       Size = definition.size or UDim2.new(1, -8, 0, height),
@@ -334,7 +338,7 @@ function UIKit.create(options)
     return true
   end
   local function shortcut(handle, key, xOffset, topAligned)
-    if not key then return end
+    if not key or not desktop then return end
     local cap = button(handle.Root, keyName(read(key)), {
       Name = "Shortcut_" .. key,
       Position = topAligned and UDim2.new(1, xOffset or -126, 0, 10) or UDim2.new(1, xOffset or -126, 0.5, -13),
@@ -404,7 +408,10 @@ function UIKit.create(options)
   Inputs.install(context); Selection.install(context)
   Dropdown.install(context); components.tabs = components.segmented
   components.click = components.button; components.scroll = components.slider
-  components.off_on = components.toggle; components.keybind_selector = components.button
+  components.off_on = components.toggle
+  components.keybind_selector = function(parent, definition)
+    assert(desktop, "Keybind controls are unavailable in mobile mode; enable PC UI in settings"); return components.button(parent, definition)
+  end
   return kit
 end
 

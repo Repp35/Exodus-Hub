@@ -572,7 +572,7 @@ local function extremeReturn(state, s, time)
   end
 end
 local function chooseActivation(state, s, time)
-  local anticipated = extremeReturn(state, s, time)
+  local anticipated = utils.getConfigValue("AutoSpamClashPrediction") ~= false and extremeReturn(state, s, time)
   if anticipated then return "extreme_return_prediction", anticipated end
   local prediction, dashGate = dashPrediction(state, s, time); state.dashPrediction, state.gates.dash = prediction, dashGate
   if prediction then return prediction.reason, prediction.partner, prediction.at end
@@ -862,6 +862,7 @@ function AutoSpam.canSend()
   if transient and canBridgeSend(state, s, time) then state.lastBridgedSendAt = time; return true end
   return sendBlocked(state, gate, time)
 end
+function AutoSpam.hasClashPrediction() return type(extremeReturn) == "function" end
 function AutoSpam.createManualSession()
   local character = localPlayer.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root then return nil end
@@ -1008,6 +1009,7 @@ AutoSpam.__contract = {
     "getTargetSwitch",
     "getDashData",
     "stopSpam",
+    "hasClashPrediction",
     "createManualSession",
     "getManualStopReason",
   },
