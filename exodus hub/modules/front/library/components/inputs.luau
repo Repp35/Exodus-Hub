@@ -109,7 +109,7 @@ function Components.install(context)
     end
     local cancelDrag = Runtime.bindDrag(handle.scope, hit, function(input)
       if handle.enabled and track.AbsoluteSize.X > 0 then change(minimum + math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1) * (maximum - minimum)) end
-    end)
+    end, function() return handle.enabled and not kit.suspended end)
     drags[cancelDrag] = true
     handle.scope.add(function() drags[cancelDrag] = nil end)
     handle.scope.connect(hit.InputBegan, function(input)

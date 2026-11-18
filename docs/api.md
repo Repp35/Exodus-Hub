@@ -415,3 +415,10 @@ e detecta acessos diretos ao registro global que contornem as views.
 Essa é uma fronteira de arquitetura nas APIs internas, não um sandbox da VM ou
 do motor Roblox; código nativo, objetos do jogo e acessos dinâmicos arbitrários
 não são isolados por ela.
+
+Sliders capturam o arraste no `UserInputService.InputBegan`, apenas se o contato
+começar dentro do hitbox e ele estiver no topo da GUI naquela posição. Entrar
+no hitbox com um toque já iniciado fora não captura o gesto. Movimentos são
+aceitos somente do mesmo toque ou do mouse com botão esquerdo ainda pressionado.
+Soltar, cancelar, ocultar, desabilitar, suspender ou perder foco libera a captura.
+Navegação por teclado/controle permanece independente do arraste por ponteiro.

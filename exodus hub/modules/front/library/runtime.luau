@@ -134,19 +134,35 @@ function Runtime.isVisible(object)
   end
   return true
 end
-function Runtime.bindDrag(scope, target, onChange)
+function Runtime.bindDrag(scope, target, onChange, canStart)
   local owner
   local function release() owner = nil end
-  scope.connect(target.InputBegan, function(input)
-    if owner or not Runtime.isVisible(target) then return end
+  local function available() return target.Parent ~= nil and Runtime.isVisible(target) and target.Active and (not canStart or canStart()) end
+  local function startsOnTarget(input)
+    local point, position, size = input.Position, target.AbsolutePosition, target.AbsoluteSize
+    if point.X < position.X or point.Y < position.Y or point.X > position.X + size.X or point.Y > position.Y + size.Y then return false end
+    local gui = target:FindFirstAncestorOfClass("PlayerGui") or target:FindFirstAncestorOfClass("CoreGui")
+    if not gui then return false end
+    local ok, objects = pcall(function() return gui:GetGuiObjectsAtPosition(point.X, point.Y) end)
+    if not ok or not objects[1] then return false end
+    return objects[1] == target or objects[1]:IsDescendantOf(target)
+  end
+  scope.connect(UIS.InputBegan, function(input)
+    if owner or not available() or input.UserInputState ~= Enum.UserInputState.Begin then return end
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    if not startsOnTarget(input) then return end
     owner = input; onChange(input)
   end)
   scope.connect(UIS.InputChanged, function(input)
     if not owner then return end
-    if not Runtime.isVisible(target) then release(); return end
+    if not available() or owner.UserInputState == Enum.UserInputState.End or owner.UserInputState == Enum.UserInputState.Cancel then release(); return end
     local mouse = owner.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
-    if mouse or input == owner then onChange(input) end
+    if mouse then
+      if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then release(); return end
+      onChange(input)
+    elseif input == owner then
+      onChange(input)
+    end
   end)
   scope.connect(UIS.InputEnded, function(input)
     if input == owner then release() end
