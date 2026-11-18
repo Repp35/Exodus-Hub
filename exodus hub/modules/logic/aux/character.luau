@@ -3,7 +3,6 @@
 -- module
 local Character = {}
 local utils, spam, binds
-local assistanceTick
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
 local startWorker
@@ -152,36 +151,11 @@ function Character.setup(deps)
     if owner == setupEpoch and currentLife and currentLife.character == character then deactivate(currentLife, "character_removing") end
   end)
   utils.trackGlobal(added); utils.trackGlobal(removing)
-  local elapsed, wasDuel = 0, false
-  assistanceTick = utils.getRunService().Heartbeat:Connect(function(dt)
-    elapsed += dt
-    if elapsed < 0.25 then return end
-    elapsed = 0; local enabled = utils.isActive() and utils.getConfigValue("ManualSpamOnDuel") == true
-    local duel, ownAlive, count = false, false, 0
-    if enabled and utils.getWorkspace():GetAttribute("MatchStatus") == 6 then
-      for _, candidate in ipairs(utils.getPlayers():GetPlayers()) do
-        local lives = candidate:GetAttribute("Lives"); local model = candidate.Character
-        local hum = model and model:FindFirstChildOfClass("Humanoid")
-        if type(lives) == "number" and lives > 0 and candidate:GetAttribute("Playing") ~= false and hum and hum.Health > 0 then
-          count += 1
-          if candidate == player then ownAlive = true end
-        end
-      end
-      duel = ownAlive and count == 2
-    end
-    if duel and not wasDuel and not utils.isManualSpamActive() then utils.setManualSpamActive(true) end
-    wasDuel = duel
-  end)
-  utils.trackGlobal(assistanceTick)
   if player.Character then setupCharacter(player.Character) end
   return true
 end
 function Character.teardown()
   generation += 1; setupEpoch += 1
-  if assistanceTick then
-    if utils then utils.untrackGlobal(assistanceTick) end
-    assistanceTick:Disconnect(); assistanceTick = nil
-  end
   if utils then
     if added then utils.untrackGlobal(added) end
     if removing then utils.untrackGlobal(removing) end
@@ -204,10 +178,6 @@ Character.__contract = {
       "getLocalPlayer",
       "getConfigValue",
       "setConfig",
-      "getRunService",
-      "getPlayers",
-      "getWorkspace",
-      "isManualSpamActive",
       "isActive",
       "apiVersion",
       "trackGlobal",

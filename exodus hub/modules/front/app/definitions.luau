@@ -348,7 +348,13 @@ local CONFIG = {
         {
           title = "Phantom Ball",
           components = {
-            { kind = "toggle", title = "Spam manual no x1", description = "Liga ao restarem você e um oponente na partida.", key = "ManualSpamOnDuel" },
+            {
+              kind = "toggle",
+              title = "Mostrar GUI de spam no x1",
+              description = "Abre o controle manual no mobile, sem ativar os cliques.",
+              key = "ManualSpamUIOnDuel",
+              mobileOnly = true,
+            },
             {
               kind = "toggle",
               title = "Religar AP ao morrer",
@@ -434,7 +440,7 @@ local CONFIG = {
       ClickMethod = "clickMethod",
       Keybind = "keyCode",
       SpamKeybind = "keyCode",
-      ManualSpamOnDuel = "boolean",
+      ManualSpamUIOnDuel = "boolean",
       ParryOnDeath = "boolean",
       ManualSpamEnabled = "boolean",
       ParryKeybind = "keyCode",
@@ -494,7 +500,7 @@ local CONFIG = {
       ClickMethod = "Deflect",
       Keybind = Enum.KeyCode.F9,
       SpamKeybind = Enum.KeyCode.F,
-      ManualSpamOnDuel = false,
+      ManualSpamUIOnDuel = false,
       ParryOnDeath = false,
       ManualSpamEnabled = false,
       ParryKeybind = Enum.KeyCode.P,

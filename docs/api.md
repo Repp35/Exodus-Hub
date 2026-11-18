@@ -265,10 +265,10 @@ A ordem de chegada dos dois caminhos depende da replicação em execução.
 ## Assistências de Phantom Ball
 
 A página utilitária `assists` tem atalho próprio ao lado do Config, com PNG
-embutido. `ManualSpamOnDuel` e `ParryOnDeath` são persistentes e desativados por
+embutido. `ManualSpamUIOnDuel` e `ParryOnDeath` são persistentes e desativados por
 padrão. O x1 exige partida ativa, jogador local vivo e exatamente dois jogadores
-com vidas e personagem vivo; a transição liga o spam manual uma vez, sem impedir
-que ele seja desligado depois. `ParryOnDeath` religa o AP no evento de morte.
+com vidas e personagem vivo; a transição abre somente a GUI do spam manual no mobile, sem ligar cliques.
+A opção fica oculta no desktop e permite fechar a GUI depois. `ParryOnDeath` religa o AP no evento de morte.
 As conexões são removidas no teardown/reload. A página universal é independente.
 
 O dumper agenda lotes de até 100 scripts concorrentes, incluindo lotes menores
