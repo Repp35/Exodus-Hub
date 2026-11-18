@@ -25,7 +25,8 @@ local CONFIG = {
     DASH_DETECTION_RANGE = 70,
   },
   DEACTIVATION = {
-    COOLDOWN_NEAR_FACTOR = 2,
+    COOLDOWN_BASE_MAX = 0.05,
+    COOLDOWN_MAX_WAIT = 0.12,
     COOLDOWN_MARGIN = 2 / 60,
     PHYSICAL_EXIT_DELAY = 0.12,
     PROTECTION_RADIUS = 14,
@@ -127,15 +128,19 @@ local function monitorCooldown(state)
   end
   local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshotSpeed(snapshot)
   local g = speed and deflectGeometry.getDeflectGeometry(speed, "game", 1, false, 0); local window = g and g.deflectWindow
-  state.cooldownWindow = finite(window) and window > 0 and math.max(window, 0.05) or nil; local opponent = playerPosition(state.partner)
+  state.cooldownWindow = finite(window) and window > 0 and window or CONFIG.DEACTIVATION.COOLDOWN_BASE_MAX; local opponent = playerPosition(state.partner)
   local distance = opponent and state.root and (opponent - state.root.Position).Magnitude
   local otherRadius = speed and state.partner and deflectGeometry.getPlayerRawRadius(state.partner, speed, false); local proximity = 0
   if distance and speed and speed > 0 and g and finite(g.noWindowParryRadius) and finite(otherRadius) and state.cooldownWindow then
-    local travel = math.max(0, distance - g.noWindowParryRadius - otherRadius); local roundTrip = 2 * travel / speed
-    proximity = math.clamp(1 - roundTrip / state.cooldownWindow, 0, 1)
+    local contactRange = g.noWindowParryRadius + otherRadius; local responseTravel = math.min(contactRange, speed * (networkLatency() + CONFIG.DEACTIVATION.COOLDOWN_MARGIN))
+    if contactRange > 0 then proximity = math.clamp(1 - distance / (contactRange + responseTravel), 0, 1) end
   end
-  local factor = 1 + proximity * (CONFIG.DEACTIVATION.COOLDOWN_NEAR_FACTOR - 1)
-  state.cooldownLimit = state.cooldownWindow and state.cooldownWindow * factor + networkLatency() + CONFIG.DEACTIVATION.COOLDOWN_MARGIN or nil
+  local base = math.min(state.cooldownWindow, CONFIG.DEACTIVATION.COOLDOWN_BASE_MAX)
+  state.cooldownLimit = math.clamp(
+    base + networkLatency() + proximity * CONFIG.DEACTIVATION.COOLDOWN_MARGIN,
+    CONFIG.DEACTIVATION.COOLDOWN_MARGIN,
+    CONFIG.DEACTIVATION.COOLDOWN_MAX_WAIT
+  )
   return cd, state.cooldownLimit ~= nil and time - state.cooldownSince >= state.cooldownLimit
 end
 local function sampleGate(state, s, time)

@@ -14,7 +14,7 @@ class Reactivation(unittest.TestCase):
     def test_continuous_cooldown_is_a_single_stop_event(self):
         check(COUNT+"""
 packet(42,0,2);cd.blocking=true;cd.blockingSince=tm;cd.episode=1
-heartbeat(.1);assert(ap.isActive())
+heartbeat(.03);assert(ap.isActive())
 heartbeat(.35);stopped('cooldown');assert(stops('cooldown')==1)
 packet(99,.01,2);packet(42,.01,2);assert(not ap.isActive(),'blocked cooldown reactivated spam')
 cd.blocking=false;heartbeat(.01);packet(99,.01,2);packet(42,.01,2);assert(ap.isActive())
@@ -43,7 +43,7 @@ class VideoRegressions(unittest.TestCase):
 packet(42,0,2);cd.miss=true
 for i=1,20 do
  cd.blocking=true;cd.blockingSince=tm;cd.episode=i
- heartbeat(.1);assert(ap.isActive(),'short cooldown or miss stopped clash')
+ heartbeat(.03);assert(ap.isActive(),'short cooldown or miss stopped clash')
  cd.blocking=false;heartbeat(.01);assert(ap.isActive())
 end
 ''')
@@ -77,7 +77,7 @@ class DynamicCooldown(unittest.TestCase):
 packet(42,0,2);other.root.Position=v(25)
 snap.syncSpeed={speed};snap.speed={speed};snap.velocity=v(-{speed})
 cd.blocking=true;cd.blockingSince=tm
-heartbeat(.26);assert(ap.isActive()==({speed}==600),'speed did not change cooldown tolerance')
+heartbeat(.055);assert(ap.isActive()==({speed}==600),'speed did not change cooldown tolerance')
 heartbeat(.2);stopped('cooldown')
 ''')
 
@@ -85,6 +85,15 @@ heartbeat(.2);stopped('cooldown')
         check('''
 other.root.Position=v(1);packet(42,0,2)
 cd.blocking=true;cd.blockingSince=tm
-heartbeat(.26);assert(ap.isActive())
+heartbeat(.06);assert(ap.isActive())
 other.root.Position=v(100);ap.canSend();stopped('cooldown')
+''')
+
+    def test_extreme_proximity_and_latency_cannot_make_cooldown_exit_slow(self):
+        check('''
+other.root.Position=v(0);packet(42,0,2)
+g.getAveragePing=function() return 1 end
+cd.blocking=true;cd.blockingSince=tm
+heartbeat(.119);assert(ap.isActive())
+heartbeat(.002);stopped('cooldown')
 ''')

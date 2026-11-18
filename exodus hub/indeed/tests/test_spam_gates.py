@@ -56,7 +56,7 @@ for _,factor in ipairs(geometryFactors) do assert(factor==1) end
     def test_near_opponent_preserves_session_during_cooldown(self):
         check('''
 packet(42,0,2);cd.blocking=true;cd.blockingSince=tm
-packet(99,.01,50);heartbeat(.1);assert(ap.isActive())
+packet(99,.01,50);heartbeat(.03);assert(ap.isActive())
 heartbeat(.35);stopped('cooldown')
 ''')
 
