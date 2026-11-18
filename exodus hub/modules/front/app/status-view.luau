@@ -24,9 +24,12 @@ function StatusView.format(data)
   if positive(stats.currentCps) then out.distance[#out.distance + 1] = string.format("Clash: %.2f CPS", stats.currentCps) end
   if positive(stats.duration) then out.distance[#out.distance + 1] = string.format("Duration: %.2fs", stats.duration) end
   local travel = object(data.travel or stats)
-  if finite(travel.incomingRecordedAt) then
+  if finite(travel.incomingRecordedAt) or finite(travel.outgoingRecordedAt) then
     local function tti(value) return finite(value) and value >= 0 and string.format("%.0f ms", value * 1000) or "unavailable" end
     out.travel[1] = "Last target TTI: " .. tti(travel.lastIncomingTTI); out.travel[2] = "Previous target TTI: " .. tti(travel.previousIncomingTTI)
+    if finite(travel.outgoingRecordedAt) then
+      out.travel[#out.travel + 1] = "Opponent target TTI: " .. tti(travel.lastOutgoingTTI); out.travel[#out.travel + 1] = "Previous opponent TTI: " .. tti(travel.previousOutgoingTTI)
+    end
     return out
   end
   if finite(travel.travelElapsed) and travel.travelElapsed >= 0 and text(travel.travelTargetName) then

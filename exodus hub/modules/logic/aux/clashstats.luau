@@ -71,11 +71,16 @@ function ClashStats.begin(partner, time)
       last = stats.lastIncomingTTI,
       penultimate = stats.previousIncomingTTI,
       at = stats.incomingRecordedAt,
+      outgoing = stats.lastOutgoingTTI,
+      outgoingPrevious = stats.previousOutgoingTTI,
+      outgoingAt = stats.outgoingRecordedAt,
+      partner = stats.partnerId,
     }
   stats = stats or {}; table.clear(stats)
   if previous then
     stats.incomingBall, stats.travelObservedTarget = previous.ball, previous.target
     stats.lastIncomingTTI, stats.previousIncomingTTI, stats.incomingRecordedAt = previous.last, previous.penultimate, previous.at
+    if previous.partner == partner then stats.lastOutgoingTTI, stats.previousOutgoingTTI, stats.outgoingRecordedAt = previous.outgoing, previous.outgoingPrevious, previous.outgoingAt end
   end
   stats.partnerId, stats.cps, stats.lastObserved = partner, 0, time; stats.startedAt, stats.startedDate = time, os.date("!%Y-%m-%d %H:%M:%S")
   stats.totalSwitches, stats.frozen = 0, false
@@ -113,12 +118,23 @@ function ClashStats.observe(session, snapshot, time, fresh)
     if fresh then
       if stats.incomingBall ~= snapshot.ball or snapshot.teleported or snapshot.resetting then
         stats.travelObservedTarget = nil
-        if stats.incomingBall ~= snapshot.ball then stats.lastIncomingTTI, stats.previousIncomingTTI, stats.incomingRecordedAt = nil, nil, nil end
+        if stats.incomingBall ~= snapshot.ball then
+          stats.lastIncomingTTI, stats.previousIncomingTTI, stats.incomingRecordedAt = nil, nil, nil; stats.lastOutgoingTTI, stats.previousOutgoingTTI, stats.outgoingRecordedAt = nil, nil, nil
+        end
         stats.incomingBall = snapshot.ball
       end
-      if target == me and stats.travelObservedTarget ~= me and not snapshot.teleported and not snapshot.resetting and not snapshot.locked then
-        local root = session.root; local position = typeof(snapshot.realPosition) == "Vector3" and snapshot.realPosition or snapshot.position
-        local velocity = snapshot.velocity
+      if
+        (target == me or target == partner)
+        and stats.travelObservedTarget ~= target
+        and not snapshot.teleported
+        and not snapshot.resetting
+        and not snapshot.locked
+      then
+        local root = session.root
+        if target ~= me then
+          local position, velocity = gameInfo.getPlayerMotion(target); root = typeof(position) == "Vector3" and { Parent = true, Position = position, AssemblyLinearVelocity = velocity } or nil
+        end
+        local position = typeof(snapshot.realPosition) == "Vector3" and snapshot.realPosition or snapshot.position; local velocity = snapshot.velocity
         local tti
         if root and root.Parent and typeof(position) == "Vector3" and typeof(velocity) == "Vector3" then
           local delta = root.Position - position; local distance = delta.Magnitude
@@ -132,7 +148,9 @@ function ClashStats.observe(session, snapshot, time, fresh)
             tti = acceleration > 0.0001 and 2 * remaining / (closing + math.sqrt(closing * closing + 2 * acceleration * remaining)) or remaining / closing
           end
         end
-        stats.previousIncomingTTI, stats.lastIncomingTTI = stats.lastIncomingTTI, finite(tti) and tti >= 0 and tti or nil; stats.incomingRecordedAt = time
+        local value = finite(tti) and tti >= 0 and tti or nil
+        if target == me then stats.previousIncomingTTI, stats.lastIncomingTTI, stats.incomingRecordedAt = stats.lastIncomingTTI, value, time
+        else stats.previousOutgoingTTI, stats.lastOutgoingTTI, stats.outgoingRecordedAt = stats.lastOutgoingTTI, value, time end
       end
       stats.travelObservedTarget = target
     end
@@ -200,6 +218,9 @@ function ClashStats.getStatus()
     lastIncomingTTI = stats.lastIncomingTTI,
     previousIncomingTTI = stats.previousIncomingTTI,
     incomingRecordedAt = stats.incomingRecordedAt,
+    lastOutgoingTTI = stats.lastOutgoingTTI,
+    previousOutgoingTTI = stats.previousOutgoingTTI,
+    outgoingRecordedAt = stats.outgoingRecordedAt,
     deceasedName = stats.deceasedId and (stats.deceasedId == localPlayer.UserId and "You" or "Opponent") or nil,
     deceasedId = stats.deceasedId,
   }

@@ -39,8 +39,10 @@ assert(mod.setup({Utils=u,GameInfo=g,DeflectGeometry=geometry}))
 local session={active=true,partner=99,root=root}
 local s={ball={},targetId=42,exchangeTargetId=99,position=v(34),velocity=v(-100),speed=100}
 mod.observe(session,s,tm,true);assert(mod.getStatus().lastIncomingTTI==nil)
+assert(math.abs(mod.getStatus().lastOutgoingTTI-.2)<1e-9,'opponent TTI was not sampled on target change')
 s.exchangeTargetId=42;s.velocity=v(100);tm=tm+.01;mod.observe(session,s,tm,true)
 assert(mod.getStatus().incomingRecordedAt==tm and mod.getStatus().lastIncomingTTI==nil)
 s.velocity=v(-100);tm=tm+10;mod.observe(session,s,tm,false)
 assert(mod.getStatus().lastIncomingTTI==nil,'same target was resampled from a frame')
+assert(math.abs(mod.getStatus().lastOutgoingTTI-.2)<1e-9,'opponent TTI changed after arrival')
 ''')

@@ -100,6 +100,8 @@ ClashStats registra `lastIncomingTTI` e `previousIncomingTTI` ao receber uma tro
 real de alvo para o jogador local; frames ou pacotes repetindo o mesmo alvo não
 refazem a amostra. `incomingRecordedAt` identifica a medição. O painel Travel
 mostra essas duas estimativas em milissegundos, inclusive após a morte.
+`lastOutgoingTTI`, `previousOutgoingTTI` e `outgoingRecordedAt` registram de forma
+separada a mesma medição na troca para o oponente, sem esperar a chegada da bola.
 
 O TTI é estimado no recebimento pela distância até o raio de impacto, velocidade
 de aproximação relativa ao jogador e aceleração positiva disponível. Não é um
