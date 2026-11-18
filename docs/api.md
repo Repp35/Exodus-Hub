@@ -56,11 +56,7 @@ atual e expõe `getTargetSignals(time?)`; `getStatus().targeting` traz o mesmo
 formato para diagnóstico. O treino usa seu próprio `BallState.goal` e não consulta
 os leitores da partida.
 
-Os 14 leitores são `sync.target`, `sync.highlight`, `replicator.target`,
-`replicator.highlight`, `replicator.latestTargetId`, `replicator.IsLocalTarget`,
-`history.target`, `history.highlight`, `workspace.GameBallTarget`,
-`character.PlayerBallHighlight`, `ball.color`, `ball.trail`, `ui.BallIndicator` e
-`ball.skinFace`. `docs/game.md` descreve as condições nativas desses sinais.
+Os dois leitores são `replicator.IsLocalTarget` e `workspace.GameBallTarget`.
 
 ```lua
 local report = GameInfo.getTargetSignals()
@@ -77,12 +73,9 @@ end
 ```
 
 A regra de autorização é OR: um positivo prevalece mesmo com votos negativos.
-Isso é uma política permissiva, não uma garantia de acerto. As fontes visuais
-podem atrasar um frame, e várias leituras derivam do mesmo estado nativo.
-Cor ambígua de skin, faces transitórias, elementos desabilitados/ocultos e fontes
-incompatíveis não votam. Cada leitor isola suas falhas. Estado de rede vencido,
-histórico que não corresponde à última sequência e replicador mais antigo que o
-pacote aceito não confirmam alvo. Fora da rodada ativa os votos são limpos.
+Cada leitor isola suas falhas. Replicador vencido ou mais antigo que o pacote
+aceito não confirma alvo. Fora da rodada ativa os votos são limpos. Sinais
+visuais derivados não participam da autorização.
 
 Snapshots expõem `targetSignals` e `targetSource`; `targetId`/`targeted` refletem a
 resolução. `exchangeTargetId` preserva a identidade recebida pela rede, usada nas
@@ -262,3 +255,9 @@ O primeiro envio reserva o ciclo antes do remote; uma trava de requisição em
 voo impede envios concorrentes mesmo se um evento de alvo rearmar o ciclo
 durante a chamada. Alcance físico, cooldown e validade da bola continuam sendo
 revalidados no envio.
+
+A identificação de alvo em partida usa somente `BallReplicator:IsLocalTarget()`
+e `Workspace.GameBallTarget`. O primeiro compara `latestTargetId` com o jogador
+local; o segundo recebe a atribuição do servidor na troca de alvo. Qualquer sim
+autoriza o alvo local. Cor, trail, highlight, UI e histórico não autorizam o AP.
+A ordem de chegada dos dois caminhos depende da replicação em execução.
