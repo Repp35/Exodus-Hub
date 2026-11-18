@@ -139,14 +139,15 @@ local CONFIG = {
     { name = "dynamicparry", path = "modules/logic/dynamicparry.luau" },
     { name = "spam", path = "modules/logic/spam.luau" },
     { name = "character", path = "modules/logic/aux/character.luau" },
-    { name = "dumper", path = "modules/logic/extras/universal/dumper.luau" },
-    { name = "servers", path = "modules/logic/extras/universal/servers.luau" },
+    { name = "dumper", path = "modules/logic/extras/universal/tools/dumper.luau" },
+    { name = "servers", path = "modules/logic/extras/universal/tools/servers.luau" },
     { name = "uicontext", path = "modules/front/controllers/context.luau" },
     { name = "uiwindow", path = "modules/front/controllers/window.luau" },
     { name = "uifloating", path = "modules/front/controllers/floating.luau" },
     { name = "uinotificationview", path = "modules/front/controllers/notifications.luau" },
     { name = "uistatus", path = "modules/front/app/status-view.luau" },
     { name = "uitelemetry", path = "modules/front/controllers/telemetry.luau" },
+    { name = "uiassists", path = "modules/front/controllers/assists.luau" },
     { name = "uiinput", path = "modules/front/controllers/input.luau" },
     { name = "uilifecycle", path = "modules/front/controllers/lifecycle.luau" },
     { name = "ui", path = "modules/front/ui.luau" },
@@ -542,12 +543,12 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions)
+  local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions, "modules/logic/aux/permissions.luau")
   loaded.permissions = register("permissions", permissions)
   for _, entry in ipairs(MODULE_MANIFEST) do
     local name = entry.name
     if name ~= "permissions" then
-      local module = results[name].module or execute(name, results[name].chunk); permissions.validate(name, module)
+      local module = results[name].module or execute(name, results[name].chunk); permissions.validate(name, module, entry.path)
       loaded[name] = register(name, module)
     end
   end

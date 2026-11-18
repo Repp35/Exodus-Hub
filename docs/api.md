@@ -1,10 +1,11 @@
 # API interna
 
 Os módulos são declarados no manifesto de `exodus hub/loader.luau`.
-`__contract` descreve métodos exportados, dependências e métodos consumidos.
-`Permissions.resolve` entrega somente as APIs declaradas. A ordem de setup segue
-o grafo de dependências; ciclos são rejeitados. As assinaturas completas estão
-nos contratos dos próprios módulos.
+`__contract` descreve a interface pública, imports e APIs mínimas necessárias à
+compatibilidade. Essas listas não concedem permissões. `Permissions.resolve`
+entrega views de dependências filtradas pela família do consumidor, com tabelas
+somente para leitura. APIs novas da mesma categoria não exigem novos grants por
+método. A ordem de setup segue os imports; ciclos são rejeitados.
 
 Conexões devem ser registradas em Utils e encerradas no teardown. Código de
 combate pertence a `logic`; adaptação dos serviços do jogo, a GameInfo; componentes
@@ -348,10 +349,11 @@ sem RichText, inclusive ao reutilizar cartões existentes.
 ## Verificação de permissões antes de publicar
 
 `indeed/tools/check_permissions.py` roda no workflow antes do build protegido.
-Valida imports contra exports de contratos e acessos estáticos diretos ou por
-alias, incluindo múltiplas atribuições e os controllers que recebem as views
-restritas da UI via `context.deps`. Falhas indicam arquivo, linha, consumidor e
-membro ausente em `requiresMethods`/`requiresData` e interrompem o build.
+Lê a mesma política JSON embutida em `permissions.luau` usada pelo runtime.
+Valida imports/exports, cobertura do manifesto e capacidades de família em
+acessos diretos ou por alias, incluindo os controllers que recebem as views da
+UI. Falhas indicam arquivo, linha, família e capacidade proibida; interrompem o
+build. `--report` lista todos os módulos e as capacidades fixas de cada família.
 O verificador não amplia permissões nem remove a proteção de runtime. Acessos
 computados e repasses arbitrários de tabelas continuam dependendo da validação
 de runtime em `permissions.luau`; a análise estática não prova esses casos.
@@ -374,3 +376,42 @@ Geometria de segurança e demais gates continuam independentes dessa opção.
 Dynamic e restaura imediatamente o componente Block e suas referências durante
 a edição. Ao sair, o substituto é recriado com o tamanho e a posição ajustados,
 se Dynamic Parry ainda estiver habilitado. A edição não dispara o Dynamic.
+
+## Famílias de responsabilidade
+
+A política fixa fica em `permissions.luau`. A família é derivada da organização
+do manifesto, nunca de grants pedidos pelo próprio módulo. Todos recebem
+leitura interna, diagnóstico e gerenciamento de suas inscrições. As capacidades
+de comando são compartilhadas integralmente dentro de cada família:
+
+| Família | Responsabilidade adicional |
+| --- | --- |
+| combat | Executar ações e coordenar estado temporário de combate. AP, AutoSpam, Spam e Dynamic usam exatamente este perfil. |
+| game | Manter adaptadores e sincronização do jogo. |
+| presentation | Editar preferências, controlar input manual, criar a interface e executar ferramentas por ações do usuário. |
+| view | Montar componentes visuais, sem editar configurações globais. |
+| lifecycle | Vincular personagens e limpar estado temporário; não dispara ações de combate. |
+| universal | Controlar recursos universais; só escreve configurações com prefixo Universal. |
+| render | Controlar renderização; só escreve configurações com prefixo AntiLag. |
+| tools | Executar dump e navegação de servidores, sem controlar outros recursos universais. |
+| infrastructure | Bootstrap, registros e administração central. O loader é a raiz privilegiada. |
+
+Leitura interna não inclui escrever tabelas nem chamar APIs de comando de UI.
+Tabelas exportadas que contenham funções são classificadas como APIs da família
+provedora, não apenas dados. A classificação das operações é separada dos grants
+dos consumidores: declarar uma dependência ou acrescentar `setConfig` ao contrato
+não dá ao combate `config.write`.
+
+`Permissions.policy(name)` expõe família, capacidades e imports; não existe
+lista de permissões AutoSpam → AP ou por arquivo. Dependências continuam sendo
+imports explícitos e requisitos de versão/API, como contratos de compatibilidade.
+
+As preferências de religar AP na morte e mostrar a GUI de spam no x1 pertencem a
+`front/controllers/assists.luau`. O controlador de personagem não altera essas
+preferências. Dumper e Servers ficam em `extras/universal/tools/`, com perfil de
+ferramentas. O verificador proíbe capacidades de UI/configuração no perfil combat
+e detecta acessos diretos ao registro global que contornem as views.
+
+Essa é uma fronteira de arquitetura nas APIs internas, não um sandbox da VM ou
+do motor Roblox; código nativo, objetos do jogo e acessos dinâmicos arbitrários
+não são isolados por ela.

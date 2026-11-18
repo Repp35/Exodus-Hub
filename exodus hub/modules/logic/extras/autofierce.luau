@@ -210,7 +210,6 @@ AutoFierce.__contract = {
       "getLocalPlayer",
       "getRunService",
       "isActive",
-      "stopAllSpam",
       "observeConfig",
       "trackGlobal",
       "untrackGlobal",

@@ -93,7 +93,7 @@ function ExodusUI.setup(deps, preview)
     onNavigate = context.window.updateNavigation,
   })
   context.floating.refreshAbilities(); context.updateResponsiveScale()
-  deps.Input.create(context)
+  deps.Input.create(context); deps.Assists.create(context)
   if preview and preview.snapshot then context.pages.restore(preview.snapshot) end
   context.scope.add(deps.Utils.observeSpam(function()
     local manual = deps.Utils.isManualSpamActive()
@@ -131,6 +131,7 @@ ExodusUI.__contract = {
     Status = "status",
     Telemetry = "uitelemetry",
     Input = "uiinput",
+    Assists = "uiassists",
     Lifecycle = "uilifecycle",
   },
   requiresMethods = {
@@ -173,6 +174,7 @@ ExodusUI.__contract = {
     Status = { "get" },
     Telemetry = { "create" },
     Input = { "create" },
+    Assists = { "create" },
     Lifecycle = { "create" },
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },

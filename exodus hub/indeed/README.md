@@ -8,7 +8,7 @@ incluindo os fixtures e harnesses compartilhados.
 - `formatting/backend.py`: configuração, descoberta e execução do StyLua.
 - `formatting/cli.py`: argumentos, seleção de arquivos, pipeline e escrita atômica.
 - `formatting/resources/`: configuração e executável do StyLua.
-- `tools/check_permissions.py`: verifica contratos e acessos às dependências, incluindo os controllers que recebem permissões da UI; bloqueia a publicação no CI.
+- `tools/check_permissions.py`: verifica contratos e capacidades fixas por família usando a mesma política do runtime; `--report` audita todos os módulos e falhas bloqueiam a publicação no CI.
 - `tools/`: geração e validação dos ícones da interface.
 - `benchmarks/`: comparação offline do dispatch de cliques.
 - `diagnostics/`: scripts Luau de inspeção para execução manual.

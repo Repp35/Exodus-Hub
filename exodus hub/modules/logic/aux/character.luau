@@ -104,10 +104,7 @@ local function setupCharacter(character)
     if currentLife ~= life or life.humanoids[humanoid] then return end
     life.humanoids[humanoid] = true
     utils.trackCharacter(humanoid.Died:Connect(function()
-      if humanoid.Parent == life.character then
-        if utils.getConfigValue("ParryOnDeath") == true and utils.getConfigValue("AutoParry") ~= true then utils.setConfig({ AutoParry = true }) end
-        deactivate(life, "character_died")
-      end
+      if humanoid.Parent == life.character then deactivate(life, "character_died") end
     end))
     if humanoid.Health <= 0 then deactivate(life, "character_died") end
   end
@@ -176,15 +173,12 @@ Character.__contract = {
   requiresMethods = {
     Utils = {
       "getLocalPlayer",
-      "getConfigValue",
-      "setConfig",
       "isActive",
       "apiVersion",
       "trackGlobal",
       "untrackGlobal",
       "trackCharacter",
       "disconnectCharacterConnections",
-      "setManualSpamActive",
       "setAutoSpamActive",
       "recordTransition",
       "recordError",

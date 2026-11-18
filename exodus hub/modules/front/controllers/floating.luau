@@ -427,26 +427,6 @@ function Controller.create(context)
   if not UIState.desktop and config.JumpBallVisible then twPlay(context.refs.jumpBall, "control", { Position = UDim2.new(0, jumpX, 0, jumpY) }) end
   if not UIState.desktop and config.UpDashBallVisible then twPlay(context.refs.upDashBall, "control", { Position = UDim2.new(0, upDashX, 0, upDashY) }) end
   showMini(config.MiniSpamVisible == true, true); setSpam(Utils.isManualSpamActive(), true)
-  local duelElapsed, wasDuel = 0, false
-  trackConn(context.services.RunService.Heartbeat:Connect(function(dt)
-    duelElapsed += dt
-    if duelElapsed < 0.25 then return end
-    duelElapsed = 0; local duel = false
-    if not UIState.desktop and Utils.isActive() and Utils.getConfigValue("ManualSpamUIOnDuel") == true then
-      local match = GameInfo.getGameContext()
-      if match.inMatch and match.alive and match.roundActive then
-        local count = 0
-        for _, candidate in ipairs(context.services.Players:GetPlayers()) do
-          local lives = candidate:GetAttribute("Lives"); local model = candidate.Character
-          local humanoid = model and model:FindFirstChildOfClass("Humanoid")
-          if type(lives) == "number" and lives > 0 and candidate:GetAttribute("Playing") ~= false and humanoid and humanoid.Health > 0 then count += 1 end
-        end
-        duel = count == 2
-      end
-    end
-    if duel and not wasDuel and Utils.getConfigValue("MiniSpamVisible") ~= true then setConfigValue("MiniSpamVisible", true) end
-    wasDuel = duel
-  end))
   return {
     setSpam = setSpam,
     showMini = showMini,

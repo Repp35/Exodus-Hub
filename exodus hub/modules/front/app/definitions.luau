@@ -23,7 +23,7 @@ local CONFIG = {
               key = "AutoSpamClashPrediction",
               parentKey = "AutoSpam",
               requiresCapability = "clashPrediction",
-              description = "Predicts clashes and spams early. May increase misses.",
+              description = "Prevê clashes e spama antes, mas pode aumentar os misses.",
             },
             {
               kind = "toggle",

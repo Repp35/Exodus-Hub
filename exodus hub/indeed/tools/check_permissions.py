@@ -1,4 +1,4 @@
-"""Check literal module contracts and statically visible dependency access.
+"""Check fixed family capabilities, API compatibility and dependency access.
 
 No Roblox execution, network access or test harness is required. UI controllers
 receive the UI's restricted dependency views; their accesses are checked against
@@ -7,6 +7,8 @@ need runtime enforcement by permissions.luau.
 """
 from __future__ import annotations
 import re
+import json
+import argparse
 import sys
 from pathlib import Path
 
@@ -47,21 +49,70 @@ def lists(source: str) -> dict[str, set[str]]:
     return {alias: names(body) for alias, body in re.findall(r'(\w+)\s*=\s*\{([^{}]*)\}', source)}
 
 
+SPEC = json.loads(re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/logic/aux/permissions.luau').read_text(), re.S)[1])
+MODULES = {}
+
+def family(name, path):
+    for rule in SPEC['rules']:
+        if (rule.get('prefix') and path.startswith(rule['prefix'])) or name in rule.get('names', []):
+            return rule['family']
+    raise ValueError(f'Module has no family: {name}')
+
+def capability(provider, member, data=False):
+    if data:
+        if member in MODULES[provider].get('commandData', set()):
+            return SPEC['domains'][MODULES[provider]['family']]
+        return 'internal.read'
+    if member in SPEC['lifecycleMethods']:
+        return 'lifecycle.write'
+    definition = SPEC['providers'].get(provider, {})
+    if member in definition.get('methods', {}):
+        return definition['methods'][member]
+    if any(member.startswith(prefix) for prefix in SPEC['readPrefixes']):
+        return 'internal.read'
+    if any(member.startswith(prefix) for prefix in SPEC['subscribePrefixes']):
+        return 'lifetime.manage'
+    return definition.get('default', SPEC['domains'][MODULES[provider]['family']])
+
+def permitted(consumer, provider, member, data=False):
+    grants = set(SPEC['families'][consumer['family']]) | set(SPEC['base'])
+    permission = capability(provider, member, data)
+    own = provider == 'utils' and member == 'setConfig' and 'config.own' in grants
+    return ('*' in grants or permission in grants or own), ('config.own' if own and permission not in grants else permission)
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--report', action='store_true', help='List every module and its fixed family capabilities')
+    arguments = parser.parse_args()
     entries = re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', (ROOT / 'loader.luau').read_text())
     modules, errors = {}, []
+    manifest_paths = {path for _, path in entries}
+    actual_paths = {str(path.relative_to(ROOT)) for path in (ROOT / 'modules').rglob('*.luau')}
+    for path in sorted(actual_paths - manifest_paths):
+        errors.append(f'{path}: module outside the manifest has no reviewed family')
+    global MODULES
+    MODULES = modules
     for name, path in entries:
         source = clean((ROOT / path).read_text())
         contract = table(source, '__contract')
         if not contract:
             errors.append(f'{path}: missing literal __contract')
             continue
-        modules[name] = dict(path=path, source=source, code=clean(source, strings=True),
+        modules[name] = dict(family=family(name, path), path=path, source=source, code=clean(source, strings=True),
                              exports=names(table(contract, 'provides')),
                              data=names(table(contract, 'data')),
                              requires=dict(re.findall(r'(\w+)\s*=\s*"(\w+)"', table(contract, 'requires'))),
                              methods=lists(table(contract, 'requiresMethods')),
                              fields=lists(table(contract, 'requiresData')))
+    for module in modules.values():
+        module['commandData'] = set()
+        for field in module['data']:
+            assignment = re.search(r'\b\w+\.' + re.escape(field) + r'\s*=\s*(\w+)\b', module['code'])
+            if assignment:
+                variable = re.escape(assignment[1])
+                if re.search(r'\bfunction\s+' + variable + r'[.:]|\b' + variable + r'(?:\[[^\n]*?\]|\.\w+)\s*=\s*function', module['code']):
+                    module['commandData'].add(field)
     for owner, module in modules.items():
         returned = re.search(r'\breturn\s+(\w+)\s*$', module['code'])
         if returned:
@@ -81,6 +132,10 @@ def main() -> int:
                 for member in module[kind].get(alias, set()):
                     if member not in modules[provider][exported]:
                         errors.append(f'{owner}: {alias}.{member} is not exported by {provider}')
+                    else:
+                        ok, permission = permitted(module, provider, member, kind == 'fields')
+                        if not ok:
+                            errors.append(f'{owner} [{module["family"]}]: import {alias}.{member} requires forbidden capability {permission}')
         for kind in ['methods', 'fields']:
             for alias in module[kind].keys() - module['requires'].keys():
                 errors.append(f'{owner}: {kind} declared for unknown dependency {alias}')
@@ -92,6 +147,8 @@ def main() -> int:
         owner = 'ui' if name in forwarded else name
         consumer = modules[owner]
         code = module['code']
+        if consumer['family'] not in {'infrastructure', 'presentation'} and re.search(r'\b(?:_G\.)?Exodus\.(?:Context|Modules|UI)\b|\b_G\.ExodusUI\w*', code):
+            errors.append(f"{module['path']}: direct access to the hub registry/UI bypasses family APIs")
         aliases: dict[str, str] = {}
         dep_pattern = r'(?:context\.)?deps\.(\w+)'
         for match in re.finditer(dep_pattern + r'\.(\w+)', code):
@@ -118,20 +175,42 @@ def main() -> int:
             for match in re.finditer(r'\b' + re.escape(variable) + r'\.(\w+)', code):
                 accesses += 1
                 check(errors, module, consumer, owner, alias, match[1], match.start())
+    # Architectural invariants: combat remains one profile, without UI/config ownership.
+    combat = set(SPEC['families']['combat']) | set(SPEC['base'])
+    if combat & {'*', 'ui.write', 'config.write', 'manual.input.write', 'hub.control', 'infrastructure.write', 'lifecycle.write', 'game.write', 'game.inventory', 'ui.write', 'world.write', 'render.write', 'tooling.execute', 'input.stop'}:
+        errors.append('combat family must not own UI, configuration, manual input, or infrastructure')
+    if len({modules[name]['family'] for name in ['autoparry', 'autospam', 'spam', 'dynamicparry']}) != 1:
+        errors.append('AP, AutoSpam, Spam and DynamicParry must share one family')
+    if arguments.report:
+        for name, module in modules.items():
+            grants = sorted(set(SPEC['base']) | set(SPEC['families'][module['family']]))
+            print(f"{name}: {module['family']} -> {', '.join(grants)}")
     if errors:
         print('Permission verification failed:', file=sys.stderr)
         for error in sorted(set(errors)):
             print('  ' + error, file=sys.stderr)
         return 1
-    print(f'Permissions OK: {len(modules)} modules; {accesses} static accesses checked (including UI forwarding).')
+    print(f'Permissions OK: {len(modules)} modules; {accesses} static accesses; {len(SPEC["families"])} fixed families (including UI forwarding).')
     return 0
 
 
 def check(errors, module, consumer, owner, alias, member, offset):
-    allowed = consumer['methods'].get(alias, set()) | consumer['fields'].get(alias, set())
-    if member not in allowed:
-        line = module['source'].count('\n', 0, offset) + 1
-        errors.append(f"{module['path']}:{line}: {owner} -> {alias}.{member} missing in requiresMethods/requiresData")
+    provider = consumer['requires'][alias]
+    target = MODULES[provider]
+    line = module['source'].count('\n', 0, offset) + 1
+    if member not in target['exports'] | target['data']:
+        errors.append(f"{module['path']}:{line}: missing export {provider}.{member}")
+        return
+    ok, permission = permitted(consumer, provider, member, member in target['data'])
+    if not ok:
+        errors.append(f"{module['path']}:{line}: {owner} [{consumer['family']}] cannot use {provider}.{member}: {permission}")
+    elif permission == 'config.own':
+        call = re.match(r'\w+\.setConfig\s*\(\s*\{([^}]*)\}', module['code'][offset:])
+        if call:
+            prefix = SPEC['ownConfigPrefixes'][consumer['family']]
+            for key in re.findall(r'\b(\w+)\s*=(?!=)', call[1]):
+                if not key.startswith(prefix):
+                    errors.append(f"{module['path']}:{line}: {consumer['family']} cannot write config key {key}")
 
 
 if __name__ == '__main__':

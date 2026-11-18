@@ -972,7 +972,6 @@ AutoSpam.__contract = {
       "getConfigValue",
       "isManualSpamActive",
       "setAutoSpamActive",
-      "setManualSpamActive",
       "trackCharacter",
       "untrackCharacter",
       "recordTransition",
