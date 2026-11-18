@@ -27,6 +27,7 @@ local CONFIG = {
 
 local EMPTY_OPTIONS = {}
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+local function vector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 local function validBallSpeed(value) return finite(value) and value >= 0 and value <= 1000 end
 local function sharedLayout() return gameInfo.usesSharedLayout() end
 local function projectParts(range, speed, window, factor, latency, extraRange, latencyFactor, padding)
@@ -281,6 +282,29 @@ function Geometry.getTrajectory(position, velocity, rootPosition, nominalSpeed, 
   end
   return distance, closing, threshold, entry
 end
+function Geometry.getDanger(position, velocity, targetPosition, speed, range, responseTime, targetVelocity)
+  if not vector(position) or not vector(velocity) or not vector(targetPosition) or not validBallSpeed(speed) then return nil end
+  if not finite(range) or range <= 0 or not finite(responseTime) or responseTime < 0 then return nil end
+  local g = { noWindowParryRadius = range, effectiveWindow = responseTime }
+  local distance, closing, _, entry = Geometry.getTrajectory(position, velocity, targetPosition, speed, g, range, targetVelocity); local ballVelocity = velocity
+  if speed > 0 and ballVelocity.Magnitude > speed * 1.1 then ballVelocity = ballVelocity.Unit * speed * 1.1 end
+  local relative = ballVelocity - (vector(targetVelocity) and targetVelocity or Vector3.zero); local delta = targetPosition - position
+  local squaredSpeed = relative:Dot(relative); local closestAt = squaredSpeed > 0.000001 and math.max(0, delta:Dot(relative) / squaredSpeed) or 0
+  local closestDistance = (delta - relative * closestAt).Magnitude; local alignment = distance > 0 and squaredSpeed > 0.000001 and math.clamp(closing / math.sqrt(squaredSpeed), -1, 1) or 0
+  local score = entry == 0 and 100 or (finite(entry) and responseTime > 0 and 100 * math.clamp(1 - entry / (2 * responseTime), 0, 1) or 0)
+  return {
+    score = score,
+    ready = entry == 0 or (closing > 0 and entry <= responseTime),
+    distance = distance,
+    closingSpeed = closing,
+    entryTime = entry,
+    responseTime = responseTime,
+    alignment = alignment,
+    closestDistance = closestDistance,
+    closestAt = closestAt,
+    range = range,
+  }
+end
 function Geometry.getTrainingLatency(ping) return finite(ping) and math.clamp(ping, 0, CONFIG.TRAINING_MAX_PING) or 0 end
 function Geometry.getProjectedTriggerRadius(value, closingSpeed) return Geometry.getProjectedDeflectRadius(value, closingSpeed) + (value.triggerPadding or 0) end
 function Geometry.addLatencyRadius(range, speed, latency) return range + math.max(0, speed) * math.max(0, latency) end
@@ -345,6 +369,7 @@ Geometry.__contract = {
     "withAutoParryFactor",
     "getTrainingTrigger",
     "getTrajectory",
+    "getDanger",
     "getTrainingLatency",
     "getProjectedTriggerRadius",
     "addLatencyRadius",

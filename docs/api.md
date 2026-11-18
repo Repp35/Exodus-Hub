@@ -94,6 +94,34 @@ A autorização de alvo não ignora alcance, cooldown, congelamento ou personage
 morto. As leituras compartilham o cache curto de GameInfo, sem varrer a árvore
 inteira do jogo a cada frame.
 
+## Perigo físico compartilhado
+
+`DeflectGeometry.getDanger(position, velocity, targetPosition, speed, range,
+responseTime, targetVelocity)` calcula a entrada na esfera do alcance nativo,
+considerando a velocidade relativa do jogador. Retorna `score` (0–100), `ready`,
+`entryTime`, `responseTime`, `alignment`, `closestDistance` e `closingSpeed`.
+A trajetória precisa interceptar a esfera: aproximação radial sozinha não basta.
+O índice representa urgência, não probabilidade de acertar ou ser o alvo:
+100 significa contato; 50 é a fronteira `entryTime == responseTime`; uma
+trajetória que não intercepta o alcance recebe zero. Não há espera de confirmação
+nem acumulação de amostras para liberar o clique.
+
+AP usa a janela configurada e a margem de reação; a ampliação adaptativa exige
+TTI de morte iminente. Com simulação do replicador, o estado visual também precisa
+indicar risco próximo. Auto spam usa 30% da janela nativa mais latência e um frame
+nos gates de contato, sem somar a projeção da janela duas vezes. A previsão de
+clash usa o mesmo cálculo de interseção no alcance do oponente, mantendo seus
+limites próprios de antecedência e prioridade de destino.
+
+Antes da ativação e de cada envio automático, o auto spam exige oponente vivo
+próximo, alvo de rede dentro da dupla e perigo físico na dupla. O bloqueio de
+envio é imediato mesmo quando o cooldown ainda mantém o estado ativo. Histórico
+de trocas e continuidade não autorizam cliques com a bola distante. A avaliação
+física é reutilizada na rajada CPF enquanto snapshot e movimentos não mudarem.
+`AutoSpam.getStatus().danger`, `AutoParry.getTiming(snapshot).danger` e
+`AutoParry.getStatus().timing.danger` expõem o índice para diagnóstico.
+Treino e spam manual mantêm regras separadas.
+
 ## Pré-ativação em contato extremo
 
 `extreme_return_prediction` arma uma rajada antes do alvo local confirmar quando
@@ -108,7 +136,9 @@ A janela usa fator 0,3 e é limitada pelo orçamento de 240 ms mais latência.
 A devolução também precisa ter TTI inferior a esse orçamento. A rajada só começa quando falta até a menor entre a janela efetiva e 80 ms,
 mais latência, para a bola entrar no alcance do oponente. O orçamento de 240 ms
 continua avaliando o risco da devolução, sem iniciar a rajada com tanta antecedência.
-Fora do raio, a bola precisa se aproximar.
+Fora do alcance, a trajetória relativa precisa interceptar a esfera do oponente.
+A posição observada é usada para evitar contatos previstos a partir de uma
+posição antiga de pacote; a latência entra uma única vez no tempo de reação.
 
 `GameInfo.getDeflectTargetPrediction(id)` compara os candidatos pela direção da
 câmera replicada do oponente, com fallback de orientação do personagem, como a

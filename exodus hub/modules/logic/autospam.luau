@@ -12,6 +12,7 @@ local CONFIG = {
     RETURN = 0.36,
     EXTREME_TARGET_DELAY = 0.24,
     EXTREME_WINDOW_FACTOR = 0.3,
+    CONTACT_WINDOW_FACTOR = 0.3,
     EXTREME_MAX_LEAD = 0.08,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
@@ -103,6 +104,7 @@ local function deactivate(state, reason, time)
     and reason ~= "ball_left_exchange"
     and reason ~= "ball_reset"
     and reason ~= "anticipation_expired"
+    and reason ~= "target_left_pair"
     and reason ~= "anticipation_cancelled"
   then
     local opponent = playerPosition(state.partner)
@@ -184,14 +186,46 @@ local function geometry(s, factor)
   local low, high = gameInfo.getBallSpeedLimits(); g = deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1)
   return g, speed
 end
+local function ballDanger(state, s, target, position, motion)
+  if not position then position, motion = gameInfo.getPlayerMotion(target) end
+  if target == localPlayer.UserId then position, motion = state.root.Position, state.root.AssemblyLinearVelocity end
+  local speed = snapshotSpeed(s)
+  if not speed or speed <= 0 or not vector(position) then return nil end
+  local range = deflectGeometry.getPlayerRawRadius(target, speed, false); local window = deflectGeometry.getDeflectWindow(speed, false)
+  if not finite(range) or not finite(window) then return nil end
+  local response = window * CONFIG.ACTIVATION.CONTACT_WINDOW_FACTOR + networkLatency() + 1 / 60; return deflectGeometry.getDanger(s.position, s.velocity, position, speed, range, response, motion)
+end
 local function ballWindow(state, s, target)
-  local position = target == localPlayer.UserId and state.root.Position or playerPosition(target); local g, speed = geometry(s, 1)
-  if not vector(position) or not g then return false end
-  local delta = position - s.position; local distance = delta.Magnitude
-  local range = target == localPlayer.UserId and g.noWindowParryRadius or deflectGeometry.getPlayerRawRadius(target, speed, false)
-  if not finite(range) then return false end
-  local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0; local full = target == localPlayer.UserId and g.fullRadius or deflectGeometry.projectRadius(range, speed, g.effectiveWindow)
-  return distance <= range or (closing > 0 and distance <= deflectGeometry.projectRadius(full, closing, g.effectiveWindow))
+  local danger = ballDanger(state, s, target); return danger ~= nil and danger.ready
+end
+local function pairDanger(state, s, partner)
+  if not s or not vector(s.position) or not vector(s.velocity) then return nil end
+  local ownPosition, ownVelocity = state.root.Position, state.root.AssemblyLinearVelocity; local otherPosition, otherVelocity = gameInfo.getPlayerMotion(partner)
+  local cached = state.dangerCache
+  if
+    cached
+    and cached.snapshot == s
+    and cached.partner == partner
+    and cached.ownPosition == ownPosition
+    and cached.ownVelocity == ownVelocity
+    and cached.otherPosition == otherPosition
+    and cached.otherVelocity == otherVelocity
+  then
+    return cached.value
+  end
+  local own = ballDanger(state, s, localPlayer.UserId, ownPosition, ownVelocity); local other = ballDanger(state, s, partner, otherPosition, otherVelocity)
+  local best = own
+  if other and (not own or other.score > own.score) then best = other end
+  state.dangerCache = {
+    snapshot = s,
+    partner = partner,
+    ownPosition = ownPosition,
+    ownVelocity = ownVelocity,
+    otherPosition = otherPosition,
+    otherVelocity = otherVelocity,
+    value = best,
+  }
+  return best
 end
 local function nearPartner(state, id, limit)
   if not id or id == localPlayer.UserId or not playerIsAlive(id) then return nil end
@@ -302,7 +336,12 @@ local function activate(state, reason, partner, time, s)
   if not userId(partner) or partner == localPlayer.UserId or not target or (target ~= localPlayer.UserId and target ~= partner) then
     state.lastGate, state.gates.common = "target_outside_pair", "target_outside_pair"; return false
   end
-  state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
+  local danger = pairDanger(state, s, partner)
+  if not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready then
+    state.lastGate, state.gates.common = "no_immediate_danger", "no_immediate_danger"; return false
+  end
+  state.danger = danger; state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time
+  state.lastGate = reason
   if reason == "extreme_return_prediction" then
     state.anticipationUsed = true; state.anticipationUsedPartner = partner
     local other = playerPosition(partner); state.anticipationUsedGap = other and (other - state.root.Position).Magnitude or nil
@@ -391,6 +430,8 @@ local function deactivationReason(state, s, time, cd, expired)
   if expired == nil then cd, expired = monitorCooldown(state) end
   if expired then return "cooldown" end
   if s and (s.teleported or s.resetting) then return "ball_reset" end
+  local networkTarget = s and userId(s.exchangeTargetId or s.targetId)
+  if networkTarget and networkTarget ~= localPlayer.UserId and networkTarget ~= state.partner then return "target_left_pair" end
   if state.anticipatingUntil then
     local target = s and (s.exchangeTargetId or s.targetId)
     if anticipationConfirmed(state, s, time) then state.anticipatingUntil = nil
@@ -494,11 +535,11 @@ local function dashPrediction(state, s, time)
   return nil, lastGate
 end
 local function extremeReturnPartner(state, s, time, partner)
-  if not partner or partner == localPlayer.UserId then return nil end
+  if not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
   local other = playerPosition(partner); local speed = snapshotSpeed(s)
   if not other or not playerIsAlive(partner) or not speed or speed <= 0 then return nil end
-  local ownRadius = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
-  if not finite(ownRadius) or not finite(otherRadius) then return nil end
+  local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
+  if not finite(otherRadius) then return nil end
   local gap = (other - state.root.Position).Magnitude; local latency = networkLatency()
   if
     state.anticipationUsed
@@ -514,13 +555,10 @@ local function extremeReturnPartner(state, s, time, partner)
   if not finite(dangerRadius) or gap > dangerRadius then return nil end
   local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
   if math.max(0, gap - kill) / speed > budget then return nil end
-  local position = vector(s.realPosition) and s.realPosition or s.position; local delta = other - position
-  local distance = delta.Magnitude; local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0
-  local contactRadius = deflectGeometry.addLatencyRadius(otherRadius, speed, latency)
-  if distance > contactRadius and closing <= 0 then return nil end
-  local entry = distance <= contactRadius and 0 or (distance - contactRadius) / closing; local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency)
-  if entry > lead or distance > contactRadius + speed * lead then return nil end
-  return partner
+  local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency); local _, motion = gameInfo.getPlayerMotion(partner)
+  local danger = deflectGeometry.getDanger(s.position, s.velocity, other, speed, otherRadius, lead, motion)
+  if not danger or not danger.ready then return nil end
+  state.danger = danger; return partner
 end
 local function extremeReturn(state, s, time)
   local target = userId(s.exchangeTargetId or s.targetId)
@@ -545,11 +583,7 @@ local function chooseActivation(state, s, time)
     elseif s.targetId ~= localPlayer.UserId then
       state.gates.returnTarget = "return_not_target"
     else
-      local inWindow = ballWindow(state, s, localPlayer.UserId); local history = state.confirmedReturns
-      if not inWindow and history and history.partner == pending.partner and history.count >= 2 then
-        local g = geometry(s, 1); local position = vector(s.realPosition) and s.realPosition or s.position
-        inWindow = g and (position - state.root.Position).Magnitude <= g.fullRadius
-      end
+      local inWindow = ballWindow(state, s, localPlayer.UserId)
       if inWindow then state.gates.returnTarget = "ready"; return "return_target", pending.partner end
       state.gates.returnTarget = "return_ball_outside_window"
     end
@@ -559,6 +593,7 @@ local function chooseActivation(state, s, time)
     if
       nearPartner(state, close.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
       and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+      and ballWindow(state, s, localPlayer.UserId)
     then
       state.close = nil; state.gates.close = "ready"
       return "close_target", close.partner
@@ -812,6 +847,10 @@ function AutoSpam.canSend()
   local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd, cooldownExpired)
   if stop then deactivate(state, stop, time); return sendBlocked(state, stop, time) end
   local order = sequenceOrder(state, s and s.syncSequence); local gate = (order == "old" or order == "invalid") and ("packet_" .. order) or sampleGate(state, s, time)
+  local target = s and userId(s.exchangeTargetId or s.targetId)
+  if not target or (target ~= localPlayer.UserId and target ~= state.partner) then return sendBlocked(state, "target_outside_pair", time) end
+  local danger = pairDanger(state, s, state.partner); state.danger = danger
+  if not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready then return sendBlocked(state, "no_immediate_danger", time) end
   if gate == nil then return true end
   local transient = gate == "target_unknown"
     or gate == "snapshot_invalid"
@@ -856,6 +895,7 @@ function AutoSpam.getStatus()
     windowFactor = 1,
     gates = state and table.clone(state.gates) or {},
     confirmedReturns = state and state.confirmedReturns and state.confirmedReturns.count or 0,
+    danger = state and state.danger and table.clone(state.danger) or nil,
     dashPrediction = state and state.dashPrediction or nil,
     dashEscape = state and state.dashEscape or nil,
     activationReason = state and state.active and state.reason or nil,
@@ -884,6 +924,8 @@ AutoSpam.__contract = {
   },
   requiresMethods = {
     DeflectGeometry = {
+      "getDanger",
+      "getDeflectWindow",
       "getKillRadius",
       "getDefensePhysics",
       "getPlayerRawRadius",
