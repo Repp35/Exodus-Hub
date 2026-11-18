@@ -30,6 +30,7 @@ function Controller.create(context)
       if gameProcessed or UIState.keyCapture or context.kit.isCapturing(input) or UIS:GetFocusedTextBox() or not UIState.desktop or not inputBinding(input) then return end
       if UIState.closing then return end
       local config = Utils.getConfig() or {}
+      if config.DynamicParry == true and isKey(input, config.DynamicParryKey) then return end
       if isKey(input, config.Keybind) then
         actions.triggerShortcut(inputBinding(input))
       elseif isKey(input, config.SpamKeybind) then

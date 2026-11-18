@@ -124,8 +124,8 @@ local function fireInput(guard)
 end
 
 -- public-api
-local function dispatchParry(info, guard, context)
-  local method = utils.getConfigValue("ClickMethod")
+local function dispatchParry(info, guard, context, native)
+  local method = native and "Deflect" or utils.getConfigValue("ClickMethod")
   if method == "Input" then return fireInput(guard) end
   if info.isTrainingArea() then
     if not allowed(guard) then return false, "Deflect cancelado" end
@@ -155,6 +155,7 @@ function Remote.prepareParry(callerGuard)
     return dispatchParry(info, guard, context)
   end
 end
+function Remote.fireNativeParry(guard) return dispatchParry(gameInfo, guard, {}, true) end
 function Remote.fireParry(_flag, callerGuard) return Remote.prepareParry(callerGuard)() end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
@@ -187,6 +188,7 @@ Remote.__contract = {
     "teardown",
     "fireParry",
     "prepareParry",
+    "fireNativeParry",
     "fireDark",
     "fireFierce",
     "fireDash",

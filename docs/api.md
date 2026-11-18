@@ -287,3 +287,27 @@ equipamento. A UI valida antes de habilitar automações ou seus botões flutuan
 e exibe o motivo da recusa. Dark e Up Dash ficam ocultos sem a habilidade,
 inclusive após troca de equipamento; a configuração de visibilidade é preservada.
 Auto Jump é universal e não depende de habilidade equipada nem desse modo.
+
+## Dynamic Parry
+
+`logic/dynamicparry.luau` é um controle manual, sem ativação por alvo. Um toque
+envia uma chamada nativa `Deflect()`; manter o botão por 180 ms inicia o spam.
+Em Toggle, soltar mantém a rajada e o próximo clique encerra. Em Hold, soltar
+encerra. `DynamicParryKey` seleciona a tecla no PC e tem prioridade sobre os
+atalhos do hub quando o recurso está habilitado.
+
+O módulo clona o frame mobile fornecido por `DeflectAbility.Interface`, preserva
+a arte e redireciona as referências mobile de cooldown/flash para a substituta.
+O frame original fica oculto; referências, input nativo e visibilidade são
+restaurados ao desligar/recarregar. Respawn e troca de interface reanexam o botão.
+O envio usa `Remote.fireNativeParry`, independentemente de `ClickMethod`, para
+manter o fluxo e as animações nativas. A rajada usa o scheduler único de Spam,
+com estado independente de manual spam e AutoSpam.
+
+`AutoSpam.createManualSession()` cria o contexto manual de clash e
+`getManualStopReason(session, protectedUntil)` reaproveita a função de saída,
+cooldown, validação de snapshot e geometria do auto spam. Não há cópia dos gates
+no Dynamic. `DynamicParryDeactivation` habilita essas saídas após 300 ms mais o
+ping retornado por GameInfo. Morte, reset da bola, desligamento, perda de foco e
+comando explícito de parada podem encerrar antes. O período protege a rajada de
+saídas automáticas de clash; não contorna recusas ou cooldown nativo do jogo.

@@ -5,6 +5,7 @@ local Spam = {}
 local utils, remote, gameInfo, autoSpam, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false
+local dynamicParry
 local currentMode, currentRate
 local requestSequence = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
@@ -95,7 +96,7 @@ end
 -- scheduler
 local function sync()
   if not utils or not remote then return end
-  local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
+  local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive() or utils.isDynamicSpamActive()) and rate > 0
   if not enabled then
     if running then cancel("spam_disabled") end
     return
@@ -106,14 +107,24 @@ local function sync()
   running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
   local boundAutoSpam = autoSpam
   task.spawn(function()
-    local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
+    local function guard()
+      return token == generation
+        and boundUtils.isActive()
+        and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive() or boundUtils.isDynamicSpamActive())
+    end
     local function allowed()
       if not guard() then return false end
-      return (boundUtils.isManualSpamActive() and boundAutoSpam.canSendManual()) or boundAutoSpam.canSend()
+      return (boundUtils.isDynamicSpamActive() and dynamicParry.canSend())
+        or (boundUtils.isManualSpamActive() and boundAutoSpam.canSendManual())
+        or boundAutoSpam.canSend()
     end
     local ok, err = xpcall(function()
-      local dispatch = type(boundRemote.prepareParry) == "function" and boundRemote.prepareParry(allowed)
+      local prepared = type(boundRemote.prepareParry) == "function" and boundRemote.prepareParry(allowed)
         or function() return boundRemote.fireParry(1, allowed) end
+      local function dispatch()
+        if boundUtils.isDynamicSpamActive() then return boundRemote.fireNativeParry(allowed) end
+        return prepared()
+      end
       local function burst()
         if not allowed() then return end
         local sample = beginSample(os.clock())
@@ -125,7 +136,7 @@ local function sync()
       end
       local heartbeat = mode == "CPF" and boundUtils.getRunService().Heartbeat; local credit, previous = 0, os.clock()
       local clicksPerSecond = mode == "MS" and 1000 / rate or rate
-      if boundUtils.isAutoSpamActive() and allowed() then
+      if (boundUtils.isAutoSpamActive() or boundUtils.isDynamicSpamActive()) and allowed() then
         if mode == "CPF" then
           burst()
         elseif mode ~= "Auto" then
@@ -194,6 +205,8 @@ function Spam.setup(deps)
     or type(deps.Utils) ~= "table"
     or type(deps.Remote) ~= "table"
     or type(deps.GameInfo) ~= "table"
+    or type(deps.DynamicParry) ~= "table"
+    or type(deps.DynamicParry.canSend) ~= "function"
     or type(deps.AutoSpam) ~= "table"
     or type(deps.AutoSpam.canSend) ~= "function"
     or type(deps.AutoSpam.canSendManual) ~= "function"
@@ -209,8 +222,8 @@ function Spam.setup(deps)
   then
     return false, "dependência ausente: Remote ou Utils"
   end
-  Spam.teardown(); utils, remote, gameInfo, autoSpam = deps.Utils, deps.Remote, deps.GameInfo, deps.AutoSpam
-  spamObserver = utils.observeSpam(sync)
+  Spam.teardown(); dynamicParry = deps.DynamicParry
+  utils, remote, gameInfo, autoSpam = deps.Utils, deps.Remote, deps.GameInfo, deps.AutoSpam; spamObserver = utils.observeSpam(sync)
   configObserver = utils.observeConfig(function(changes)
     if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil or changes.MS ~= nil then sync() end
   end)
@@ -257,10 +270,12 @@ Spam.__contract = {
     Utils = "utils",
     GameInfo = "gameinfo",
     AutoSpam = "autospam",
+    DynamicParry = "dynamicparry",
   },
   requiresMethods = {
-    Remote = { "fireParry", "prepareParry" },
+    Remote = { "fireParry", "prepareParry", "fireNativeParry" },
     AutoSpam = { "canSend", "canSendManual" },
+    DynamicParry = { "canSend" },
     GameInfo = { "getAutoSpamDelay", "getMinimumSpamInterval" },
     Utils = {
       "apiVersion",
@@ -269,6 +284,7 @@ Spam.__contract = {
       "isActive",
       "isManualSpamActive",
       "isAutoSpamActive",
+      "isDynamicSpamActive",
       "observeSpam",
       "observeConfig",
       "trackGlobal",

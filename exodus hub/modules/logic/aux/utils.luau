@@ -13,6 +13,7 @@ local state = {
   urls = {},
   globalConnections = {},
   characterConnections = {},
+  dynamicSpam = false,
   manualSpam = false,
   autoSpam = false,
   lifecycle = {
@@ -339,7 +340,7 @@ function Utils.stop()
   end
   _G.ExodusUpdateStop = nil
   if type(stopUpdateChannel) == "function" then pcall(stopUpdateChannel) end
-  state.lifecycle.generation += 1; state.active, state.manualSpam, state.autoSpam = false, false, false
+  state.lifecycle.generation += 1; state.active, state.manualSpam, state.autoSpam, state.dynamicSpam = false, false, false, false
   local notified, notifyError = pcall(notify, spamObservers)
   if not notified then warn("Failed to notify observers: " .. tostring(notifyError)) end
   local saved, saveError = pcall(flushSave)
@@ -398,7 +399,8 @@ function Utils.recordError(source, message)
 end
 function Utils.isManualSpamActive() return state.manualSpam end
 function Utils.isAutoSpamActive() return state.autoSpam end
-function Utils.isSpamActive() return state.manualSpam or state.autoSpam end
+function Utils.isDynamicSpamActive() return state.dynamicSpam end
+function Utils.isSpamActive() return state.manualSpam or state.autoSpam or state.dynamicSpam end
 local function setSpam(key, value, source, reason)
   value = value == true
   if state[key] == value then return false end
@@ -407,9 +409,10 @@ local function setSpam(key, value, source, reason)
   return true
 end
 function Utils.setManualSpamActive(value) return setSpam("manualSpam", value, "Spam", "manual_toggle") end
+function Utils.setDynamicSpamActive(value) return setSpam("dynamicSpam", value, "DynamicParry", "manual_gesture") end
 function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoSpam", "automatic_toggle") end
 function Utils.stopAllSpam()
-  local changed = state.manualSpam or state.autoSpam; state.manualSpam, state.autoSpam = false, false
+  local changed = state.manualSpam or state.autoSpam or state.dynamicSpam; state.manualSpam, state.autoSpam, state.dynamicSpam = false, false, false
   if changed then notify(spamObservers) end
   return true
 end
@@ -577,6 +580,8 @@ Utils.__contract = {
     "recordError",
     "recordTransition",
     "isSpamActive",
+    "isDynamicSpamActive",
+    "setDynamicSpamActive",
     "isManualSpamActive",
     "isAutoSpamActive",
     "setManualSpamActive",

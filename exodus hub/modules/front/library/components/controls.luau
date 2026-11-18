@@ -19,6 +19,11 @@ function Components.install(context)
   local hitbox = context.hitbox; local commit = context.commit
   local shortcut = context.shortcut; local bind = context.bind
   local read = context.read
+  function components.keybind(parent, definition)
+    local height = Theme.CARD_H; local handle = control(parent, definition, height)
+    title(handle, definition, 64, height); shortcut(handle, definition.key, -64)
+    return handle
+  end
   function components.button(parent, definition)
     definition = definition or {}; local height = definition.description and Theme.CARD_H + 22 or Theme.CARD_H
     local handle = control(parent, definition, height); title(handle, definition, definition.shortcutKey and 64 or 0, height)

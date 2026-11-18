@@ -425,7 +425,7 @@ local function anticipationConfirmed(state, s, time)
 end
 local function deactivationReason(state, s, time, cd, expired)
   if not utils.isActive() then return "hub_inactive" end
-  if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  if not state.external and utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if expired == nil then cd, expired = monitorCooldown(state) end
   if expired then return "cooldown" end
@@ -862,6 +862,33 @@ function AutoSpam.canSend()
   if transient and canBridgeSend(state, s, time) then state.lastBridgedSendAt = time; return true end
   return sendBlocked(state, gate, time)
 end
+function AutoSpam.createManualSession()
+  local character = localPlayer.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
+  if not root then return nil end
+  return { external = true, character = character, root = root, stopEvents = {}, gates = {}, active = true, activatedAt = now() }
+end
+function AutoSpam.getManualStopReason(state, protectedUntil)
+  local time = now(); local s = gameInfo.getSnapshotAt(time)
+  if not state or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
+  if not utils.isActive() then return "hub_inactive" end
+  if s and (s.resetting or s.teleported or (state.ball and state.ball ~= s.ball)) then return "ball_reset" end
+  if s then
+    state.ball = s.ball; observeTarget(state, s, time, true, true)
+    observeExchangeContinuity(state, s, time); local target = userId(s.exchangeTargetId or s.targetId)
+    if state.exchange and not state.partnerConfirmed then state.partner, state.partnerConfirmed = state.exchange.partner, true end
+    if not state.partner then state.partner = target ~= localPlayer.UserId and target or state.previousOpponent or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) end
+  end
+  local cd, expired = monitorCooldown(state)
+  if time < protectedUntil then return nil end
+  if not state.partner then return "no_clash_partner" end
+  local stop = deactivationReason(state, s, time, cd, expired)
+  if stop then return stop end
+  local gate = sampleGate(state, s, time)
+  if gate then return gate end
+  local danger = pairDanger(state, s, state.partner)
+  if not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready then return "no_immediate_danger" end
+  return nil
+end
 function AutoSpam.stopSpam(reason)
   if current then deactivate(current, reason or "stop_spam", now()) end
 end
@@ -981,6 +1008,8 @@ AutoSpam.__contract = {
     "getTargetSwitch",
     "getDashData",
     "stopSpam",
+    "createManualSession",
+    "getManualStopReason",
   },
   onBallSync = true,
   bindCharacter = true,

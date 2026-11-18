@@ -51,6 +51,21 @@ local CONFIG = {
           },
         },
         {
+          title = "Dynamic Parry",
+          column = 2,
+          components = {
+            { kind = "toggle", title = "Dynamic Parry", key = "DynamicParry" },
+            {
+              kind = "segmented",
+              title = "Modo",
+              key = "DynamicParryMode",
+              options = { { value = "Toggle", label = "Travar ao segurar" }, { value = "Hold", label = "Hold" } },
+            },
+            { kind = "keybind", title = "Botão no PC", key = "DynamicParryKey" },
+            { kind = "toggle", title = "Desativação dinâmica", key = "DynamicParryDeactivation" },
+          },
+        },
+        {
           title = "Manual Spam",
           column = 2,
           components = {
@@ -433,6 +448,10 @@ local CONFIG = {
       CPF = "rate",
       MS = "rate",
       SpamRateMode = "rateMode",
+      DynamicParry = "boolean",
+      DynamicParryMode = "spamActivation",
+      DynamicParryKey = "keyCode",
+      DynamicParryDeactivation = "boolean",
       ManualSpamMode = "spamActivation",
       ClickMethod = "clickMethod",
       Keybind = "keyCode",
@@ -493,6 +512,10 @@ local CONFIG = {
       CPF = 10,
       MS = 10,
       SpamRateMode = "CPF",
+      DynamicParry = false,
+      DynamicParryMode = "Toggle",
+      DynamicParryKey = Enum.KeyCode.F,
+      DynamicParryDeactivation = true,
       ManualSpamMode = "Toggle",
       ClickMethod = "Deflect",
       Keybind = Enum.KeyCode.F9,
