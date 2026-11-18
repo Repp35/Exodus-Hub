@@ -111,6 +111,20 @@ Sequências antigas/duplicadas não criam trocas. Mudança de direção sem troc
 alvo não é retorno. As regras de continuidade do clash, miss e cooldown são
 independentes da aquisição dessas evidências de ativação.
 
+Miss isolado não encerra o AutoSpam. Cooldown bloqueado continuamente encerra a
+sessão após a janela de defesa atual, latência e margem de frames. O prazo ganha
+tolerância progressiva quando a ida e volta entre os alcances dos jogadores é
+mais rápida que essa janela; distância e velocidade entram no cálculo, sem raio
+fixo para essa tolerância. Cooldown liberado, reset previsto ou confirmação de
+parry reiniciam a contagem. Aproximar/afastar altera o prazo sem reiniciar o tempo
+já bloqueado. Após encerrar, é necessária nova evidência de ativação.
+
+A saída física também observa posição, direção e alcance durante a janela atual:
+a bola precisa estar fora do alcance temporal dos dois jogadores e se afastando
+de ambos continuamente para encerrar a troca, mesmo com um alvo visual atrasado.
+Oposição próxima não veta cooldown persistente, reset ou saída física confirmada.
+
+
 ## Carregamento e atualização
 
 O manifesto de publicação contém a revisão do repositório e checksums por

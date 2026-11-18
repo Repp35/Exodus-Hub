@@ -25,6 +25,9 @@ local CONFIG = {
     DASH_DETECTION_RANGE = 70,
   },
   DEACTIVATION = {
+    COOLDOWN_NEAR_FACTOR = 2,
+    COOLDOWN_MARGIN = 2 / 60,
+    PHYSICAL_EXIT_DELAY = 0.12,
     PROTECTION_RADIUS = 14,
     MAX_CLASH_DISTANCE = 35,
     DASH_ESCAPE_COOLDOWN = 0.05,
@@ -93,6 +96,8 @@ local function deactivate(state, reason, time)
     and reason ~= "opponent_left_or_died"
     and reason ~= "cooldown"
     and reason ~= "target_redirected_far"
+    and reason ~= "ball_left_exchange"
+    and reason ~= "ball_reset"
   then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
@@ -101,12 +106,38 @@ local function deactivate(state, reason, time)
   end
   time = time or now()
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
-  state.sendContinuity = nil; state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason
-  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY; lastStopReason, lastStopAt = reason, time
-  utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
-  return true
+  if reason == "cooldown" or reason == "ball_left_exchange" or reason == "ball_reset" then resetTargets(state) end
+  state.physicalExitSince = nil; state.sendContinuity = nil
+  state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
+  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
+  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
-local function monitorCooldown(state) return cooldownInfo.getDeflectCooldownState(), false end
+local function monitorCooldown(state)
+  local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
+  local reset = not cd or cd.source == "unknown" or cd.blocking ~= true or cd.predictedReset == true; local parried = cd and cd.lastParriedAt
+  if finite(parried) and parried ~= state.cooldownParriedAt then reset = true; state.cooldownParriedAt = parried end
+  if reset then
+    state.cooldownResetAt = time; state.cooldownSince, state.cooldownEpisode, state.cooldownStart, state.cooldownWindow, state.cooldownLimit = nil, nil, nil, nil, nil
+    return cd, false
+  end
+  local start = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or nil
+  if start and state.cooldownResetAt then start = math.max(start, state.cooldownResetAt) end
+  if not state.cooldownSince or state.cooldownEpisode ~= cd.episode or state.cooldownStart ~= start then
+    state.cooldownSince, state.cooldownEpisode, state.cooldownStart = start or time, cd.episode, start
+  end
+  local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshotSpeed(snapshot)
+  local g = speed and deflectGeometry.getDeflectGeometry(speed, "game", 1, false, 0); local window = g and g.deflectWindow
+  state.cooldownWindow = finite(window) and window > 0 and math.max(window, 0.05) or nil; local opponent = playerPosition(state.partner)
+  local distance = opponent and state.root and (opponent - state.root.Position).Magnitude
+  local otherRadius = speed and state.partner and deflectGeometry.getPlayerRawRadius(state.partner, speed, false); local proximity = 0
+  if distance and speed and speed > 0 and g and finite(g.noWindowParryRadius) and finite(otherRadius) and state.cooldownWindow then
+    local travel = math.max(0, distance - g.noWindowParryRadius - otherRadius); local roundTrip = 2 * travel / speed
+    proximity = math.clamp(1 - roundTrip / state.cooldownWindow, 0, 1)
+  end
+  local factor = 1 + proximity * (CONFIG.DEACTIVATION.COOLDOWN_NEAR_FACTOR - 1)
+  state.cooldownLimit = state.cooldownWindow and state.cooldownWindow * factor + networkLatency() + CONFIG.DEACTIVATION.COOLDOWN_MARGIN or nil
+  return cd, state.cooldownLimit ~= nil and time - state.cooldownSince >= state.cooldownLimit
+end
 local function sampleGate(state, s, time)
   if not utils.isActive() then return "hub_inactive" end
   if not state.root.Parent or not state.character.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
@@ -328,11 +359,33 @@ local function deactivationReason(state, s, time, cd)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
+  local _, expired = monitorCooldown(state)
+  if expired then return "cooldown" end
+  if s and (s.teleported or s.resetting) then return "ball_reset" end
   if redirectedFar(state, s, time) then return "target_redirected_far" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   local opponent = playerPosition(state.partner)
   if not opponent then state.distanceSince = nil; return nil end
   local distance = (opponent - state.root.Position).Magnitude
+  if freshSnapshot(s, time) and not s.locked and vector(s.position) and vector(s.velocity) then
+    local position = vector(s.realPosition) and s.realPosition or s.position; local fromOwn, fromOther = position - state.root.Position, position - opponent
+    local g, speed = geometry(s); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
+    local ownLimit = g and deflectGeometry.projectRadius(g.noWindowParryRadius, speed, g.deflectWindow, 1, networkLatency())
+    local otherLimit = g and finite(otherRadius) and deflectGeometry.projectRadius(otherRadius, speed, g.deflectWindow, 1, networkLatency()); local outside = ownLimit
+      and otherLimit
+      and fromOwn.Magnitude > ownLimit
+      and fromOther.Magnitude > otherLimit
+      and s.velocity:Dot(fromOwn) > 0
+      and s.velocity:Dot(fromOther) > 0
+    if outside then
+      state.physicalExitSince = state.physicalExitSince or time
+      if time - state.physicalExitSince >= CONFIG.DEACTIVATION.PHYSICAL_EXIT_DELAY then return "ball_left_exchange" end
+    else
+      state.physicalExitSince = nil
+    end
+  else
+    state.physicalExitSince = nil
+  end
   if distance <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then state.distanceSince = nil; return nil end
   if distance > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then
     state.distanceSince = state.distanceSince or time
@@ -441,7 +494,11 @@ local function observeStats(state, s, time, packet)
 end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
-  state.gates = {}; local cd = monitorCooldown(state)
+  state.gates = {}; local cd, cooldownExpired = monitorCooldown(state)
+  if cooldownExpired then
+    deactivate(state, "cooldown", time); clearEvidence(state)
+    state.lastGate, state.gates.common = "cooldown", "cooldown"; return
+  end
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
@@ -460,7 +517,7 @@ local function evaluate(state, s, time, packet)
   if gate then
     state.gates.common, state.lastGate = gate, gate; state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil
     state.cooldownResumeAt = time
-    if gate == "player_died" or gate == "hub_inactive" then deactivate(state, gate, time) end
+    if gate == "player_died" or gate == "hub_inactive" or gate == "ball_reset" then deactivate(state, gate, time) end
     if gate == "ball_reset" or gate == "target_unknown" then resetTargets(state) end
     if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return

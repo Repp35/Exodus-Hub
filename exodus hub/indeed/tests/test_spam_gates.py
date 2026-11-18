@@ -56,15 +56,16 @@ for _,factor in ipairs(geometryFactors) do assert(factor==1) end
     def test_near_opponent_preserves_session_during_cooldown(self):
         check('''
 packet(42,0,2);cd.blocking=true;cd.blockingSince=tm
-packet(99,.01,50);heartbeat(.5);assert(ap.isActive())
+packet(99,.01,50);heartbeat(.1);assert(ap.isActive())
+heartbeat(.35);stopped('cooldown')
 ''')
 
-    def test_continuous_nonmiss_cooldown_does_not_stop_spam(self):
+    def test_continuous_cooldown_stops_even_without_miss_flag(self):
         check("""
 snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16);other.root.Position=v(20)
 packet(42,0,12);packet(99,.01);packet(42,.05)
 cd.blocking=true;cd.blockingSince=tm;heartbeat(2)
-assert(ap.isActive(),'ordinary cooldown stopped spam')
+stopped('cooldown')
 """)
 
 
@@ -96,13 +97,13 @@ local before=clicks;ap.onBallSync({Source='packet',Sequence=0,TargetPlayerID=42,
     def test_disabled_and_detached_never_send(self):
         check("cfg.AutoSpam=false;packet(42,0,2);assert(not ap.isActive() and clicks==0);cfg.AutoSpam=true;packet(42,.01,2);assert(ap.isActive());ap.detachCharacter();assert(not ap.canSend())")
 
-    def test_paused_session_survives_resume(self):
+    def test_paused_session_does_not_hide_continuous_cooldown(self):
         check("""
 other.root.Position=v(30);packet(42,0,50);packet(99,.01);packet(42,.05)
 packet(99,.01);cd.blocking=true;cd.blockingSince=tm
-snap.locked=true;heartbeat(1);assert(ap.isActive() and not ap.canSend())
-snap.locked=false;cd.blocking=false;heartbeat(.01);assert(ap.isActive())
-heartbeat(.17);assert(ap.isActive(),'resumed session was interrupted')
+snap.locked=true;heartbeat(1);assert(not ap.isActive() and not ap.canSend())
+snap.locked=false;cd.blocking=false;heartbeat(.01);assert(not ap.isActive())
+other.root.Position=v(10);packet(42,.02,5);assert(ap.isActive(),'new receipt after recovery did not activate')
 """)
 
     def test_reset_does_not_create_fake_return_and_cannot_hide_miss(self):
