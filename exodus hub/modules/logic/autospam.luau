@@ -389,10 +389,19 @@ local function deactivationReason(state, s, time, cd, expired)
   if s and (s.teleported or s.resetting) then return "ball_reset" end
   if state.anticipatingUntil then
     local target = s and (s.exchangeTargetId or s.targetId)
-    if anticipationConfirmed(state, s, time) then state.anticipatingUntil = nil
-    elseif target ~= state.partner and target ~= localPlayer.UserId then return "anticipation_cancelled"
-    elseif time >= state.anticipatingUntil then return "anticipation_expired"
-    elseif gameInfo.getDeflectTargetPrediction(state.partner) ~= localPlayer.UserId then return "anticipation_cancelled" end
+    if anticipationConfirmed(state, s, time) then
+      state.anticipatingUntil = nil
+    elseif
+      target ~= state.partner
+      and target ~= localPlayer.UserId
+      and not (state.anticipationUsedSeal and target == state.anticipationStartTarget and localPlayer:GetAttribute("DarkSealed") == true)
+    then
+      return "anticipation_cancelled"
+    elseif time >= state.anticipatingUntil then
+      return "anticipation_expired"
+    elseif gameInfo.getDeflectTargetPrediction(state.partner) ~= localPlayer.UserId then
+      return "anticipation_cancelled"
+    end
   end
   if redirectedFar(state, s, time) then return "target_redirected_far" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
