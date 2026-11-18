@@ -299,7 +299,11 @@ end
 local function activate(state, reason, partner, time, s)
   if state.active then return false end
   state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
-  if reason == "extreme_return_prediction" then state.anticipationUsed = true; state.anticipatingUntil = time + CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + networkLatency() end
+  if reason == "extreme_return_prediction" then
+    state.anticipationUsed = true; state.anticipationUsedSeal = localPlayer:GetAttribute("DarkSealed") == true
+    local other = playerPosition(partner); state.anticipationUsedGap = other and (other - state.root.Position).Magnitude or nil
+    state.anticipatingUntil = time + CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + networkLatency()
+  end
   if s.targetId == partner then state.departedAt = state.departedAt or time end
   lastActivationReason, lastActivationAt = reason, time; clashStatsModule.begin(partner, time)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
@@ -369,6 +373,13 @@ local function sendBlocked(state, reason, time)
   if state.lastSendBlockReason ~= reason then state.lastSendBlockReason, state.lastSendBlockAt = reason, time end
   return false
 end
+local function anticipationConfirmed(state, s, time)
+  local exchange = state.exchange; return freshSnapshot(s, time)
+    and (s.exchangeTargetId or s.targetId) == localPlayer.UserId
+    and exchange
+    and exchange.partner == state.partner
+    and exchange.at >= state.activatedAt
+end
 local function deactivationReason(state, s, time, cd, expired)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
@@ -378,8 +389,8 @@ local function deactivationReason(state, s, time, cd, expired)
   if s and (s.teleported or s.resetting) then return "ball_reset" end
   if state.anticipatingUntil then
     local target = s and (s.exchangeTargetId or s.targetId)
-    if target == localPlayer.UserId and freshSnapshot(s, time) then state.anticipatingUntil = nil
-    elseif target ~= state.partner then return "anticipation_cancelled"
+    if anticipationConfirmed(state, s, time) then state.anticipatingUntil = nil
+    elseif target ~= state.partner and target ~= localPlayer.UserId then return "anticipation_cancelled"
     elseif time >= state.anticipatingUntil then return "anticipation_expired"
     elseif gameInfo.getDeflectTargetPrediction(state.partner) ~= localPlayer.UserId then return "anticipation_cancelled" end
   end
@@ -478,14 +489,20 @@ local function dashPrediction(state, s, time)
   end
   return nil, lastGate
 end
-local function extremeReturn(state, s, time)
-  local partner = userId(s.exchangeTargetId or s.targetId)
-  if not partner or partner == localPlayer.UserId or state.anticipationUsed then return nil end
+local function extremeReturnPartner(state, s, time, partner, sealed)
+  if not partner or partner == localPlayer.UserId then return nil end
   local other = playerPosition(partner); local speed = snapshotSpeed(s)
   if not other or not playerIsAlive(partner) or not speed or speed <= 0 then return nil end
   local ownRadius = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
   if not finite(ownRadius) or not finite(otherRadius) then return nil end
   local gap = (other - state.root.Position).Magnitude; local latency = networkLatency()
+  if
+    state.anticipationUsed
+    and not (sealed and not state.anticipationUsedSeal)
+    and not (finite(state.anticipationUsedGap) and state.anticipationUsedGap - gap >= otherRadius * 0.25)
+  then
+    return nil
+  end
   if gameInfo.getDeflectTargetPrediction(partner) ~= localPlayer.UserId then return nil end
   local budget = CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + latency; local g = geometry(s, CONFIG.ACTIVATION.EXTREME_WINDOW_FACTOR)
   if not g then return nil end
@@ -498,8 +515,21 @@ local function extremeReturn(state, s, time)
   local contactRadius = deflectGeometry.addLatencyRadius(otherRadius, speed, latency)
   if distance > contactRadius and closing <= 0 then return nil end
   local entry = distance <= contactRadius and 0 or (distance - contactRadius) / closing; local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency)
-  if entry > lead or distance > contactRadius + speed * lead then return nil end
+  local forcedContact = sealed and gap <= contactRadius; local allowedLead = forcedContact and math.min(budget, g.deflectWindow + latency) or lead
+  if entry > allowedLead or distance > contactRadius + speed * allowedLead then return nil end
   return partner
+end
+local function extremeReturn(state, s, time)
+  local sealed = localPlayer:GetAttribute("DarkSealed") == true; local target = userId(s.exchangeTargetId or s.targetId)
+  local partner = extremeReturnPartner(state, s, time, target, sealed)
+  if partner then return partner end
+  if not sealed then return nil end
+  for _, player in ipairs(players:GetPlayers()) do
+    if player ~= localPlayer and player.UserId ~= target then
+      partner = extremeReturnPartner(state, s, time, player.UserId, true)
+      if partner then return partner end
+    end
+  end
 end
 local function chooseActivation(state, s, time)
   local anticipated = extremeReturn(state, s, time)
@@ -569,12 +599,7 @@ local function evaluate(state, s, time, packet)
     state.sendContinuity = nil; state.ball, state.sequence = s.ball, nil
     resetTargets(state)
   end
-  if
-    state.active
-    and state.anticipatingUntil
-    and time >= state.anticipatingUntil
-    and not (freshSnapshot(s, time) and (s.exchangeTargetId or s.targetId) == localPlayer.UserId)
-  then
+  if state.active and state.anticipatingUntil and time >= state.anticipatingUntil and not anticipationConfirmed(state, s, time) then
     deactivate(state, "anticipation_expired", time); clearEvidence(state)
     return
   end
