@@ -145,7 +145,10 @@ function Controller.create(context)
     card.BackgroundColor3 = background; local cardStroke = card:FindFirstChildOfClass("UIStroke")
     if cardStroke then cardStroke.Color = border end
     local label = card:FindFirstChild("Message")
-    if label then label.Text = tostring(message) end
+    if label then
+      label.TextColor3 = Color3.new(1, 1, 1); label.RichText = false
+      label.Text = tostring(message)
+    end
     if duration == nil and safeKey ~= "dumper" then duration = 2.5 end
     state.generation += 1; local generation = state.generation
     card:SetAttribute("ExodusNotificationGeneration", generation); reflowPersistentNotifications(true)

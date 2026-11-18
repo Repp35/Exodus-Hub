@@ -61,13 +61,12 @@ function Pages.create(kit, parent, definitions, context)
   end
   local function included(definition) return not (context.desktop and definition.mobileOnly) and not (not context.desktop and definition.desktopOnly) end
   for _, definition in ipairs(definitions) do
-    local root = inst("CanvasGroup", {
+    local root = inst("Frame", {
       Name = "Page_" .. definition.id,
       Size = UDim2.fromOffset(width, height),
       Position = origin,
       BackgroundTransparency = 1,
       Visible = false,
-      GroupTransparency = 1,
       ClipsDescendants = true,
       ZIndex = 6,
     }, parent)
@@ -158,8 +157,7 @@ function Pages.create(kit, parent, definitions, context)
   end
   local function settle()
     for id, page in pairs(registry) do
-      page.Root.Visible = id == active; page.Root.GroupTransparency = id == active and 0 or 1
-      page.Root.Position = origin
+      page.Root.Visible = id == active; page.Root.Position = origin
     end
     transitioning = false; shield.Visible = false
   end
@@ -187,7 +185,7 @@ function Pages.create(kit, parent, definitions, context)
     for key, page in pairs(registry) do
       local root = page.Root
       if key == active then
-        if not root.Visible then root.Position = UDim2.fromOffset(T.PAD + T.PAGE_OFFSET * direction, T.TITLE_H + T.PAD); root.GroupTransparency = 1 end
+        if not root.Visible then root.Position = UDim2.fromOffset(T.PAD + T.PAGE_OFFSET * direction, T.TITLE_H + T.PAD) end
         root.Visible = true; targets[#targets + 1] = { root = root, position = origin, transparency = 0 }
       elseif root.Visible then
         targets[#targets + 1] = { root = root, position = UDim2.fromOffset(T.PAD - T.PAGE_OFFSET * direction, T.TITLE_H + T.PAD), transparency = 1 }
@@ -203,9 +201,15 @@ function Pages.create(kit, parent, definitions, context)
       end
     end
     for _, target in ipairs(targets) do
-      local tween = motion.play(target.root, "page", { Position = target.position, GroupTransparency = target.transparency }, complete)
+      local tween = motion.play(target.root, "page", { Position = target.position }, complete)
       if tween then tweens[#tweens + 1] = tween end
     end
+    task.delay(0.6, function()
+      if alive and revision == generation and transitioning then
+        cancel(); settle()
+        notify()
+      end
+    end)
   end
   function controller.step(direction)
     local index = table.find(normal, active)

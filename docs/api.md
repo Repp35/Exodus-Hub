@@ -230,7 +230,7 @@ clash. Animar a troca de interface pertence ao controller lifecycle.
 | Configuração | Padrão | Efeito |
 | --- | --- | --- |
 | AntiLagEnabled | false | Ativa o otimizador e seu journal reversível. |
-| AntiLagRenderDistance | 200 | Raio ao redor do personagem para cenário, personagens, bolas, efeitos e indicadores no mundo. |
+| AntiLagRenderDistance | 200 | Raio ao redor da câmera para cenário, personagens, efeitos e indicadores no mundo; a bola tem visibilidade protegida. |
 | AntiLagFloorCull | true | Usa a menor altura pisada, com margem de 5 studs; mantém peças potencialmente visíveis no campo de visão. |
 
 O culling usa limites de cada objeto e planos da câmera com margem apenas para
@@ -328,3 +328,15 @@ pelo direcional. `ButtonSelect` ou a tecla `Menu` abre/fecha o painel; com ele
 aberto, o gamepad navega a interface sem disparar atalhos de combate. O foco é
 restaurado no teardown. Remotos de TV dependem dos eventos de teclado/gamepad
 expostos pelo Roblox no dispositivo, sem inferência de protocolos de hardware.
+
+A bola e seus descendentes são excluídos dos cortes espaciais e da remoção de
+efeitos do otimizador. Ao trocar a bola, suas propriedades são restauradas
+imediatamente. A visão é avaliada em `PreRender`; objetos ocultos que entram na
+visão são restaurados na atualização da câmera, sem a antiga fila de 48 por
+passagem. A indexação e os cortes restantes continuam incrementais.
+
+As páginas usam frames comuns com transição de posição, evitando um render
+target de CanvasGroup para cada página inteira. Um finalizador por revisão
+garante a visibilidade da página ativa quando uma transição não completa.
+Notificações persistentes e de falha de inicialização reaplicam texto branco
+sem RichText, inclusive ao reutilizar cartões existentes.

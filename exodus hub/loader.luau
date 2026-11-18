@@ -42,7 +42,11 @@ local function fallbackNotification(message, key, kind, duration)
     label.Parent = card
   end
   local label = card:FindFirstChild("Message")
-  if label then label.Text = tostring(message) end
+  if label then
+    label.TextColor3 = Color3.new(1, 1, 1); label.RichText = false
+    label.TextStrokeTransparency = 1; label.ZIndex = 101
+    label.Text = tostring(message)
+  end
   if duration == nil and key ~= "dumper" then duration = 2.5 end
   card.GroupTransparency = 0; card.Visible = true
   local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1; card:SetAttribute("ExodusNotificationGeneration", generation)
