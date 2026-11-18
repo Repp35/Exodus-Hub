@@ -296,8 +296,9 @@ Em Toggle, soltar mantém a rajada e o próximo clique encerra. Em Hold, soltar
 encerra. `DynamicParryKey` seleciona a tecla no PC e tem prioridade sobre os
 atalhos do hub quando o recurso está habilitado.
 
-O módulo clona o frame mobile fornecido por `DeflectAbility.Interface`, preserva
-a arte e redireciona as referências mobile de cooldown/flash para a substituta.
+O módulo cria um botão próprio com painel vermelho (OFF) e verde (ON), sem
+o texto BLOCK. Reutiliza somente o ícone da habilidade e redireciona as
+referências mobile de cooldown/flash para os elementos novos.
 O frame original fica oculto; referências, input nativo e visibilidade são
 restaurados ao desligar/recarregar. Respawn e troca de interface reanexam o botão.
 O envio usa `Remote.fireNativeParry`, independentemente de `ClickMethod`, para

@@ -57,30 +57,48 @@ local function attach(ability)
   local interface = ability and ability.Interface; local original = interface and interface.MobileUIAbilityFrame
   if not original or not original.Parent then return end
   if binding and binding.ability == ability and binding.original == original and binding.clone.Parent then return end
-  restore(); local clone = original:Clone()
-  clone.Name = "ExodusDynamicParry"
-  for _, item in ipairs(clone:GetDescendants()) do
-    if item:IsA("LuaSourceContainer") then item:Destroy() end
-  end
-  local function counterpart(item)
-    if item == original then return clone end
-    local path = {}; local node = item
-    while node and node ~= original do
-      table.insert(path, 1, node.Name); node = node.Parent
-    end
-    if node ~= original then return nil end
-    local target = clone
-    for _, name in ipairs(path) do
-      target = target and target:FindFirstChild(name)
-    end
-    return target
-  end
-  local references, replacements = {}, {}
-  for key, value in pairs(interface) do
-    if typeof(value) == "Instance" and (value == original or value:IsDescendantOf(original)) then
-      local replacement = counterpart(value)
-      if replacement then references[key], replacements[key], interface[key] = value, replacement, replacement end
-    end
+  restore(); local clone = Instance.new("Frame")
+  clone.Name = "ExodusDynamicParry"; clone.Size, clone.Position, clone.AnchorPoint = original.Size, original.Position, original.AnchorPoint
+  clone.LayoutOrder, clone.ZIndex, clone.BackgroundTransparency = original.LayoutOrder, original.ZIndex, 1; local button = Instance.new("TextButton")
+  button.Name = "DynamicButton"; button.Size = UDim2.fromScale(1, 1)
+  button.Text = ""; button.AutoButtonColor = false
+  button.Selectable = true; button.BackgroundColor3 = Color3.fromRGB(160, 32, 43)
+  button.BackgroundTransparency = 0.08; button.BorderSizePixel = 0
+  button.ZIndex = clone.ZIndex + 1; button.Parent = clone
+  local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0.24, 0)
+  corner.Parent = button; local outline = Instance.new("UIStroke")
+  outline.Thickness = 2; outline.Color = Color3.fromRGB(255, 80, 95)
+  outline.Parent = button; local image = Instance.new("ImageLabel")
+  image.Name = "ParryIcon"; image.BackgroundTransparency = 1
+  image.AnchorPoint = Vector2.new(0.5, 0); image.Position = UDim2.fromScale(0.5, 0.08)
+  image.Size = UDim2.fromScale(0.64, 0.57); image.ScaleType = Enum.ScaleType.Fit
+  image.Image = interface.MobileUIAbilityImage.Image; image.ImageColor3 = Color3.new(1, 1, 1)
+  image.ZIndex = button.ZIndex + 2; image.Parent = button
+  local clipping = Instance.new("Frame"); clipping.Name = "CooldownClipping"
+  clipping.BackgroundTransparency = 1; clipping.Size = UDim2.fromScale(1, 1)
+  clipping.ClipsDescendants = true; clipping.ZIndex = button.ZIndex + 1
+  clipping.Parent = button; local cooldown = Instance.new("Frame")
+  cooldown.Name = "Cooldown"; cooldown.AnchorPoint = Vector2.new(0, 1)
+  cooldown.Position = UDim2.fromScale(0, 1); cooldown.Size = UDim2.fromScale(1, 0)
+  cooldown.BackgroundColor3 = Color3.new(0, 0, 0); cooldown.BackgroundTransparency = 0.45
+  cooldown.BorderSizePixel = 0; cooldown.ZIndex = clipping.ZIndex
+  cooldown.Parent = clipping; local flash = Instance.new("Frame")
+  flash.Name = "RecoveryFlash"; flash.Size = UDim2.fromScale(1, 1)
+  flash.BackgroundColor3 = Color3.new(1, 1, 1); flash.BackgroundTransparency = 1
+  flash.BorderSizePixel = 0; flash.ZIndex = button.ZIndex + 3
+  flash.Parent = button; local flashCorner = Instance.new("UICorner")
+  flashCorner.CornerRadius = corner.CornerRadius; flashCorner.Parent = flash
+  local references = {}
+  local replacements = {
+    MobileUIAbilityFrame = clone,
+    MobileUIAbilityButton = button,
+    MobileUIAbilityImage = image,
+    MobileUIAbilityCooldown = cooldown,
+    MobileUICooldownFlash = flash,
+  }
+
+  for key, value in pairs(replacements) do
+    references[key], interface[key] = interface[key], value
   end
   local oldKey = ability.OnKeyDown
   local function hook(self, input, processed)
@@ -98,16 +116,18 @@ local function attach(ability)
     replacements = replacements,
     keyDown = oldKey,
     hook = hook,
+    button = button,
+    outline = outline,
   }
 
-  ability.OnKeyDown = hook; local button = interface.MobileUIAbilityButton
-  local state = Instance.new("TextLabel"); state.Name = "DynamicState"
-  state.BackgroundTransparency = 1; state.Size = UDim2.fromScale(1, 0.22)
-  state.Position = UDim2.fromScale(0, 0.76); state.TextScaled = true
-  state.Font = Enum.Font.GothamBold; state.TextColor3 = Color3.new(1, 1, 1)
-  state.TextStrokeTransparency = 0.25; state.ZIndex = button.ZIndex + 5
-  state.Parent = button; binding.state = state
-  clone.Parent = original.Parent; original.Visible = false
+  ability.OnKeyDown = hook; local state = Instance.new("TextLabel")
+  state.Name = "DynamicState"; state.BackgroundTransparency = 1
+  state.Size = UDim2.fromScale(1, 0.22); state.Position = UDim2.fromScale(0, 0.76)
+  state.TextScaled = true; state.Font = Enum.Font.GothamBold
+  state.TextColor3 = Color3.new(1, 1, 1); state.TextStrokeTransparency = 0.25
+  state.ZIndex = button.ZIndex + 5; state.Parent = button
+  binding.state = state; clone.Parent = original.Parent
+  original.Visible = false
   connect(uiConnections, button.InputBegan, function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then press(input) end
   end)
@@ -167,7 +187,9 @@ function Dynamic.setup(deps)
     if binding then
       binding.original.Visible = false; local mobile = input.TouchEnabled and not input.KeyboardEnabled and not input.MouseEnabled
       binding.clone.Visible = mobile; local on = active or held ~= nil or os.clock() < pulseUntil
-      binding.state.Text = on and "ON" or "OFF"; binding.state.TextColor3 = on and Color3.fromRGB(100, 255, 145) or Color3.new(1, 1, 1)
+      binding.state.Text = on and "ON" or "OFF"; binding.state.TextColor3 = Color3.new(1, 1, 1)
+      local body = on and Color3.fromRGB(24, 157, 73) or Color3.fromRGB(160, 32, 43); local edge = on and Color3.fromRGB(105, 255, 150) or Color3.fromRGB(255, 80, 95)
+      binding.button.BackgroundColor3 = binding.button.BackgroundColor3:Lerp(body, 0.65); binding.outline.Color = binding.outline.Color:Lerp(edge, 0.65)
       local target = held and 0.93 or 1; binding.scale.Scale += (target - binding.scale.Scale) * 0.6
     end
   end)
