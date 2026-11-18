@@ -413,7 +413,9 @@ local function request(reason)
     if state.mode == "training" then
       state.fired = false; state.nextAttemptAt = clock() + CONFIG.FRAME_BASE
       phase("waiting", "training_attempt_failed"); local errorAt = clock()
-      if detail ~= "Deflect cancelado" and errorAt - state.lastErrorAt >= 1 then state.lastErrorAt = errorAt; boundUtils.recordError("TrainingParry", tostring(detail or "Treino indisponível")) end
+      if detail ~= "Deflect cancelado" and detail ~= "Deflect recusado pelo cliente" and detail ~= "Deflect recusado" and errorAt - state.lastErrorAt >= 1 then
+        state.lastErrorAt = errorAt; boundUtils.recordError("TrainingParry", tostring(detail or "Treino indisponível"))
+      end
       return false
     end
     state.fired = false; state.retryReady = wasRetry
@@ -426,7 +428,9 @@ local function request(reason)
     if cooldown and finite(cooldown.remaining) then delay = math.max(delay, cooldown.remaining) end
     state.nextAttemptAt = clock() + math.clamp(delay, 1 / 240, CONFIG.MATCH_RETRY_DELAY_MAX); phase("waiting", "parry_attempt_failed")
     local errorAt = clock()
-    if errorAt - state.lastErrorAt >= 1 then state.lastErrorAt = errorAt; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
+    if detail ~= "Deflect cancelado" and detail ~= "Deflect recusado pelo cliente" and detail ~= "Deflect recusado" and errorAt - state.lastErrorAt >= 1 then
+      state.lastErrorAt = errorAt; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível"))
+    end
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()

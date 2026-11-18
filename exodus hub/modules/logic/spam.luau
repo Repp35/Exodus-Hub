@@ -82,6 +82,7 @@ local function request(boundUtils, dispatch, token, sample)
     if sample.live then sample.accepted += 1; sampleAccepted += 1 end
     status.lastError = nil; return true
   end
+  if detail == "Deflect recusado pelo cliente" or detail == "Deflect recusado" or detail == "Deflect cancelado" then status.lastError = nil; return false, detail end
   local message = tostring(detail or "Remote.fireParry indisponível"); status.lastError = message
   local time = os.clock()
   if time - status.lastErrorAt >= 1 then

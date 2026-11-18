@@ -749,6 +749,7 @@ local function createSpatialController(services, getOption)
     local hidden = active and option("HideLobbyInMatch", true) and Workspace:GetAttribute("MatchStatus") == 6 and lives > 0 and root ~= nil
     if hidden ~= lobbyHidden or root ~= lastLobby then lobbyHidden, lastLobby = hidden, root; services.OnLobbyHidden(hidden, root) end
   end
+  local modelBounds = setmetatable({}, { __mode = "k" })
   local function visualBounds(object)
     if object:IsA("BasePart") and not object:IsA("Terrain") then return object.Position, boundsHalf(object.CFrame, object.Size) end
     if object:IsA("Explosion") then return object.Position, Vector3.zero end
@@ -761,7 +762,14 @@ local function createSpatialController(services, getOption)
     while subject and subject ~= Workspace do
       if subject:IsA("Attachment") then return subject.WorldPosition, Vector3.zero end
       if subject:IsA("BasePart") then return subject.Position, boundsHalf(subject.CFrame, subject.Size) end
-      if subject:IsA("Model") then local frame, size = subject:GetBoundingBox(); return frame.Position, boundsHalf(frame, size) end
+      if subject:IsA("Model") then
+        local cached = modelBounds[subject]
+        if not cached then
+          local frame, size = subject:GetBoundingBox(); cached = { frame.Position, boundsHalf(frame, size) }
+          modelBounds[subject] = cached
+        end
+        return cached[1], cached[2]
+      end
       subject = subject.Parent
     end
   end
@@ -859,6 +867,7 @@ local function createSpatialController(services, getOption)
     return true
   end
   function controller:Tick(now, camera)
+    table.clear(modelBounds)
     if not active or not alive or not option("CullEnabled", true) then return end
     local deadline = os.clock() + option("CullBudgetMs", 0.75) / 1000; local count = 0
     while count < 48 and os.clock() < deadline do

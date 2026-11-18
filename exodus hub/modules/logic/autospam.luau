@@ -369,11 +369,11 @@ local function sendBlocked(state, reason, time)
   if state.lastSendBlockReason ~= reason then state.lastSendBlockReason, state.lastSendBlockAt = reason, time end
   return false
 end
-local function deactivationReason(state, s, time, cd)
+local function deactivationReason(state, s, time, cd, expired)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
-  local _, expired = monitorCooldown(state)
+  if expired == nil then cd, expired = monitorCooldown(state) end
   if expired then return "cooldown" end
   if s and (s.teleported or s.resetting) then return "ball_reset" end
   if state.anticipatingUntil then
@@ -390,17 +390,21 @@ local function deactivationReason(state, s, time, cd)
   local distance = (opponent - state.root.Position).Magnitude
   if freshSnapshot(s, time) and not s.locked and vector(s.position) and vector(s.velocity) then
     local position = vector(s.realPosition) and s.realPosition or s.position; local fromOwn, fromOther = position - state.root.Position, position - opponent
-    local g, speed = geometry(s); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
-    local ownLimit = g and deflectGeometry.projectRadius(g.noWindowParryRadius, speed, g.deflectWindow, 1, networkLatency())
-    local otherLimit = g and finite(otherRadius) and deflectGeometry.projectRadius(otherRadius, speed, g.deflectWindow, 1, networkLatency()); local outside = ownLimit
-      and otherLimit
-      and fromOwn.Magnitude > ownLimit
-      and fromOther.Magnitude > otherLimit
-      and s.velocity:Dot(fromOwn) > 0
-      and s.velocity:Dot(fromOther) > 0
-    if outside then
-      state.physicalExitSince = state.physicalExitSince or time
-      if time - state.physicalExitSince >= CONFIG.DEACTIVATION.PHYSICAL_EXIT_DELAY then return "ball_left_exchange" end
+    if s.velocity:Dot(fromOwn) > 0 and s.velocity:Dot(fromOther) > 0 then
+      local g, speed = geometry(s); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
+      local ownLimit = g and deflectGeometry.projectRadius(g.noWindowParryRadius, speed, g.deflectWindow, 1, networkLatency())
+      local otherLimit = g and finite(otherRadius) and deflectGeometry.projectRadius(otherRadius, speed, g.deflectWindow, 1, networkLatency()); local outside = ownLimit
+        and otherLimit
+        and fromOwn.Magnitude > ownLimit
+        and fromOther.Magnitude > otherLimit
+        and s.velocity:Dot(fromOwn) > 0
+        and s.velocity:Dot(fromOther) > 0
+      if outside then
+        state.physicalExitSince = state.physicalExitSince or time
+        if time - state.physicalExitSince >= CONFIG.DEACTIVATION.PHYSICAL_EXIT_DELAY then return "ball_left_exchange" end
+      else
+        state.physicalExitSince = nil
+      end
     else
       state.physicalExitSince = nil
     end
@@ -603,7 +607,7 @@ local function evaluate(state, s, time, packet)
   observeExchangeContinuity(state, s, time); rememberSendContinuity(state, s, time)
   dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
-    local stop = deactivationReason(state, s, time, cd)
+    local stop = deactivationReason(state, s, time, cd, cooldownExpired)
     if stop then deactivate(state, stop, time); return end
     state.lastGate = "active"; observeStats(state, s, time, packet)
     return
@@ -777,8 +781,8 @@ end
 function AutoSpam.canSend()
   local state = current
   if not state or not state.active then return false end
-  local time = now(); local cd = monitorCooldown(state)
-  local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd)
+  local time = now(); local cd, cooldownExpired = monitorCooldown(state)
+  local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd, cooldownExpired)
   if stop then deactivate(state, stop, time); return sendBlocked(state, stop, time) end
   local order = sequenceOrder(state, s and s.syncSequence); local gate = (order == "old" or order == "invalid") and ("packet_" .. order) or sampleGate(state, s, time)
   if gate == nil then return true end
