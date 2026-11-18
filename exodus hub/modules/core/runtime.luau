@@ -59,7 +59,10 @@ function Runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
       pendingSyncRefresh = false
       if not utils.isActive() then return end
       local refreshed = gameInfo.applySync(nil)
-      if type(refreshed) == "table" then notifyBallSync(refreshed) end
+      if type(refreshed) == "table" then
+        refreshed = table.clone(refreshed); refreshed.Source = "replicator"
+        notifyBallSync(refreshed)
+      end
     end)
   end
   local function onBallSync(...)

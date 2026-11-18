@@ -718,7 +718,7 @@ function AutoParry.onBallSync(data)
   local order = sequenceOrder(sequence)
   if order == "old" then return true end
   if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
-  if data.Source == "packet" or data.Source == nil then
+  if data.Source == "packet" or data.Source == "replicator" or data.Source == nil then
     local receivedAt = clock()
     if lastSyncAt and receivedAt > lastSyncAt then
       local interval = receivedAt - lastSyncAt
@@ -742,7 +742,7 @@ function AutoParry.onBallSync(data)
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
   state.teleported, state.teleportSequence = false, nil; local now, target = clock(), gameInfo.getTargetId()
-  if order == "new" and (data.Source == "packet" or data.Source == nil) then observePacketReturn(data, now) end
+  if order == "new" and (data.Source == "packet" or data.Source == "replicator" or data.Source == nil) then observePacketReturn(data, now) end
   observeTarget(target or -1, now)
   if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true

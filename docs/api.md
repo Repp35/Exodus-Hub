@@ -153,6 +153,15 @@ O manual é independente. A ativação automática usa:
   durante esse dash. Velocidade/animação ou alvo sozinho não bastam; WindDash e
   tipo desconhecido são rejeitados.
 
+Atualizações novas aceitas do replicador (`Source = "replicator"`) e pacotes
+remotos alimentam o mesmo histórico de trocas. Uma divergência temporária de
+posição bloqueia o envio, mas não apaga identidades de alvo recebidas em sequência
+válida. Reset, teleporte e participação de terceiro invalidam a sequência.
+Após dois retornos reais com o mesmo oponente, uma velocidade visual apontando
+para fora não veta a ativação se a bola continua dentro do alcance geométrico
+completo. Isso não dispensa cooldown, validade do estado, distância do oponente
+ou alcance da bola. `confirmedReturns` no status mostra a contagem.
+
 Sequências antigas/duplicadas não criam trocas. Mudança de direção sem troca de
 alvo não é retorno. As regras de continuidade do clash, miss e cooldown são
 independentes da aquisição dessas evidências de ativação.
