@@ -829,7 +829,11 @@ end
 local startLock = false
 local startToken = {}
 function Loader.start()
-  if startLock or _G.ExodusLoaderStartToken then return false, "Loader", "startup já em andamento" end
+  if startLock or _G.ExodusLoaderStartToken then
+    local message = "Inicialização já em andamento. Aguarde o carregamento atual."
+    if type(warn) == "function" then warn("[Exodus] " .. message) else printStartup(message) end
+    pcall(notifyPersistent, message, "startup_in_progress", "warning", 2.5); return true, nil, nil, "in_progress"
+  end
   local ready, reason = validateExecutor()
   if not ready then return false, "Loader", reason end
   startLock = true; startupPerformed = false
@@ -853,7 +857,8 @@ function Loader.start()
   activeLoaded = nil; return started, moduleName, startError
 end
 local function startSafely()
-  local started, moduleName, startError = Loader.start()
+  local started, moduleName, startError, status = Loader.start()
+  if status == "in_progress" then return nil end
   if started ~= true then
     moduleName = moduleName or "Loader"; startError = startError or started
     local entry = MODULE_BY_NAME[moduleName]; printRawError(moduleName, startError, entry and entry.path or "loader.luau")
@@ -868,7 +873,7 @@ local function startSafely()
   return true
 end
 local started = startSafely()
-Exodus.Started = started == true
+if started ~= nil then Exodus.Started = started == true end
 if started and startupPerformed then updater.start() end
 
 return Loader

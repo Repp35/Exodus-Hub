@@ -422,3 +422,8 @@ no hitbox com um toque já iniciado fora não captura o gesto. Movimentos são
 aceitos somente do mesmo toque ou do mouse com botão esquerdo ainda pressionado.
 Soltar, cancelar, ocultar, desabilitar, suspender ou perder foco libera a captura.
 Navegação por teclado/controle permanece independente do arraste por ponteiro.
+
+Chamadas repetidas de `Loader.start()` enquanto existe inicialização em curso
+são reconhecidas com `true, nil, nil, "in_progress"` e apenas exibem um aviso.
+Não há nova inicialização, rollback, notificação crítica ou alteração de
+`Exodus.Started`/`StartError` nesse caminho; a chamada que possui o token continua.
