@@ -109,6 +109,7 @@ local CONFIG = {
     { name = "uiactions", path = "modules/front/app/actions.luau" },
     { name = "utils", path = "modules/logic/aux/utils.luau" },
     { name = "ballsync", path = "modules/logic/aux/ballsync.luau" },
+    { name = "targeting", path = "modules/logic/aux/targeting.luau" },
     { name = "deflectgeometry", path = "modules/logic/aux/deflectgeometry.luau" },
     { name = "gameinfo", path = "modules/logic/aux/gameinfo.luau" },
     { name = "cooldown", path = "modules/logic/aux/cooldown.luau" },

@@ -5,7 +5,7 @@ local GameInfo = {}
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local ballSync
+local ballSync, targeting, targetCache, targetCacheAt
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 local minimumSpeed, maximumSpeed, speedAt
@@ -62,7 +62,7 @@ local function finite(value) return type(value) == "number" and value == value a
 local function validBallSpeed(value) return finite(value) and value >= 0 and value <= 1000 end
 local function finiteVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
 local function invalidateSnapshotCache()
-  snapshotCache, snapshotCacheAt = nil, -math.huge
+  snapshotCache, snapshotCacheAt, targetCache, targetCacheAt = nil, -math.huge, nil, -math.huge
 end
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function report(name, message)
@@ -382,8 +382,10 @@ end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   if type(deps.BallSync) ~= "table" or type(deps.BallSync.create) ~= "function" then return false, "dependência ausente: BallSync" end
+  if type(deps.Targeting) ~= "table" or type(deps.Targeting.create) ~= "function" then return false, "dependência ausente: Targeting" end
   GameInfo.stopMaintenance(); utils = deps.Utils
   ballSync = deps.BallSync.create({ getReplicator = getReplicator, invalidateSnapshotCache = invalidateSnapshotCache, packetAge = CONFIG.PACKET_AGE })
+  targeting = deps.Targeting.create({ storage = storage }); targetCache, targetCacheAt = nil, -math.huge
   players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
@@ -582,7 +584,51 @@ local function syncSequence(current, provider) return ballSync.getSequence(curre
 function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
 function GameInfo.applyPacket(value) return ballSync.applyPacket(value) end
 function GameInfo.decodeBallPacket(value) return ballSync.decodeBallPacket(value) end
-function GameInfo.getTargetId() return targetId(syncData()) end
+local function resolveTarget(time, provider, sync, currentBall)
+  time = finite(time) and time or utils.now()
+  if targetCache and time >= targetCacheAt and time - targetCacheAt < CONFIG.SNAPSHOT_CACHE_INTERVAL then return targetCache end
+  if provider == nil then provider = getReplicator() end
+  if sync == nil then sync = syncData(provider or false) end
+  if currentBall == nil then currentBall = getBall() end
+  local receivedAt = ballSync.getReceivedAt(); local fresh = receivedAt > 0 and time >= receivedAt and time - receivedAt <= CONFIG.PACKET_AGE
+  local serverNow = type(world.GetServerTimeNow) == "function" and world:GetServerTimeNow() or nil; local matchStatus = world:GetAttribute("MatchStatus")
+  local report = targeting.resolve({
+    player = players.LocalPlayer,
+    players = players,
+    world = world,
+    ball = currentBall,
+    sync = sync,
+    syncFresh = fresh,
+    provider = provider,
+    serverNow = serverNow,
+    sequence = syncSequence(sync, provider),
+    maxAge = CONFIG.PACKET_AGE,
+    active = not finite(matchStatus) or matchStatus == 6,
+  })
+  targetCache, targetCacheAt = report, time; return report
+end
+function GameInfo.getTargetSignals(time)
+  if inTrainingArea() then
+    local id = trainingState and trainingState.goal; local valid = finite(id) and id > 0
+    return {
+      mode = "training",
+      targetId = valid and id or -1,
+      targeted = valid and players.LocalPlayer ~= nil and id == players.LocalPlayer.UserId,
+      known = valid,
+      signals = {},
+    }
+  end
+  local report = resolveTarget(time); local copy = table.clone(report)
+  copy.positive, copy.signals = table.clone(report.positive), {}
+  for index, signal in ipairs(report.signals) do
+    copy.signals[index] = table.clone(signal)
+  end
+  return copy
+end
+function GameInfo.getTargetId()
+  if inTrainingArea() then return trainingState and trainingState.goal or -1 end
+  return resolveTarget().targetId
+end
 
 -- snapshots
 local function snapshot(time)
@@ -626,6 +672,10 @@ local function snapshot(time)
   local currentBall = getBall()
   if not currentBall then return nil end
   local provider = getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
+  local targetReport = resolveTarget(time, provider, sync, currentBall); local exchangeTarget = targetId(sync)
+  local syncReceivedAt = ballSync.getReceivedAt(); local syncFresh = syncReceivedAt > 0 and time >= syncReceivedAt and time - syncReceivedAt <= CONFIG.PACKET_AGE
+  if not syncFresh then sync = nil; syncReceivedAt = nil end
+  local target = targetReport.targetId; local frozen = GameInfo.getBallFrozen() == true
   if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
     sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
   elseif sampledPosition and sampledAt and time - sampledAt >= CONFIG.SAMPLE_INTERVAL then
@@ -640,8 +690,6 @@ local function snapshot(time)
     sampledPosition, sampledAt = position, time
   end
   if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-  local target = targetId(sync); local frozen = GameInfo.getBallFrozen() == true
-  local syncReceivedAt = ballSync.getReceivedAt()
   local result = {
     schema = 2,
     generatedAt = time,
@@ -658,8 +706,10 @@ local function snapshot(time)
     syncMaxSpeed = sync and sync.MaxSpeed or nil,
     targetId = target,
     targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
-    targetSource = "sync",
-    targetUncertain = sync == nil or syncReceivedAt <= 0 or time < syncReceivedAt or time - syncReceivedAt > CONFIG.PACKET_AGE,
+    targetSource = targetReport.source or "unavailable",
+    targetSignals = targetReport,
+    exchangeTargetId = exchangeTarget,
+    targetUncertain = not targetReport.known,
     teleported = sync and sync.Teleported == true or false,
     locked = sync and sync.Locked == true or false,
     ballCanMove = not frozen and not (sync and sync.Locked == true),
@@ -710,7 +760,7 @@ function GameInfo.getParrySnapshot(time)
     }
 
   end
-  if not sample or not finite(sample.serverTime) or not finiteVector(sample.position) then return value end
+  if not sample or sample.targetId ~= value.targetId or not finite(sample.serverTime) or not finiteVector(sample.position) then return value end
   local serverNow = world:GetServerTimeNow(); local age = serverNow - sample.serverTime
   if not finite(age) or age < -0.02 or age > 0.25 then return value end
   local target = playerRoot(value.targetId)
@@ -808,6 +858,7 @@ function GameInfo.getStatus()
     available = value ~= nil,
     targetId = value and value.targetId or -1,
     targeted = value and value.targeted or false,
+    targeting = GameInfo.getTargetSignals(now),
     speed = value and value.speed or 0,
   }
 end
@@ -817,9 +868,11 @@ GameInfo.__contract = {
   requires = {
     Utils = "utils",
     BallSync = "ballsync",
+    Targeting = "targeting",
   },
   requiresMethods = {
     BallSync = { "create" },
+    Targeting = { "create" },
     Utils = {
       "now",
       "apiVersion",
@@ -878,6 +931,7 @@ GameInfo.__contract = {
     "getSyncSequence",
     "decodeBallPacket",
     "getTargetId",
+    "getTargetSignals",
     "getBallTargetAttribute",
     "applySync",
     "installBallWatcher",

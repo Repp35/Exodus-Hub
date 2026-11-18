@@ -49,6 +49,7 @@ local g={getDeflectAbility=function() return {} end,getSnapshotAt=function() ret
 local c={getDeflectCooldownState=function() return cd end,recordDeflectAttempt=function(at) cd.pressAt=at end}
 local r={fireParry=function(_,guard) assert(guard()); fires=fires+1; return true end}
 
+g.getTargetId=function() return snap.targetId end
 g.getBallVelocity=function() return snap.velocity end
 local trainingUntil=0
 c.recordTrainingDeflectAttempt=function(at) trainingUntil=at+1.45 end
@@ -70,6 +71,30 @@ local function packet(target)
   ap.onBallSync({Sequence=snap.syncSequence,TargetPlayerID=target})
 end
 """ + case)
+
+    def test_real_return_rearms_while_visual_votes_remain_positive(self):
+        self.check_ap('''
+snap.targetId=42;snap.targetSignals={targeted=true}
+ap.onBallSync({Sequence=1,TargetPlayerID=42});assert(fires==1)
+tm=tm+.02;snap.syncSequence=2
+ap.onBallSync({Sequence=2,TargetPlayerID=99})
+assert(fires==1,'outgoing packet plus red visual fabricated a return')
+tm=tm+.02;snap.syncSequence=3
+ap.onBallSync({Sequence=3,TargetPlayerID=42})
+assert(fires==2,'persistent visual vote hid a genuine packet return')
+ap.onBallSync({Sequence=3,TargetPlayerID=42});assert(fires==2,'duplicate packet rearmed AP')
+''')
+
+    def test_packet_cannot_veto_a_positive_from_the_shared_target_resolver(self):
+        self.check_ap('''
+local pending
+snap.targetSignals={targeted=true};snap.targetId=42
+r.fireParry=function(_,guard) pending=guard;assert(guard());fires=fires+1;return true end
+ap.onBallSync({Sequence=1,TargetPlayerID=99})
+assert(fires==1 and pending(),'positive aggregate was vetoed by raw target')
+snap.targetSignals.targeted=false;snap.targetId=99
+assert(not pending(),'request survived disappearance of all positive signals')
+''')
 
     def test_disabled_ap_blocks_public_fire_and_pending_guard(self):
         self.check_ap("""

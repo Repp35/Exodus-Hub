@@ -25,12 +25,16 @@ def run_case(script):
 
 def module(path):
     source = (ROOT / path).read_text()
+    if path == 'aux/targeting.luau':
+        source = "local Color3=Color3 or {fromRGB=function(r,g,b) return {R=r/255,G=g/255,B=b/255} end}\n" + source
     if path == 'aux/gameinfo.luau':
-        dependencies = (module('aux/ballsync.luau').replace('local mod=', 'local TestBallSync=', 1)
+        dependencies = (module('aux/targeting.luau').replace('local mod=', 'local TestTargeting=', 1)
+                        + module('aux/ballsync.luau').replace('local mod=', 'local TestBallSync=', 1)
                         + module('aux/deflectgeometry.luau').replace('local mod=', 'local TestGeometry=', 1))
         wrapper = """
 local originalSetup=GameInfo.setup
 function GameInfo.setup(deps)
+ deps.Targeting=TestTargeting
  deps.BallSync=TestBallSync
  local ok,err=originalSetup(deps)
  if not ok then return ok,err end
@@ -161,7 +165,23 @@ tm=11.2;assert(mod.applySync(packet(9))==nil)
 assert(mod.getSnapshotAt(tm).targetUncertain,'duplicate packet renewed freshness')
 assert(mod.applySync(packet(10,88)))
 assert(mod.getSnapshotAt(tm).targetId==88,'older provider state overrode the accepted table packet')
-tm=11.8;assert(mod.getSnapshotAt(tm).targetId==88 and mod.getSnapshotAt(tm).targetUncertain)
+tm=11.8;assert(mod.getSnapshotAt(tm).exchangeTargetId==88 and mod.getSnapshotAt(tm).targetUncertain)
+''')
+
+    def test_attribute_positive_overrides_packet_and_exposes_detached_signals(self):
+        self.check('''
+world.GetAttribute=function(_,name) if name=='GameBallTarget' then return 42 elseif name=='MatchStatus' then return 6 end end
+assert(mod.applyPacket(packet(7,99)))
+local value=mod.getSnapshotAt(tm)
+assert(value.targetId==42 and value.targeted and value.exchangeTargetId==99)
+local report=mod.getTargetSignals(tm);assert(report.targeted and report.conflict and #report.signals==14)
+report.signals[1].targeted=true;report.positive[1]='mutated'
+assert(mod.getTargetSignals(tm).positive[1]~='mutated')
+tm=10.6;value=mod.getSnapshotAt(tm)
+assert(value.targeted and not value.targetUncertain,'current attribute vote was rejected with stale sync')
+assert(value.syncAt==nil and value.realPosition==nil and value.syncDirection==nil,'expired physics was reused')
+world.GetAttribute=function(_,name) if name=='MatchStatus' then return 0 end end
+tm=10.7;assert(not mod.getSnapshotAt(tm).targeted,'inactive round retained visual votes')
 ''')
 
     def test_packet_snapshots_expire_without_a_provider(self):

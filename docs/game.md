@@ -44,3 +44,36 @@ limite de velocidade, lock, grace e tempo do servidor.
 `DeflectAbility.Deflect` pode recusar chamadas com intervalo inferior a 0,008 s;
 retorno nil sozinho não confirma que houve envio. Cooldown, previsão local e
 confirmação do servidor são estados diferentes.
+
+## Identificação de alvo na partida
+
+O cliente possui duas fases relacionadas: `StandardBall.ChangeTarget` escreve
+`Workspace.GameBallTarget` e `HighlightTargetPlayerID`; o tick da simulação escreve
+`TargetPlayerID`. O replicador também mantém `latestTargetId`,
+`IsLocalTarget()` e o último item de `history` com `targetId`/`highlightId`.
+Os eventos `BallSyncData` e `BallSnapshot` transportam esse estado. Leituras do
+mesmo estado são correlacionadas e podem mudar em frames diferentes.
+
+Os sinais visuais encontrados no dump são:
+
+- `PlayerBallHighlight` habilitado no personagem do alvo, atualizado por
+  `BallHighlightManager`. `BlockingHighlights` pode desabilitá-lo temporariamente
+  por feedback de bloqueio; ausência não prova que o jogador deixou de ser alvo.
+- `GameBall.Color = Color3.fromRGB(202, 56, 30)` para o alvo local, definido em
+  `GameBallInitializer`. Posse substitui a cor por verde. A cor normal de uma skin
+  pode coincidir com o vermelho e tornar a leitura ambígua.
+- `GameBall.Trails.BallTrail.Color` copiado de `BallTrailTarget.Color` para o alvo
+  local, ou de `BallTrail2.Color` para os demais. Sequências iguais são ambíguas.
+- `PlayerGui.Interface.BallIndicatorUI.Indicator.ImageColor3` vermelho puro para
+  alvo local e branco para os demais, em `BallIndicator`. O script não atualiza a
+  cor enquanto a seta está oculta; a cor de uma seta oculta não deve votar.
+- A textura do Decal em `GameBall.SkinFace`: `BallSkinClient.pickFace` usa
+  `serious_1`, `evil`, `crazy` e `crazy_talking` quando o alvo é local. Outras faces
+  podem representar acerto, miss, previsão ou congelamento; não confirmam alvo.
+  A tabela `Inventory.BallSkins[BallSkin].Faces` define os assets de cada skin.
+
+O Highlight da própria bola não diferencia os alvos: suas cores de preenchimento
+e contorno são iguais nos dois ramos. `SkinTargetColor` é preenchido pelo script
+de skins, mas o código de renderização inspecionado usa o vermelho acima.
+`LastParryTarget`, posse, direção, distância, feedback de bloqueio e histórico
+antigo de simulação não garantem quem é o alvo atual.

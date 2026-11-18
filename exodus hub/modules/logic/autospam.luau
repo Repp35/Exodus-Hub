@@ -165,7 +165,7 @@ local function nearestPartner(state, limit)
 end
 local function observeTarget(state, s, time, packet)
   if not packet then return end
-  local target, previous = s.targetId, state.target
+  local target, previous = s.exchangeTargetId or s.targetId, state.target
   if target == previous then return end
   local me = localPlayer.UserId; state.close, state.pending, state.exchange = nil, nil, nil
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
@@ -261,12 +261,12 @@ local function activate(state, reason, partner, time, s)
   utils.recordTransition("AutoSpam", "idle", "active", reason); return true
 end
 local function observeExchangeContinuity(state, s, time)
-  local h = state.exchangeHistory
+  local target = s.exchangeTargetId or s.targetId; local h = state.exchangeHistory
   if not h or (h.lastAt and time - h.lastAt > CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE) then h = {}; state.exchangeHistory = h end
   h.lastAt = time; local me = localPlayer.UserId
-  if h.target ~= s.targetId then
-    if h.target and (h.target == me or s.targetId == me) then h.exchangeAt = time end
-    if s.targetId == me then
+  if h.target ~= target then
+    if h.target and (h.target == me or target == me) then h.exchangeAt = time end
+    if target == me then
       if h.inboundAt and h.departedAt then
         local interval = time - h.inboundAt
         if interval > 0 and interval <= CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE then h.cycle = interval end
@@ -275,7 +275,7 @@ local function observeExchangeContinuity(state, s, time)
     elseif h.target == me then
       h.departedAt = time
     end
-    h.target = s.targetId
+    h.target = target
   end
 end
 local function redirectedFar(state, s, time)
@@ -619,7 +619,10 @@ function AutoSpam.onBallSync(data)
     local order = sequenceOrder(state.ball == s.ball and state or {}, data.Sequence or data.TeleportSequence)
     if order == "old" or order == "invalid" or (order == "same" and data.Teleported ~= true) then return end
     s = table.clone(s); s.syncSequence, s.syncAt = data.Sequence or data.TeleportSequence, time
-    if data.TargetPlayerID ~= nil then s.targetId, s.targetUncertain = data.TargetPlayerID, false end
+    if data.TargetPlayerID ~= nil then
+      s.exchangeTargetId = data.TargetPlayerID
+      if not s.targetSignals then s.targetId, s.targetUncertain = data.TargetPlayerID, false end
+    end
     if data.Speed ~= nil then s.syncSpeed = data.Speed end
     if data.RealPosition ~= nil then s.realPosition = data.RealPosition end
     if vector(data.ForcedDirection) and snapshotSpeed(s) then s.velocity = data.ForcedDirection * snapshotSpeed(s) end

@@ -49,6 +49,51 @@ alcance base e `ping = false` desconsidera latência.
 solicita a recomposição por `withAutoParryFactor`. `compose` combina parcelas
 explícitas; `projectRadius` fornece o cálculo numérico sem alocar uma tabela.
 
+## Targeting
+
+`aux/targeting.luau` centraliza os leitores da partida. GameInfo injeta o estado
+atual e expõe `getTargetSignals(time?)`; `getStatus().targeting` traz o mesmo
+formato para diagnóstico. O treino usa seu próprio `BallState.goal` e não consulta
+os leitores da partida.
+
+Os 14 leitores são `sync.target`, `sync.highlight`, `replicator.target`,
+`replicator.highlight`, `replicator.latestTargetId`, `replicator.IsLocalTarget`,
+`history.target`, `history.highlight`, `workspace.GameBallTarget`,
+`character.PlayerBallHighlight`, `ball.color`, `ball.trail`, `ui.BallIndicator` e
+`ball.skinFace`. `docs/game.md` descreve as condições nativas desses sinais.
+
+```lua
+local report = GameInfo.getTargetSignals()
+-- report.targeted: qualquer fonte disponível confirmou o jogador local
+-- report.known: pelo menos uma fonte conseguiu responder
+-- report.targetId: jogador local se houve positivo; senão, primeiro ID disponível
+-- report.positive: nomes das fontes positivas
+-- report.conflict: coexistem respostas positivas e negativas
+for _, signal in ipairs(report.signals) do
+  -- signal.name, family, state = "yes" / "no" / "unavailable"
+  -- signal.available, targeted (boolean quando disponível), targetId (opcional)
+  -- signal.reason explica indisponibilidade, ambiguidade ou falha de leitura
+end
+```
+
+A regra de autorização é OR: um positivo prevalece mesmo com votos negativos.
+Isso é uma política permissiva, não uma garantia de acerto. As fontes visuais
+podem atrasar um frame, e várias leituras derivam do mesmo estado nativo.
+Cor ambígua de skin, faces transitórias, elementos desabilitados/ocultos e fontes
+incompatíveis não votam. Cada leitor isola suas falhas. Estado de rede vencido,
+histórico que não corresponde à última sequência e replicador mais antigo que o
+pacote aceito não confirmam alvo. Fora da rodada ativa os votos são limpos.
+
+Snapshots expõem `targetSignals` e `targetSource`; `targetId`/`targeted` refletem a
+resolução. `exchangeTargetId` preserva a identidade recebida pela rede, usada nas
+trocas do AutoSpam. Sinais visuais não criam evidência de troca por dash/retorno.
+Se houver conflito de alvo, o AP não simula a trajetória de outro jogador como
+se fosse local. Se a identificação continua válida após expirar a sincronização,
+o movimento usa a observação atual da bola, sem reciclar posição/direção antigas.
+A autorização de alvo não ignora alcance, cooldown, congelamento ou personagem
+morto. As leituras compartilham o cache curto de GameInfo, sem varrer a árvore
+inteira do jogo a cada frame.
+
 ## AutoSpam
 
 O manual é independente. A ativação automática usa:

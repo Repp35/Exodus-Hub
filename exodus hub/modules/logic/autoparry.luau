@@ -120,16 +120,16 @@ end
 -- lifecycle
 local function resetTracking()
   syncInterval, lastSyncAt, lastAcceptedSample = nil, nil, nil; state.fired, state.awaySeen, state.cycle = false, false, 0
-  state.target, state.targetKnown, state.lastTargeted = -1, false, false; state.teleported, state.teleportSequence, state.sequence = false, nil, nil
-  state.mode = nil; state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
-  state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0; state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge
-  state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
-  state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
-  state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil
-  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
-  table.clear(state.returns)
+  state.packetBall, state.packetTarget, state.packetAwayAt, state.packetAwayTarget = nil, nil, nil, nil; state.target, state.targetKnown, state.lastTargeted = -1, false, false
+  state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
+  state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
+  state.adaptiveWindow, state.adaptiveFactor, state.timeToRange = 0, 0, math.huge; state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
+  state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.awayAt, state.awayTarget, state.targetChangedAt = nil, nil, nil
+  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil; state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil
+  state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -258,6 +258,26 @@ local function observeTarget(target, time)
     state.awayAt, state.awayTarget = nil, nil
   end
   state.target, state.targetKnown = target, true
+end
+local function observePacketReturn(data, time)
+  local value = gameInfo.getSnapshotAt(time)
+  if not value or value.mode == "training" then return end
+  if state.packetBall ~= value.ball then state.packetBall, state.packetTarget, state.packetAwayAt, state.packetAwayTarget = value.ball, nil, nil, nil end
+  local target = tonumber(data.TargetPlayerID); local previous = state.packetTarget
+  if not finite(target) or target <= 0 then state.packetTarget, state.packetAwayAt, state.packetAwayTarget = nil, nil, nil; return end
+  local me = state.player.UserId
+  if previous == me and target ~= me then
+    state.packetAwayAt, state.packetAwayTarget = time, target
+  elseif target == me and previous ~= me and state.packetAwayAt then
+    if state.targetKnown and state.target == me then
+      if state.packetAwayTarget == previous then appendRecent(state.returns, { at = time, interval = time - state.packetAwayAt }) end
+      state.fired, state.awaySeen, state.nextAttemptAt = false, false, 0; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+      state.cycle += 1; state.targetChangedAt = time
+      state.awayAt, state.awayTarget = nil, nil
+    end
+    state.packetAwayAt, state.packetAwayTarget = nil, nil
+  end
+  state.packetTarget = target
 end
 local function observeSnapshot(snapshot, time)
   local mode = snapshot.mode == "training" and "training" or "match"
@@ -709,19 +729,20 @@ function AutoParry.onBallSync(data)
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
     state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
-    state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
-    state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; state.resetPending = true
-    state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
-    state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
-    state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
-    table.clear(state.returns); phase("waiting", "teleport_lock")
-    return true
+    state.packetBall, state.packetTarget, state.packetAwayAt, state.packetAwayTarget = nil, nil, nil, nil; state.cycle += 1
+    state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+    state.resetPending = true; state.speed, state.distance, state.approaching = 0, 0, false
+    state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR; state.nextAttemptAt = 0
+    state.lastPosition, state.lastSampleAt = nil, 0; state.awayAt, state.awayTarget = nil, nil
+    table.clear(state.clicks); table.clear(state.returns)
+    phase("waiting", "teleport_lock"); return true
   end
   if state.teleported and state.teleportSequence then
     local current = gameInfo.getSyncSequence()
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
-  state.teleported, state.teleportSequence = false, nil; local now, target = clock(), tonumber(data.TargetPlayerID)
+  state.teleported, state.teleportSequence = false, nil; local now, target = clock(), gameInfo.getTargetId()
+  if order == "new" and (data.Source == "packet" or data.Source == nil) then observePacketReturn(data, now) end
   observeTarget(target or -1, now)
   if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true

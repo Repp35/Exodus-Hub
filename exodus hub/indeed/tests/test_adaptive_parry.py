@@ -90,6 +90,18 @@ clashing=true;assert(math.abs(gi._geometry.getDeflectWindow(600)-.32)<1e-9)
 pressure=1;assert(math.abs(gi._geometry.getDeflectWindow(600)-.03)<1e-9)
 ''')
 
+    def test_visual_positive_never_simulates_another_players_target_as_local(self):
+        self.check('''
+world.GetAttribute=function(_,key) if key=='GameBallTarget' then return 42 end end
+publish(75,600,.1,100)
+provider.syncData.TargetPlayerID=99
+local packet=table.clone(provider.syncData);packet.Sequence=gi.getSyncSequence()+1;packet.TargetPlayerID=99
+assert(gi.applyPacket(packet))
+local raw=gi.getSnapshotAt(tm);assert(raw.targeted and raw.exchangeTargetId==99)
+local before=simCalls;local value=gi.getParrySnapshot(tm)
+assert(value==raw and not value.predicted and simCalls==before,'target conflict produced a wrong trajectory')
+''')
+
     def test_prediction_waits_for_visual_ball_in_range(self):
         self.check('''
 ping=.05;publish(75,600,.1,200)
