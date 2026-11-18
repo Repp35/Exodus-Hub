@@ -104,7 +104,17 @@ function Context.create(deps, deviceDesktop)
   local function viewport()
     local currentCamera = workspace.CurrentCamera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
   end
-  local function setConfigValue(key, value) return Utils.setConfig({ [key] = value }) end
+  local abilityKeys = { AutoDark = "dark", DarkBallVisible = "dark", AutoFierce = "fierce", AutoClashUpDash = "dash", UpDashBallVisible = "dash" }
+  local function canUseAbility(name)
+    local available, reason = deps.GameInfo.getAbilityAvailability(name)
+    if not available and context.notifications then context.notifications.toast(reason) end
+    return available
+  end
+  context.canUseAbility = canUseAbility
+  local function setConfigValue(key, value)
+    if value == true and abilityKeys[key] and not canUseAbility(abilityKeys[key]) then return false end
+    return Utils.setConfig({ [key] = value })
+  end
   pulseButton = function(button)
     local scale = inst("UIScale", { Name = "PressScale", Scale = 1 }, button)
     local activeTween

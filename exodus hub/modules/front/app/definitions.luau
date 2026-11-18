@@ -190,24 +190,23 @@ local CONFIG = {
           title = "Automatic Abilities",
           column = 1,
           components = {
-            { kind = "toggle", title = "Auto Dark", key = "AutoDark", shortcutKey = "DarkKeybind", abilityOnly = true },
-            { kind = "toggle", title = "Auto Fierce", key = "AutoFierce", shortcutKey = "FierceKeybind", abilityOnly = true },
-            { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind", abilityOnly = true },
-            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", shortcutKey = "AutoDashKeybind", abilityOnly = true },
+            { kind = "toggle", title = "Auto Dark", key = "AutoDark", shortcutKey = "DarkKeybind" },
+            { kind = "toggle", title = "Auto Fierce", key = "AutoFierce", shortcutKey = "FierceKeybind" },
+            { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind" },
+            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", shortcutKey = "AutoDashKeybind" },
           },
         },
         {
           title = "Quick Controls",
           column = 2,
           components = {
-            { kind = "button", title = "Up Dash", action = "upDash", shortcutKey = "UpDashKeybind", desktopOnly = true, abilityOnly = true },
+            { kind = "button", title = "Up Dash", action = "upDash", shortcutKey = "UpDashKeybind", desktopOnly = true },
             {
               kind = "toggle",
               title = "Mini Dark UI",
               description = "Exibe o controle de Auto Dark na tela.",
               key = "DarkBallVisible",
               mobileOnly = true,
-              abilityOnly = true,
             },
             {
               kind = "toggle",
@@ -215,7 +214,6 @@ local CONFIG = {
               description = "Exibe o controle de Auto Jump na tela.",
               key = "JumpBallVisible",
               mobileOnly = true,
-              abilityOnly = true,
             },
             {
               kind = "toggle",
@@ -223,7 +221,6 @@ local CONFIG = {
               description = "Exibe o botão de Up Dash na tela.",
               key = "UpDashBallVisible",
               mobileOnly = true,
-              abilityOnly = true,
             },
           },
         },

@@ -38,6 +38,8 @@ function Controller.create(context)
   local function showBall(ball, visible, visibleKey, xKey, yKey, defaultX, defaultY)
     local config = Utils.getConfig(); local x = config[xKey] or defaultX
     local y = config[yKey] or defaultY; local shouldShow = visible and not UIState.desktop
+    local ability = visibleKey == "DarkBallVisible" and "dark" or (visibleKey == "UpDashBallVisible" and "dash" or nil)
+    if ability then shouldShow = shouldShow and GameInfo.getAbilityAvailability(ability); ball.Visible = shouldShow end
     twPlay(ball, "control", { Position = shouldShow and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) })
   end
   local function pulseBall(ball)
@@ -294,6 +296,7 @@ function Controller.create(context)
     "UpDashBallY",
     CLASH_SIZE / 2 + 8,
     function(ball)
+      if not context.canUseAbility("dash") then return end
       if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
       pulseBall(ball)
       if context.notifications.toast then context.notifications.toast("Up Dash") end
@@ -411,10 +414,12 @@ function Controller.create(context)
     if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
   end
   local lastAbilityMode
+  local lastDarkAvailable, lastDashAvailable
   local function updateAbilityVisibility()
-    lastAbilityMode = GameInfo.areAbilitiesEnabled(); context.pages.refresh()
-    local enabled = lastAbilityMode and not UIState.desktop; context.refs.darkBall.Visible = enabled
-    context.refs.jumpBall.Visible = enabled; context.refs.upDashBall.Visible = enabled
+    lastAbilityMode = GameInfo.areAbilitiesEnabled(); lastDarkAvailable = GameInfo.getAbilityAvailability("dark")
+    lastDashAvailable = GameInfo.getAbilityAvailability("dash"); context.pages.refresh()
+    showDarkBall(Utils.getConfigValue("DarkBallVisible") == true); showUpDashBall(Utils.getConfigValue("UpDashBallVisible") == true)
+    context.refs.jumpBall.Visible = not UIState.desktop; showJumpBall(Utils.getConfigValue("JumpBallVisible") == true)
   end
   if not UIState.desktop and config.ClashBallVisible then twPlay(context.refs.clashBall, "control", { Position = UDim2.new(0, clashX, 0, clashY) }) end
   if not UIState.desktop and config.ParryBallVisible then twPlay(context.refs.parryBall, "control", { Position = UDim2.new(0, parryX, 0, parryY) }) end
@@ -459,7 +464,13 @@ function Controller.create(context)
         elapsed += delta
         if elapsed < 0.25 then return end
         elapsed = 0
-        if GameInfo.areAbilitiesEnabled() ~= lastAbilityMode then updateAbilityVisibility() end
+        if
+          GameInfo.areAbilitiesEnabled() ~= lastAbilityMode
+          or GameInfo.getAbilityAvailability("dark") ~= lastDarkAvailable
+          or GameInfo.getAbilityAvailability("dash") ~= lastDashAvailable
+        then
+          updateAbilityVisibility()
+        end
       end))
     end,
   }

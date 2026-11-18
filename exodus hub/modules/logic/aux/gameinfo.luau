@@ -460,6 +460,15 @@ function GameInfo.getGameContext()
   }
 end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
+function GameInfo.getAbilityAvailability(name)
+  local ids = { dark = CONFIG.GAME_IDS.DARK, dash = CONFIG.GAME_IDS.DASH, fierce = CONFIG.GAME_IDS.FIERCE }; local labels = { dark = "Dark Seal", dash = "Dash", fierce = "Fierce Deflect" }
+  local id = ids[name]
+  if not id then return false, "Habilidade desconhecida." end
+  if not GameInfo.areAbilitiesEnabled() then return false, "Esta partida está no modo sem habilidades." end
+  local equipped = getAbilities()
+  if not equipped or not equipped[id] then return false, "Você precisa equipar " .. labels[name] .. " para usar esta opção." end
+  return true
+end
 function GameInfo.observeAbilityMode(callback)
   return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
@@ -941,6 +950,7 @@ GameInfo.__contract = {
     "getLocalPing",
     "getAveragePing",
     "areAbilitiesEnabled",
+    "getAbilityAvailability",
     "observeAbilityMode",
     "getPlayerDistance",
     "getPlayerMotion",

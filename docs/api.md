@@ -276,3 +276,14 @@ inteiros, e aguarda sua conclusão antes de iniciar outro lote ou escrever o
 resultado final. Scripts sem fonte passam por até 10 novas rodadas após a
 tentativa inicial, encerrando cedo quando recuperados. Cancelamento e erros
 de workers são propagados ao controlador; os manifestos mantêm o índice original.
+
+## Disponibilidade de habilidades
+
+`GameInfo.getAbilityAvailability("dark" | "dash" | "fierce")` retorna booleano
+e motivo de indisponibilidade. Usa `ClientAbilities.Abilities`, que o
+AbilityManager do dump limpa e recria ao receber o equipamento do servidor,
+e bloqueia `CurGamemode == 3` (sem habilidades). Não confunde cooldown com
+equipamento. A UI valida antes de habilitar automações ou seus botões flutuantes
+e exibe o motivo da recusa. Dark e Up Dash ficam ocultos sem a habilidade,
+inclusive após troca de equipamento; a configuração de visibilidade é preservada.
+Auto Jump é universal e não depende de habilidade equipada nem desse modo.

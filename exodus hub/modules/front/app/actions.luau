@@ -35,7 +35,11 @@ function Actions.create(context)
   callbacks.panic = function()
     context.setSpam(false); invoke("onPanic")
   end
-  callbacks.upDash = function() invoke("onUpDash") end
+  callbacks.upDash = function()
+    local available, reason = GameInfo.getAbilityAvailability("dash")
+    if not available then notify(reason); return end
+    invoke("onUpDash")
+  end
   callbacks.rejoin = function() invoke("onRejoin") end
   callbacks.serverHop = function() invoke("onServerHop") end
   callbacks.resetCharacter = function()
@@ -217,7 +221,7 @@ Actions.__contract = {
   requires = { Utils = "utils", GameInfo = "gameinfo", Dumper = "dumper" },
   requiresMethods = {
     Utils = { "getConfigValue", "getLocalPlayer", "isActive", "isManualSpamActive", "observeConfig", "resetConfig", "recordError" },
-    GameInfo = { "createCrateNetwork", "spinCrate" },
+    GameInfo = { "createCrateNetwork", "spinCrate", "getAbilityAvailability" },
     Dumper = { "start", "isRunning" },
   },
 }
