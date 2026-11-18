@@ -114,9 +114,21 @@ local function sync()
     local ok, err = xpcall(function()
       local dispatch = type(boundRemote.prepareParry) == "function" and boundRemote.prepareParry(allowed)
         or function() return boundRemote.fireParry(1, allowed) end
-      local credit, previous = 0, os.clock(); local clicksPerSecond = mode == "MS" and 1000 / rate or rate
+      local function burst()
+        if not allowed() then return end
+        local sample = beginSample(os.clock())
+        for _ = 1, math.max(1, math.floor(rate)) do
+          if not guard() then break end
+          local sent, detail = request(boundUtils, dispatch, token, sample)
+          if sent == false and detail == "Deflect cancelado" and not boundUtils.isManualSpamActive() then break end
+        end
+      end
+      local heartbeat = mode == "CPF" and boundUtils.getRunService().Heartbeat; local credit, previous = 0, os.clock()
+      local clicksPerSecond = mode == "MS" and 1000 / rate or rate
       if boundUtils.isAutoSpamActive() and allowed() then
-        if mode ~= "Auto" then
+        if mode == "CPF" then
+          burst()
+        elseif mode ~= "Auto" then
           request(boundUtils, dispatch, token, beginSample(os.clock()))
         else
           local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
@@ -127,11 +139,14 @@ local function sync()
         end
       end
       while guard() do
-        if mode ~= "Auto" then
+        if mode == "CPF" then
+          heartbeat:Wait()
+          if guard() then burst() end
+        elseif mode ~= "Auto" then
           task.wait(); local time = os.clock()
           local delta = math.clamp(time - previous, 0, CONFIG.MAX_ACCUMULATION_SECONDS); previous = time
           if allowed() then
-            credit = math.min(CONFIG.MAX_FRAME_REQUESTS, credit + (mode == "CPF" and rate or clicksPerSecond * delta)); local count = math.floor(credit)
+            credit = math.min(CONFIG.MAX_FRAME_REQUESTS, credit + (clicksPerSecond * delta)); local count = math.floor(credit)
             credit -= count
             if count > 0 then
               local sample = beginSample(time)
@@ -250,6 +265,7 @@ Spam.__contract = {
     Utils = {
       "apiVersion",
       "getConfigValue",
+      "getRunService",
       "isActive",
       "isManualSpamActive",
       "isAutoSpamActive",
