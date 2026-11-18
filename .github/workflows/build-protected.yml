@@ -33,6 +33,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify module permissions
+        run: python3 'exodus hub/indeed/tools/check_permissions.py'
+
       - name: Generate protected build
         shell: bash
         env:

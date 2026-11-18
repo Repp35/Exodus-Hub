@@ -152,6 +152,8 @@ ExodusUI.__contract = {
       "author",
     },
     GameInfo = {
+      "getAbilityAvailability",
+      "getGameContext",
       "areAbilitiesEnabled",
       "observeAbilityMode",
     },

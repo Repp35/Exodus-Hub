@@ -340,3 +340,14 @@ target de CanvasGroup para cada página inteira. Um finalizador por revisão
 garante a visibilidade da página ativa quando uma transição não completa.
 Notificações persistentes e de falha de inicialização reaplicam texto branco
 sem RichText, inclusive ao reutilizar cartões existentes.
+
+## Verificação de permissões antes de publicar
+
+`indeed/tools/check_permissions.py` roda no workflow antes do build protegido.
+Valida imports contra exports de contratos e acessos estáticos diretos ou por
+alias, incluindo múltiplas atribuições e os controllers que recebem as views
+restritas da UI via `context.deps`. Falhas indicam arquivo, linha, consumidor e
+membro ausente em `requiresMethods`/`requiresData` e interrompem o build.
+O verificador não amplia permissões nem remove a proteção de runtime. Acessos
+computados e repasses arbitrários de tabelas continuam dependendo da validação
+de runtime em `permissions.luau`; a análise estática não prova esses casos.
