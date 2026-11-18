@@ -10,6 +10,8 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.36,
+    EXTREME_TARGET_DELAY = 0.24,
+    EXTREME_CONTACT_DISTANCE = 5,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
     CLOSE_OPPONENT_DISTANCE = 16,
@@ -99,6 +101,8 @@ local function deactivate(state, reason, time)
     and reason ~= "target_redirected_far"
     and reason ~= "ball_left_exchange"
     and reason ~= "ball_reset"
+    and reason ~= "anticipation_expired"
+    and reason ~= "anticipation_cancelled"
   then
     local opponent = playerPosition(state.partner)
     if state.root and state.root.Parent and opponent and (opponent - state.root.Position).Magnitude <= CONFIG.DEACTIVATION.PROTECTION_RADIUS then
@@ -108,10 +112,11 @@ local function deactivate(state, reason, time)
   time = time or now()
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
   if reason == "cooldown" or reason == "ball_left_exchange" or reason == "ball_reset" then resetTargets(state) end
-  state.physicalExitSince = nil; state.sendContinuity = nil
-  state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason; state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
-  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
-  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
+  state.anticipatingUntil = nil; state.physicalExitSince = nil
+  state.sendContinuity = nil; state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason
+  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY; lastStopReason, lastStopAt = reason, time
+  utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
+  return true
 end
 local function monitorCooldown(state)
   local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
@@ -291,6 +296,7 @@ end
 local function activate(state, reason, partner, time, s)
   if state.active then return false end
   state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
+  if reason == "extreme_return_prediction" then state.anticipationUsed = true; state.anticipatingUntil = time + CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + networkLatency() end
   if s.targetId == partner then state.departedAt = state.departedAt or time end
   lastActivationReason, lastActivationAt = reason, time; clashStatsModule.begin(partner, time)
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
@@ -367,6 +373,12 @@ local function deactivationReason(state, s, time, cd)
   local _, expired = monitorCooldown(state)
   if expired then return "cooldown" end
   if s and (s.teleported or s.resetting) then return "ball_reset" end
+  if state.anticipatingUntil then
+    local target = s and (s.exchangeTargetId or s.targetId)
+    if target == localPlayer.UserId and freshSnapshot(s, time) then state.anticipatingUntil = nil
+    elseif target ~= state.partner then return "anticipation_cancelled"
+    elseif time >= state.anticipatingUntil then return "anticipation_expired" end
+  end
   if redirectedFar(state, s, time) then return "target_redirected_far" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   local opponent = playerPosition(state.partner)
@@ -458,7 +470,28 @@ local function dashPrediction(state, s, time)
   end
   return nil, lastGate
 end
+local function extremeReturn(state, s, time)
+  local partner = userId(s.exchangeTargetId or s.targetId)
+  if not partner or partner == localPlayer.UserId or state.anticipationUsed then return nil end
+  local other = playerPosition(partner); local speed = snapshotSpeed(s)
+  if not other or not playerIsAlive(partner) or not speed or speed <= 0 then return nil end
+  local ownRadius = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
+  if not finite(ownRadius) or not finite(otherRadius) then return nil end
+  local gap = (other - state.root.Position).Magnitude; local latency = networkLatency()
+  if gap > math.min(CONFIG.ACTIVATION.EXTREME_CONTACT_DISTANCE, otherRadius) then return nil end
+  local budget = CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + latency; local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
+  if math.max(0, gap - kill) / speed > budget then return nil end
+  local position = vector(s.realPosition) and s.realPosition or s.position; local delta = other - position
+  local distance = delta.Magnitude; local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0
+  local contactRadius = deflectGeometry.addLatencyRadius(otherRadius, speed, latency)
+  if distance > contactRadius and closing <= 0 then return nil end
+  local entry = distance <= contactRadius and 0 or (distance - contactRadius) / closing
+  if entry > budget or distance > contactRadius + speed * budget then return nil end
+  return partner
+end
 local function chooseActivation(state, s, time)
+  local anticipated = extremeReturn(state, s, time)
+  if anticipated then return "extreme_return_prediction", anticipated end
   local prediction, dashGate = dashPrediction(state, s, time); state.dashPrediction, state.gates.dash = prediction, dashGate
   if prediction then return prediction.reason, prediction.partner, prediction.at end
   local pending = state.pending; state.gates.returnTarget = not pending and "return_no_round_trip" or "return_expired"
@@ -515,6 +548,15 @@ local function evaluate(state, s, time, packet)
     state.sendContinuity = nil; state.ball, state.sequence = s.ball, nil
     resetTargets(state)
   end
+  if
+    state.active
+    and state.anticipatingUntil
+    and time >= state.anticipatingUntil
+    and not (freshSnapshot(s, time) and (s.exchangeTargetId or s.targetId) == localPlayer.UserId)
+  then
+    deactivate(state, "anticipation_expired", time); clearEvidence(state)
+    return
+  end
   local order = sequenceOrder(state, s and s.syncSequence)
   if order == "old" or order == "invalid" then state.lastGate = "packet_" .. order; return end
   if order == "new" then state.sequence = s.syncSequence end
@@ -527,6 +569,8 @@ local function evaluate(state, s, time, packet)
     if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return
   end
+  local legTarget = s.exchangeTargetId or s.targetId
+  if state.anticipationLegBall ~= s.ball or state.anticipationLegTarget ~= legTarget then state.anticipationLegBall, state.anticipationLegTarget, state.anticipationUsed = s.ball, legTarget, false end
   observeTarget(state, s, time, packet); observeExchangeContinuity(state, s, time)
   rememberSendContinuity(state, s, time); dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
@@ -745,6 +789,7 @@ function AutoSpam.getStatus()
     lastGate = state and state.lastGate or "detached",
     reactivationRemaining = state and math.max(0, (state.reactivateAt or 0) - time) or 0,
     ballDistance = distance,
+    anticipationRemaining = state and state.anticipatingUntil and math.max(0, state.anticipatingUntil - time) or 0,
     targetUncertain = sample and sample.targetUncertain == true or false,
     snapshotAge = sample and finite(sample.syncAt) and time - sample.syncAt or nil,
     windowFactor = 1,
@@ -776,7 +821,15 @@ AutoSpam.__contract = {
     Dash = "dash",
   },
   requiresMethods = {
-    DeflectGeometry = { "getPlayerRawRadius", "addLatencyRadius", "getDeflectGeometry", "withSpeedWindowBonus", "projectRadius" },
+    DeflectGeometry = {
+      "getKillRadius",
+      "getDefensePhysics",
+      "getPlayerRawRadius",
+      "addLatencyRadius",
+      "getDeflectGeometry",
+      "withSpeedWindowBonus",
+      "projectRadius",
+    },
     Utils = {
       "now",
       "getLocalPlayer",

@@ -94,6 +94,25 @@ A autorização de alvo não ignora alcance, cooldown, congelamento ou personage
 morto. As leituras compartilham o cache curto de GameInfo, sem varrer a árvore
 inteira do jogo a cada frame.
 
+## Pré-ativação em contato extremo
+
+`extreme_return_prediction` arma uma rajada antes do alvo local confirmar quando
+o alvo de rede é um oponente vivo a até 5 studs (também limitado pelo alcance
+bruto dele), a bola chega ao alcance desse oponente dentro do orçamento de 240 ms
+mais latência e uma devolução teria TTI inferior a esse orçamento. Fora do raio,
+a bola precisa estar se aproximando; dentro dele, a devolução pode ser imediata.
+O alcance vem de DeflectGeometry, com resiliência e compensação de latência.
+
+A rajada fica especulativa até uma troca real para o jogador local. Sem confirmação,
+expira; uma troca para terceiro cancela. Cada ida da bola admite uma tentativa,
+sem rearmar continuamente só porque o mesmo oponente ainda está perto. Cooldown,
+reset, morte e demais condições de saída continuam valendo durante a antecipação.
+`anticipationRemaining` no status expõe o prazo restante.
+
+O orçamento de 240 ms é uma referência operacional escolhida para esse gatilho,
+não uma taxa atribuída ao protocolo. A antecipação não garante que o oponente
+clicará ou escolherá o jogador local; automatiza a rajada preventiva em contato.
+
 ## TTI recebido no clash
 
 ClashStats registra `lastIncomingTTI` e `previousIncomingTTI` ao receber uma troca
