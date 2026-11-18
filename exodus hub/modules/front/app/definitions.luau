@@ -105,7 +105,7 @@ local CONFIG = {
               kind = "segmented",
               title = "Modo",
               key = "DynamicParryMode",
-              options = { { value = "Toggle", label = "Travar ao segurar" }, { value = "Hold", label = "Hold" } },
+              options = { { value = "Toggle", label = "Toggle" }, { value = "Hold", label = "Hold" } },
             },
             { kind = "keybind", title = "Botão (PC / controle)", key = "DynamicParryKey" },
             { kind = "toggle", title = "Desativação dinâmica", key = "DynamicParryDeactivation" },
