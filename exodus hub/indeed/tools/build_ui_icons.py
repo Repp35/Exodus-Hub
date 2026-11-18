@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'modules/front/library/icons.luau'
-NAMES = ('settings', 'chevron', 'minimize')
+NAMES = ('settings', 'chevron', 'minimize', 'assists')
 
 
 def generated(source: str) -> str:

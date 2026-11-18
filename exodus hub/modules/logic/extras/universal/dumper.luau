@@ -19,9 +19,9 @@ local status = {
 local CONFIG = {
   PREFIX = "SrcDump",
   PROGRESS_EVERY = 25,
-  MAX_SOURCE_ATTEMPTS = 5,
+  MAX_SOURCE_ATTEMPTS = 11,
   INSTANCE_BATCH = 5000,
-  SCRIPT_BATCH = 25,
+  SCRIPT_BATCH = 100,
   SAVE_BYTECODE = true,
   SAVE_DISASSEMBLY = true,
   INCLUDE_NIL_INSTANCES = true,
@@ -284,7 +284,27 @@ local function run(token, callbacks)
     end
     return folder
   end
-  for index, item in ipairs(candidates) do
+  local function concurrent(items, process)
+    for first = 1, #items, CONFIG.SCRIPT_BATCH do
+      if token.cancelled then return false, "Dump canceled" end
+      local pending, failure = 0, nil
+      for index = first, math.min(#items, first + CONFIG.SCRIPT_BATCH - 1) do
+        local itemIndex, item = index, items[index]; pending += 1
+        task.defer(function()
+          local ok, err = xpcall(function() process(itemIndex, item) end, function(message) return debug.traceback(tostring(message), 2) end)
+          if not ok then failure = failure or err end
+          pending -= 1
+        end)
+      end
+      repeat
+        task.wait()
+      until pending == 0
+      if failure then return false, failure end
+    end
+    return not token.cancelled, token.cancelled and "Dump canceled" or nil
+  end
+  local processed = 0
+  local function extract(index, item)
     if token.cancelled then return nil, "Dump canceled" end
     local object, attempts = item.instance, {}
     local source, method, bytecode, closure
@@ -362,10 +382,11 @@ local function run(token, callbacks)
       unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, closure = closure, attempts = attempts, context = context }
       manifest[index] = "[PENDING] " .. line(item.path); failed += 1
     end
-    status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
-    if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
-    if index % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
+    processed += 1; status.processed, status.saved, status.failed, status.bytecode = processed, saved, failed, bytecodes
+    if processed == 1 or processed % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", processed, #candidates, item.path) end
   end
+  local extracted, extractError = concurrent(candidates, extract)
+  if not extracted then return nil, extractError end
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
   emit(callbacks, "onStatus", "Saving game data..."); local tree = { "SrcDump - instances", "", "" }
@@ -411,7 +432,7 @@ local function run(token, callbacks)
   local infoOk, infoError = save(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
   if not infoOk then return nil, "cannot save game_info.txt: " .. tostring(infoError) end
   if #unresolved > 0 then emit(callbacks, "onStatus", "Retrying failed scripts...") end
-  for retryIndex, entry in ipairs(unresolved) do
+  local function retrySource(retryIndex, entry)
     if token.cancelled then return nil, "Dump canceled" end
     local recovered = entry.bytecode and sourceCache[entry.bytecode]; local recoveredMethod = recovered and "cached bytecode (later match)" or nil
     if recovered then cacheHits += 1 end
@@ -493,8 +514,9 @@ local function run(token, callbacks)
       manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | " .. category
     end
     status.saved, status.failed, status.bytecode = saved, failed, bytecodes
-    if retryIndex % CONFIG.SCRIPT_BATCH == 0 then task.wait() end
   end
+  local retried, retryError = concurrent(unresolved, retrySource)
+  if not retried then return nil, retryError end
   if token.cancelled then return nil, "Dump canceled" end
   status.saved, status.failed = saved, failed; local manifestOk, manifestError = save(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
   if not manifestOk then return nil, "cannot save manifest.txt: " .. tostring(manifestError) end

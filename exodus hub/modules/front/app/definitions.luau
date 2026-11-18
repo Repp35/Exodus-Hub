@@ -339,6 +339,27 @@ local CONFIG = {
       },
     },
     {
+      id = "assists",
+      title = "Assistências",
+      columns = 1,
+      width = 360,
+      utility = true,
+      sections = {
+        {
+          title = "Phantom Ball",
+          components = {
+            { kind = "toggle", title = "Spam manual no x1", description = "Liga ao restarem você e um oponente na partida.", key = "ManualSpamOnDuel" },
+            {
+              kind = "toggle",
+              title = "Religar AP ao morrer",
+              description = "Liga o Auto Parry se estiver desligado quando você morrer.",
+              key = "ParryOnDeath",
+            },
+          },
+        },
+      },
+    },
+    {
       id = "config",
       title = "Config",
       columns = 1,
@@ -413,6 +434,8 @@ local CONFIG = {
       ClickMethod = "clickMethod",
       Keybind = "keyCode",
       SpamKeybind = "keyCode",
+      ManualSpamOnDuel = "boolean",
+      ParryOnDeath = "boolean",
       ManualSpamEnabled = "boolean",
       ParryKeybind = "keyCode",
       ClashKeybind = "keyCode",
@@ -471,6 +494,8 @@ local CONFIG = {
       ClickMethod = "Deflect",
       Keybind = Enum.KeyCode.F9,
       SpamKeybind = Enum.KeyCode.F,
+      ManualSpamOnDuel = false,
+      ParryOnDeath = false,
       ManualSpamEnabled = false,
       ParryKeybind = Enum.KeyCode.P,
       ClashKeybind = Enum.KeyCode.C,

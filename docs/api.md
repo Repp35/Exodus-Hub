@@ -261,3 +261,18 @@ e `Workspace.GameBallTarget`. O primeiro compara `latestTargetId` com o jogador
 local; o segundo recebe a atribuição do servidor na troca de alvo. Qualquer sim
 autoriza o alvo local. Cor, trail, highlight, UI e histórico não autorizam o AP.
 A ordem de chegada dos dois caminhos depende da replicação em execução.
+
+## Assistências de Phantom Ball
+
+A página utilitária `assists` tem atalho próprio ao lado do Config, com PNG
+embutido. `ManualSpamOnDuel` e `ParryOnDeath` são persistentes e desativados por
+padrão. O x1 exige partida ativa, jogador local vivo e exatamente dois jogadores
+com vidas e personagem vivo; a transição liga o spam manual uma vez, sem impedir
+que ele seja desligado depois. `ParryOnDeath` religa o AP no evento de morte.
+As conexões são removidas no teardown/reload. A página universal é independente.
+
+O dumper agenda lotes de até 100 scripts concorrentes, incluindo lotes menores
+inteiros, e aguarda sua conclusão antes de iniciar outro lote ou escrever o
+resultado final. Scripts sem fonte passam por até 10 novas rodadas após a
+tentativa inicial, encerrando cedo quando recuperados. Cancelamento e erros
+de workers são propagados ao controlador; os manifestos mantêm o índice original.

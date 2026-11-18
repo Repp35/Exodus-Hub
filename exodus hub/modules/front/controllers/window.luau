@@ -208,6 +208,18 @@ function Controller.create(context)
     Parent = context.refs.titleBar,
   })
   corner(settingsButton, 8); context.kit.icon(settingsButton, "settings")
+  local assistsButton = inst("TextButton", {
+    Name = "HubAssistsButton",
+    Size = UDim2.fromOffset(30, 30),
+    Position = UDim2.new(1, -PAD - 102, 0.5, -15),
+    BackgroundColor3 = C.btnDark,
+    BackgroundTransparency = 0.3,
+    Text = "",
+    ZIndex = 9,
+    Parent = context.refs.titleBar,
+  })
+  corner(assistsButton, 8); context.kit.icon(assistsButton, "assists")
+  trackConn(assistsButton.Activated:Connect(function() context.pages.toggle("assists") end))
   context.refs.killBtn = inst("TextButton", {
     Size = UDim2.new(0, 124, 0, 26),
     Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
@@ -264,6 +276,7 @@ function Controller.create(context)
   corner(previous, 6); corner(nextPage, 6)
   local previousIcon = context.kit.icon(previous, "chevron", { Rotation = 90 }); local nextIcon = context.kit.icon(nextPage, "chevron", { Rotation = -90 })
   local function updateNavigation(state)
+    assistsButton.BackgroundColor3 = state.id == "assists" and C.accent or C.btnDark
     pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title; previous.Visible = not state.utility
     nextPage.Visible = not state.utility; previous.Active = state.index ~= nil and state.index > 1
     previous.Selectable = previous.Active; nextPage.Active = state.index ~= nil and state.index < state.count
