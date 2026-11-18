@@ -122,13 +122,12 @@ function Pages.create(kit, parent, definitions, context)
     for _, entry in ipairs(pending) do
       local owner = keyed[entry.parentKey]; assert(owner, "Visible child requires a visible parent: " .. entry.parentKey)
       if not owner.children then
-        owner.children = inst("CanvasGroup", {
+        owner.children = inst("Frame", {
           Name = "Children",
           Size = UDim2.new(1, -12, 0, 0),
           BackgroundTransparency = 1,
-          GroupTransparency = 1,
           Visible = false,
-          ClipsDescendants = true,
+          ClipsDescendants = false,
           LayoutOrder = 1,
           ZIndex = 6,
         }, owner.Root)
@@ -233,14 +232,7 @@ function Pages.create(kit, parent, definitions, context)
     local height = expanded and (layout.AbsoluteContentSize.Y / math.max(scale, 0.001)) or 0
     if not immediate and owner.expanded == expanded and owner.targetHeight == height then return end
     owner.expanded, owner.targetHeight = expanded, height; owner.revision = (owner.revision or 0) + 1
-    local revision = owner.revision
-    if expanded then owner.children.Visible = true end
-    motion.play(owner.children, immediate and 0 or "control", {
-      Size = UDim2.new(1, -12, 0, height),
-      GroupTransparency = expanded and 0 or 1,
-    }, function()
-      if alive and revision == owner.revision then owner.children.Visible = expanded end
-    end)
+    owner.children.Size = UDim2.new(1, -12, 0, height); owner.children.Visible = expanded
   end
   function controller.refresh()
     for _, entry in ipairs(rows) do

@@ -30,7 +30,10 @@ local CONFIG = {
   },
   DEACTIVATION = {
     COOLDOWN_BASE_MAX = 0.05,
-    COOLDOWN_MAX_WAIT = 0.12,
+    COOLDOWN_MAX_WAIT = 0.24,
+    COOLDOWN_NORMAL_MAX_WAIT = 0.12,
+    COOLDOWN_CLOSE_ALLOWANCE = 0.12,
+    PROXIMITY_DECAY = 0.18,
     COOLDOWN_MARGIN = 2 / 60,
     PHYSICAL_EXIT_DELAY = 0.12,
     PROTECTION_RADIUS = 14,
@@ -143,11 +146,15 @@ local function monitorCooldown(state)
     local contactRange = g.noWindowParryRadius + otherRadius; local responseTravel = math.min(contactRange, speed * (networkLatency() + CONFIG.DEACTIVATION.COOLDOWN_MARGIN))
     if contactRange > 0 then proximity = math.clamp(1 - distance / (contactRange + responseTravel), 0, 1) end
   end
-  local base = math.min(state.cooldownWindow, CONFIG.DEACTIVATION.COOLDOWN_BASE_MAX)
+  local elapsed = math.max(0, time - (state.proximityAt or time)); local retained = (state.proximityStrength or 0) * math.exp(-elapsed / (CONFIG.DEACTIVATION.PROXIMITY_DECAY + networkLatency()))
+  state.proximityStrength, state.proximityAt = math.max(proximity, retained), time; local base = math.min(state.cooldownWindow, CONFIG.DEACTIVATION.COOLDOWN_BASE_MAX)
   state.cooldownLimit = math.clamp(
-    base + networkLatency() + proximity * CONFIG.DEACTIVATION.COOLDOWN_MARGIN,
+    base + networkLatency() + state.proximityStrength * CONFIG.DEACTIVATION.COOLDOWN_CLOSE_ALLOWANCE,
     CONFIG.DEACTIVATION.COOLDOWN_MARGIN,
-    CONFIG.DEACTIVATION.COOLDOWN_MAX_WAIT
+    math.min(
+      CONFIG.DEACTIVATION.COOLDOWN_MAX_WAIT,
+      CONFIG.DEACTIVATION.COOLDOWN_NORMAL_MAX_WAIT + state.proximityStrength * CONFIG.DEACTIVATION.COOLDOWN_CLOSE_ALLOWANCE
+    )
   )
   return cd, state.cooldownLimit ~= nil and time - state.cooldownSince >= state.cooldownLimit
 end
@@ -390,7 +397,7 @@ local function canBridgeSend(state, s, time)
   local evidence = state.sendContinuity
   if not evidence or evidence.ball ~= state.ball or not evidence.ball.Parent then return false end
   if time < evidence.exchangeAt or time > evidence.expiresAt then return false end
-  if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true or not playerIsAlive(localPlayer.UserId) then return false end
+  if not utils.isActive() or (not state.external and utils.getConfigValue("AutoSpam") ~= true) or not playerIsAlive(localPlayer.UserId) then return false end
   if not state.root.Parent or not state.character.Parent or not playerIsAlive(state.partner) then return false end
   local opponent = playerPosition(state.partner)
   if not opponent or (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.PROTECTION_RADIUS then return false end
@@ -840,17 +847,24 @@ function AutoSpam.canSendManual()
   if not state or not utils or not utils.isActive() or not utils.isManualSpamActive() then return false end
   return state.root ~= nil and state.root.Parent ~= nil and state.character ~= nil and state.character.Parent ~= nil and playerIsAlive(localPlayer.UserId)
 end
-function AutoSpam.canSend()
-  local state = current
-  if not state or not state.active then return false end
-  local time = now(); local cd, cooldownExpired = monitorCooldown(state)
-  local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd, cooldownExpired)
-  if stop then deactivate(state, stop, time); return sendBlocked(state, stop, time) end
+local function activeSendDecision(state, s, time)
   local order = sequenceOrder(state, s and s.syncSequence); local gate = (order == "old" or order == "invalid") and ("packet_" .. order) or sampleGate(state, s, time)
   local target = s and userId(s.exchangeTargetId or s.targetId)
-  if not target or (target ~= localPlayer.UserId and target ~= state.partner) then return sendBlocked(state, "target_outside_pair", time) end
+  if not target or (target ~= localPlayer.UserId and target ~= state.partner) then return false, "target_outside_pair" end
   local danger = pairDanger(state, s, state.partner); state.danger = danger
-  if not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready then return sendBlocked(state, "no_immediate_danger", time) end
+  local ready = danger and danger.ready
+  if ready then state.lastDangerAt = time end
+  if not ready and freshSnapshot(s, time) and state.lastDangerAt and state.exchange and state.exchange.partner == state.partner then
+    local grace = math.min(0.18, networkLatency() + 1 / 30 + (state.proximityStrength or 0) * 0.08); local other = playerPosition(state.partner)
+    local speed = snapshotSpeed(s); local ownRange = speed and deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false)
+    local otherRange = speed and deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
+    if other and finite(ownRange) and finite(otherRange) and time - state.lastDangerAt <= grace then
+      local contactRange = ownRange + otherRange + speed * networkLatency(); local ballRange = math.max(ownRange, otherRange) + speed * grace
+      ready = (other - state.root.Position).Magnitude <= contactRange
+        and math.min((s.position - state.root.Position).Magnitude, (s.position - other).Magnitude) <= ballRange
+    end
+  end
+  if not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not ready then return false, "no_immediate_danger" end
   if gate == nil then return true end
   local transient = gate == "target_unknown"
     or gate == "snapshot_invalid"
@@ -860,13 +874,43 @@ function AutoSpam.canSend()
     or gate == "ball_data_invalid"
     or gate == "packet_old"
   if transient and canBridgeSend(state, s, time) then state.lastBridgedSendAt = time; return true end
-  return sendBlocked(state, gate, time)
+  return false, gate
+end
+function AutoSpam.canSend()
+  local state = current
+  if not state or not state.active then return false end
+  local time = now(); local cd, expired = monitorCooldown(state)
+  local s = gameInfo.getSnapshotAt(time); local stop = deactivationReason(state, s, time, cd, expired)
+  if stop then deactivate(state, stop, time); return sendBlocked(state, stop, time) end
+  local allowed, gate = activeSendDecision(state, s, time)
+  if not allowed then return sendBlocked(state, gate, time) end
+  return true
 end
 function AutoSpam.hasClashPrediction() return type(extremeReturn) == "function" end
 function AutoSpam.createManualSession()
   local character = localPlayer.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root then return nil end
-  return { external = true, character = character, root = root, stopEvents = {}, gates = {}, active = true, activatedAt = now() }
+  local reference = current and current.active and current or nil
+  return {
+    external = true,
+    character = character,
+    root = root,
+    stopEvents = {},
+    gates = {},
+    active = true,
+    activatedAt = now(),
+    partner = reference and reference.partner,
+    partnerConfirmed = reference ~= nil,
+    ball = reference and reference.ball,
+    target = reference and reference.target,
+    sequence = reference and reference.sequence,
+    exchange = reference and reference.exchange and table.clone(reference.exchange),
+    exchangeHistory = reference and reference.exchangeHistory and table.clone(reference.exchangeHistory),
+    lastDangerAt = reference and reference.lastDangerAt,
+    proximityStrength = reference and reference.proximityStrength,
+    proximityAt = reference and reference.proximityAt,
+    cooldownResetAt = reference and reference.cooldownResetAt,
+  }
 end
 function AutoSpam.getManualStopReason(state, protectedUntil)
   local time = now(); local s = gameInfo.getSnapshotAt(time)
@@ -875,20 +919,20 @@ function AutoSpam.getManualStopReason(state, protectedUntil)
   if s and (s.resetting or s.teleported or (state.ball and state.ball ~= s.ball)) then return "ball_reset" end
   if s then
     state.ball = s.ball; observeTarget(state, s, time, true, true)
-    observeExchangeContinuity(state, s, time); local target = userId(s.exchangeTargetId or s.targetId)
+    observeExchangeContinuity(state, s, time); rememberSendContinuity(state, s, time)
+    if sequenceOrder(state, s.syncSequence) == "new" then state.sequence = s.syncSequence end
+    local target = userId(s.exchangeTargetId or s.targetId)
     if state.exchange and not state.partnerConfirmed then state.partner, state.partnerConfirmed = state.exchange.partner, true end
     if not state.partner then state.partner = target ~= localPlayer.UserId and target or state.previousOpponent or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) end
   end
   local cd, expired = monitorCooldown(state)
-  if time < protectedUntil then return nil end
-  if not state.partner then return "no_clash_partner" end
+  if time < protectedUntil then return nil, true end
+  if not state.partner then return "no_clash_partner", false end
   local stop = deactivationReason(state, s, time, cd, expired)
-  if stop then return stop end
-  local gate = sampleGate(state, s, time)
-  if gate then return gate end
-  local danger = pairDanger(state, s, state.partner)
-  if not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready then return "no_immediate_danger" end
-  return nil
+  if stop then return stop, false end
+  local allowed, gate = activeSendDecision(state, s, time)
+  if not allowed then sendBlocked(state, gate, time) end
+  return nil, allowed
 end
 function AutoSpam.stopSpam(reason)
   if current then deactivate(current, reason or "stop_spam", now()) end

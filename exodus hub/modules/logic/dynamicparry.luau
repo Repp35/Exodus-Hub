@@ -148,8 +148,9 @@ function Dynamic.canSend()
   local player = utils.getLocalPlayer(); local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
   if not humanoid or humanoid.Health <= 0 then stop(); return false end
   if utils.getConfigValue("DynamicParryDeactivation") ~= false then
-    local reason = autoSpam.getManualStopReason(session, protectedUntil)
+    local reason, allowed = autoSpam.getManualStopReason(session, protectedUntil)
     if reason then stop(); return false end
+    return allowed ~= false
   end
   return true
 end

@@ -427,3 +427,20 @@ Chamadas repetidas de `Loader.start()` enquanto existe inicialização em curso
 são reconhecidas com `true, nil, nil, "in_progress"` e apenas exibem um aviso.
 Não há nova inicialização, rollback, notificação crítica ou alteração de
 `Exodus.Started`/`StartError` nesse caminho; a chamada que possui o token continua.
+
+AutoSpam e Dynamic usam a mesma função `activeSendDecision` para autorizar os
+envios, além da mesma função de saída. Uma recusa temporária de envio mantém a
+sessão Dynamic ativa, em vez de virar um gate extra de desligamento. O contexto
+manual herda evidência do clash ativo quando existir, sem compartilhar tabelas
+mutáveis. Sua proteção inicial de 300 ms mais ping permanece independente.
+
+Em contato próximo, a tolerância ao cooldown aumenta gradualmente até o teto
+de 240 ms, com proximidade calculada pelo alcance dos dois jogadores e latência.
+A proximidade retida decai em 180 ms mais latência; um pequeno afastamento não
+remove toda a margem imediatamente. Longe, o teto normal de 120 ms permanece.
+Perdas breves de interseção admitem continuidade apenas com troca confirmada,
+perigo recente e bola dentro da região de contato; alvo fora da dupla continua
+encerrando imediatamente.
+
+Filhos usam frames sem máscara intermediária, preservando bordas e strokes.
+Abertura/fechamento altera visibilidade e altura sem recortar o componente.
