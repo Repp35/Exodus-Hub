@@ -172,7 +172,7 @@ function Actions.create(context)
   end
   function result.attach(definition, handle)
     if definition.action then handles[definition.action] = handle end
-    if context.desktop and definition.shortcutKey then
+    if definition.shortcutKey then
       local entry = { definition = definition, handle = handle }
       if definition.action == "panic" then table.insert(shortcuts, 1, entry) else shortcuts[#shortcuts + 1] = entry end
     end
@@ -186,7 +186,7 @@ function Actions.create(context)
     return true
   end
   function result.triggerShortcut(binding)
-    if not context.desktop or binding == Enum.KeyCode.Unknown then return false end
+    if binding == Enum.KeyCode.Unknown then return false end
     for _, entry in ipairs(shortcuts) do
       local definition, handle = entry.definition, entry.handle
       if Utils.getConfigValue(definition.shortcutKey) == binding then

@@ -129,9 +129,9 @@ local function resetTracking()
   state.trainingLastValidAt, state.trainingLastServerTime = 0, nil; state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil
   state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
   state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
-  state.danger = nil; state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil
-  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
-  table.clear(state.returns)
+  state.apNativePressAt = nil; state.danger = nil
+  state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -389,6 +389,13 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   end
   return true
 end
+local function manualClickOnCurrentTarget()
+  if state.mode == "training" or not finite(state.targetChangedAt) then return false end
+  local ok, stamp = pcall(function()
+    local ability = gameInfo.getDeflectAbility(); return ability and (ability.LastDeflectCallAt or ability.LastPressClock)
+  end)
+  return ok and finite(stamp) and stamp >= state.targetChangedAt and stamp <= clock() and stamp ~= state.apNativePressAt
+end
 local function request(reason)
   local now = clock()
   if
@@ -401,10 +408,14 @@ local function request(reason)
   then
     return false
   end
-  local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
-  local expectedBall, expectedMode, trainingThreshold = state.lastBall, state.mode, state.triggerDistance; local firedAt, speed, distance = now, state.speed, state.distance
-  state.fired, state.lastFireAt = true, firedAt; local wasRetry = state.retryReady
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  if manualClickOnCurrentTarget() then
+    state.fired = true; phase("waiting", "manual_target_already_clicked")
+    return false
+  end
+  local manualBlocked = false; local generation, cycle = state.generation, state.cycle
+  local boundUtils, boundRemote = utils, remote; local expectedBall, expectedMode, trainingThreshold = state.lastBall, state.mode, state.triggerDistance
+  local firedAt, speed, distance = now, state.speed, state.distance; state.fired, state.lastFireAt = true, firedAt
+  local wasRetry = state.retryReady; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
   local function sameCycle()
     return state.generation == generation
       and state.cycle == cycle
@@ -417,6 +428,7 @@ local function request(reason)
       and (state.targetKnown and state.target == state.player.UserId)
   end
   local function allowed()
+    if manualClickOnCurrentTarget() then manualBlocked = true; return false end
     return sameCycle()
       and not state.teleported
       and boundUtils.isActive()
@@ -426,9 +438,19 @@ local function request(reason)
   end
   requestInFlight = true; local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
   requestInFlight = false
+  if not manualBlocked then
+    local readOk, stamp = pcall(function()
+      local ability = gameInfo.getDeflectAbility(); return ability and (ability.LastDeflectCallAt or ability.LastPressClock)
+    end)
+    if readOk and finite(stamp) then state.apNativePressAt = stamp end
+  end
   if not ok then detail, sent = sent, false end
   if not sameCycle() then return false end
   if sent ~= true then
+    if manualBlocked then
+      state.fired = true; phase("waiting", "manual_target_already_clicked")
+      return false
+    end
     if state.mode == "training" then
       state.fired = false; state.nextAttemptAt = clock() + CONFIG.FRAME_BASE
       phase("waiting", "training_attempt_failed"); local errorAt = clock()
@@ -546,21 +568,6 @@ local function tick(character, root, generation)
   if fierceActive(time, cooldown) then phase("waiting", "fierce_active"); return end
   if value.mode == "training" then tickTraining(value, root, time); return end
   if not cooldown or cooldown.source == "unknown" then phase("waiting", "cooldown_unknown"); return end
-  local ability = gameInfo.getDeflectAbility(); local manualAt = ability and ability.LastDeflectCallAt
-  local accepted = cooldown.predictedReset == true or (finite(cooldown.pressAt) and finite(manualAt) and cooldown.pressAt >= manualAt - 0.05)
-  if
-    not state.fired
-    and state.player
-    and state.targetKnown
-    and state.target == state.player.UserId
-    and finite(manualAt)
-    and manualAt > state.lastFireAt
-    and manualAt <= time
-    and time - manualAt <= 0.15
-    and accepted
-  then
-    state.fired, state.lastFireAt, state.retryPending, state.retryReady = true, manualAt, true, false
-  end
   if state.fired and state.retryPending and cooldown then
     if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.lastFireAt then
       state.retryPending = false

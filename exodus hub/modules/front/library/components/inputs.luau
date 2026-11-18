@@ -92,6 +92,7 @@ function Components.install(context)
       "",
       { Name = "SliderHitbox", Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 1, -28), BackgroundTransparency = 1, ZIndex = 11 }
     )
+    hit.NextSelectionLeft, hit.NextSelectionRight = hit, hit
     local value
     local function normalize(nextValue)
       return math.clamp(minimum + math.floor(((finite(nextValue) or minimum) - minimum) / step + 0.5) * step, minimum, maximum)
@@ -112,8 +113,8 @@ function Components.install(context)
     drags[cancelDrag] = true
     handle.scope.add(function() drags[cancelDrag] = nil end)
     handle.scope.connect(hit.InputBegan, function(input)
-      if input.KeyCode == Enum.KeyCode.Left then change(value - step) end
-      if input.KeyCode == Enum.KeyCode.Right then change(value + step) end
+      if input.KeyCode == Enum.KeyCode.Left or input.KeyCode == Enum.KeyCode.DPadLeft then change(value - step) end
+      if input.KeyCode == Enum.KeyCode.Right or input.KeyCode == Enum.KeyCode.DPadRight then change(value + step) end
     end)
     handle.setValue(read(definition.key, definition.value)); bind(handle, definition.key, handle.setValue)
     return handle

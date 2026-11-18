@@ -169,7 +169,7 @@ function UIKit.create(options)
   scope.connect(UIS.InputBegan, function(input)
     if not capture then return end
     local binding
-    if input.UserInputType == Enum.UserInputType.Keyboard then
+    if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType.Name:match("^Gamepad") then
       if input.KeyCode == Enum.KeyCode.Escape then
         capturedInput = input; kit.cancelCapture()
         return
@@ -298,6 +298,7 @@ function UIKit.create(options)
       Font = FONT.strong,
       BackgroundColor3 = C.inputBg,
       ZIndex = 10,
+      Selectable = true,
     }
 
     for key, value in pairs(properties or {}) do

@@ -311,3 +311,20 @@ no Dynamic. `DynamicParryDeactivation` habilita essas saídas após 300 ms mais 
 ping retornado por GameInfo. Morte, reset da bola, desligamento, perda de foco e
 comando explícito de parada podem encerrar antes. O período protege a rajada de
 saídas automáticas de clash; não contorna recusas ou cooldown nativo do jogo.
+
+## Clique manual e controle
+
+Imediatamente antes de reservar o envio do AP e na guarda final do remote, o AP
+lê `DeflectAbility.LastDeflectCallAt` (fallback `LastPressClock`) com `pcall`.
+Uma chamada manual desde a entrada no alvo atual bloqueia o AP nesse ciclo; a
+marca da própria chamada do AP é excluída. Uma nova volta de alvo libera o ciclo.
+Falha de leitura não bloqueia nem agenda verificações. O mesmo marcador nativo
+cobre Dynamic, mouse, teclado e toque que passam por `Deflect()`.
+
+Dynamic Parry fica abaixo de Manual Spam na Main. O botão selecionado aceita
+as entradas de teclado, mouse e gamepad reconhecidas pelo Roblox. O hub aceita
+captura de botões de gamepad, seleção de controles, ativação nativa e sliders
+pelo direcional. `ButtonSelect` ou a tecla `Menu` abre/fecha o painel; com ele
+aberto, o gamepad navega a interface sem disparar atalhos de combate. O foco é
+restaurado no teardown. Remotos de TV dependem dos eventos de teclado/gamepad
+expostos pelo Roblox no dispositivo, sem inferência de protocolos de hardware.

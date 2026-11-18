@@ -22,7 +22,7 @@ local function stop()
   if utils then utils.setDynamicSpamActive(false) end
 end
 local function matches(input)
-  local key = utils.getConfigValue("DynamicParryKey"); return input.KeyCode == key or input.UserInputType == key
+  local key = utils.getConfigValue("DynamicParryKey"); return key ~= nil and key ~= Enum.KeyCode.Unknown and (input.KeyCode == key or input.UserInputType == key)
 end
 local function press(input)
   if not enabled() or held then return end

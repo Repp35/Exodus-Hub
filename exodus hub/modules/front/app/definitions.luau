@@ -51,21 +51,6 @@ local CONFIG = {
           },
         },
         {
-          title = "Dynamic Parry",
-          column = 2,
-          components = {
-            { kind = "toggle", title = "Dynamic Parry", key = "DynamicParry" },
-            {
-              kind = "segmented",
-              title = "Modo",
-              key = "DynamicParryMode",
-              options = { { value = "Toggle", label = "Travar ao segurar" }, { value = "Hold", label = "Hold" } },
-            },
-            { kind = "keybind", title = "Botão no PC", key = "DynamicParryKey" },
-            { kind = "toggle", title = "Desativação dinâmica", key = "DynamicParryDeactivation" },
-          },
-        },
-        {
           title = "Manual Spam",
           column = 2,
           components = {
@@ -109,6 +94,21 @@ local CONFIG = {
               increment = 0.05,
               valueName = "x",
             },
+          },
+        },
+        {
+          title = "Dynamic Parry",
+          column = 2,
+          components = {
+            { kind = "toggle", title = "Dynamic Parry", key = "DynamicParry" },
+            {
+              kind = "segmented",
+              title = "Modo",
+              key = "DynamicParryMode",
+              options = { { value = "Toggle", label = "Travar ao segurar" }, { value = "Hold", label = "Hold" } },
+            },
+            { kind = "keybind", title = "Botão (PC / controle)", key = "DynamicParryKey" },
+            { kind = "toggle", title = "Desativação dinâmica", key = "DynamicParryDeactivation" },
           },
         },
         {
