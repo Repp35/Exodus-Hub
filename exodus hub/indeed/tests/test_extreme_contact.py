@@ -75,6 +75,7 @@ local oldIndex=V.__index
 V.__index=function(t,k) if k=='Unit' then return t/t.Magnitude end return oldIndex(t,k) end
 function V:Dot(b) return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
 local function finiteVector(x) return typeof(x)=='Vector3' end
+local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
 local function person(id,pos)
  local root={Parent=true,Position=pos,CFrame={cf=true,Position=pos,LookVector=v(1)}}
  local char={FindFirstChild=function() return root end,FindFirstChildOfClass=function() return {Health=100} end}
@@ -100,4 +101,15 @@ mode=1;source.attrs.PlayerTeam='red';me.attrs.PlayerTeam='red'
 assert(GameInfo.getDeflectTargetPrediction(99)==nil,'teammate was selected')
 mode=0;third.attrs.IsCloaked=false;third.attrs.DarkSealed=true
 assert(GameInfo.getDeflectTargetPrediction(99)==88)
+source.attrs.CamCFrame=nil;source.root.CFrame=nil
+assert(GameInfo.getDeflectTargetPrediction(99)==88,'third-player Dark Seal depended on camera')
+third.attrs.DarkSealed=false;me.attrs.DarkSealed=true
+local target,_,_,reason=GameInfo.getDeflectTargetPrediction(99)
+assert(target==42 and reason=='dark_seal','local Dark Seal failed without camera')
+me.attrs.DarkSealed=false
+assert(GameInfo.getDeflectTargetPrediction(99)==nil,'expired seal remained forced')
+me.attrs.DarkSealed=true;me.attrs.Lives=0
+assert(GameInfo.getDeflectTargetPrediction(99)==nil,'dead seal holder forced anticipation')
+me.attrs.Lives=1;me.attrs.IsCloaked=true
+assert(GameInfo.getDeflectTargetPrediction(99)==nil,'cloak eligibility was ignored')
 ''')

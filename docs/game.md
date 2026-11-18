@@ -77,3 +77,12 @@ e contorno são iguais nos dois ramos. `SkinTargetColor` é preenchido pelo scri
 de skins, mas o código de renderização inspecionado usa o vermelho acima.
 `LastParryTarget`, posse, direção, distância, feedback de bloqueio e histórico
 antigo de simulação não garantem quem é o alvo atual.
+
+`DarkSealAbility` ativa `Player.DarkSealed = true` no dono, com duração de 15 s
+(`SealTime`) e cooldown de 20 s. O servidor recusa ativar se outro jogador já está
+marcado; morte, reset e destruição limpam a marca e invalidam o timer por token.
+Não se deve inferir marca ativa por habilidade equipada, cooldown ou VFX.
+A seleção nativa exclui o próprio rebatedor, camuflagem e companheiros em equipes
+antes da prioridade Dark Seal; só depois compara alinhamento com a câmera.
+A previsão do hub verifica a marca antes de exigir câmera válida: marca em terceiro
+impede antecipar para o jogador local; marca local válida dispensa alinhamento.

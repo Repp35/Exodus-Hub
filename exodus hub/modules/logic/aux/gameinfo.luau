@@ -482,30 +482,37 @@ end
 function GameInfo.getDeflectTargetPrediction(id)
   local source = players:GetPlayerByUserId(id); local root = source and source.Character and source.Character:FindFirstChild("HumanoidRootPart")
   if not root then return nil end
+  local mode = world:GetAttribute("CurGamemode"); local teams = mode == 1 or mode == 2
+  local candidates = {}
+  for _, candidate in ipairs(players:GetPlayers()) do
+    local position, character = playerRoot(candidate.UserId); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local lives = candidate:GetAttribute("Lives")
+    if
+      candidate ~= source
+      and position
+      and humanoid
+      and humanoid.Health > 0
+      and (not finite(lives) or lives > 0)
+      and candidate:GetAttribute("Playing") ~= false
+      and candidate:GetAttribute("IsCloaked") ~= true
+      and (not teams or source:GetAttribute("PlayerTeam") ~= candidate:GetAttribute("PlayerTeam"))
+    then
+      if candidate:GetAttribute("DarkSealed") == true then return candidate.UserId, 1, 1, "dark_seal" end
+      candidates[#candidates + 1] = { player = candidate, root = position }
+    end
+  end
   local camera = source:GetAttribute("CamCFrame"); local observed = typeof(camera) == "CFrame"
   if not observed then camera = root.CFrame end
   if typeof(camera) ~= "CFrame" then return nil end
   local origin, look = camera.Position, camera.LookVector
   if (origin - root.Position).Magnitude > 64 then origin = root.Position end
   if not finiteVector(origin) or not finiteVector(look) or look.Magnitude < 0.5 then return nil end
-  look = look.Unit; local mode = world:GetAttribute("CurGamemode")
-  local teams = mode == 1 or mode == 2; local winner, best, runner = nil, -math.huge, -math.huge
-  for _, candidate in ipairs(players:GetPlayers()) do
-    local position, character = playerRoot(candidate.UserId); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if
-      candidate ~= source
-      and position
-      and humanoid
-      and humanoid.Health > 0
-      and candidate:GetAttribute("IsCloaked") ~= true
-      and (not teams or source:GetAttribute("PlayerTeam") ~= candidate:GetAttribute("PlayerTeam"))
-    then
-      if candidate:GetAttribute("DarkSealed") == true then return candidate.UserId, 1, 1, "dark_seal" end
-      local delta = position.Position - origin
-      if delta.Magnitude > 0.001 then
-        local score = look:Dot(delta.Unit)
-        if score > best then winner, runner, best = candidate.UserId, best, score elseif score > runner then runner = score end
-      end
+  look = look.Unit; local winner, best, runner = nil, -math.huge, -math.huge
+  for _, entry in ipairs(candidates) do
+    local candidate, position = entry.player, entry.root; local delta = position.Position - origin
+    if delta.Magnitude > 0.001 then
+      local score = look:Dot(delta.Unit)
+      if score > best then winner, runner, best = candidate.UserId, best, score elseif score > runner then runner = score end
     end
   end
   local required = observed and 0.75 or 0.9
