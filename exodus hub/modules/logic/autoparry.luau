@@ -3,6 +3,7 @@
 -- module
 local AutoParry = {}
 local deflectGeometry
+local requestInFlight = false
 local utils, gameInfo, remote, cooldownInfo
 local maxObservedCps, syncInterval, lastSyncAt, lastAcceptedSample
 local state = {
@@ -234,11 +235,6 @@ local function matchTiming(value, time, own, factor, observedVelocity)
   end
   local rootVelocity = state.root and state.root.Parent and state.root.AssemblyLinearVelocity or Vector3.zero
   local danger = deflectGeometry.getDanger(value.position, velocity, own, speed, g.noWindowParryRadius, g.effectiveWindow, rootVelocity); local ready = danger ~= nil and danger.ready
-  if ready and value.predicted == true then
-    local visualVelocity = vector(value.visualVelocity) and value.visualVelocity or velocity
-    local visual = deflectGeometry.getDanger(value.visualPosition, visualVelocity, own, speed, g.noWindowParryRadius, g.effectiveWindow, rootVelocity); ready = visual ~= nil and visual.ready
-    if visual and visual.score < danger.score then danger = visual end
-  end
   return {
     geometry = g,
     danger = danger,
@@ -387,9 +383,6 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   if not geometry then return false end
   local threshold = mode == "training" and trainingThreshold or geometry.fullRadius
   if not finite(threshold) or (position - own).Magnitude > threshold + CONFIG.DISTANCE_EPSILON then return false end
-  if mode ~= "training" and value.predicted == true then
-    if not vector(value.visualPosition) or (value.visualPosition - own).Magnitude > threshold + CONFIG.DISTANCE_EPSILON then return false end
-  end
   if mode ~= "training" and value.realPosition ~= nil and (value.realPosition - own).Magnitude > threshold then
     local age = finite(value.syncAt) and math.clamp(time - value.syncAt, 0, 0.15) or 0.15; local tolerance = math.max(6, speed * (age + math.clamp(state.ping, 0, 0.1) + CONFIG.FRAME_BASE))
     if state.resetPending or (value.position - value.realPosition).Magnitude > tolerance then return false end
@@ -399,7 +392,8 @@ end
 local function request(reason)
   local now = clock()
   if
-    now < state.nextAttemptAt
+    requestInFlight
+    or now < state.nextAttemptAt
     or fierceActive(now, safeCooldown())
     or state.fired
     or not state.player
@@ -430,7 +424,8 @@ local function request(reason)
       and boundUtils.getConfigValue("AutoParry") ~= false
       and currentRequestReady(expectedBall, expectedMode, trainingThreshold)
   end
-  local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+  requestInFlight = true; local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+  requestInFlight = false
   if not ok then detail, sent = sent, false end
   if not sameCycle() then return false end
   if sent ~= true then
@@ -639,6 +634,11 @@ function AutoParry.bindCharacter(character)
     if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE) end
     tick(character, root, generation)
   end))
+  if service.PreSimulation and service.PreSimulation ~= signal then
+    track(service.PreSimulation:Connect(function()
+      if generation == state.generation and not gameInfo.isTrainingArea() then tick(character, root, generation) end
+    end))
+  end
   track(gameInfo.observeTraining(function()
     if generation == state.generation and gameInfo.isTrainingArea() then tick(character, root, generation) end
   end))

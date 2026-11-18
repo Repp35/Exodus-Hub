@@ -107,8 +107,8 @@ trajetória que não intercepta o alcance recebe zero. Não há espera de confir
 nem acumulação de amostras para liberar o clique.
 
 AP usa a janela configurada e a margem de reação; a ampliação adaptativa exige
-TTI de morte iminente. Com simulação do replicador, o estado visual também precisa
-indicar risco próximo. Auto spam usa 30% da janela nativa mais latência e um frame
+TTI de morte iminente. A simulação válida do replicador não depende da atualização visual para
+autorizar o AP. Auto spam usa 30% da janela nativa mais latência e um frame
 nos gates de contato, sem somar a projeção da janela duas vezes. A previsão de
 clash usa o mesmo cálculo de interseção no alcance do oponente, mantendo seus
 limites próprios de antecedência e prioridade de destino.
@@ -255,3 +255,10 @@ inteiros para preservar o trecho próximo. A API pública não oferece recorte
 esférico por pixel nem corte local do Terrain sólido sem alterar voxels. Efeitos
 emitidos de dentro do raio podem se estender além dele; isso não é um far clip
 global do motor. Mudanças são aplicadas gradualmente conforme o orçamento.
+
+O AP avalia também `PreSimulation`, além do tick após física e dos eventos de
+sincronização. Qualquer fonte positiva de alvo local vence fontes negativas.
+O primeiro envio reserva o ciclo antes do remote; uma trava de requisição em
+voo impede envios concorrentes mesmo se um evento de alvo rearmar o ciclo
+durante a chamada. Alcance físico, cooldown e validade da bola continuam sendo
+revalidados no envio.
