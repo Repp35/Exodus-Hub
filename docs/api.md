@@ -97,7 +97,11 @@ inteira do jogo a cada frame.
 ## Pré-ativação em contato extremo
 
 `extreme_return_prediction` arma uma rajada antes do alvo local confirmar quando
-o alvo de rede é um oponente vivo. Não há corte fixo de 5 studs: o raio de perigo
+o alvo de rede é o jogador local ou o oponente vivo avaliado. Essa restrição é
+validada na entrada comum de todos os gatilhos do auto spam: alvo de terceiro
+não autoriza ativação. Quando o alvo ainda é local, a previsão também avalia os
+oponentes em contato físico, respeitando a prioridade da Dark Seal.
+Não há corte fixo de 5 studs: o raio de perigo
 parte do alcance bruto desse oponente (incluindo resiliência) e acrescenta a
 distância percorrida pela bola na janela efetiva de antecipação e na latência.
 A janela usa fator 0,3 e é limitada pelo orçamento de 240 ms mais latência.
@@ -115,8 +119,10 @@ revalidada durante a rajada especulativa. Isso estima uma escolha; não torna a
 câmera remota ou a intenção do oponente perfeitamente conhecidas.
 
 A rajada fica especulativa até uma troca real para o jogador local. Sem confirmação,
-expira; uma troca para terceiro cancela. Cada ida da bola admite uma tentativa,
-sem rearmar continuamente só porque o mesmo oponente ainda está perto. Cooldown,
+expira; uma troca para terceiro cancela. Cada ida da bola admite uma tentativa
+por oponente, com nova tentativa apenas se a aproximação reduzir a distância em
+pelo menos um quarto do raio bruto dele. A marca Dark Seal não amplia a janela
+de antecipação. Cooldown,
 reset, morte e demais condições de saída continuam valendo durante a antecipação.
 `anticipationRemaining` no status expõe o prazo restante.
 

@@ -298,9 +298,13 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
 end
 local function activate(state, reason, partner, time, s)
   if state.active then return false end
+  local target = s and userId(s.exchangeTargetId or s.targetId)
+  if not userId(partner) or partner == localPlayer.UserId or not target or (target ~= localPlayer.UserId and target ~= partner) then
+    state.lastGate, state.gates.common = "target_outside_pair", "target_outside_pair"; return false
+  end
   state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time; state.lastGate = reason
   if reason == "extreme_return_prediction" then
-    state.anticipationUsed = true; state.anticipationUsedSeal = localPlayer:GetAttribute("DarkSealed") == true
+    state.anticipationUsed = true; state.anticipationUsedPartner = partner
     local other = playerPosition(partner); state.anticipationUsedGap = other and (other - state.root.Position).Magnitude or nil
     state.anticipatingUntil = time + CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + networkLatency()
   end
@@ -389,19 +393,10 @@ local function deactivationReason(state, s, time, cd, expired)
   if s and (s.teleported or s.resetting) then return "ball_reset" end
   if state.anticipatingUntil then
     local target = s and (s.exchangeTargetId or s.targetId)
-    if anticipationConfirmed(state, s, time) then
-      state.anticipatingUntil = nil
-    elseif
-      target ~= state.partner
-      and target ~= localPlayer.UserId
-      and not (state.anticipationUsedSeal and target == state.anticipationStartTarget and localPlayer:GetAttribute("DarkSealed") == true)
-    then
-      return "anticipation_cancelled"
-    elseif time >= state.anticipatingUntil then
-      return "anticipation_expired"
-    elseif gameInfo.getDeflectTargetPrediction(state.partner) ~= localPlayer.UserId then
-      return "anticipation_cancelled"
-    end
+    if anticipationConfirmed(state, s, time) then state.anticipatingUntil = nil
+    elseif target ~= state.partner and target ~= localPlayer.UserId then return "anticipation_cancelled"
+    elseif time >= state.anticipatingUntil then return "anticipation_expired"
+    elseif gameInfo.getDeflectTargetPrediction(state.partner) ~= localPlayer.UserId then return "anticipation_cancelled" end
   end
   if redirectedFar(state, s, time) then return "target_redirected_far" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
@@ -498,7 +493,7 @@ local function dashPrediction(state, s, time)
   end
   return nil, lastGate
 end
-local function extremeReturnPartner(state, s, time, partner, sealed)
+local function extremeReturnPartner(state, s, time, partner)
   if not partner or partner == localPlayer.UserId then return nil end
   local other = playerPosition(partner); local speed = snapshotSpeed(s)
   if not other or not playerIsAlive(partner) or not speed or speed <= 0 then return nil end
@@ -507,7 +502,7 @@ local function extremeReturnPartner(state, s, time, partner, sealed)
   local gap = (other - state.root.Position).Magnitude; local latency = networkLatency()
   if
     state.anticipationUsed
-    and not (sealed and not state.anticipationUsedSeal)
+    and state.anticipationUsedPartner == partner
     and not (finite(state.anticipationUsedGap) and state.anticipationUsedGap - gap >= otherRadius * 0.25)
   then
     return nil
@@ -524,18 +519,16 @@ local function extremeReturnPartner(state, s, time, partner, sealed)
   local contactRadius = deflectGeometry.addLatencyRadius(otherRadius, speed, latency)
   if distance > contactRadius and closing <= 0 then return nil end
   local entry = distance <= contactRadius and 0 or (distance - contactRadius) / closing; local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency)
-  local forcedContact = sealed and gap <= contactRadius; local allowedLead = forcedContact and math.min(budget, g.deflectWindow + latency) or lead
-  if entry > allowedLead or distance > contactRadius + speed * allowedLead then return nil end
+  if entry > lead or distance > contactRadius + speed * lead then return nil end
   return partner
 end
 local function extremeReturn(state, s, time)
-  local sealed = localPlayer:GetAttribute("DarkSealed") == true; local target = userId(s.exchangeTargetId or s.targetId)
-  local partner = extremeReturnPartner(state, s, time, target, sealed)
-  if partner then return partner end
-  if not sealed then return nil end
+  local target = userId(s.exchangeTargetId or s.targetId)
+  if not target then return nil end
+  if target ~= localPlayer.UserId then return extremeReturnPartner(state, s, time, target) end
   for _, player in ipairs(players:GetPlayers()) do
-    if player ~= localPlayer and player.UserId ~= target then
-      partner = extremeReturnPartner(state, s, time, player.UserId, true)
+    if player ~= localPlayer then
+      local partner = extremeReturnPartner(state, s, time, player.UserId)
       if partner then return partner end
     end
   end

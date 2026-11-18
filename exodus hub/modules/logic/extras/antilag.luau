@@ -10,20 +10,16 @@ local CONFIG = {
     AntiLagEnabled = "boolean",
     AntiLagFloorCull = "boolean",
     AntiLagRenderDistance = "rate",
-    AntiLagRemoveLighting = "boolean",
     AntiLagRemoveSwordSounds = "boolean",
     AntiLagHideLobby = "boolean",
-    AntiLagRemoveFog = "boolean",
     AntiLagRemoveEffects = "boolean",
   },
   defaults = {
     AntiLagEnabled = false,
     AntiLagFloorCull = true,
     AntiLagRenderDistance = 200,
-    AntiLagRemoveLighting = true,
     AntiLagRemoveSwordSounds = true,
     AntiLagHideLobby = true,
-    AntiLagRemoveFog = true,
     AntiLagRemoveEffects = true,
   },
 }
@@ -59,20 +55,20 @@ local PROFILE = {
   Particles = true,
   TrailsAndBeams = true,
   LegacyEffects = true,
-  PostEffects = true,
-  Lights = true,
-  Shadows = true,
-  FlatLighting = true,
-  FlatSky = true,
-  Atmosphere = true,
-  Clouds = true,
-  NoFog = true,
+  PostEffects = false,
+  Lights = false,
+  Shadows = false,
+  FlatLighting = false,
+  FlatSky = false,
+  Atmosphere = false,
+  Clouds = false,
+  NoFog = false,
   Water = true,
   TransparentWater = true,
   TerrainDecoration = true,
   FlatMaterials = false,
   HideTaggedDecorations = false,
-  LowestGraphics = true,
+  LowestGraphics = false,
   MaintainEffects = true,
   RestoreLatest = false,
   ShowFPS = false,
@@ -1014,11 +1010,10 @@ end
 local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or CONFIG.defaults.AntiLagRenderDistance
   if distance ~= distance then distance = CONFIG.defaults.AntiLagRenderDistance end
-  profile.CullDistance = math.clamp(distance, 128, 1200); local lighting, effects, fog = not setting("AntiLagRemoveLighting"), not setting("AntiLagRemoveEffects"), not setting("AntiLagRemoveFog")
-  profile.Lights, profile.Shadows, profile.FlatLighting = not lighting, not lighting, not lighting; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
-  profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.NoFog, profile.Atmosphere = not fog, not fog
-  profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = not effects, not effects, not effects; profile.PostEffects, profile.Clouds, profile.FlatSky = not effects, not effects, not effects
-  profile.GameNoVFX, profile.GameReducedUI = not effects, not effects; return profile
+  profile.CullDistance = math.clamp(distance, 128, 1200); local removeEffects = setting("AntiLagRemoveEffects") == true
+  profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = setting("AntiLagHideLobby")
+  profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects; profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects
+  return profile
 end
 local function loadNativeModules(owner)
   if not owner.compatible then return end
