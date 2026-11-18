@@ -2,7 +2,7 @@
 
 -- module
 local AntiLag = {}
-local Utils
+local Utils, GameInfo
 
 -- configuration
 local CONFIG = {
@@ -678,6 +678,14 @@ local function inCameraView(delta, half, view)
 end
 local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
   local delta = position - view.position; local options = view.options
+  if options.BallCenter then
+    local offset = position - options.BallCenter
+    if math.abs(offset.X) - half.X <= 60 and math.abs(offset.Y) - half.Y <= 60 and math.abs(offset.Z) - half.Z <= 60 then
+      local floor = options.BallFloorY or options.CullFloorY
+      if floor and position.Y + half.Y < floor then return "ball_floor", nil end
+      return nil, nil
+    end
+  end
   local origin = view.focus or view.position; local rangeDelta = position - origin
   local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z)
   local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -898,6 +906,7 @@ local function createSpatialController(services, getOption)
     lastCameraFrame = camera.CFrame; cameraSnapshot.planes = cameraPlanes(cameraSnapshot)
     if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
     if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
+    if services.GetBallBounds then cameraSnapshot.options.BallCenter, cameraSnapshot.options.BallFloorY = services.GetBallBounds(now) end
     if not active or not alive then return end
     local restoreLimit = math.min(#hiddenEntries, 48); local restoreDeadline = os.clock() + 0.25 / 1000
     for _ = 1, restoreLimit do
@@ -1086,11 +1095,27 @@ local function startSession()
     if humanoid and humanoid.Health > 0 then return character end
     return nil
   end
+  local ballFloorParams = RaycastParams.new(); ballFloorParams.FilterType = Enum.RaycastFilterType.Exclude
+  ballFloorParams.RespectCanCollide = true
   owner.spatial = createSpatialController({
     Workspace = workspace,
     Roots = visualRoots,
     Player = player,
     RunService = runService,
+    GetBallBounds = function(now)
+      local ball = GameInfo.getBall()
+      if not ball or not ball.Parent then owner.ballFloorAt, owner.ballFloorY = nil, nil; return nil end
+      local position = ball.Position
+      if owner.ballFloorBall ~= ball or not owner.ballFloorAt or now - owner.ballFloorAt >= 0.1 then
+        owner.ballFloorBall, owner.ballFloorAt = ball, now; local excluded = { ball }
+        for _, person in ipairs(game:GetService("Players"):GetPlayers()) do
+          if person.Character then excluded[#excluded + 1] = person.Character end
+        end
+        ballFloorParams.FilterDescendantsInstances = excluded; local hit = workspace:Raycast(position, Vector3.new(0, -512, 0), ballFloorParams)
+        owner.ballFloorY = hit and hit.Normal.Y > 0.5 and hit.Position.Y - 5 or nil
+      end
+      return position, owner.ballFloorY
+    end,
     GetFocusY = function()
       local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
       return root and root.Position.Y or nil
@@ -1205,8 +1230,8 @@ function AntiLag.teardown()
   stopSession(); return true
 end
 function AntiLag.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  AntiLag.teardown(); Utils = deps.Utils
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência ausente: Utils ou GameInfo" end
+  AntiLag.teardown(); Utils, GameInfo = deps.Utils, deps.GameInfo
   observer = Utils.observeConfig(function(changes)
     for key in pairs(changes) do
       if CONFIG.schema[key] then
@@ -1228,8 +1253,10 @@ AntiLag.__config = CONFIG
 AntiLag.__contract = {
   requires = {
     Utils = "utils",
+    GameInfo = "gameinfo",
   },
   requiresMethods = {
+    GameInfo = { "getBall" },
     Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "isActive", "observeConfig", "trackGlobal", "untrackGlobal", "recordError" },
   },
   provides = { "setup", "teardown", "setEnabled", "getStatus" },
