@@ -1077,18 +1077,27 @@ local function startSession()
     local scripts = player:FindFirstChild("PlayerScripts") or player:WaitForChild("PlayerScripts", 10); assert(scripts, "PlayerScripts indisponível")
     owner.adapter = createGameAdapter({ Workspace = workspace, Player = player, PlayerScripts = scripts }, getOption)
   end
+  local function viewedCharacter()
+    local camera = workspace.CurrentCamera
+    if not camera or camera.CameraType == Enum.CameraType.Scriptable then return nil end
+    local subject = camera.CameraSubject
+    if not subject or not subject.Parent then return nil end
+    local character = subject:IsA("Humanoid") and subject.Parent or subject:FindFirstAncestorOfClass("Model"); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Health > 0 then return character end
+    return nil
+  end
   owner.spatial = createSpatialController({
     Workspace = workspace,
     Roots = visualRoots,
     Player = player,
     RunService = runService,
     GetFocusY = function()
-      local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
+      local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
       return root and root.Position.Y or nil
     end,
     GetFloorY = function()
       if not setting("AntiLagFloorCull") then owner.floorY, owner.currentFloorY = nil, nil; return nil end
-      local character = player.Character
+      local character = viewedCharacter()
       if owner.floorCharacter ~= character then owner.floorCharacter, owner.floorY, owner.currentFloorY = character, nil, nil end
       local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
       if root and humanoid and humanoid.Health > 0 and humanoid.FloorMaterial ~= Enum.Material.Air then
@@ -1098,8 +1107,8 @@ local function startSession()
       return setting("AntiLagFloorCull") and owner.floorY and owner.floorY - 5 or nil
     end,
     GetFocusPosition = function()
-      local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
-      return root and root.Position or nil
+      local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
+      return root and root.Position or (workspace.CurrentCamera and workspace.CurrentCamera.CFrame.Position)
     end,
     OnHidden = function(object, hidden)
       owner.masks[object] = if hidden then true else nil
