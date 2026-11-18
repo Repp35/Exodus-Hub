@@ -479,6 +479,39 @@ function GameInfo.getPlayerMotion(id)
   if not root then return nil end
   return root.Position, root.AssemblyLinearVelocity, character
 end
+function GameInfo.getDeflectTargetPrediction(id)
+  local source = players:GetPlayerByUserId(id); local root = source and source.Character and source.Character:FindFirstChild("HumanoidRootPart")
+  if not root then return nil end
+  local camera = source:GetAttribute("CamCFrame"); local observed = typeof(camera) == "CFrame"
+  if not observed then camera = root.CFrame end
+  if typeof(camera) ~= "CFrame" then return nil end
+  local origin, look = camera.Position, camera.LookVector
+  if (origin - root.Position).Magnitude > 64 then origin = root.Position end
+  if not finiteVector(origin) or not finiteVector(look) or look.Magnitude < 0.5 then return nil end
+  look = look.Unit; local mode = world:GetAttribute("CurGamemode")
+  local teams = mode == 1 or mode == 2; local winner, best, runner = nil, -math.huge, -math.huge
+  for _, candidate in ipairs(players:GetPlayers()) do
+    local position, character = playerRoot(candidate.UserId); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if
+      candidate ~= source
+      and position
+      and humanoid
+      and humanoid.Health > 0
+      and candidate:GetAttribute("IsCloaked") ~= true
+      and (not teams or source:GetAttribute("PlayerTeam") ~= candidate:GetAttribute("PlayerTeam"))
+    then
+      if candidate:GetAttribute("DarkSealed") == true then return candidate.UserId, 1, 1, "dark_seal" end
+      local delta = position.Position - origin
+      if delta.Magnitude > 0.001 then
+        local score = look:Dot(delta.Unit)
+        if score > best then winner, runner, best = candidate.UserId, best, score elseif score > runner then runner = score end
+      end
+    end
+  end
+  local required = observed and 0.75 or 0.9
+  if winner and best >= required and best - runner >= 0.03 then return winner, best, best - runner, observed and "camera" or "root" end
+  return nil
+end
 function GameInfo.getPlayerDistance(id)
   local own = players.LocalPlayer; local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart")
   local otherRoot = playerRoot(id)
@@ -904,6 +937,7 @@ GameInfo.__contract = {
     "observeAbilityMode",
     "getPlayerDistance",
     "getPlayerMotion",
+    "getDeflectTargetPrediction",
     "getHaunterEvent",
     "getBallFrozen",
     "getDeflectAbility",

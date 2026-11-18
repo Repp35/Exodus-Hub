@@ -31,7 +31,7 @@ local u={now=function() return tm end,getLocalPlayer=function() return me end,ge
  trackGlobal=function() end,untrackGlobal=function() end,trackCharacter=function() end,untrackCharacter=function() end,
  apiVersion=function() return 1 end,recordTransition=function(...) transitions[#transitions+1]={...} end,recordError=function(_,err) error(err) end}
 local geometryFactors={}
-local g={getSnapshotAt=function() return snap end,isSnapshotValid=function(s) return s and s.ball and s.ball.Parent~=nil end,
+local g={getDeflectTargetPrediction=function() return nil end,getSnapshotAt=function() return snap end,isSnapshotValid=function(s) return s and s.ball and s.ball.Parent~=nil end,
  getPlayerMotion=function(id) local p=people[id];return p and p.root.Position,p and p.root.AssemblyLinearVelocity end,
  getAveragePing=function() return 0 end,getBallSpeedLimits=function() return 16,600 end,
  getPlayerRawRadius=function() return 8.5 end,getDeflectGeometry=function(speed,_,factor)

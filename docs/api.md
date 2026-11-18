@@ -97,11 +97,20 @@ inteira do jogo a cada frame.
 ## Pré-ativação em contato extremo
 
 `extreme_return_prediction` arma uma rajada antes do alvo local confirmar quando
-o alvo de rede é um oponente vivo a até 5 studs (também limitado pelo alcance
-bruto dele), a bola chega ao alcance desse oponente dentro do orçamento de 240 ms
-mais latência e uma devolução teria TTI inferior a esse orçamento. Fora do raio,
-a bola precisa estar se aproximando; dentro dele, a devolução pode ser imediata.
-O alcance vem de DeflectGeometry, com resiliência e compensação de latência.
+o alvo de rede é um oponente vivo. Não há corte fixo de 5 studs: o raio de perigo
+parte do alcance bruto desse oponente (incluindo resiliência) e acrescenta a
+distância percorrida pela bola na janela efetiva de antecipação e na latência.
+A janela usa fator 0,3 e é limitada pelo orçamento de 240 ms mais latência.
+A devolução também precisa ter TTI inferior a esse orçamento. A bola deve chegar
+ao alcance do oponente dentro do orçamento; fora do raio precisa se aproximar.
+
+`GameInfo.getDeflectTargetPrediction(id)` compara os candidatos pela direção da
+câmera replicada do oponente, com fallback de orientação do personagem, como a
+seleção do dump. Isola companheiros de equipe, camuflagem e prioridade DarkSeal.
+Exige alinhamento frontal e separação do segundo candidato; ambiguidade retorna
+indisponível. A previsão precisa favorecer o jogador local e continua sendo
+revalidada durante a rajada especulativa. Isso estima uma escolha; não torna a
+câmera remota ou a intenção do oponente perfeitamente conhecidas.
 
 A rajada fica especulativa até uma troca real para o jogador local. Sem confirmação,
 expira; uma troca para terceiro cancela. Cada ida da bola admite uma tentativa,

@@ -11,7 +11,7 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.36,
     EXTREME_TARGET_DELAY = 0.24,
-    EXTREME_CONTACT_DISTANCE = 5,
+    EXTREME_WINDOW_FACTOR = 0.3,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
     CLOSE_OPPONENT_DISTANCE = 16,
@@ -377,7 +377,8 @@ local function deactivationReason(state, s, time, cd)
     local target = s and (s.exchangeTargetId or s.targetId)
     if target == localPlayer.UserId and freshSnapshot(s, time) then state.anticipatingUntil = nil
     elseif target ~= state.partner then return "anticipation_cancelled"
-    elseif time >= state.anticipatingUntil then return "anticipation_expired" end
+    elseif time >= state.anticipatingUntil then return "anticipation_expired"
+    elseif gameInfo.getDeflectTargetPrediction(state.partner) ~= localPlayer.UserId then return "anticipation_cancelled" end
   end
   if redirectedFar(state, s, time) then return "target_redirected_far" end
   if not playerIsAlive(state.partner) then return "opponent_left_or_died" end
@@ -478,8 +479,12 @@ local function extremeReturn(state, s, time)
   local ownRadius = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
   if not finite(ownRadius) or not finite(otherRadius) then return nil end
   local gap = (other - state.root.Position).Magnitude; local latency = networkLatency()
-  if gap > math.min(CONFIG.ACTIVATION.EXTREME_CONTACT_DISTANCE, otherRadius) then return nil end
-  local budget = CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + latency; local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
+  if gameInfo.getDeflectTargetPrediction(partner) ~= localPlayer.UserId then return nil end
+  local budget = CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + latency; local g = geometry(s, CONFIG.ACTIVATION.EXTREME_WINDOW_FACTOR)
+  if not g then return nil end
+  local contactTime = math.min(budget, g.effectiveWindow); local dangerRadius = deflectGeometry.projectRadius(otherRadius, speed, contactTime, 1, latency)
+  if not finite(dangerRadius) or gap > dangerRadius then return nil end
+  local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
   if math.max(0, gap - kill) / speed > budget then return nil end
   local position = vector(s.realPosition) and s.realPosition or s.position; local delta = other - position
   local distance = delta.Magnitude; local closing = distance > 0 and s.velocity:Dot(delta) / distance or 0
@@ -847,6 +852,7 @@ AutoSpam.__contract = {
       "apiVersion",
     },
     GameInfo = {
+      "getDeflectTargetPrediction",
       "areAbilitiesEnabled",
       "getSnapshotAt",
       "isSnapshotValid",
