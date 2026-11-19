@@ -231,7 +231,7 @@ clash. Animar a troca de interface pertence ao controller lifecycle.
 | Configuração | Padrão | Efeito |
 | --- | --- | --- |
 | AntiLagEnabled | false | Ativa o otimizador e seu journal reversível. |
-| AntiLagRenderDistance | 128 | Raio configurável entre 1 e 1200 studs ao redor do personagem. |
+| AntiLagRenderDistance | 300 | Raio configurável entre 300 e 1200 studs ao redor do personagem; valores salvos inferiores usam 300. |
 | AntiLagFloorCull | true | Mantido por compatibilidade; o corte inferior fica sempre ativo. |
 
 O filtro oculta instâncias inteiramente fora do raio configurado ou inteiramente

@@ -19,7 +19,7 @@ class AntiLagTests(unittest.TestCase):
 assert(config.register('antilag',definition))
 local defaults=config.defaults()
 assert(defaults.AntiLagEnabled==false and defaults.AntiLagRemoveSwordSounds==true)
-assert(defaults.AntiLagRenderDistance==128 and defaults.AntiLagFloorCull==true)
+assert(defaults.AntiLagRenderDistance==300 and defaults.AntiLagFloorCull==true)
 assert(defaults.AntiLagClashCull==nil and defaults.AntiLagRemoveTextures==nil)
 assert(defaults.AntiLagHideLobby==true)
 assert(defaults.AntiLagRemoveEffects==true)
@@ -33,18 +33,18 @@ assert(not config.validatePatch({AntiLagRenderDistance=math.huge}))
         code = SOURCE[SOURCE.index('local function requestedProfile()'):SOURCE.index('local function loadNativeModules(')]
         run_lua('''
 local PROFILE={CullDistance=128}
-local CONFIG={defaults={AntiLagRenderDistance=128}}
-local distance=128
+local CONFIG={defaults={AntiLagRenderDistance=300}}
+local distance=300
 local function setting(key) if key=='AntiLagRenderDistance' then return distance end return false end
 function table.clone(t) local r={} for k,v in pairs(t) do r[k]=v end return r end
 function math.clamp(v,lo,hi) return math.max(lo,math.min(hi,v)) end
 '''+code+'''
-assert(requestedProfile().CullDistance==128)
-distance=64; assert(requestedProfile().CullDistance==64)
+assert(requestedProfile().CullDistance==300)
+distance=64; assert(requestedProfile().CullDistance==300)
 distance=400; assert(requestedProfile().CullDistance==400)
-distance=0; assert(requestedProfile().CullDistance==1)
+distance=0; assert(requestedProfile().CullDistance==300)
 distance=2000; assert(requestedProfile().CullDistance==1200)
-distance=math.huge; assert(requestedProfile().CullDistance==128)
+distance=math.huge; assert(requestedProfile().CullDistance==300)
 ''')
 
     def test_optional_terrain_failure_is_reported_in_status_without_warning(self):
