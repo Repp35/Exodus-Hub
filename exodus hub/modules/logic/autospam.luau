@@ -87,7 +87,7 @@ local function clearEvidence(state)
   state.outbound, state.pending, state.receipt, state.haunter, state.exchange = nil, nil, nil, nil, nil
   state.target, state.targetAt, state.previousOpponent, state.confirmedReturns, state.exchangeHistory = nil, nil, nil, nil, nil
   state.lastPairExchangeAt, state.sendContinuity, state.prediction, state.predictionEvidence = nil, nil, nil, nil; state.leg = (state.leg or 0) + 1
-  state.activationEvidence, state.closeReceipt, state.targetChannels = nil, nil, {}
+  state.activationEvidence, state.closeReceipt, state.targetChannels, state.predictionArmed = nil, nil, {}, nil
   for _, sensor in pairs(state.sensors or {}) do
     sensor.attempt = nil
   end
@@ -299,9 +299,7 @@ local function solveReturnPartner(state, s, time, partner)
   local target = activationTarget(state, s, time)
   if target ~= localPlayer.UserId and target ~= partner then return nil end
   if not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then state.gates.prediction = "opponent_out_of_range"; return nil end
-  local attempt = liveAttempt(state, partner, time); local outbound = state.outbound
-  local contactEvidence = outbound and outbound.partner == partner and time - outbound.at <= CONFIG.ACTIVATION.RETURN
-  if not attempt and not contactEvidence then state.gates.prediction = "waiting_deflect_evidence"; return nil end
+  local attempt = liveAttempt(state, partner, time)
   if attempt and attempt.used then state.gates.prediction = "attempt_consumed"; return nil end
   if state.consumedLeg == state.leg then state.gates.prediction = "leg_consumed"; return nil end
   local aimed, score, margin, source = gameInfo.getDeflectTargetPrediction(partner)
@@ -314,17 +312,30 @@ local function solveReturnPartner(state, s, time, partner)
   local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false); local ownRadius = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false)
   if not finite(window) or not finite(otherRadius) or not finite(ownRadius) then return nil end
   local window = windowOpportunity(state, s, target, time)
-  if not window or not window.ready then state.gates.prediction = "outside_tti_window"; return nil end
+  if not window then return nil end
+  state.predictionArmed = {
+    partner = partner,
+    target = target,
+    ball = s.ball,
+    leg = state.leg,
+    at = time,
+    entryTime = window.entryTime,
+    window = window.window,
+    fullRadius = window.fullRadius,
+    ready = false,
+  }
+  if not window.ready then state.gates.prediction = "outside_tti_window"; return nil end
   local budget = window.window; local physicalDanger = deflectGeometry.getDanger(position, velocity, other, speed, otherRadius, budget, motion)
   local arrival = target == localPlayer.UserId and 0 or math.max(0, (position - other).Magnitude - otherRadius) / speed
   if attempt and attempt.phase == "parry" then arrival = 0 end
   if physicalDanger and physicalDanger.ready and finite(physicalDanger.entryTime) then arrival = math.min(arrival, math.max(0, physicalDanger.entryTime)) end
-  if not attempt and arrival > frameLead(state) then state.gates.prediction = "waiting_deflect_evidence"; return nil end
   local futureOther = other + motion * arrival; local ownMotion = vector(state.root.AssemblyLinearVelocity) and state.root.AssemblyLinearVelocity or Vector3.zero
   local futureOwn = own + ownMotion * arrival; local returnTime = math.max(0, (futureOther - futureOwn).Magnitude - otherRadius - ownRadius) / speed
   if arrival + returnTime > budget then state.gates.prediction = "return_has_reaction_time"; return nil end
+  state.predictionArmed.ready = true; state.predictionArmed.contactIn, state.predictionArmed.returnIn = arrival, returnTime
+  if not attempt then state.gates.prediction = "armed_waiting_animation"; return nil end
   local danger = physicalDanger
-  if attempt and attempt.phase ~= "parry" and time + arrival > attempt.expiresAt then state.gates.prediction = "attempt_expires_before_contact"; return nil end
+  if attempt.phase ~= "parry" and time + arrival > attempt.expiresAt then state.gates.prediction = "attempt_expires_before_contact"; return nil end
   local evidence = {
     partner = partner,
     leg = state.leg,
@@ -332,19 +343,18 @@ local function solveReturnPartner(state, s, time, partner)
     contactIn = arrival,
     returnIn = returnTime,
     deadline = time + window.window + networkLatency() * 2 + frameLead(state) * 2,
-    source = attempt and attempt.source or "outbound_contact",
-    animationPhase = attempt and attempt.phase,
+    source = attempt.source,
+    animationPhase = attempt.phase,
     aimSource = source,
     aimScore = score,
     aimMargin = margin,
     danger = danger,
   }
 
-  state.predictionEvidence, state.gates.prediction = evidence, "ready"
-  return { reason = attempt and "extreme_return_prediction" or "contact_return_prediction", partner = partner, prediction = evidence, attempt = attempt }
+  state.predictionEvidence, state.gates.prediction = evidence, "ready"; return { reason = "extreme_return_prediction", partner = partner, prediction = evidence, attempt = attempt }
 end
 local function solveReturn(state, s, time)
-  state.gates.prediction = "waiting_deflect_evidence"; state.predictionEvidence = nil
+  state.gates.prediction = "waiting_deflect_evidence"; state.predictionEvidence, state.predictionArmed = nil, nil
   local target = activationTarget(state, s, time)
   if not target then return nil end
   if target ~= localPlayer.UserId then return solveReturnPartner(state, s, time, target) end
@@ -353,7 +363,7 @@ local function solveReturn(state, s, time)
     if not id or seen[id] then return nil end
     seen[id] = true; return solveReturnPartner(state, s, time, id)
   end
-  local candidate = tryPartner(state.previousOpponent)
+  local candidate = tryPartner(state.previousOpponent or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE))
   if candidate then return candidate end
   for id in pairs(state.sensors) do
     if liveAttempt(state, id, time) then
@@ -1038,6 +1048,7 @@ function AutoSpam.getStatus()
     confirmedReturns = state and state.confirmedReturns and state.confirmedReturns.count or 0,
     prediction = state and state.prediction and table.clone(state.prediction) or nil,
     predictionEvidence = state and state.predictionEvidence and table.clone(state.predictionEvidence) or nil,
+    predictionArmed = state and state.predictionArmed and table.clone(state.predictionArmed) or nil,
     animationSignals = animations,
     frameLead = state and frameLead(state) or nil,
     danger = state and state.danger and table.clone(state.danger) or nil,

@@ -34,6 +34,15 @@ assert(ap.isActive() and clicks>0,'new animation asset was missed')
                 check(f'''g.getDeflectTargetPrediction=function() return 42 end
 packet(99,0,18);animate(99,{phase});assert(ap.isActive() and clicks>0)''')
 
+    def test_outbound_prediction_prepares_then_dispatches_on_opponent_animation(self):
+        check('''g.getDeflectTargetPrediction=function() return 42 end
+packet(42,0,50);packet(99,.001,18)
+assert(not ap.isActive() and clicks==0,'outbound contact fired animation prediction without an animation')
+local prepared=ap.getStatus().predictionArmed
+assert(prepared and prepared.ready,'prediction was not prepared before animation')
+animate(99,101)
+assert(ap.isActive() and clicks>0,'opponent animation did not release prepared prediction')''')
+
     def test_detach_releases_all_observers(self):
         check('''
 packet(42,0,2);ap.detachCharacter()

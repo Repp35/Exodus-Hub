@@ -130,3 +130,9 @@ Os testes de cenários exercitam perda de eventos entre canais, retorno rápido,
 distância no instante correto, animação nas duas pernas, TTI e integração real
 entre AP, AutoSpam e Spam com serviços simulados. Não equivalem a uma medição
 de latência ou a uma garantia de resultado do servidor em partida.
+
+Na previsão por animação, preparar e ativar são etapas distintas. Alvo,
+geometria e TTI preenchem `predictionArmed` antes do evento. O caminho só retorna
+uma ativação quando existe uma tentativa de animação do oponente observada e
+válida; contato físico sem animação não substitui essa confirmação final.
+Proximidade e return continuam sendo entradas independentes.
