@@ -87,60 +87,46 @@ antes da prioridade Dark Seal; só depois compara alinhamento com a câmera.
 A previsão do hub verifica a marca antes de exigir câmera válida: marca em terceiro
 impede antecipar para o jogador local; marca local válida dispensa alinhamento.
 
-## Auto spam: sinais e previsão de retorno
+## Auto spam: observação, TTI e disparo
 
-O motor mantém sinais de animação, pernas da bola e histórico de trocas separados.
-`BlockStart`, `BlockLoop` e `Parry` são classificados pelos assets de todos os
-estilos. Eventos são avaliados imediatamente; uma varredura limitada recupera
-tracks já em execução e assets que chegaram por streaming. O loop não renova
-indefinidamente a vida de uma tentativa. Respawn, remoção e detach limpam as
-inscrições dos personagens anteriores.
+Os três caminhos principais compartilham a geometria da window completa
+(fator 1) e o cálculo físico de entrada no alcance de defesa, com movimento
+relativo e latência. A condição de janela é `entryTime <= effectiveWindow`;
+`fullRadius` identifica a projeção completa do alcance e da window. Não há espera
+por um timer para decidir que a bola entrou nessa janela. O guard de cada envio
+recalcula a mesma condição de TTI.
 
-A previsão calcula a interceptação da bola com o adversário e o voo de retorno
-até o alcance local, considerando movimento relativo, latência e duração do
-frame. A posição e direção de sincronização são usadas quando recentes. Uma
-animação pode chegar antes ou depois do alvo; sua evidência permanece disponível
-para a próxima avaliação. Contato físico numa saída confirmada também permite
-antecipar quando a animação ainda não foi recebida.
+| Caminho | Evidência de ativação, além da window/TTI |
+| --- | --- |
+| Proximidade | Ao virar alvo, a bola estava a até 5 studs. Salva distância e posição nesse instante; aproximar depois não reescreve o evento. |
+| Return | O alvo deixou de ser local e voltou rapidamente, dentro de `RETURN` mais latência. Uma única ida e volta é suficiente. |
+| Animação | Tentativa de defesa do adversário observada, com alvo local **ou** no adversário. A previsão usa alcances e TTI; não exige exclusivamente a perna de saída. |
 
-O estado passa de idle para anticipating e depois clashing quando o alvo local
-é confirmado. A antecipação possui prazo absoluto e é consumida por tentativa e
-perna. O guard de envio revalida a sessão; trocas rápidas confirmadas permitem uma
-ponte curta durante lacunas de dados, cujo prazo não é renovado pela incerteza.
-`AutoSpam.getStatus()` expõe fase, tempos previstos, origem da animação,
-latência de frame e motivo da última interrupção para diagnóstico.
+Pacotes e replicador alimentam o mesmo histórico de rede. Atributo de alvo,
+snapshot resolvido e observação do AP têm históricos próprios: uma amostra
+atrasada de outra origem não apaga a metade de uma troca. A sequência de 16 bits
+é deduplicada apenas na entrada de rede, sem ser adiantada por snapshots/AP.
+O watcher transmite `GameBallTarget` diretamente no callback da mudança.
 
-A seleção prevista acompanha o maior alinhamento entre candidatos elegíveis,
-sem exigir um cone artificial de câmera. Em duelo com um único candidato válido,
-a previsão dispensa câmera. Camuflagem e equipes são filtradas antes do Dark Seal.
-Os testes novos verificam recuperação, ativação e limpeza observáveis, sem exigir
-a presença de gates ou constantes internas.
+O AP entrega exatamente o alvo que reconheceu, sem substituí-lo pelo
+`exchangeTargetId` de outro canal. Faz isso quando reconhece a mudança e antes
+do envio. O auto spam também avalia nas fases de simulação e renderização
+existentes. A integração não cria uma condição adicional de ativação e uma
+falha no módulo de spam não impede o AP de continuar avaliando sua defesa.
 
-### Ativação independente e prioridade sobre AP
+As animações `BlockStart`, `BlockLoop` e `Parry` são classificadas por asset e
+retidas com vida limitada. Eventos iniciam avaliação imediata; varreduras curtas
+recuperam tracks em execução/streaming. Tentativas consumidas não são renovadas
+indefinidamente por um loop. Respawn e detach removem os observadores antigos.
+A antecipação termina pela window física prevista ou pela confirmação da volta,
+sem um orçamento de ativação arbitrário de 100 ms.
 
-As três entradas principais não compartilham confirmação de trajetória:
+`getStatus()` informa histórico recente por origem, distância no recebimento do
+alvo, TTI/window de proximidade, return e envio, além da última falha por etapa.
+Falha numa previsão opcional é registrada e não impede outro caminho pronto.
+Morte, reset, congelamento e desativação continuam sendo limites de ciclo de vida.
 
-- Proximidade usa a posição **atual** da bola a até 5 studs enquanto o alvo
-  observado é local. Não exige nova troca de alvo nem identificar o adversário.
-- Return usa a sequência local → adversário → local dentro de `RETURN` mais
-  latência. A primeira volta já ativa; posição e direção de renderização não
-  vetam uma troca recebida.
-- Animação mantém a tentativa do adversário e estima chegada/retorno por
-  distâncias, alcances e velocidade. Uma direção visual atrasada não invalida
-  `BlockStart`, `BlockLoop` ou `Parry` efetivamente observados.
-
-O watcher de `GameBallTarget` transmite o valor no callback, sem esperar o
-snapshot resolver divergências visuais/de rede. Eventos desse atributo não são
-rejeitados por compartilhar a sequência do pacote anterior. As ativações rodam
-nas fases de simulação/renderização disponíveis, além do Heartbeat.
-
-O AP chama `AutoSpam.onDefenseOpportunity(snapshot)` antes de consumir a amostra
-e antes de despachar. Se uma entrada de spam está pronta, o scheduler assume no
-mesmo callback. Uma ativação recém-confirmada mantém autorização curta para seu
-primeiro envio durante uma lacuna do cache; essa autorização tem prazo fixo e
-não supera morte, congelamento, reset ou desativação. Trocas novas podem rearmar
-sem aguardar 20 ms. Evidência consumida impede repetir a mesma ativação parada.
-
-`test_spam_instant_activation.py` exercita as três entradas e o handoff com os
-módulos reais AP, AutoSpam e Spam, usando serviços/transporte simulados. Não mede
-latência real do servidor nem transforma distâncias de tela do vídeo em studs.
+Os testes de cenários exercitam perda de eventos entre canais, retorno rápido,
+distância no instante correto, animação nas duas pernas, TTI e integração real
+entre AP, AutoSpam e Spam com serviços simulados. Não equivalem a uma medição
+de latência ou a uma garantia de resultado do servidor em partida.

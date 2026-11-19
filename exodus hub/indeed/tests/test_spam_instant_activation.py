@@ -8,9 +8,9 @@ from autospam_harness import check
 from test_logic_reliability import module
 
 class InstantActivation(unittest.TestCase):
-    def test_proximity_uses_current_ball_position_without_a_second_target_event(self):
+    def test_proximity_requires_close_position_on_becoming_target(self):
         check('''packet(42,0,50);snap.position=v(2);heartbeat(.016)
-assert(ap.isActive() and clicks>0,'closer render position was ignored')''')
+assert(not ap.isActive(),'later approach replaced the original target-receipt distance')''')
 
     def test_proximity_does_not_wait_for_identifying_the_partner(self):
         check('''other.root.Position=v(80);third.root.Position=v(100)
@@ -24,9 +24,9 @@ assert(ap.isActive() and clicks>0)''')
         for speed in (16,83,600):
             for interval in (.001,.01,.05,.2):
                 with self.subTest(speed=speed,interval=interval):
-                    check(f'''snap.syncSpeed={speed};snap.speed={speed};snap.velocity=v({speed})
-packet(42,0,500);packet(99,.001,500);packet(42,{interval},500)
-assert(ap.isActive() and clicks>0,'return was vetoed by render trajectory')''')
+                    check(f'''snap.syncSpeed={speed};snap.speed={speed};snap.velocity=v(-{speed})
+packet(42,0,50);packet(99,.001,50);packet(42,{interval},8.5+{speed}*.05)
+assert(ap.isActive() and clicks>0,'in-window first return did not activate')''')
 
     def test_target_attribute_events_capture_two_switches_between_packets(self):
         check('''snap.targetSignals={known=false};snap.targetUncertain=true;snap.targetId=-1
@@ -38,7 +38,7 @@ assert(ap.isActive() and clicks>0,'same-sequence attribute transitions disappear
 
     def test_fresh_return_can_reactivate_between_frames(self):
         check('''packet(42,0,2);ap.stopSpam('stop_spam')
-packet(99,.001,500);packet(42,.001,500)
+packet(99,.001,50);packet(42,.001,20)
 assert(ap.isActive() and ap.canSend(),'fresh return waited for a rearm timer')''')
 
     def test_animation_anticipates_despite_outgoing_render_velocity(self):
