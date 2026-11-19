@@ -33,14 +33,15 @@ view.planes=cameraPlanes(view)
 local half=v(1,1,1)
 '''+case)
 
-    def test_visible_below_floor_and_view_margin_are_retained(self):
+    def test_floor_applies_even_when_visible_and_turning(self):
         self.check('''
-assert(renderDecision(v(0,-20,40),half,nil,nil,10,view,false)==nil)
+assert(renderDecision(v(0,-20,40),half,nil,nil,10,view,false)=='floor')
 assert(renderDecision(v(0,-50,20),half,nil,nil,10,view,false)=='floor')
 assert(renderDecision(v(35,0,30),half,nil,1,10,view,false)==nil,'margin disappeared')
 assert(renderDecision(v(100,0,30),half,nil,1,10,view,false)=='view')
 view.look=v(0,-1,0);view.up=v(0,0,1);view.planes=cameraPlanes(view)
-assert(renderDecision(v(0,-50,20),half,'floor',1,11,view,false)==nil,'looking down failed to restore visible geometry')
+assert(renderDecision(v(0,-50,20),half,'floor',1,11,view,false)=='floor','looking down bypassed floor')
+assert(renderDecision(v(0,-50,20),half,nil,nil,11,view,true)=='floor','turn bypassed floor')
 ''')
 
     def test_distance_has_no_extra_margin_even_when_visible_or_turning(self):
@@ -54,7 +55,7 @@ assert(renderDecision(v(0,0,250),half,'distance',nil,12,view,false)==nil,'range 
 assert(renderDecision(v(0,0,302),half,nil,nil,12,view,false)=='distance')
 ''')
 
-    def test_floor_history_only_descends_when_grounded_and_resets_on_respawn(self):
+    def test_floor_history_tracks_lowest_position_and_survives_respawn(self):
         source=(ROOT/'extras/antilag.luau').read_text()
         code=source[source.index('    GetFloorY = function()'):source.index('    GetFocusPosition = function()')]
         run_lua('''
@@ -65,15 +66,16 @@ local root={Position={Y=100},Size={Y=2}}
 local humanoid={Health=100,FloorMaterial='grass',HipHeight=2}
 local function character() return {FindFirstChild=function() return root end,FindFirstChildOfClass=function() return humanoid end} end
 local player={Character=character()}
+local function viewedCharacter() return player.Character end
 local services={
 '''+code+'''
 }
-assert(services.GetFloorY()==92)
-root.Position.Y=110;assert(services.GetFloorY()==92)
-root.Position.Y=90;assert(services.GetFloorY()==82)
-humanoid.FloorMaterial='air';root.Position.Y=60;assert(services.GetFloorY()==82)
+assert(services.GetFloorY()==95)
+root.Position.Y=110;assert(services.GetFloorY()==95)
+root.Position.Y=90;assert(services.GetFloorY()==85)
+humanoid.FloorMaterial='air';root.Position.Y=60;assert(services.GetFloorY()==55)
 player.Character=character();humanoid.FloorMaterial='grass';root.Position.Y=100
-assert(services.GetFloorY()==92)
+assert(services.GetFloorY()==55)
 enabled=false;assert(services.GetFloorY()==nil)
 ''')
 

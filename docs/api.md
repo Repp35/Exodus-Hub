@@ -231,8 +231,8 @@ clash. Animar a troca de interface pertence ao controller lifecycle.
 | Configuração | Padrão | Efeito |
 | --- | --- | --- |
 | AntiLagEnabled | false | Ativa o otimizador e seu journal reversível. |
-| AntiLagRenderDistance | 200 | Raio ao redor da câmera para cenário, personagens, efeitos e indicadores no mundo; a bola tem visibilidade protegida. |
-| AntiLagFloorCull | true | Usa a menor altura pisada, com margem de 5 studs; mantém peças potencialmente visíveis no campo de visão. |
+| AntiLagRenderDistance | 128 | Raio mínimo configurável ao redor do personagem para cenário, personagens, efeitos e indicadores no mundo. |
+| AntiLagFloorCull | true | Oculta objetos inteiramente abaixo da menor altura percorrida, com margem de 2 studs. |
 
 O culling usa limites de cada objeto e planos da câmera com margem apenas para
 o campo de visão. A distância não tem margem adicional nem exceções para

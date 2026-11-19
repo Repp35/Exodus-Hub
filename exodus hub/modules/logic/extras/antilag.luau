@@ -17,7 +17,7 @@ local CONFIG = {
   defaults = {
     AntiLagEnabled = false,
     AntiLagFloorCull = true,
-    AntiLagRenderDistance = 200,
+    AntiLagRenderDistance = 128,
     AntiLagRemoveSwordSounds = true,
     AntiLagHideLobby = true,
     AntiLagRemoveEffects = true,
@@ -36,7 +36,7 @@ local PROFILE = {
   CullVerticalMargin = 20,
   HideLobbyInMatch = true,
   GameSwordSounds = false,
-  CullDistance = 200,
+  CullDistance = 128,
   CullKeepNear = 16,
   CullViewPadding = 12,
   CullViewDegrees = 8,
@@ -56,8 +56,8 @@ local PROFILE = {
   TrailsAndBeams = true,
   LegacyEffects = true,
   PostEffects = false,
-  Lights = false,
-  Shadows = false,
+  Lights = true,
+  Shadows = true,
   FlatLighting = false,
   FlatSky = false,
   Atmosphere = false,
@@ -166,7 +166,6 @@ local function createOptimizer(services, initialConfig)
         end
       end
     elseif object:IsA("BasePart") then
-      watch = false
       if options.Shadows then target.CastShadow = false end
       if options.FlatMaterials then target.Material = Enum.Material.SmoothPlastic; target.MaterialVariant, target.Reflectance = "", 0 end
       if options.HideTaggedDecorations and CollectionService:HasTag(object, "AntiLagDecoration") then target.LocalTransparencyModifier = 1 end
@@ -672,24 +671,15 @@ local function inCameraView(delta, half, view)
   end
   return true
 end
-local function renderDecision(position, half, previous, outsideSince, now, view, turnHold, pinned)
-  if pinned then return nil, nil end
+local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
   local delta = position - view.position; local options = view.options
-  if options.BallCenter then
-    local offset = position - options.BallCenter
-    if math.abs(offset.X) - half.X <= 60 and math.abs(offset.Y) - half.Y <= 60 and math.abs(offset.Z) - half.Z <= 60 then
-      local floor = options.BallFloorY or options.CullFloorY
-      if floor and position.Y + half.Y < floor then return "ball_floor", nil end
-      return nil, nil
-    end
-  end
-  local origin = view.position; local rangeDelta = position - origin
+  local origin = view.focus or view.position; local rangeDelta = position - origin
   local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z)
   local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
   if surfaceDistance > options.CullDistance then return "distance", nil end
-  if turnHold or inCameraView(delta, half, view) then return nil, nil end
   local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
   if vertical then return vertical, nil end
+  if turnHold or inCameraView(delta, half, view) then return nil, nil end
   if not options.CullView or surfaceDistance <= options.CullKeepNear then return nil, nil end
   outsideSince = outsideSince or now
   if now - outsideSince >= options.CullHideDelay then return "view", outsideSince end
@@ -873,8 +863,7 @@ local function createSpatialController(services, getOption)
           entry.outsideSince,
           now,
           cameraSnapshot,
-          now < holdUntil,
-          services.IsBallVisual and services.IsBallVisual(object)
+          now < holdUntil
         )
       end
       entry.reason, entry.outsideSince = reason, outsideSince; setHidden(entry, reason ~= nil)
@@ -886,7 +875,8 @@ local function createSpatialController(services, getOption)
     table.clear(modelBounds)
     if not active or not alive or not option("CullEnabled", true) then return end
     local deadline = os.clock() + option("CullBudgetMs", 2) / 1000; local count = 0
-    while count < 512 and os.clock() < deadline do
+    local scanDeadline = os.clock() + option("CullBudgetMs", 2) / 2000
+    while count < 80 and os.clock() < scanDeadline do
       local object, descend = nextNode()
       if not object then break end
       if inScope(object) then
@@ -915,7 +905,6 @@ local function createSpatialController(services, getOption)
     lastCameraFrame = camera.CFrame; cameraSnapshot.planes = cameraPlanes(cameraSnapshot)
     if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
     if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
-    if services.GetBallBounds then cameraSnapshot.options.BallCenter, cameraSnapshot.options.BallFloorY = services.GetBallBounds(now) end
     if not active or not alive then return end
     local restoreLimit = cameraChanged and #hiddenEntries or math.min(#hiddenEntries, 256)
     for _ = 1, restoreLimit do
@@ -925,8 +914,8 @@ local function createSpatialController(services, getOption)
       if not object.Parent then
         forget(object)
       else
-        local position, half = visualBounds(object); local pinned = services.IsBallVisual and services.IsBallVisual(object)
-        local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil, pinned)
+        local position, half = visualBounds(object)
+        local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
         if not reason then entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false) else hiddenCursor += 1 end
       end
     end
@@ -1078,9 +1067,6 @@ local function startSession()
   pcall(function() gameSettings = UserSettings():GetService("UserGameSettings") end)
   local visualRoots = { workspace }; local playerGui = player:FindFirstChildOfClass("PlayerGui")
   if playerGui then visualRoots[#visualRoots + 1] = playerGui end
-  local function isBallVisual(object)
-    local ball = GameInfo.getBall(); return ball ~= nil and (object == ball or object:IsDescendantOf(ball))
-  end
   local optimizerRoots = table.clone(visualRoots); optimizerRoots[#optimizerRoots + 1], optimizerRoots[#optimizerRoots + 2] = lighting, game:GetService("SoundService")
   owner.engine = createOptimizer({
     Workspace = workspace,
@@ -1090,7 +1076,6 @@ local function startSession()
     GameSettings = gameSettings,
     Roots = optimizerRoots,
     ExtraPolicy = function(object, target, watch, options)
-      if isBallVisual(object) then return {}, false end
       if owner.compatible then target, watch = applyGamePolicy(object, target, watch, options) end
       return applyScenePolicy(object, target, watch, options, owner.masks, owner.lobbyHidden, owner.lobby)
     end,
@@ -1109,34 +1094,11 @@ local function startSession()
     if humanoid and humanoid.Health > 0 then return character end
     return nil
   end
-  local ballFloorParams = RaycastParams.new(); ballFloorParams.FilterType = Enum.RaycastFilterType.Exclude
-  ballFloorParams.RespectCanCollide = true
   owner.spatial = createSpatialController({
     Workspace = workspace,
     Roots = visualRoots,
     Player = player,
     RunService = runService,
-    IsBallVisual = isBallVisual,
-    GetBallBounds = function(now)
-      local ball = GameInfo.getBall()
-      if not ball or not ball.Parent then owner.ballFloorAt, owner.ballFloorY = nil, nil; return nil end
-      if owner.visibleBall ~= ball then
-        owner.visibleBall = ball; owner.engine:RefreshInstance(ball, true)
-        for _, item in ipairs(ball:GetDescendants()) do
-          owner.engine:RefreshInstance(item, true)
-        end
-      end
-      local position = ball.Position
-      if owner.ballFloorBall ~= ball or not owner.ballFloorAt or now - owner.ballFloorAt >= 0.1 then
-        owner.ballFloorBall, owner.ballFloorAt = ball, now; local excluded = { ball }
-        for _, person in ipairs(game:GetService("Players"):GetPlayers()) do
-          if person.Character then excluded[#excluded + 1] = person.Character end
-        end
-        ballFloorParams.FilterDescendantsInstances = excluded; local hit = workspace:Raycast(position, Vector3.new(0, -512, 0), ballFloorParams)
-        owner.ballFloorY = hit and hit.Normal.Y > 0.5 and hit.Position.Y - 5 or nil
-      end
-      return position, owner.ballFloorY
-    end,
     GetFocusY = function()
       local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
       return root and root.Position.Y or nil
@@ -1144,15 +1106,17 @@ local function startSession()
     GetFloorY = function()
       if not setting("AntiLagFloorCull") then owner.floorY, owner.currentFloorY = nil, nil; return nil end
       local character = viewedCharacter()
-      if owner.floorCharacter ~= character then owner.floorCharacter, owner.floorY, owner.currentFloorY = character, nil, nil end
       local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
-      if root and humanoid and humanoid.Health > 0 and humanoid.FloorMaterial ~= Enum.Material.Air then
+      if root and humanoid and humanoid.Health > 0 then
         local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.currentFloorY = footY
         owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
       end
-      return setting("AntiLagFloorCull") and owner.floorY and owner.floorY - 5 or nil
+      return setting("AntiLagFloorCull") and owner.floorY and owner.floorY - 2 or nil
     end,
-    GetFocusPosition = function() return workspace.CurrentCamera and workspace.CurrentCamera.CFrame.Position end,
+    GetFocusPosition = function()
+      local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
+      return root and root.Position or nil
+    end,
     OnHidden = function(object, hidden)
       owner.masks[object] = if hidden then true else nil
       owner.engine:RefreshInstance(object, true)

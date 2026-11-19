@@ -182,7 +182,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Ocultar abaixo do chão percorrido",
-              description = "Oculta abaixo da menor altura pisada, com margem de 5 studs; mantém o que estiver no campo de visão.",
+              description = "Oculta objetos inteiramente abaixo do ponto mais baixo percorrido, com margem de 2 studs.",
               key = "AntiLagFloorCull",
               parentKey = "AntiLagEnabled",
             },
