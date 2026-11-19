@@ -231,24 +231,16 @@ clash. Animar a troca de interface pertence ao controller lifecycle.
 | Configuração | Padrão | Efeito |
 | --- | --- | --- |
 | AntiLagEnabled | false | Ativa o otimizador e seu journal reversível. |
-| AntiLagRenderDistance | 200 | Raio ao redor da câmera para cenário, personagens, efeitos e indicadores no mundo; a bola tem visibilidade protegida. |
-| AntiLagFloorCull | true | Usa a menor altura pisada, com margem de 5 studs; mantém peças potencialmente visíveis no campo de visão. |
+| AntiLagRenderDistance | 128 | Mantido por compatibilidade; o raio é fixo em 128 studs. |
+| AntiLagFloorCull | true | Mantido por compatibilidade; o corte inferior fica sempre ativo. |
 
-O culling usa limites de cada objeto e planos da câmera com margem apenas para
-o campo de visão. A distância não tem margem adicional nem exceções para
-personagens, bolas, indicadores ou objetos `AntiLagKeepVisible`. Peças móveis são
-reavaliadas; efeitos, luzes, nomes e interfaces 3D usam a posição de seu suporte
-ou Adornee. Ocultar partículas e trails também limpa os rastros já emitidos.
+O filtro oculta instâncias que ultrapassem 128 studs do personagem ou cruzem o
+plano 2 studs abaixo de seus pés, inclusive quando estão no campo de visão.
+Peças que cruzam um limite são ocultadas inteiras. Luzes, sombras e efeitos de
+pós-processamento são desativados. As alterações são locais e reversíveis.
 
-Indexação, ocultação e restauração têm orçamento por frame. O journal restaura
-as propriedades ao desligar o recurso; colisões, toque e consultas físicas não
-são alterados. Texturas são preservadas.
-
-O filtro atua sobre instâncias: peças e beams que cruzam o limite são mantidos
-inteiros para preservar o trecho próximo. A API pública não oferece recorte
-esférico por pixel nem corte local do Terrain sólido sem alterar voxels. Efeitos
-emitidos de dentro do raio podem se estender além dele; isso não é um far clip
-global do motor. Mudanças são aplicadas gradualmente conforme o orçamento.
+A API utilizada não corta Terrain sólido e não impede a replicação de objetos.
+A indexação e as mudanças são graduais; colisões e consultas físicas permanecem.
 
 O AP avalia também `PreSimulation`, além do tick após física e dos eventos de
 sincronização. Qualquer fonte positiva de alvo local vence fontes negativas.
