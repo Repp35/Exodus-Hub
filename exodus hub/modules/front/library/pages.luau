@@ -276,11 +276,28 @@ function Pages.create(kit, parent, definitions, context)
       if not owner.children.Visible then owner.childContent.Position = UDim2.fromOffset(0, -6) end
       owner.children.Visible = true
     end
-    fadeDisclosure(owner, expanded, entering); owner.disclosureSlide = motion.play(owner.childContent, "control", { Position = UDim2.fromOffset(0, expanded and 0 or -6) })
+    local faded = pcall(fadeDisclosure, owner, expanded, entering)
+    if not faded and owner.fadeBases then
+      for _, tween in ipairs(owner.fadeTweens or {}) do
+        motion.cancel(tween)
+      end
+      for item, values in pairs(owner.fadeBases) do
+        if item.Parent then
+          for property, value in pairs(values) do
+            item[property] = value
+          end
+        end
+      end
+      owner.fadeBases, owner.fadeTweens = nil, nil
+    end
+    owner.disclosureSlide = motion.play(owner.childContent, "control", { Position = UDim2.fromOffset(0, expanded and 0 or -6) })
     local function finish()
       if not alive or revision ~= owner.revision then return end
       owner.children.Size = UDim2.new(1, -12, 0, height); owner.children.Visible = expanded
-      if not expanded and owner.fadeBases then
+      if owner.fadeBases then
+        for _, tween in ipairs(owner.fadeTweens or {}) do
+          motion.cancel(tween)
+        end
         for item, values in pairs(owner.fadeBases) do
           if item.Parent then
             for property, value in pairs(values) do
@@ -292,7 +309,13 @@ function Pages.create(kit, parent, definitions, context)
       owner.fadeBases, owner.fadeTweens = nil, nil; owner.disclosureTween, owner.disclosureSlide = nil, nil
     end
     owner.disclosureTween = motion.play(owner.children, "control", { Size = UDim2.new(1, -12, 0, height) }, finish)
-    if not owner.disclosureTween then finish() end
+    if not owner.disclosureTween then
+      finish()
+    else
+      task.delay(0.8, function()
+        if alive and revision == owner.revision and owner.disclosureTween then motion.cancel(owner.disclosureTween); finish() end
+      end)
+    end
   end
   function controller.refresh()
     for _, entry in ipairs(rows) do
