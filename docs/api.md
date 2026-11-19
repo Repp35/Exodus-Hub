@@ -444,3 +444,11 @@ encerrando imediatamente.
 
 Filhos usam frames sem máscara intermediária, preservando bordas e strokes.
 Abertura/fechamento altera visibilidade e altura sem recortar o componente.
+
+Clash forte exige pelo menos duas devoluções confirmadas com o mesmo oponente,
+alvo de rede dentro da dupla, evidência recente e bola na região de contato.
+Nessa condição, a manutenção do envio não depende da oscilação de trajetória
+frame a frame. O relógio de cooldown considera a última troca confirmada; posição
+ou alvo repetidos não renovam esse relógio. Pacotes são observados antes da
+decisão de cooldown para não encerrar uma sessão no mesmo evento que confirma
+a continuidade. Não se acrescenta gate de ativação nem nova pontuação de risco.

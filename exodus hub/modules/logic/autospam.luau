@@ -6,6 +6,7 @@ local deflectGeometry
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo, dashInfo
 local current, generation = nil, 0
 local clashStats
+local confirmedContact
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local CONFIG = {
   ACTIVATION = {
@@ -156,6 +157,7 @@ local function monitorCooldown(state)
       CONFIG.DEACTIVATION.COOLDOWN_NORMAL_MAX_WAIT + state.proximityStrength * CONFIG.DEACTIVATION.COOLDOWN_CLOSE_ALLOWANCE
     )
   )
+  if confirmedContact(state, snapshot, time) then state.cooldownSince = math.max(state.cooldownSince, state.exchange.at) end
   return cd, state.cooldownLimit ~= nil and time - state.cooldownSince >= state.cooldownLimit
 end
 local function sampleGate(state, s, time)
@@ -233,6 +235,21 @@ local function pairDanger(state, s, partner)
     value = best,
   }
   return best
+end
+confirmedContact = function(state, s, time)
+  local history, exchange = state.confirmedReturns, state.exchange
+  if not state.active or not history or history.partner ~= state.partner or history.count < 2 or not exchange or exchange.partner ~= state.partner then return false end
+  if not freshSnapshot(s, time) or s.ball ~= state.ball or s.resetting or s.teleported or s.locked then return false end
+  local target = s.exchangeTargetId or s.targetId
+  if target ~= localPlayer.UserId and target ~= state.partner then return false end
+  local latency = networkLatency()
+  if time < exchange.at or time - exchange.at > CONFIG.ACTIVATION.RETURN + latency then return false end
+  local other, speed = playerPosition(state.partner), snapshotSpeed(s)
+  if not other or not speed or speed <= 0 then return false end
+  local ownRange = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRange = deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
+  if not finite(ownRange) or not finite(otherRange) then return false end
+  local travel = speed * (latency + CONFIG.DEACTIVATION.COOLDOWN_MARGIN); return (other - state.root.Position).Magnitude <= ownRange + otherRange + travel
+    and math.min((s.position - state.root.Position).Magnitude, (s.position - other).Magnitude) <= math.max(ownRange, otherRange) + travel
 end
 local function nearPartner(state, id, limit)
   if not id or id == localPlayer.UserId or not playerIsAlive(id) then return nil end
@@ -627,11 +644,8 @@ local function observeStats(state, s, time, packet)
 end
 local function evaluate(state, s, time, packet)
   if current ~= state then return end
-  state.gates = {}; local cd, cooldownExpired = monitorCooldown(state)
-  if cooldownExpired then
-    deactivate(state, "cooldown", time); clearEvidence(state)
-    state.lastGate, state.gates.common = "cooldown", "cooldown"; return
-  end
+  state.gates = {}
+  local cd, cooldownExpired
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then
     local reason = utils.isActive() and "disabled" or "hub_inactive"; deactivate(state, reason, time)
     state.lastGate = reason; resetTargets(state)
@@ -639,13 +653,9 @@ local function evaluate(state, s, time, packet)
     return
   end
   if s and s.ball and s.ball ~= state.ball then
-    if state.ball then deactivate(state, "ball_replaced", time) end
+    if state.ball then deactivate(state, "ball_reset", time) end
     state.sendContinuity = nil; state.ball, state.sequence = s.ball, nil
     resetTargets(state)
-  end
-  if state.active and state.anticipatingUntil and time >= state.anticipatingUntil and not anticipationConfirmed(state, s, time) then
-    deactivate(state, "anticipation_expired", time); clearEvidence(state)
-    return
   end
   local order = sequenceOrder(state, s and s.syncSequence)
   if order == "old" or order == "invalid" then state.lastGate = "packet_" .. order; return end
@@ -662,6 +672,15 @@ local function evaluate(state, s, time, packet)
     and gate ~= "hub_inactive"
   then
     observeTarget(state, s, time, packet, gate == nil)
+  end
+  if state.active and state.anticipatingUntil and time >= state.anticipatingUntil and not anticipationConfirmed(state, s, time) then
+    deactivate(state, "anticipation_expired", time); clearEvidence(state)
+    return
+  end
+  cd, cooldownExpired = monitorCooldown(state)
+  if cooldownExpired then
+    deactivate(state, "cooldown", time); clearEvidence(state)
+    state.lastGate, state.gates.common = "cooldown", "cooldown"; return
   end
   if gate then
     state.gates.common, state.lastGate = gate, gate; state.deflectCooldownSince, state.departedAt, state.distanceSince = nil, nil, nil
@@ -852,8 +871,8 @@ local function activeSendDecision(state, s, time)
   local target = s and userId(s.exchangeTargetId or s.targetId)
   if not target or (target ~= localPlayer.UserId and target ~= state.partner) then return false, "target_outside_pair" end
   local danger = pairDanger(state, s, state.partner); state.danger = danger
-  local ready = danger and danger.ready
-  if ready then state.lastDangerAt = time end
+  local ready = (danger and danger.ready) or confirmedContact(state, s, time)
+  if danger and danger.ready then state.lastDangerAt = time end
   if not ready and freshSnapshot(s, time) and state.lastDangerAt and state.exchange and state.exchange.partner == state.partner then
     local grace = math.min(0.18, networkLatency() + 1 / 30 + (state.proximityStrength or 0) * 0.08); local other = playerPosition(state.partner)
     local speed = snapshotSpeed(s); local ownRange = speed and deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false)
@@ -905,6 +924,7 @@ function AutoSpam.createManualSession()
     target = reference and reference.target,
     sequence = reference and reference.sequence,
     exchange = reference and reference.exchange and table.clone(reference.exchange),
+    confirmedReturns = reference and reference.confirmedReturns and table.clone(reference.confirmedReturns),
     exchangeHistory = reference and reference.exchangeHistory and table.clone(reference.exchangeHistory),
     lastDangerAt = reference and reference.lastDangerAt,
     proximityStrength = reference and reference.proximityStrength,
