@@ -234,9 +234,9 @@ clash. Animar a troca de interface pertence ao controller lifecycle.
 | AntiLagRenderDistance | 128 | Raio configurável entre 1 e 1200 studs ao redor do personagem. |
 | AntiLagFloorCull | true | Mantido por compatibilidade; o corte inferior fica sempre ativo. |
 
-O filtro oculta instâncias que ultrapassem o raio configurado do personagem ou cruzem o
-plano 2 studs abaixo de seus pés, inclusive quando estão no campo de visão.
-Peças que cruzam um limite são ocultadas inteiras. Luzes, sombras e efeitos de
+O filtro oculta instâncias inteiramente fora do raio configurado ou inteiramente
+abaixo de 2 studs da menor altura alcançada pelo personagem. Peças que cruzam
+os limites permanecem visíveis para preservar o chão, paredes e personagens. Luzes, sombras e efeitos de
 pós-processamento são desativados. As alterações são locais e reversíveis.
 
 A API utilizada não corta Terrain sólido e não impede a replicação de objetos.
