@@ -45,7 +45,7 @@ function Targeting.create(deps)
     add("workspace.GameBallTarget", "attribute", function() return context.world:GetAttribute("GameBallTarget") end)
     add("ball.targetColor", "visual", function()
       local ball = context.ball
-      if not ball or not ball:IsA("BasePart") then return nil end
+      if not ball or not ball:IsA("BasePart") or ball.Transparency == 1 or ball.LocalTransparencyModifier == 1 then return nil end
       local color = ball.Color
       local red = Color3.fromRGB(202, 56, 30)
       local function same(a, b) return math.abs(a.R - b.R) < 0.005 and math.abs(a.G - b.G) < 0.005 and math.abs(a.B - b.B) < 0.005 end
@@ -55,8 +55,32 @@ function Targeting.create(deps)
       if same(color, typeof(normal) == "Color3" and normal or Color3.fromRGB(153, 153, 153)) then return false end
       return nil
     end)
-    report.conflict = report.targeted and negative; report.targetId = report.targeted and me or fallback or -1
-    report.source = report.positive[1] or fallbackSource or firstKnown; return report
+    local function validId(id) return finite(id) and id > 0 and id % 1 == 0 and id or nil end
+    local packet = freshSync() and sync and validId(sync.TargetPlayerID) or nil
+    local ok, attribute = pcall(function() return context.world:GetAttribute("GameBallTarget") end)
+    attribute = ok and validId(attribute) or nil; local selected = packet or attribute
+    report.conflict = packet ~= nil and attribute ~= nil and packet ~= attribute
+    if context.active == false then selected = nil; report.conflict = false end
+    if report.conflict then report.targeted, report.known, report.targetId, report.source = false, false, -1, "target_transition"; return report end
+    if selected then
+      report.targetId, report.targeted, report.known = selected, selected == me, true; report.source = packet and "sync.target" or "workspace.GameBallTarget"
+      return report
+    end
+    local highlighted, multiple
+    for _, player in ipairs(context.players and context.players:GetPlayers() or {}) do
+      local character = player.Character; local mark = character and character:FindFirstChild("PlayerBallHighlight")
+      if mark and mark.Enabled then
+        if highlighted then multiple = true end
+        highlighted = player.UserId
+      end
+    end
+    local redBall = false
+    for _, signal in ipairs(report.signals) do
+      if signal.name == "ball.targetColor" and signal.targeted then redBall = true end
+    end
+    report.targeted = not multiple and highlighted == me and redBall; report.known = not multiple and highlighted ~= nil and (highlighted ~= me or redBall)
+    report.targetId = report.known and highlighted or -1; report.source = report.known and "visual.highlight_and_ball" or "unavailable"
+    return report
   end
   return resolver
 end

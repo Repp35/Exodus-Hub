@@ -685,6 +685,9 @@ local function resolveTarget(time, provider, sync, currentBall)
   })
   targetCache, targetCacheAt = report, time; return report
 end
+function GameInfo.getParryTargetStatus(time)
+  targetCache, targetCacheAt = nil, -math.huge; return resolveTarget(time)
+end
 function GameInfo.getTargetSignals(time)
   if inTrainingArea() then
     local id = trainingState and trainingState.goal; local valid = finite(id) and id > 0
@@ -1029,6 +1032,7 @@ GameInfo.__contract = {
     "decodeBallPacket",
     "getTargetId",
     "getTargetSignals",
+    "getParryTargetStatus",
     "getDeflectAttemptAnimationIds",
     "getDeflectAnimationCatalog",
     "getBallTargetAttribute",

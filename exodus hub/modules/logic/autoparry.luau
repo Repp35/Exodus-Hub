@@ -192,10 +192,7 @@ local function radiusTiming(position, velocity, rootPosition, speed, geometry, p
   return entry, range, geometry.deflectWindow
 end
 local function adaptiveLead(geometry) return geometry.effectiveWindow, geometry.windowFactor end
-local function parrySnapshot(time)
-  if type(gameInfo.getParrySnapshot) == "function" then return gameInfo.getParrySnapshot(time) end
-  return gameInfo.getSnapshotAt(time)
-end
+local function parrySnapshot(time) return gameInfo.getSnapshotAt(time) end
 local function resolveVelocity(value, position, speed, time)
   local velocity = vector(value.velocity) and value.velocity or Vector3.zero; local direction = value.syncDirection
   local freshReturn = finite(state.targetChangedAt) and time >= state.targetChangedAt and time - state.targetChangedAt <= CONFIG.RETURN_DIRECTION_MAX_AGE
@@ -216,37 +213,23 @@ local function resolveVelocity(value, position, speed, time)
 end
 local function matchTiming(value, time, own, factor, observedVelocity)
   if not value or not vector(value.position) or not vector(own) then return nil end
-  local speed = tonumber(value.syncSpeed)
-  if not finite(speed) or speed <= 0 then speed = value.speed end
+  local speed = finite(value.syncSpeed) and value.syncSpeed or value.speed
   if not validBallSpeed(speed) then return nil end
   local g = radius(speed, factor or activeWindowFactor())
-  if not g then return nil end
-  local velocity = vector(observedVelocity) and observedVelocity or resolveVelocity(value, value.position, speed, time)
-  local distance, closing, _, entry = trajectory(value.position, velocity, own, speed, g); local killRadius = deflectGeometry.getKillRadius(g)
-  local _, _, _, killTime = trajectory(value.position, velocity, own, speed, g, killRadius)
-  local risk, adaptive = 0, g.windowFactor
-  if g.autoParry == true then
-    local frame = CONFIG.FRAME_BASE + state.frameAllowance; local jitter = finite(state.pingRaw) and math.max(0, state.pingRaw - state.ping) or 0
-    local response = frame + CONFIG.SERVER_FRAME_MARGIN + jitter; local gapTime = closing > 0 and math.max(0, g.noWindowParryRadius - killRadius) / closing or math.huge
-    local exposure = math.clamp(1 - gapTime / math.max(response, 0.001), 0, 1)
-    local imminent = math.clamp(1 - killTime / math.max(2 * ((g.networkLead or 0) + CONFIG.SERVER_FRAME_MARGIN + jitter), 0.001), 0, 1); risk = exposure * imminent
-    local base = finite(g.windowFactor) and g.windowFactor or activeWindowFactor(); adaptive = base + math.max(0, CONFIG.MAX_WINDOW_FACTOR - base) * risk
-    g = deflectGeometry.withAutoParryFactor(g, adaptive, closing, state.ping)
-  end
-  local rootVelocity = state.root and state.root.Parent and state.root.AssemblyLinearVelocity or Vector3.zero
-  local danger = deflectGeometry.getDanger(value.position, velocity, own, speed, g.noWindowParryRadius, g.effectiveWindow, rootVelocity); local ready = danger ~= nil and danger.ready
+  if not g or not finite(g.fullRadius) then return nil end
+  local distance = (value.position - own).Magnitude; local velocity = vector(observedVelocity) and observedVelocity or (vector(value.velocity) and value.velocity or Vector3.zero)
+  local closing = distance > 0 and velocity:Dot(own - value.position) / distance or 0
   return {
     geometry = g,
-    danger = danger,
     speed = speed,
     distance = distance,
     closing = closing,
-    entry = entry,
-    killTime = killTime,
-    killRadius = killRadius,
-    risk = risk,
-    factor = adaptive,
-    ready = ready,
+    entry = closing > 0 and math.max(0, distance - g.noWindowParryRadius) / closing or math.huge,
+    killTime = math.huge,
+    killRadius = deflectGeometry.getKillRadius(g),
+    risk = 0,
+    factor = g.windowFactor,
+    ready = distance <= g.fullRadius,
     velocity = velocity,
   }
 end
@@ -350,6 +333,10 @@ end
 local function currentRequestReady(expectedBall, expectedMode, trainingThreshold)
   if not state.root or not state.root.Parent or not state.character or not state.character.Parent then return false end
   local time = clock(); local value = parrySnapshot(time)
+  if expectedMode ~= "training" then
+    local target = gameInfo.getParryTargetStatus(time)
+    if not target.known or not target.targeted or target.targetId ~= state.player.UserId then return false end
+  end
   if not gameInfo.isSnapshotValid(value) or not matchDataReady(value, time) then return false end
   local mode = value.mode == "training" and "training" or "match"
   if mode ~= expectedMode or value.ball ~= expectedBall or not value.ball.Parent or value.targetId ~= state.player.UserId then return false end
@@ -383,10 +370,6 @@ local function currentRequestReady(expectedBall, expectedMode, trainingThreshold
   if not geometry then return false end
   local threshold = mode == "training" and trainingThreshold or geometry.fullRadius
   if not finite(threshold) or (position - own).Magnitude > threshold + CONFIG.DISTANCE_EPSILON then return false end
-  if mode ~= "training" and value.realPosition ~= nil and (value.realPosition - own).Magnitude > threshold then
-    local age = finite(value.syncAt) and math.clamp(time - value.syncAt, 0, 0.15) or 0.15; local tolerance = math.max(6, speed * (age + math.clamp(state.ping, 0, 0.1) + CONFIG.FRAME_BASE))
-    if state.resetPending or (value.position - value.realPosition).Magnitude > tolerance then return false end
-  end
   return true
 end
 local function manualClickOnCurrentTarget()
@@ -1068,6 +1051,7 @@ AutoParry.__contract = {
       "isSnapshotValid",
       "getSyncData",
       "getTargetId",
+      "getParryTargetStatus",
       "getSyncSequence",
       "getAveragePing",
       "getBallPosition",
