@@ -227,6 +227,32 @@ function Pages.create(kit, parent, definitions, context)
   function controller.toggle(id)
     if active == id then controller.select(returnId or normal[1]) else controller.select(id) end
   end
+  local function fadeDisclosure(owner, expanded, entering)
+    local bases = owner.fadeBases or {}; owner.fadeBases = bases
+    owner.fadeTweens = owner.fadeTweens or {}
+    for _, tween in ipairs(owner.fadeTweens) do
+      motion.cancel(tween)
+    end
+    owner.fadeTweens = {}
+    for _, item in ipairs(owner.childContent:GetDescendants()) do
+      local properties = {}
+      if item:IsA("GuiObject") then properties[#properties + 1] = "BackgroundTransparency" end
+      if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then properties[#properties + 1] = "TextTransparency"; properties[#properties + 1] = "TextStrokeTransparency" end
+      if item:IsA("ImageLabel") or item:IsA("ImageButton") then properties[#properties + 1] = "ImageTransparency" end
+      if item:IsA("UIStroke") then properties[#properties + 1] = "Transparency" end
+      if #properties > 0 then
+        local values = bases[item] or {}; bases[item] = values
+        local goals = {}
+        for _, property in ipairs(properties) do
+          if values[property] == nil then values[property] = item[property] end
+          if entering then item[property] = 1 end
+          goals[property] = expanded and values[property] or 1
+        end
+        local tween = motion.play(item, "control", goals)
+        if tween then owner.fadeTweens[#owner.fadeTweens + 1] = tween end
+      end
+    end
+  end
   refreshDisclosure = function(key, owner, immediate)
     local expanded = context.read and context.read(key) == true or false; local layout = owner.childContent:FindFirstChildOfClass("UIListLayout")
     local scale, ancestor = 1, owner.childContent
@@ -238,8 +264,8 @@ function Pages.create(kit, parent, definitions, context)
     end
     local height = expanded and (layout.AbsoluteContentSize.Y / math.max(scale, 0.001)) or 0
     if not immediate and owner.expanded == expanded and owner.targetHeight == height then return end
-    owner.expanded, owner.targetHeight = expanded, height; owner.revision = (owner.revision or 0) + 1
-    local revision = owner.revision
+    local entering = expanded and not owner.children.Visible; owner.expanded, owner.targetHeight = expanded, height
+    owner.revision = (owner.revision or 0) + 1; local revision = owner.revision
     if owner.disclosureTween then motion.cancel(owner.disclosureTween); owner.disclosureTween = nil end
     if owner.disclosureSlide then motion.cancel(owner.disclosureSlide); owner.disclosureSlide = nil end
     if immediate then
@@ -250,11 +276,20 @@ function Pages.create(kit, parent, definitions, context)
       if not owner.children.Visible then owner.childContent.Position = UDim2.fromOffset(0, -6) end
       owner.children.Visible = true
     end
-    owner.disclosureSlide = motion.play(owner.childContent, "control", { Position = UDim2.fromOffset(0, expanded and 0 or -6) })
+    fadeDisclosure(owner, expanded, entering); owner.disclosureSlide = motion.play(owner.childContent, "control", { Position = UDim2.fromOffset(0, expanded and 0 or -6) })
     local function finish()
       if not alive or revision ~= owner.revision then return end
       owner.children.Size = UDim2.new(1, -12, 0, height); owner.children.Visible = expanded
-      owner.disclosureTween, owner.disclosureSlide = nil, nil
+      if not expanded and owner.fadeBases then
+        for item, values in pairs(owner.fadeBases) do
+          if item.Parent then
+            for property, value in pairs(values) do
+              item[property] = value
+            end
+          end
+        end
+      end
+      owner.fadeBases, owner.fadeTweens = nil, nil; owner.disclosureTween, owner.disclosureSlide = nil, nil
     end
     owner.disclosureTween = motion.play(owner.children, "control", { Size = UDim2.new(1, -12, 0, height) }, finish)
     if not owner.disclosureTween then finish() end
