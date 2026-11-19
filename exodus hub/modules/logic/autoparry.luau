@@ -5,12 +5,6 @@ local AutoParry = {}
 local deflectGeometry
 local requestInFlight = false
 local utils, gameInfo, remote, cooldownInfo, autoSpam
-local function notifyAutoSpam(value)
-  if not autoSpam then return false end
-  local ok, result = pcall(autoSpam.onDefenseOpportunity, value)
-  if not ok then pcall(utils.recordError, "AutoSpam.APObservation", tostring(result)); return false end
-  return result
-end
 local maxObservedCps, syncInterval, lastSyncAt, lastAcceptedSample
 local state = {
   phase = "detached",
@@ -267,13 +261,6 @@ local function observeTarget(target, time)
     state.awayAt, state.awayTarget = nil, nil
   end
   state.target, state.targetKnown = target, true
-  if autoSpam and state.mode ~= "training" then
-    local value = gameInfo.getSnapshotAt(time)
-    if value then
-      local observation = table.clone(value); observation.targetId, observation.targeted, observation.targetUncertain = target, target == me, false
-      notifyAutoSpam(observation)
-    end
-  end
 end
 local function observePacketReturn(data, time)
   local value = gameInfo.getSnapshotAt(time)
@@ -395,7 +382,7 @@ end
 local function request(reason)
   local now = clock()
   if autoSpam and state.mode ~= "training" then
-    notifyAutoSpam(parrySnapshot(now))
+    autoSpam.onDefenseOpportunity(parrySnapshot(now))
     if utils.isSpamActive() then return false end
   end
   if
@@ -559,7 +546,7 @@ local function tick(character, root, generation)
   end
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then phase("waiting", "snapshot_stale"); return end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
-  if value.mode ~= "training" and autoSpam then notifyAutoSpam(value) end
+  if value.mode ~= "training" and autoSpam then autoSpam.onDefenseOpportunity(value) end
   if value.mode ~= "training" and utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
     state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "teleport_lock")
