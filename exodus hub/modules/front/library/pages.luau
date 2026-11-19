@@ -239,7 +239,25 @@ function Pages.create(kit, parent, definitions, context)
     local height = expanded and (layout.AbsoluteContentSize.Y / math.max(scale, 0.001)) or 0
     if not immediate and owner.expanded == expanded and owner.targetHeight == height then return end
     owner.expanded, owner.targetHeight = expanded, height; owner.revision = (owner.revision or 0) + 1
-    owner.children.Size = UDim2.new(1, -12, 0, height); owner.children.Visible = expanded
+    local revision = owner.revision
+    if owner.disclosureTween then motion.cancel(owner.disclosureTween); owner.disclosureTween = nil end
+    if owner.disclosureSlide then motion.cancel(owner.disclosureSlide); owner.disclosureSlide = nil end
+    if immediate then
+      owner.children.Size = UDim2.new(1, -12, 0, height); owner.children.Visible = expanded
+      owner.childContent.Position = UDim2.fromOffset(0, 0); return
+    end
+    if expanded then
+      if not owner.children.Visible then owner.childContent.Position = UDim2.fromOffset(0, -6) end
+      owner.children.Visible = true
+    end
+    owner.disclosureSlide = motion.play(owner.childContent, "control", { Position = UDim2.fromOffset(0, expanded and 0 or -6) })
+    local function finish()
+      if not alive or revision ~= owner.revision then return end
+      owner.children.Size = UDim2.new(1, -12, 0, height); owner.children.Visible = expanded
+      owner.disclosureTween, owner.disclosureSlide = nil, nil
+    end
+    owner.disclosureTween = motion.play(owner.children, "control", { Size = UDim2.new(1, -12, 0, height) }, finish)
+    if not owner.disclosureTween then finish() end
   end
   function controller.refresh()
     for _, entry in ipairs(rows) do
