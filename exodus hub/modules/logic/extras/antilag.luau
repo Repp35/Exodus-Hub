@@ -372,7 +372,7 @@ local function createOptimizer(services, initialConfig)
     if key == "MaxItemsPerFrame" then value = math.floor(math.clamp(value, 8, 1000)) end
     if key == "ReapplyInterval" then value = math.clamp(value, 0.1, 2) end
     local bounds = {
-      CullDistance = { 128, 1200 },
+      CullDistance = { 1, 1200 },
       CullKeepNear = { 8, 128 },
       CullViewPadding = { 0, 100 },
       CullViewDegrees = { 2, 30 },
@@ -1004,7 +1004,9 @@ local function setting(key)
   return value
 end
 local function requestedProfile()
-  local profile = table.clone(PROFILE); profile.CullDistance = 128
+  local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance"))
+  if not distance or distance ~= distance or math.abs(distance) == math.huge then distance = CONFIG.defaults.AntiLagRenderDistance end
+  profile.CullDistance = math.clamp(distance, 1, 1200)
   local removeEffects = setting("AntiLagRemoveEffects") == true; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
   profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects
   profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects; return profile
