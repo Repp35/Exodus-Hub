@@ -151,7 +151,7 @@ function Dynamic.canSend()
   if utils.getConfigValue("DynamicParryDeactivation") ~= false then
     local reason, allowed = autoSpam.getManualStopReason(session, protectedUntil)
     if reason then
-      if reason ~= "player_died" and reason ~= "opponent_left_or_died" then lastStopReason = reason end
+      if reason ~= "player_died" and reason ~= "match_player_died" and reason ~= "opponent_left_or_died" then lastStopReason = reason end
       stop(); return false
     end
     return allowed ~= false
