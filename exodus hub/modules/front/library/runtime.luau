@@ -137,18 +137,22 @@ end
 function Runtime.bindDrag(scope, target, onChange, canStart)
   local owner
   local function release() owner = nil end
-  local function available() return target.Parent ~= nil and Runtime.isVisible(target) and target.Active and (not canStart or canStart()) end
+  local function available() return target.Parent ~= nil and Runtime.isVisible(target) and (not canStart or canStart()) end
   local function startsOnTarget(input)
     local point, position, size = input.Position, target.AbsolutePosition, target.AbsoluteSize
     if point.X < position.X or point.Y < position.Y or point.X > position.X + size.X or point.Y > position.Y + size.Y then return false end
     local gui = target:FindFirstAncestorOfClass("PlayerGui") or target:FindFirstAncestorOfClass("CoreGui")
-    if not gui then return false end
+    if not gui then return true end
     local ok, objects = pcall(function() return gui:GetGuiObjectsAtPosition(point.X, point.Y) end)
-    if not ok or not objects[1] then return false end
-    return objects[1] == target or objects[1]:IsDescendantOf(target)
+    if not ok or type(objects) ~= "table" or #objects == 0 then return true end
+    for _, object in ipairs(objects) do
+      if object == target or object:IsDescendantOf(target) then return true end
+      if object:IsA("GuiButton") and object.Active and not target:IsDescendantOf(object) then return false end
+    end
+    return true
   end
   scope.connect(UIS.InputBegan, function(input)
-    if owner or not available() or input.UserInputState ~= Enum.UserInputState.Begin then return end
+    if owner or not available() then return end
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
     if not startsOnTarget(input) then return end
     owner = input; onChange(input)

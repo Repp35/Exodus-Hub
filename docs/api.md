@@ -417,7 +417,9 @@ do motor Roblox; código nativo, objetos do jogo e acessos dinâmicos arbitrári
 não são isolados por ela.
 
 Sliders capturam o arraste no `UserInputService.InputBegan`, apenas se o contato
-começar dentro do hitbox e ele estiver no topo da GUI naquela posição. Entrar
+começar dentro do hitbox. Contêineres e decoração não bloqueiam a captura; um
+botão interativo sobreposto bloqueia. Se a consulta da GUI não estiver disponível,
+a geometria do contato inicial continua válida. Entrar
 no hitbox com um toque já iniciado fora não captura o gesto. Movimentos são
 aceitos somente do mesmo toque ou do mouse com botão esquerdo ainda pressionado.
 Soltar, cancelar, ocultar, desabilitar, suspender ou perder foco libera a captura.
