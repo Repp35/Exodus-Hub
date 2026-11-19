@@ -75,6 +75,44 @@ root.Position.Y=60;assert(services.GetFloorY()==55)
 humanoid.Health=0;assert(services.GetFloorY()==55)
 ''')
 
+class RevealPolicy(unittest.TestCase):
+    def test_revealed_objects_stay_visible_after_moving_away(self):
+        source=(ROOT/'extras/antilag.luau').read_text()
+        code=source[source.index('local revealedVisuals ='):source.index('-- configuration')]
+        run_lua(code+'''
+local object={}
+assert(shouldHideVisual(object, 'distance'))
+assert(not shouldHideVisual(object, nil))
+assert(not shouldHideVisual(object, 'distance'), 'rendered object was hidden again')
+assert(not shouldHideVisual(object, 'floor'), 'rendered object was hidden by floor')
+local another={}
+assert(shouldHideVisual(another, 'floor'))
+''')
+
+    def test_unhiding_is_rate_limited_and_carries_over(self):
+        source=(ROOT/'extras/antilag.luau').read_text()
+        helper=source[source.index('local revealedVisuals ='):source.index('-- configuration')]
+        loop=source[source.index('    local restoreLimit ='):source.index('\n\n  end\n  local function clearSpatial()')]
+        loop=loop.replace('revealCount += 1','revealCount = revealCount + 1').replace('hiddenCursor += 1','hiddenCursor = hiddenCursor + 1')
+        run_lua(helper+'''
+local hiddenEntries={}; for i=1,10 do hiddenEntries[i]={object={Parent=true}} end
+local hiddenCursor=1; local deadline=math.huge; local now=0; local cameraSnapshot={}; local holdUntil=0
+local function forget() error('unexpected removal') end
+local function visualBounds() return {}, {} end
+local function renderDecision() return nil end
+local function setHidden(entry, value)
+ assert(value==false)
+ for i,e in ipairs(hiddenEntries) do if e==entry then table.remove(hiddenEntries,i);return end end
+ error('not found')
+end
+local function tick()
+'''+loop+'''
+end
+tick(); assert(#hiddenEntries==6, 'first batch exceeded four')
+tick(); assert(#hiddenEntries==2, 'second batch exceeded four')
+tick(); assert(#hiddenEntries==0)
+''')
+
 class SceneRadiusPolicy(unittest.TestCase):
     def test_masks_override_combat_exemptions_and_preserve_physics(self):
         source=(ROOT/'extras/antilag.luau').read_text()
