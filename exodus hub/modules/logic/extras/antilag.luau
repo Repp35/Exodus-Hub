@@ -55,13 +55,13 @@ local PROFILE = {
   Particles = true,
   TrailsAndBeams = true,
   LegacyEffects = true,
-  PostEffects = false,
+  PostEffects = true,
   Lights = true,
   Shadows = true,
-  FlatLighting = false,
-  FlatSky = false,
-  Atmosphere = false,
-  Clouds = false,
+  FlatLighting = true,
+  FlatSky = true,
+  Atmosphere = true,
+  Clouds = true,
   NoFog = false,
   Water = true,
   TransparentWater = true,
@@ -631,7 +631,7 @@ local function applyGamePolicy(object, target, watch, options)
   return target, watch
 end
 local function verticalDecision(minY, maxY, cameraY, previous, options)
-  if options.CullFloorY and maxY < options.CullFloorY then return "floor" end
+  if options.CullFloorY and minY < options.CullFloorY then return "floor" end
   if not options.CullVertical then return nil end
   local margin = options.CullVerticalMargin or 20
   local above = (options.CullAbove or 200) - (if previous == "above" then margin else 0)
@@ -674,7 +674,7 @@ end
 local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
   local delta = position - view.position; local options = view.options
   local origin = view.focus or view.position; local rangeDelta = position - origin
-  local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z)
+  local dx, dy, dz = math.abs(rangeDelta.X) + half.X, math.abs(rangeDelta.Y) + half.Y, math.abs(rangeDelta.Z) + half.Z
   local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
   if surfaceDistance > options.CullDistance then return "distance", nil end
   local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
@@ -804,6 +804,13 @@ local function createSpatialController(services, getOption)
     end
     local entry = { object = object, position = position, chunk = chunk, index = #chunk.parts + 1, hidden = false }; chunk.parts[entry.index], records[object] = entry, entry
     trackedCount += 1
+    if cameraSnapshot then
+      local actualPosition, half = visualBounds(object)
+      if actualPosition then
+        entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false)
+        setHidden(entry, entry.reason ~= nil)
+      end
+    end
   end
   local function enqueue(object)
     if not active or not option("CullEnabled", true) or queued[object] then return end
@@ -1001,9 +1008,8 @@ local function setting(key)
   return value
 end
 local function requestedProfile()
-  local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance")) or CONFIG.defaults.AntiLagRenderDistance
-  if distance ~= distance then distance = CONFIG.defaults.AntiLagRenderDistance end
-  profile.CullDistance = math.clamp(distance, 128, 1200); local removeEffects = setting("AntiLagRemoveEffects") == true
+  local profile = table.clone(PROFILE)
+  profile.CullDistance = 128; local removeEffects = setting("AntiLagRemoveEffects") == true
   profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = setting("AntiLagHideLobby")
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects; profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects
   return profile
@@ -1075,13 +1081,7 @@ local function startSession()
     owner.adapter = createGameAdapter({ Workspace = workspace, Player = player, PlayerScripts = scripts }, getOption)
   end
   local function viewedCharacter()
-    local camera = workspace.CurrentCamera
-    if not camera or camera.CameraType == Enum.CameraType.Scriptable then return nil end
-    local subject = camera.CameraSubject
-    if not subject or not subject.Parent then return nil end
-    local character = subject:IsA("Humanoid") and subject.Parent or subject:FindFirstAncestorOfClass("Model"); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Health > 0 then return character end
-    return nil
+    return player.Character
   end
   owner.spatial = createSpatialController({
     Workspace = workspace,
@@ -1093,14 +1093,12 @@ local function startSession()
       return root and root.Position.Y or nil
     end,
     GetFloorY = function()
-      if not setting("AntiLagFloorCull") then owner.floorY, owner.currentFloorY = nil, nil; return nil end
-      local character = viewedCharacter(); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-      local root = character and character:FindFirstChild("HumanoidRootPart")
+      local character = viewedCharacter()
+      local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
       if root and humanoid and humanoid.Health > 0 then
-        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.currentFloorY = footY
-        owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
+        return root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5 - 2
       end
-      return setting("AntiLagFloorCull") and owner.floorY and owner.floorY - 2 or nil
+      return nil
     end,
     GetFocusPosition = function()
       local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
