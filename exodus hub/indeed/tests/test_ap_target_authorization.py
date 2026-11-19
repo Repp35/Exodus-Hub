@@ -25,11 +25,14 @@ local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.
 local function vector(x) return typeof(x)=='Vector3' end
 local function validBallSpeed(x) return finite(x) and x>=0 and x<=1000 end
 local function activeWindowFactor() return .3 end
-local function radius() return {fullRadius=30,noWindowParryRadius=8.5,windowFactor=.3} end
+local state={}
+local function radius() return {fullRadius=30,noWindowParryRadius=8.5,effectiveWindow=.2,windowFactor=.3} end
 local deflectGeometry={getKillRadius=function() return 4 end}
 '''+code+'''
 for _,velocity in ipairs({v(-100),v(100),v(0,100),v()}) do
- local result=matchTiming({position=v(20),velocity=velocity,speed=100},tm,v())
- assert(result.ready,'velocity vetoed an in-range ball')
+ local result=matchTiming({position=v(8),velocity=velocity,speed=100},tm,v())
+ assert(result.ready,'velocity vetoed physical parry range')
 end
+local incoming=matchTiming({position=v(20),velocity=v(-100),speed=100},tm,v())
+assert(incoming.ready,'window extension lost incoming ball')
 ''')
