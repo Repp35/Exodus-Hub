@@ -86,3 +86,32 @@ A seleção nativa exclui o próprio rebatedor, camuflagem e companheiros em equ
 antes da prioridade Dark Seal; só depois compara alinhamento com a câmera.
 A previsão do hub verifica a marca antes de exigir câmera válida: marca em terceiro
 impede antecipar para o jogador local; marca local válida dispensa alinhamento.
+
+## Auto spam: sinais e previsão de retorno
+
+O motor mantém sinais de animação, pernas da bola e histórico de trocas separados.
+`BlockStart`, `BlockLoop` e `Parry` são classificados pelos assets de todos os
+estilos. Eventos são avaliados imediatamente; uma varredura limitada recupera
+tracks já em execução e assets que chegaram por streaming. O loop não renova
+indefinidamente a vida de uma tentativa. Respawn, remoção e detach limpam as
+inscrições dos personagens anteriores.
+
+A previsão calcula a interceptação da bola com o adversário e o voo de retorno
+até o alcance local, considerando movimento relativo, latência e duração do
+frame. A posição e direção de sincronização são usadas quando recentes. Uma
+animação pode chegar antes ou depois do alvo; sua evidência permanece disponível
+para a próxima avaliação. Contato físico numa saída confirmada também permite
+antecipar quando a animação ainda não foi recebida.
+
+O estado passa de idle para anticipating e depois clashing quando o alvo local
+é confirmado. A antecipação possui prazo absoluto e é consumida por tentativa e
+perna. O guard de envio revalida a sessão; trocas rápidas confirmadas permitem uma
+ponte curta durante lacunas de dados, cujo prazo não é renovado pela incerteza.
+`AutoSpam.getStatus()` expõe fase, tempos previstos, origem da animação,
+latência de frame e motivo da última interrupção para diagnóstico.
+
+A seleção prevista acompanha o maior alinhamento entre candidatos elegíveis,
+sem exigir um cone artificial de câmera. Em duelo com um único candidato válido,
+a previsão dispensa câmera. Camuflagem e equipes são filtradas antes do Dark Seal.
+Os testes novos verificam recuperação, ativação e limpeza observáveis, sem exigir
+a presença de gates ou constantes internas.

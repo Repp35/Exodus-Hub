@@ -507,6 +507,7 @@ function GameInfo.getDeflectTargetPrediction(id)
     local lives = candidate:GetAttribute("Lives")
     if
       candidate ~= source
+      and candidate:GetAttribute("IsCloaked") ~= true
       and position
       and humanoid
       and humanoid.Health > 0
@@ -518,6 +519,7 @@ function GameInfo.getDeflectTargetPrediction(id)
       if candidate:GetAttribute("IsCloaked") ~= true then candidates[#candidates + 1] = { player = candidate, root = position } end
     end
   end
+  if #candidates == 1 then return candidates[1].player.UserId, 1, 1, "single_candidate" end
   local camera = source:GetAttribute("CamCFrame"); local observed = typeof(camera) == "CFrame"
   if not observed then camera = root.CFrame end
   if typeof(camera) ~= "CFrame" then return nil end
@@ -532,8 +534,7 @@ function GameInfo.getDeflectTargetPrediction(id)
       if score > best then winner, runner, best = candidate.UserId, best, score elseif score > runner then runner = score end
     end
   end
-  local required = observed and 0.75 or 0.9
-  if winner and best >= required and best - runner >= 0.03 then return winner, best, best - runner, observed and "camera" or "root" end
+  if winner then return winner, best, best - runner, observed and "camera" or "root" end
   return nil
 end
 function GameInfo.getPlayerDistance(id)
@@ -579,17 +580,23 @@ function GameInfo.getAutoSpamDelay()
   return delay
 end
 function GameInfo.getDashAbility() return getAbility(CONFIG.GAME_IDS.DASH, "Dash") end
-function GameInfo.getDeflectAttemptAnimationIds()
-  local animations = child(child(storage(), "Animations"), "Deflect"); local ids = {}
-  if not animations then return ids end
-  for _, style in ipairs(animations:GetChildren()) do
-    for _, name in ipairs({ "BlockStart", "BlockLoop" }) do
-      local animation = style:FindFirstChild(name)
-      if animation and animation:IsA("Animation") then
-        local id = animation.AnimationId:match("%d+")
-        if id then ids[id] = true end
-      end
+function GameInfo.getDeflectAnimationCatalog()
+  local animations = child(child(storage(), "Animations"), "Deflect"); local catalog = {}
+  if not animations then return catalog end
+  local phases = { BlockStart = "start", BlockLoop = "loop", Parry = "parry" }
+  for _, animation in ipairs(animations:GetDescendants()) do
+    local phase = phases[animation.Name]
+    if phase and animation:IsA("Animation") then
+      local id = animation.AnimationId:match("[?&]id=(%d+)") or animation.AnimationId:match("%d+")
+      if id and (not catalog[id] or phase == "start") then catalog[id] = phase end
     end
+  end
+  return catalog
+end
+function GameInfo.getDeflectAttemptAnimationIds()
+  local ids = {}
+  for id, phase in pairs(GameInfo.getDeflectAnimationCatalog()) do
+    if phase ~= "parry" then ids[id] = true end
   end
   return ids
 end
@@ -1023,6 +1030,7 @@ GameInfo.__contract = {
     "getTargetId",
     "getTargetSignals",
     "getDeflectAttemptAnimationIds",
+    "getDeflectAnimationCatalog",
     "getBallTargetAttribute",
     "applySync",
     "installBallWatcher",
