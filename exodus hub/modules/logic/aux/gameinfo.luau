@@ -512,11 +512,10 @@ function GameInfo.getDeflectTargetPrediction(id)
       and humanoid.Health > 0
       and (not finite(lives) or lives > 0)
       and candidate:GetAttribute("Playing") ~= false
-      and candidate:GetAttribute("IsCloaked") ~= true
       and (not teams or source:GetAttribute("PlayerTeam") ~= candidate:GetAttribute("PlayerTeam"))
     then
       if candidate:GetAttribute("DarkSealed") == true then return candidate.UserId, 1, 1, "dark_seal" end
-      candidates[#candidates + 1] = { player = candidate, root = position }
+      if candidate:GetAttribute("IsCloaked") ~= true then candidates[#candidates + 1] = { player = candidate, root = position } end
     end
   end
   local camera = source:GetAttribute("CamCFrame"); local observed = typeof(camera) == "CFrame"
