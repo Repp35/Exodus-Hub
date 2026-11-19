@@ -43,6 +43,18 @@ function Targeting.create(deps)
       if freshProvider() and type(provider.IsLocalTarget) == "function" then return provider:IsLocalTarget() end
     end)
     add("workspace.GameBallTarget", "attribute", function() return context.world:GetAttribute("GameBallTarget") end)
+    add("ball.targetColor", "visual", function()
+      local ball = context.ball
+      if not ball or not ball:IsA("BasePart") then return nil end
+      local color = ball.Color
+      local red = Color3.fromRGB(202, 56, 30)
+      local function same(a, b) return math.abs(a.R - b.R) < 0.005 and math.abs(a.G - b.G) < 0.005 and math.abs(a.B - b.B) < 0.005 end
+      local normal = ball:GetAttribute("SkinNormalColor")
+      if typeof(normal) == "Color3" and same(normal, red) then return nil end
+      if same(color, red) then return true end
+      if same(color, typeof(normal) == "Color3" and normal or Color3.fromRGB(153, 153, 153)) then return false end
+      return nil
+    end)
     report.conflict = report.targeted and negative; report.targetId = report.targeted and me or fallback or -1
     report.source = report.positive[1] or fallbackSource or firstKnown; return report
   end

@@ -4,6 +4,7 @@
 local GameInfo = {}
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
+local ballVisualConnection
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local ballSync, targeting, targetCache, targetCacheAt
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
@@ -388,6 +389,7 @@ function GameInfo.setup(deps)
   targeting = deps.Targeting.create({ storage = storage }); targetCache, targetCacheAt = nil, -math.huge
   players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
+  if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
@@ -578,6 +580,20 @@ function GameInfo.getAutoSpamDelay()
   return delay
 end
 function GameInfo.getDashAbility() return getAbility(CONFIG.GAME_IDS.DASH, "Dash") end
+function GameInfo.getDeflectAttemptAnimationIds()
+  local animations = child(child(storage(), "Animations"), "Deflect"); local ids = {}
+  if not animations then return ids end
+  for _, style in ipairs(animations:GetChildren()) do
+    for _, name in ipairs({ "BlockStart", "BlockLoop" }) do
+      local animation = style:FindFirstChild(name)
+      if animation and animation:IsA("Animation") then
+        local id = animation.AnimationId:match("%d+")
+        if id then ids[id] = true end
+      end
+    end
+  end
+  return ids
+end
 function GameInfo.getLocalDashState()
   local ability = GameInfo.getDashAbility()
   if not ability then return false end
@@ -846,13 +862,25 @@ end
 function GameInfo.applySync(value) return ballSync.applySync(value) end
 function GameInfo.installBallWatcher(track)
   if type(track) ~= "function" then return false, "trackConnection invalido" end
+  local function watchVisual(item)
+    if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
+    if item then ballVisualConnection = item:GetPropertyChangedSignal("Color"):Connect(invalidateSnapshotCache); track(ballVisualConnection) end
+  end
+  track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(invalidateSnapshotCache))
   track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
-    if item.Name == "GameBall" and item:IsA("BasePart") and ball ~= item then ball = item; invalidateSnapshotCache() end
+    if item.Name == "GameBall" and item:IsA("BasePart") and ball ~= item then
+      ball = item; watchVisual(item)
+      invalidateSnapshotCache()
+    end
   end))
   track((world.DescendantRemoving or world.ChildRemoved):Connect(function(item)
-    if ball == item then ball, searchAt = nil, 0; invalidateSnapshotCache() end
+    if ball == item then
+      watchVisual(nil); ball, searchAt = nil, 0
+      invalidateSnapshotCache()
+    end
   end))
-  ball, watching, searchAt = findBall(), true, os.clock() + CONFIG.BALL_SEARCH_INTERVAL; return true
+  ball, watching, searchAt = findBall(), true, os.clock() + CONFIG.BALL_SEARCH_INTERVAL; watchVisual(ball)
+  return true
 end
 function GameInfo.getBallSpeedLimits()
   local time = os.clock()
@@ -991,6 +1019,7 @@ GameInfo.__contract = {
     "decodeBallPacket",
     "getTargetId",
     "getTargetSignals",
+    "getDeflectAttemptAnimationIds",
     "getBallTargetAttribute",
     "applySync",
     "installBallWatcher",

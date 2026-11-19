@@ -149,7 +149,6 @@ local function monitorCooldown(state)
   if not state.cooldownSince or state.cooldownEpisode ~= cd.episode or state.cooldownStart ~= start then
     state.cooldownSince, state.cooldownEpisode, state.cooldownStart = start or time, cd.episode, start
   end
-  if confirmedContact(state, snapshot, time, true) then state.cooldownSince = math.max(state.cooldownSince, state.exchange.at) end
   return cd, state.cooldownLimit ~= nil and time - state.cooldownSince >= state.cooldownLimit
 end
 local function sampleGate(state, s, time)
@@ -159,15 +158,16 @@ local function sampleGate(state, s, time)
   if s.mode == "training" then return "training" end
   if s.targetUncertain or not userId(s.targetId) then return "target_unknown" end
   if not vector(s.position) or not vector(s.velocity) or not validSpeed(s.speed) or not snapshotSpeed(s) then return "ball_data_invalid" end
-  if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return "snapshot_stale" end
+  local closeReceipt = s.targeted == true and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+  if not closeReceipt and s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return "snapshot_stale" end
   if s.teleported or s.resetting or s.ballValid == false or s.valid == false then return "ball_reset" end
   if s.locked or s.ballCanMove == false or gameInfo.getBallFrozen() == true then return "ball_paused" end
-  if s.realPosition ~= nil then
+  if not closeReceipt and s.realPosition ~= nil then
     if not vector(s.realPosition) then return "position_invalid" end
     local age = finite(s.syncAt) and math.clamp(time - s.syncAt, 0, 0.5) or 0
     if (s.position - s.realPosition).Magnitude > 8 + snapshotSpeed(s) * (age + networkLatency() + 0.15) then return "position_disagreement" end
   end
-  if snapshotSpeed(s) <= 0 then return "ball_not_moving" end
+  if not closeReceipt and snapshotSpeed(s) <= 0 then return "ball_not_moving" end
 end
 local function freshSnapshot(s, time)
   return s
@@ -245,6 +245,8 @@ confirmedContact = function(state, s, time, networkEvidence)
 end
 local function nearPartner(state, id, limit)
   if not id or id == localPlayer.UserId or not playerIsAlive(id) then return nil end
+  local player = players:GetPlayerByUserId(id); local lives = player and player:GetAttribute("Lives")
+  if player and (player:GetAttribute("Playing") == false or (finite(lives) and lives <= 0)) then return nil end
   local other = playerPosition(id); return other and (other - state.root.Position).Magnitude <= limit and id or nil
 end
 local function nearestPartner(state, limit)
@@ -256,8 +258,8 @@ local function nearestPartner(state, limit)
   return best
 end
 local function observeTarget(state, s, time, packet, captureClose)
-  if not packet then return end
-  local target, previous = s.exchangeTargetId or s.targetId, state.target
+  if not packet and not (s.targetSignals and s.targetSignals.known) then return end
+  local target, previous = s.targetId, state.target
   if target == previous then return end
   local me = localPlayer.UserId; state.close, state.pending, state.exchange = nil, nil, nil
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
@@ -348,17 +350,23 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
 end
 local function activate(state, reason, partner, time, s)
   if state.active then return false end
-  local target = s and userId(s.exchangeTargetId or s.targetId)
+  local target = s and userId(s.targetId)
   if not userId(partner) or partner == localPlayer.UserId or not target or (target ~= localPlayer.UserId and target ~= partner) then
     state.lastGate, state.gates.common = "target_outside_pair", "target_outside_pair"; return false
   end
   local danger = pairDanger(state, s, partner)
-  if not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready then
+  if
+    not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
+    or (reason ~= "close_target" and reason ~= "return_target" and (not danger or not danger.ready))
+  then
     state.lastGate, state.gates.common = "no_immediate_danger", "no_immediate_danger"; return false
   end
   state.danger = danger; state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time
   state.deathSerial = matchDeathSerial; state.lastGate = reason
+  state.cooldownResetAt = time; state.cooldownSince, state.cooldownEpisode, state.cooldownStart = nil, nil, nil
   if reason == "extreme_return_prediction" then
+    local attempt = state.deflectAttempts and state.deflectAttempts[partner]
+    if attempt then attempt.used = true end
     state.anticipationUsed = true; state.anticipationUsedPartner = partner
     local other = playerPosition(partner); state.anticipationUsedGap = other and (other - state.root.Position).Magnitude or nil
     state.anticipatingUntil = time + CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + networkLatency()
@@ -538,20 +546,23 @@ local function extremeReturnPartner(state, s, time, partner)
   local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency); local _, motion = gameInfo.getPlayerMotion(partner)
   local danger = deflectGeometry.getDanger(s.position, s.velocity, other, speed, otherRadius, lead, motion)
   if not danger or not danger.ready then return nil end
-  state.danger = danger; return partner
+  local attempt = state.deflectAttempts and state.deflectAttempts[partner]
+  if not attempt or attempt.used or attempt.ball ~= s.ball or time < attempt.at or time - attempt.at > math.min(g.deflectWindow, 0.12 + latency) then
+    state.gates.prediction = "waiting_deflect_animation"; return nil
+  end
+  state.gates.prediction = "deflect_attempt"; state.danger = danger
+  return partner
 end
 local function extremeReturn(state, s, time)
-  local target = userId(s.exchangeTargetId or s.targetId)
-  if not target then return nil end
-  if target ~= localPlayer.UserId then return extremeReturnPartner(state, s, time, target) end
-  for _, player in ipairs(players:GetPlayers()) do
-    if player ~= localPlayer then
-      local partner = extremeReturnPartner(state, s, time, player.UserId)
-      if partner then return partner end
-    end
-  end
+  local target = userId(s.targetId)
+  if target and target ~= localPlayer.UserId then return extremeReturnPartner(state, s, time, target) end
 end
 local function chooseActivation(state, s, time)
+  if s.targetId == localPlayer.UserId and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
+    local partner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+      or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
+    if partner then state.gates.close = "ready"; return "close_target", partner end
+  end
   local anticipated = utils.getConfigValue("AutoSpamClashPrediction") ~= false and extremeReturn(state, s, time)
   if anticipated then return "extreme_return_prediction", anticipated end
   local prediction, dashGate = dashPrediction(state, s, time); state.dashPrediction, state.gates.dash = prediction, dashGate
@@ -563,20 +574,13 @@ local function chooseActivation(state, s, time)
     elseif s.targetId ~= localPlayer.UserId then
       state.gates.returnTarget = "return_not_target"
     else
+      local other = playerPosition(pending.partner); local speed = snapshotSpeed(s)
+      local ownRadius = speed and deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(pending.partner, speed, false)
+      local contact = other and finite(ownRadius) and finite(otherRadius) and (other - state.root.Position).Magnitude <= ownRadius + otherRadius
       local inWindow = ballWindow(state, s, localPlayer.UserId)
+        or (contact and (s.position - state.root.Position).Magnitude <= ownRadius + speed * (networkLatency() + 1 / 60))
       if inWindow then state.gates.returnTarget = "ready"; return "return_target", pending.partner end
       state.gates.returnTarget = "return_ball_outside_window"
-    end
-  end
-  local close = state.close; state.gates.close = "close_no_target_receipt"
-  if close and s.targetId == localPlayer.UserId and time - close.at <= 0.1 then
-    if
-      nearPartner(state, close.partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-      and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
-      and ballWindow(state, s, localPlayer.UserId)
-    then
-      state.close = nil; state.gates.close = "ready"
-      return "close_target", close.partner
     end
   end
   local haunter = state.haunter; state.gates.haunter = not haunter and "haunter_no_event" or "haunter_expired"
@@ -630,7 +634,7 @@ local function evaluate(state, s, time, packet)
     observeTarget(state, s, time, packet, gate == nil)
   end
   cd, cooldownExpired = monitorCooldown(state)
-  if cooldownExpired then
+  if cooldownExpired and state.active then
     deactivate(state, "cooldown", time); clearEvidence(state)
     state.lastGate, state.gates.common = "cooldown", "cooldown"; return
   end
@@ -758,6 +762,7 @@ function AutoSpam.bindCharacter(character)
 
   current = state; connectHaunter(state)
   local watched = {}; local world = utils.getWorkspace()
+  local deflectAnimationIds = gameInfo.getDeflectAttemptAnimationIds(); state.deflectAttempts = {}
   local function watchPlayer(player)
     local entry = { lives = player:GetAttribute("Lives") }; watched[player] = entry
     local function death()
@@ -774,7 +779,23 @@ function AutoSpam.bindCharacter(character)
     local function watchCharacter(character)
       entry.reported = false
       local function watchHumanoid(humanoid)
-        if humanoid and humanoid:IsA("Humanoid") then listen(state, humanoid.Died, death) end
+        if not humanoid or not humanoid:IsA("Humanoid") then return end
+        listen(state, humanoid.Died, death)
+        local function watchAnimator(animator)
+          if not animator:IsA("Animator") then return end
+          listen(state, animator.AnimationPlayed, function(track)
+            if current ~= state or player == localPlayer or player.Character ~= character then return end
+            local animation = track.Animation; local id = animation and animation.AnimationId:match("%d+")
+            if not id or not deflectAnimationIds[id] then return end
+            local time = now(); local s = gameInfo.getSnapshotAt(time)
+            local previous = state.deflectAttempts[player.UserId]
+            if previous and time - previous.at < 1 / 30 then return end
+            state.deflectAttempts[player.UserId] = { at = time, ball = s and s.ball }; evaluate(state, s, time, false)
+          end)
+        end
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if animator then watchAnimator(animator) end
+        listen(state, humanoid.ChildAdded, watchAnimator)
       end
       watchHumanoid(character:FindFirstChildOfClass("Humanoid")); listen(state, character.ChildAdded, watchHumanoid)
       updateLives()
@@ -995,6 +1016,7 @@ AutoSpam.__contract = {
     },
     GameInfo = {
       "getDeflectTargetPrediction",
+      "getDeflectAttemptAnimationIds",
       "areAbilitiesEnabled",
       "getSnapshotAt",
       "isSnapshotValid",
