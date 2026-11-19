@@ -92,7 +92,7 @@ function Runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
     decodedData = table.clone(decodedData); decodedData.Source = "packet"
     notifyBallSync(decodedData)
   end
-  local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
+  local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal, notifyBallSync)
   if watcherReady ~= true then error("GameInfo.installBallWatcher falhou", 2) end
   local syncReady = gameInfo.bindBallSync(onBallSync)
   local maintenanceReady = gameInfo.startMaintenance({

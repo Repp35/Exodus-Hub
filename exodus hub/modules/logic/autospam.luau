@@ -260,18 +260,30 @@ end
 local function observeTarget(state, s, time, packet, captureClose)
   if not packet and not (s.targetSignals and s.targetSignals.known) then return end
   local target, previous = s.targetId, state.target
+  if target <= 0 and s.targetSignals and s.targetSignals.known and not s.targeted then
+    local raw = userId(s.exchangeTargetId)
+    if raw and raw ~= localPlayer.UserId then target = raw end
+  end
   if target == previous then return end
   local me = localPlayer.UserId; state.close, state.pending, state.exchange = nil, nil, nil
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.target, state.lastSwitchAt = target, time
   if previous and ((previous == me and target ~= me) or (target == me and previous ~= me)) then state.exchange = { partner = previous == me and target or previous, at = time } end
   if previous == me and target ~= me then
-    state.outbound = { partner = target, at = time }; state.departedAt = time
+    local partner = userId(target) or userId(state.previousOpponent) or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE); state.outbound = { partner = partner, at = time }
+    state.departedAt = time
   elseif target == me then
-    local outbound = state.outbound
-    if outbound and outbound.partner == previous and time >= outbound.at and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency() then
-      local history = state.confirmedReturns; local count = history and history.partner == previous and time - history.at <= CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE and history.count + 1 or 1
-      state.confirmedReturns = { partner = previous, at = time, count = count }; state.pending = { partner = previous, at = time }
+    local outbound = state.outbound; local returnPartner = userId(previous) or (outbound and outbound.partner)
+    if
+      outbound
+      and returnPartner
+      and outbound.partner == returnPartner
+      and time >= outbound.at
+      and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
+    then
+      local history = state.confirmedReturns; local count = history and history.partner == returnPartner and time - history.at <= CONFIG.SHARED.EXCHANGE_HISTORY_MAX_AGE and history.count + 1 or 1
+      state.confirmedReturns = { partner = returnPartner, at = time, count = count }; state.pending = { partner = returnPartner, at = time }
+      state.exchange = { partner = returnPartner, at = time }
     end
     state.outbound, state.departedAt = nil, nil; local partner = previous and previous ~= me and previous or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
     if
@@ -281,10 +293,12 @@ local function observeTarget(state, s, time, packet, captureClose)
     then
       state.close = { partner = partner, at = time }
     end
-  else
+  elseif previous and previous <= 0 and userId(target) and state.outbound then
+    state.outbound.partner = target
+  elseif userId(previous) and userId(target) then
     state.outbound, state.departedAt, state.confirmedReturns = nil, nil, nil
   end
-  if target ~= me then state.previousOpponent = target elseif previous and previous ~= me then state.previousOpponent = previous end
+  if userId(target) and target ~= me then state.previousOpponent = target elseif userId(previous) and previous ~= me then state.previousOpponent = previous end
 end
 local function opponentOutside(state, radius, maxRadius, s, time)
   local speed = snapshotSpeed(s) or state.protectionSpeed; local minimum, maximum = gameInfo.getBallSpeedLimits()
@@ -626,7 +640,7 @@ local function evaluate(state, s, time, packet)
     and s.mode ~= "training"
     and not s.teleported
     and not s.resetting
-    and userId(s.exchangeTargetId or s.targetId)
+    and (userId(s.targetId) or (s.targetSignals and s.targetSignals.known))
     and gate ~= "ball_reset"
     and gate ~= "player_died"
     and gate ~= "hub_inactive"
@@ -642,7 +656,7 @@ local function evaluate(state, s, time, packet)
     state.gates.common, state.lastGate = gate, gate; state.deflectCooldownSince, state.departedAt = nil, nil
     state.cooldownResumeAt = time
     if gate == "player_died" or gate == "hub_inactive" or gate == "ball_reset" then deactivate(state, gate, time) end
-    if gate == "ball_reset" or (gate == "target_unknown" and not state.active) then resetTargets(state) end
+    if gate == "ball_reset" or (gate == "target_unknown" and not state.active and not (s and s.targetSignals and s.targetSignals.known)) then resetTargets(state) end
     if gate == "ball_reset" or gate == "ball_paused" or gate == "ball_not_moving" or gate == "training" then state.exchangeHistory, state.sendContinuity = nil, nil end
     return
   end

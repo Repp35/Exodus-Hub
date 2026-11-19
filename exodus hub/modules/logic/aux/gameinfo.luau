@@ -860,13 +860,17 @@ function GameInfo.isSnapshotValid(value)
     and type(value.targeted) == "boolean"
 end
 function GameInfo.applySync(value) return ballSync.applySync(value) end
-function GameInfo.installBallWatcher(track)
+function GameInfo.installBallWatcher(track, onTargetChanged)
   if type(track) ~= "function" then return false, "trackConnection invalido" end
+  local function targetChanged()
+    invalidateSnapshotCache()
+    if type(onTargetChanged) == "function" then onTargetChanged({ Source = "target" }) end
+  end
   local function watchVisual(item)
     if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
-    if item then ballVisualConnection = item:GetPropertyChangedSignal("Color"):Connect(invalidateSnapshotCache); track(ballVisualConnection) end
+    if item then ballVisualConnection = item:GetPropertyChangedSignal("Color"):Connect(targetChanged); track(ballVisualConnection) end
   end
-  track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(invalidateSnapshotCache))
+  track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(targetChanged))
   track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
     if item.Name == "GameBall" and item:IsA("BasePart") and ball ~= item then
       ball = item; watchVisual(item)
