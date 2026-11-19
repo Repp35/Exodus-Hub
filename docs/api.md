@@ -100,59 +100,24 @@ O índice representa urgência, não probabilidade de acertar ou ser o alvo:
 trajetória que não intercepta o alcance recebe zero. Não há espera de confirmação
 nem acumulação de amostras para liberar o clique.
 
-AP usa a janela configurada e a margem de reação; a ampliação adaptativa exige
-TTI de morte iminente. A simulação válida do replicador não depende da atualização visual para
-autorizar o AP. Auto spam usa 30% da janela nativa mais latência e um frame
-nos gates de contato, sem somar a projeção da janela duas vezes. A previsão de
-clash usa o mesmo cálculo de interseção no alcance do oponente, mantendo seus
-limites próprios de antecedência e prioridade de destino.
-
-Antes da ativação e de cada envio automático, o auto spam exige oponente vivo
-próximo, alvo de rede dentro da dupla e perigo físico na dupla. O bloqueio de
-envio é imediato mesmo quando o cooldown ainda mantém o estado ativo. Histórico
-de trocas e continuidade não autorizam cliques com a bola distante. A avaliação
-física é reutilizada na rajada CPF enquanto snapshot e movimentos não mudarem.
-`AutoSpam.getStatus().danger`, `AutoParry.getTiming(snapshot).danger` e
-`AutoParry.getStatus().timing.danger` expõem o índice para diagnóstico.
-Treino e spam manual mantêm regras separadas.
+AP usa a janela configurada e a margem de reação. A ativação do AutoSpam
+não exige identificar o oponente no gate de proximidade ou no retorno visual;
+a associação pode acontecer depois, quando uma troca fornece essa evidência.
+A cor vermelha pode confirmar o alvo local, sem substituir um alvo de terceiro
+confirmado. Treino e spam manual mantêm regras próprias.
 
 ## Pré-ativação em contato extremo
 
-`extreme_return_prediction` arma uma rajada antes do alvo local confirmar quando
-o alvo de rede é o jogador local ou o oponente vivo avaliado. Essa restrição é
-validada na entrada comum de todos os gatilhos do auto spam: alvo de terceiro
-não autoriza ativação. Quando o alvo ainda é local, a previsão também avalia os
-oponentes em contato físico, respeitando a prioridade da Dark Seal.
-Não há corte fixo de 5 studs: o raio de perigo
-parte do alcance bruto desse oponente (incluindo resiliência) e acrescenta a
-distância percorrida pela bola na janela efetiva de antecipação e na latência.
-A janela usa fator 0,3 e é limitada pelo orçamento de 240 ms mais latência.
-A devolução também precisa ter TTI inferior a esse orçamento. A rajada só começa quando falta até a menor entre a janela efetiva e 80 ms,
-mais latência, para a bola entrar no alcance do oponente. O orçamento de 240 ms
-continua avaliando o risco da devolução, sem iniciar a rajada com tanta antecedência.
-Fora do alcance, a trajetória relativa precisa interceptar a esfera do oponente.
-A posição observada é usada para evitar contatos previstos a partir de uma
-posição antiga de pacote; a latência entra uma única vez no tempo de reação.
+A previsão exige uma animação de deflect observada no oponente, ainda válida e
+não consumida. Também exige alvo local ou do oponente, previsão de mira para o
+jogador local e retorno dentro do orçamento de 100 a 250 ms, conforme latência
+e frame. A distância entre jogadores é limitada ao maior entre 13 studs e o
+raio de defesa sem janela; a bola deve estar dentro do raio calculado com 0,8
+da janela. Uma tentativa e uma perna da bola não são reutilizadas.
 
-`GameInfo.getDeflectTargetPrediction(id)` compara os candidatos pela direção da
-câmera replicada do oponente, com fallback de orientação do personagem, como a
-seleção do dump. Isola companheiros de equipe, camuflagem e prioridade DarkSeal.
-Exige alinhamento frontal e separação do segundo candidato; ambiguidade retorna
-indisponível. A previsão precisa favorecer o jogador local e continua sendo
-revalidada durante a rajada especulativa. Isso estima uma escolha; não torna a
-câmera remota ou a intenção do oponente perfeitamente conhecidas.
-
-A rajada fica especulativa até uma troca real para o jogador local. Sem confirmação,
-expira; uma troca para terceiro cancela. Cada ida da bola admite uma tentativa
-por oponente, com nova tentativa apenas se a aproximação reduzir a distância em
-pelo menos um quarto do raio bruto dele. A marca Dark Seal não amplia a janela
-de antecipação. Cooldown,
-reset, morte e demais condições de saída continuam valendo durante a antecipação.
-`anticipationRemaining` no status expõe o prazo restante.
-
-O orçamento de 240 ms é uma referência operacional escolhida para esse gatilho,
-não uma taxa atribuída ao protocolo. A antecipação não garante que o oponente
-clicará ou escolherá o jogador local; automatiza a rajada preventiva em contato.
+A fase especulativa termina ao confirmar o alvo local, expirar, ter a previsão
+desligada ou mudar a mira prevista. O prazo é limitado a 450 ms. Isso não
+garante o deflect ou o alvo real escolhido pelo oponente.
 
 ## TTI recebido no clash
 
@@ -172,45 +137,31 @@ Reiniciar o AutoSpam preserva as últimas amostras da mesma bola.
 
 ## AutoSpam
 
-O manual é independente. A ativação automática usa:
+A bola deve estar válida, em movimento e fora de treino; o hub e o AutoSpam
+precisam estar ligados e o jogador vivo. As entradas são:
 
-- Retorno real `você → mesmo oponente → você`, dentro do intervalo permitido e
-  da geometria calculada.
-- Proximidade de até 5 studs **no pacote em que você vira alvo**. Aproximação
-  posterior e envio da bola a outro jogador não qualificam esse gatilho.
-- Haunter com evento de teleporte e condições geométricas válidas.
-- Dash normal confirmado, com uma troca entre você e o mesmo oponente ocorrida
-  durante esse dash. Velocidade/animação ou alvo sozinho não bastam; WindDash e
-  tipo desconhecido são rejeitados.
+- Alvo local com bola a até 5 studs no momento da troca, sem exigir parceiro.
+- Retorno local observado por rede ou cor, com a bola dentro do raio calculado
+  com 0,8 da janela. A sequência de rede aceita retorno em até 600 ms mais
+  latência; a cor também pode fornecer o alvo local sem parceiro identificado.
+- Previsão com animação de deflect, conforme a seção anterior.
+- Dash normal com troca confirmada durante o dash, ou evento Haunter válido.
 
-Atualizações novas aceitas do replicador (`Source = "replicator"`) e pacotes
-remotos alimentam o mesmo histórico de trocas. Uma divergência temporária de
-posição bloqueia o envio, mas não apaga identidades de alvo recebidas em sequência
-válida. Reset, teleporte e participação de terceiro invalidam a sequência.
-Após dois retornos reais com o mesmo oponente, uma velocidade visual apontando
-para fora não veta a ativação se a bola continua dentro do alcance geométrico
-completo. Isso não dispensa cooldown, validade do estado, distância do oponente
-ou alcance da bola. `confirmedReturns` no status mostra a contagem.
+Depois da ativação, uma troca pode identificar o parceiro. O AutoSpam não possui
+saída por distância entre jogadores. Cooldown bloqueado continuamente encerra
+após `225 ms − 125 ms × progresso de velocidade + latência`, somando 120 ms
+quando o parceiro está a até `10 + 6 × progresso` studs. Progresso varia de 0
+a 1 entre velocidades mínima e máxima; a margem é removida imediatamente ao
+sair da distância. Reset previsto, liberação ou confirmação de parry reiniciam
+a contagem. O mesmo prazo limita o tempo com o alvo no parceiro aguardando o
+retorno ao jogador local. Alvo desconhecido não inicia esse relógio.
 
-Sequências antigas/duplicadas não criam trocas. Mudança de direção sem troca de
-alvo não é retorno. As regras de continuidade do clash, miss e cooldown são
-independentes da aquisição dessas evidências de ativação.
-
-Miss isolado não encerra o AutoSpam. Cooldown bloqueado continuamente é a saída
-principal: a base usa a janela atual limitada a 50 ms, mais latência e uma margem
-de proximidade de até dois frames. A região de contato deriva dos alcances dos
-dois jogadores e do deslocamento da bola durante a resposta, sem usar 14 studs.
-O prazo total é limitado a 120 ms, inclusive com ping alto ou contato extremo;
-a tolerância não multiplica a janela nem aguarda a saída física da bola.
-Cooldown liberado, reset previsto ou confirmação de parry reiniciam a contagem.
-Aproximar/afastar altera o prazo sem reiniciar o tempo já bloqueado. Após encerrar,
-é necessária nova evidência de ativação.
-
-A saída física também observa posição, direção e alcance durante a janela atual:
-a bola precisa estar fora do alcance temporal dos dois jogadores e se afastando
-de ambos continuamente para encerrar a troca, mesmo com um alvo visual atrasado.
-Oposição próxima não veta cooldown persistente, reset ou saída física confirmada.
-
+A saída física requer bola fora do raio dos dois e afastando-se de ambos por
+120 ms. Reset, teleporte, pausa, treino, fim de partida, mortes, desligamento e
+redirecionamento confirmado para terceiro são saídas próprias. Os gates de
+ativação são avaliados no estado inativo; os de saída, no estado ativo. Uma
+entrada consumida não dispara repetidamente. Dynamic mantém sua política de
+saída própria e seu contexto de sessão separado.
 
 ## Carregamento e atualização
 
@@ -305,13 +256,10 @@ O envio usa `Remote.fireNativeParry`, independentemente de `ClickMethod`, para
 manter o fluxo e as animações nativas. A rajada usa o scheduler único de Spam,
 com estado independente de manual spam e AutoSpam.
 
-`AutoSpam.createManualSession()` cria o contexto manual de clash e
-`getManualStopReason(session, protectedUntil)` reaproveita a função de saída,
-cooldown, validação de snapshot e geometria do auto spam. Não há cópia dos gates
-no Dynamic. `DynamicParryDeactivation` habilita essas saídas após 300 ms mais o
-ping retornado por GameInfo. Morte, reset da bola, desligamento, perda de foco e
-comando explícito de parada podem encerrar antes. O período protege a rajada de
-saídas automáticas de clash; não contorna recusas ou cooldown nativo do jogo.
+`AutoSpam.createManualSession()` cria o contexto manual independente e
+`getManualStopReason(session, protectedUntil)` avalia a política própria do
+Dynamic. `DynamicParryDeactivation` habilita suas saídas após 300 ms mais ping;
+a proteção não impede morte, reset ou desligamento.
 
 ## Clique manual e controle
 
@@ -426,40 +374,9 @@ são reconhecidas com `true, nil, nil, "in_progress"` e apenas exibem um aviso.
 Não há nova inicialização, rollback, notificação crítica ou alteração de
 `Exodus.Started`/`StartError` nesse caminho; a chamada que possui o token continua.
 
-AutoSpam e Dynamic usam a mesma função `activeSendDecision` para autorizar os
-envios, além da mesma função de saída. Uma recusa temporária de envio mantém a
-sessão Dynamic ativa, em vez de virar um gate extra de desligamento. O contexto
-manual herda evidência do clash ativo quando existir, sem compartilhar tabelas
-mutáveis. Sua proteção inicial de 300 ms mais ping permanece independente.
-
-Em contato próximo, a tolerância ao cooldown aumenta gradualmente até o teto
-de 240 ms, com proximidade calculada pelo alcance dos dois jogadores e latência.
-A proximidade retida decai em 180 ms mais latência; um pequeno afastamento não
-remove toda a margem imediatamente. Longe, o teto normal de 120 ms permanece.
-Perdas breves de interseção admitem continuidade apenas com troca confirmada,
-perigo recente e bola dentro da região de contato; alvo fora da dupla continua
-encerrando imediatamente.
+AutoSpam e Dynamic mantêm contextos e decisões de saída distintos. Uma recusa
+momentânea de envio não desativa a sessão Dynamic. O contexto manual pode herdar
+a referência do clash ativo sem compartilhar suas tabelas mutáveis.
 
 Filhos usam frames sem máscara intermediária, preservando bordas e strokes.
 Abertura/fechamento altera visibilidade e altura sem recortar o componente.
-
-Clash forte exige pelo menos duas devoluções confirmadas com o mesmo oponente,
-alvo de rede dentro da dupla, evidência recente e bola na região de contato.
-Nessa condição, a manutenção do envio não depende da oscilação de trajetória
-frame a frame. O relógio de cooldown considera a última troca confirmada; posição
-ou alvo repetidos não renovam esse relógio. Pacotes são observados antes da
-decisão de cooldown para não encerrar uma sessão no mesmo evento que confirma
-a continuidade. Não se acrescenta gate de ativação nem nova pontuação de risco.
-
-Dynamic usa somente três regras de saída de gameplay: alvo fora do jogador
-local além do limite calculado pelo cooldown, oponente além de 35 studs por
-250 ms, ou morte/saída de um dos jogadores. A proteção inicial de 300 ms mais
-ping adia as regras de alvo/distância; não a morte nem comandos explícitos de
-parada. Cooldown bloqueado, bola afastada, previsão expirada e redirecionamento
-não são saídas adicionais do Dynamic. O scheduler não reaproveita autorização
-de outro modo na mesma chamada. Morte não sobrescreve o motivo anterior no
-painel; o motivo próprio do Dynamic é apresentado separadamente.
-
-No AutoSpam, trocas confirmadas da dupla em contato renovam a referência do
-cooldown pela evidência de rede, mesmo quando a posição visual ainda está
-interpolando. A autorização física do clique continua verificando a bola.

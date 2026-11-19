@@ -4,18 +4,15 @@
 local Spam = {}
 local utils, remote, gameInfo, autoSpam, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
-local generation, running, inFlight = 0, false, false
+local generation, running = 0, false
 local dynamicParry
 local currentMode, currentRate
-local requestSequence = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 local samples, sampleHead, sampleTail, sampleAccepted, sampleAttempts = {}, 1, 0, 0, 0
 
 -- configuration
 local CONFIG = {
   ERROR_RETRY_INTERVAL = 0.03,
-  MAX_FRAME_REQUESTS = 128,
-  MAX_ACCUMULATION_SECONDS = 0.1,
 }
 
 -- helpers
@@ -61,7 +58,7 @@ local function transition(active, reason)
   if utils and type(utils.recordTransition) == "function" then utils.recordTransition("Spam", previous, phase, reason) end
 end
 local function cancel(reason)
-  generation += 1; running, currentMode, currentRate, inFlight = false, nil, nil, false
+  generation += 1; running, currentMode, currentRate = false, nil, nil
   transition(false, reason)
 end
 
@@ -72,12 +69,8 @@ local function beginSample(time)
   return sample
 end
 local function request(boundUtils, dispatch, token, sample)
-  if inFlight then return end
-  requestSequence += 1; local requestToken = requestSequence
-  inFlight = requestToken; status.lastRequestAt = os.clock()
-  sample.attempts += 1; sampleAttempts += 1
-  local result, detail = dispatch()
-  if inFlight == requestToken then inFlight = false end
+  status.lastRequestAt = os.clock(); sample.attempts += 1
+  sampleAttempts += 1; local result, detail = dispatch()
   if token ~= generation or utils ~= boundUtils then return end
   if result == true then
     if sample.live then sample.accepted += 1; sampleAccepted += 1 end
@@ -125,22 +118,26 @@ local function sync()
         if boundUtils.isDynamicSpamActive() then return boundRemote.fireNativeParry(allowed) end
         return prepared()
       end
+      local frameCredit = 0
       local function burst()
         if not allowed() then return end
+        frameCredit += rate; local count = math.floor(frameCredit)
+        frameCredit -= count
+        if count == 0 then return end
         local sample = beginSample(os.clock())
-        for _ = 1, math.max(1, math.floor(rate)) do
+        for _ = 1, count do
           if not guard() then break end
           local sent, detail = request(boundUtils, dispatch, token, sample)
           if sent == false and detail == "Deflect cancelado" and not boundUtils.isManualSpamActive() then break end
         end
       end
       local heartbeat = mode == "CPF" and boundUtils.getRunService().Heartbeat; local credit, previous = 0, os.clock()
-      local clicksPerSecond = mode == "MS" and 1000 / rate or rate
+      local skipFirstFrame = false; local clicksPerSecond = mode == "MS" and 1000 / rate or rate
       if (boundUtils.isAutoSpamActive() or boundUtils.isDynamicSpamActive()) and allowed() then
         if mode == "CPF" then
-          burst()
+          burst(); skipFirstFrame = true
         elseif mode ~= "Auto" then
-          request(boundUtils, dispatch, token, beginSample(os.clock()))
+          request(boundUtils, dispatch, token, beginSample(os.clock())); credit = -1
         else
           local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
           if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
@@ -152,12 +149,12 @@ local function sync()
       while guard() do
         if mode == "CPF" then
           heartbeat:Wait()
-          if guard() then burst() end
+          if skipFirstFrame then skipFirstFrame = false elseif guard() then burst() end
         elseif mode ~= "Auto" then
           task.wait(); local time = os.clock()
-          local delta = math.clamp(time - previous, 0, CONFIG.MAX_ACCUMULATION_SECONDS); previous = time
+          local delta = math.max(0, time - previous); previous = time
           if allowed() then
-            credit = math.min(CONFIG.MAX_FRAME_REQUESTS, credit + (clicksPerSecond * delta)); local count = math.floor(credit)
+            credit += clicksPerSecond * delta; local count = math.max(0, math.floor(credit + 1e-9))
             credit -= count
             if count > 0 then
               local sample = beginSample(time)
@@ -172,7 +169,7 @@ local function sync()
           end
         else
           task.wait()
-          if allowed() and not inFlight then
+          if allowed() then
             local delay = boundGameInfo.getAutoSpamDelay(); local minimum = boundGameInfo.getMinimumSpamInterval()
             if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
             if (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum then

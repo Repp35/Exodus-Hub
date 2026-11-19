@@ -4,7 +4,39 @@ from test_logic_reliability import COMMON, SPAM, module, run_case
 
 class ClickPerformance(unittest.TestCase):
     def check(self,case):
-        run_case(COMMON+SPAM+module('spam.luau')+case)
+        fixture = '''
+u.isDynamicSpamActive=function() return false end
+local heartbeat={Wait=function() coroutine.yield() end}
+u.getRunService=function() return {Heartbeat=heartbeat} end
+local dynamic={canSend=function() return false end}
+'''
+        case=case.replace('AutoSpam=a}', 'AutoSpam=a,DynamicParry=dynamic}')
+        run_case(COMMON+SPAM+fixture+module('spam.luau')+case)
+
+    def test_lag_and_high_rates_are_not_capped(self):
+        self.check('''
+mode='CPS';rate=2000
+assert(mod.setup({Utils=u,Remote=r,GameInfo=g,AutoSpam=a}))
+frame(.25);assert(count==500,'elapsed time or burst was capped')
+frame(.25);assert(count==1000,'rate changed after lag')
+''')
+
+    def test_fractional_cpf_accumulates(self):
+        self.check('''
+mode='CPF';rate=1.5
+assert(mod.setup({Utils=u,Remote=r,GameInfo=g,AutoSpam=a}))
+for i=1,10 do frame(.016) end
+assert(count==15,'fractional CPF was rounded down')
+''')
+
+    def test_initial_auto_click_is_counted_in_rate(self):
+        self.check('''
+mode='CPS';rate=20;manual=false
+u.isAutoSpamActive=function() return true end;a.canSend=function() return true end
+assert(mod.setup({Utils=u,Remote=r,GameInfo=g,AutoSpam=a}));assert(count==1)
+for i=1,100 do frame(.01) end
+assert(count==20,'initial click was extra or lost')
+''')
 
     def test_exact_counts_at_multiple_modes_and_frame_rates(self):
         for mode,rate in (('CPS',600),('MS',2),('CPF',64)):

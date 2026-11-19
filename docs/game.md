@@ -100,8 +100,7 @@ A previsão calcula a interceptação da bola com o adversário e o voo de retor
 até o alcance local, considerando movimento relativo, latência e duração do
 frame. A posição e direção de sincronização são usadas quando recentes. Uma
 animação pode chegar antes ou depois do alvo; sua evidência permanece disponível
-para a próxima avaliação. Contato físico numa saída confirmada também permite
-antecipar quando a animação ainda não foi recebida.
+para a próxima avaliação. A animação de deflect observada é obrigatória para a previsão.
 
 O estado passa de idle para anticipating e depois clashing quando o alvo local
 é confirmado. A antecipação possui prazo absoluto e é consumida por tentativa e
@@ -125,8 +124,8 @@ As três entradas principais não compartilham confirmação de trajetória:
   posterior da bola ou do jogador não altera essa distância salva. Não exige
   identificar o adversário.
 - Return usa a sequência local → adversário → local dentro de `RETURN` mais
-  latência. A primeira volta já ativa; posição e direção de renderização não
-  vetam uma troca recebida.
+  latência ou usa a cor para reconhecer o alvo local. Exige que a bola esteja
+  dentro do raio calculado com 0,8 da janela; o parceiro pode ser identificado depois.
 - Animação mantém a tentativa do adversário e estima chegada/retorno por
   distâncias, alcances e velocidade. Uma direção visual atrasada não invalida
   `BlockStart`, `BlockLoop` ou `Parry` efetivamente observados.
@@ -137,8 +136,8 @@ rejeitados por compartilhar a sequência do pacote anterior. As ativações roda
 nas fases de simulação/renderização disponíveis, além do Heartbeat.
 
 O AP chama `AutoSpam.onDefenseOpportunity(snapshot)` antes de consumir a amostra
-e antes de despachar. Se uma entrada de spam está pronta, o scheduler assume no
-mesmo callback. Uma ativação recém-confirmada mantém autorização curta para seu
+e antes de despachar. Se uma entrada de spam está pronta, o scheduler envia
+imediatamente e contabiliza essa tentativa na taxa escolhida. Uma ativação recém-confirmada mantém autorização curta para seu
 primeiro envio durante uma lacuna do cache; essa autorização tem prazo fixo e
 não supera morte, congelamento, reset ou desativação. Trocas novas podem rearmar
 sem aguardar 20 ms. Evidência consumida impede repetir a mesma ativação parada.
