@@ -855,17 +855,7 @@ local function createSpatialController(services, getOption)
     else
       local position, half = visualBounds(object)
       local reason, outsideSince
-      if position then
-        reason, outsideSince = renderDecision(
-          position,
-          half,
-          entry.reason,
-          entry.outsideSince,
-          now,
-          cameraSnapshot,
-          now < holdUntil
-        )
-      end
+      if position then reason, outsideSince = renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil) end
       entry.reason, entry.outsideSince = reason, outsideSince; setHidden(entry, reason ~= nil)
       job.index += 1
     end
@@ -914,8 +904,7 @@ local function createSpatialController(services, getOption)
       if not object.Parent then
         forget(object)
       else
-        local position, half = visualBounds(object)
-        local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
+        local position, half = visualBounds(object); local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
         if not reason then entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false) else hiddenCursor += 1 end
       end
     end
@@ -1105,8 +1094,8 @@ local function startSession()
     end,
     GetFloorY = function()
       if not setting("AntiLagFloorCull") then owner.floorY, owner.currentFloorY = nil, nil; return nil end
-      local character = viewedCharacter()
-      local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
+      local character = viewedCharacter(); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+      local root = character and character:FindFirstChild("HumanoidRootPart")
       if root and humanoid and humanoid.Health > 0 then
         local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.currentFloorY = footY
         owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
