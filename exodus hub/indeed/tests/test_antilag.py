@@ -28,6 +28,25 @@ assert(not config.validatePatch({AntiLagEnabled='yes'}))
 assert(not config.validatePatch({AntiLagRenderDistance=math.huge}))
 """)
 
+    def test_distance_setting_is_used_with_bounds(self):
+        from test_raw_target_parry import run_lua
+        code = SOURCE[SOURCE.index('local function requestedProfile()'):SOURCE.index('local function loadNativeModules(')]
+        run_lua('''
+local PROFILE={CullDistance=128}
+local CONFIG={defaults={AntiLagRenderDistance=128}}
+local distance=128
+local function setting(key) if key=='AntiLagRenderDistance' then return distance end return false end
+function table.clone(t) local r={} for k,v in pairs(t) do r[k]=v end return r end
+function math.clamp(v,lo,hi) return math.max(lo,math.min(hi,v)) end
+'''+code+'''
+assert(requestedProfile().CullDistance==128)
+distance=64; assert(requestedProfile().CullDistance==64)
+distance=400; assert(requestedProfile().CullDistance==400)
+distance=0; assert(requestedProfile().CullDistance==1)
+distance=2000; assert(requestedProfile().CullDistance==1200)
+distance=math.huge; assert(requestedProfile().CullDistance==128)
+''')
+
     def test_optional_terrain_failure_is_reported_in_status_without_warning(self):
         from test_raw_target_parry import run_lua
         report = SOURCE[SOURCE.index('  local function reportUnavailable('):SOURCE.index('  local function inScope(')]
@@ -60,7 +79,7 @@ local pages=uipages.create(kit,panel,uiconfig.pages,{desktop=DESKTOP,read=utils.
 pages.select('antilag',false)
 assert(#pages.get('antilag').columns==1)
 local enabled=pages.getControl('AntiLagEnabled')
-local children={'AntiLagRemoveSwordSounds','AntiLagHideLobby','AntiLagRemoveEffects'}
+local children={'AntiLagRenderDistance','AntiLagRemoveSwordSounds','AntiLagHideLobby','AntiLagRemoveEffects'}
 for _,key in ipairs(children) do assert(not uiruntime.isVisible(pages.getControl(key).Root),key) end
 assert(enabled.activate());finishTweens()
 for _,key in ipairs(children) do assert(uiruntime.isVisible(pages.getControl(key).Root),key) end

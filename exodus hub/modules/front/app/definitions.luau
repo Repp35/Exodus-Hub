@@ -179,6 +179,17 @@ local CONFIG = {
           title = "Anti Lag",
           components = {
             { kind = "toggle", title = "Ativar Anti Lag", key = "AntiLagEnabled" },
+            {
+              kind = "slider",
+              title = "Distância de renderização",
+              description = "Define o raio em studs ao redor do personagem.",
+              key = "AntiLagRenderDistance",
+              parentKey = "AntiLagEnabled",
+              min = 1,
+              max = 1200,
+              increment = 1,
+              valueName = "studs",
+            },
             { kind = "toggle", title = "Remover som da espada", key = "AntiLagRemoveSwordSounds", parentKey = "AntiLagEnabled" },
             { kind = "toggle", title = "Ocultar lobby na partida", key = "AntiLagHideLobby", parentKey = "AntiLagEnabled" },
             { kind = "toggle", title = "Remover efeitos", key = "AntiLagRemoveEffects", parentKey = "AntiLagEnabled" },
