@@ -270,14 +270,13 @@ local function observeTarget(state, s, time, packet, captureClose)
   state.target, state.lastSwitchAt = target, time
   if previous and ((previous == me and target ~= me) or (target == me and previous ~= me)) then state.exchange = { partner = previous == me and target or previous, at = time } end
   if previous == me and target ~= me then
-    local partner = userId(target) or userId(state.previousOpponent) or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE); state.outbound = { partner = partner, at = time }
+    local partner = userId(target) or userId(state.previousOpponent); state.outbound = { partner = partner, at = time }
     state.departedAt = time
   elseif target == me then
     local outbound = state.outbound; local returnPartner = userId(previous) or (outbound and outbound.partner)
     if
       outbound
-      and returnPartner
-      and outbound.partner == returnPartner
+      and (not returnPartner or not outbound.partner or outbound.partner == returnPartner)
       and time >= outbound.at
       and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
     then
@@ -285,20 +284,14 @@ local function observeTarget(state, s, time, packet, captureClose)
       state.confirmedReturns = { partner = returnPartner, at = time, count = count }; state.pending = { partner = returnPartner, at = time }
       state.exchange = { partner = returnPartner, at = time }
     end
-    state.outbound, state.departedAt = nil, nil; local partner = previous and previous ~= me and previous or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-    if
-      captureClose ~= false
-      and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
-      and nearPartner(state, partner, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-    then
-      state.close = { partner = partner, at = time }
-    end
+    state.outbound, state.departedAt = nil, nil
   elseif previous and previous <= 0 and userId(target) and state.outbound then
     state.outbound.partner = target
   elseif userId(previous) and userId(target) then
     state.outbound, state.departedAt, state.confirmedReturns = nil, nil, nil
   end
   if userId(target) and target ~= me then state.previousOpponent = target elseif userId(previous) and previous ~= me then state.previousOpponent = previous end
+  if state.active and not state.partner then state.partner = userId(state.previousOpponent) end
 end
 local function opponentOutside(state, radius, maxRadius, s, time)
   local speed = snapshotSpeed(s) or state.protectionSpeed; local minimum, maximum = gameInfo.getBallSpeedLimits()
@@ -364,15 +357,17 @@ local function dashEscapeRisk(state, tracker, snapshot, time)
 end
 local function activate(state, reason, partner, time, s)
   if state.active then return false end
-  local target = s and userId(s.targetId)
-  if not userId(partner) or partner == localPlayer.UserId or not target or (target ~= localPlayer.UserId and target ~= partner) then
+  local target = s and userId(s.targetId); local receipt = reason == "close_target" or reason == "return_target"
+  partner = userId(partner)
+  if
+    not target
+    or (receipt and target ~= localPlayer.UserId)
+    or (not receipt and (not partner or partner == localPlayer.UserId or (target ~= localPlayer.UserId and target ~= partner)))
+  then
     state.lastGate, state.gates.common = "target_outside_pair", "target_outside_pair"; return false
   end
-  local danger = pairDanger(state, s, partner)
-  if
-    not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
-    or (reason ~= "close_target" and reason ~= "return_target" and (not danger or not danger.ready))
-  then
+  local danger = not receipt and pairDanger(state, s, partner) or nil
+  if not receipt and (not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready) then
     state.lastGate, state.gates.common = "no_immediate_danger", "no_immediate_danger"; return false
   end
   state.danger = danger; state.active, state.reason, state.partner, state.activatedAt = true, reason, partner, time
@@ -386,7 +381,8 @@ local function activate(state, reason, partner, time, s)
     state.anticipatingUntil = time + CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + networkLatency()
   end
   if s.targetId == partner then state.departedAt = state.departedAt or time end
-  lastActivationReason, lastActivationAt = reason, time; clashStatsModule.begin(partner, time)
+  lastActivationReason, lastActivationAt = reason, time
+  if partner then clashStatsModule.begin(partner, time) end
   clashStats = clashStatsModule.get(); utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason); return true
 end
@@ -573,23 +569,21 @@ local function extremeReturn(state, s, time)
 end
 local function chooseActivation(state, s, time)
   if s.targetId == localPlayer.UserId and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
-    local partner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-      or nearestPartner(state, CONFIG.ACTIVATION.CLOSE_OPPONENT_DISTANCE)
-    if partner then state.gates.close = "ready"; return "close_target", partner end
+    state.gates.close = "ready"; return "close_target", userId(state.previousOpponent)
   end
   local anticipated = utils.getConfigValue("AutoSpamClashPrediction") ~= false and extremeReturn(state, s, time)
   if anticipated then return "extreme_return_prediction", anticipated end
-  local prediction, dashGate = dashPrediction(state, s, time); state.dashPrediction, state.gates.dash = prediction, dashGate
+  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE); local prediction, dashGate = dashPrediction(state, s, time)
+  state.dashPrediction, state.gates.dash = prediction, dashGate
   if prediction then return prediction.reason, prediction.partner, prediction.at end
   local pending = state.pending; state.gates.returnTarget = not pending and "return_no_round_trip" or "return_expired"
   if pending and time - pending.at <= CONFIG.ACTIVATION.RETURN + networkLatency() then
-    if not nearPartner(state, pending.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then
-      state.gates.returnTarget = "return_opponent_distance"
-    elseif s.targetId ~= localPlayer.UserId then
+    if s.targetId ~= localPlayer.UserId then
       state.gates.returnTarget = "return_not_target"
     else
       local other = playerPosition(pending.partner); local speed = snapshotSpeed(s)
-      local ownRadius = speed and deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(pending.partner, speed, false)
+      local ownRadius = speed and deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false)
+      local otherRadius = speed and pending.partner and deflectGeometry.getPlayerRawRadius(pending.partner, speed, false)
       local contact = other and finite(ownRadius) and finite(otherRadius) and (other - state.root.Position).Magnitude <= ownRadius + otherRadius
       local inWindow = ballWindow(state, s, localPlayer.UserId)
         or (contact and (s.position - state.root.Position).Magnitude <= ownRadius + speed * (networkLatency() + 1 / 60))
@@ -663,7 +657,6 @@ local function evaluate(state, s, time, packet)
   local legTarget = s.exchangeTargetId or s.targetId
   if state.anticipationLegBall ~= s.ball or state.anticipationLegTarget ~= legTarget then state.anticipationLegBall, state.anticipationLegTarget, state.anticipationUsed = s.ball, legTarget, false end
   observeExchangeContinuity(state, s, time); rememberSendContinuity(state, s, time)
-  dashInfo.tick(time, false, state.root.Position, CONFIG.ACTIVATION.DASH_DETECTION_RANGE)
   if state.active then
     local stop = deactivationReason(state, s, time, cd, cooldownExpired)
     if stop then deactivate(state, stop, time); return end
@@ -848,7 +841,11 @@ function AutoSpam.bindCharacter(character)
     if vector(state.lastRootPosition) and (root.Position - state.lastRootPosition).Magnitude > CONFIG.ACTIVATION.HAUNTER_RANGE then
       state.recentRootPosition, state.recentRootAt = state.lastRootPosition, time
     end
-    evaluate(state, gameInfo.getSnapshotAt(time), time, false); state.lastRootPosition = root.Position
+    evaluate(state, gameInfo.getSnapshotAt(time), time, false)
+    if state.active and not state.partner and time >= (state.nextPartnerCheck or 0) then
+      state.nextPartnerCheck = time + 0.1; state.partner = userId(state.previousOpponent) or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
+    end
+    state.lastRootPosition = root.Position
   end)
   listen(state, character.AncestryChanged, function(_, parent)
     if not parent and current == state then detach("character_removed") end
