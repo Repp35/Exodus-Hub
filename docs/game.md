@@ -120,8 +120,10 @@ a presença de gates ou constantes internas.
 
 As três entradas principais não compartilham confirmação de trajetória:
 
-- Proximidade usa a posição **atual** da bola a até 5 studs enquanto o alvo
-  observado é local. Não exige nova troca de alvo nem identificar o adversário.
+- Proximidade salva a distância entre bola e jogador **no instante em que
+  o alvo passa a ser local** e ativa se ela era de até 5 studs. Aproximação
+  posterior da bola ou do jogador não altera essa distância salva. Não exige
+  identificar o adversário.
 - Return usa a sequência local → adversário → local dentro de `RETURN` mais
   latência. A primeira volta já ativa; posição e direção de renderização não
   vetam uma troca recebida.

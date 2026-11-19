@@ -201,7 +201,8 @@ local function observeTarget(state, s, time, packet)
   local previous = state.target
   if previous == target then return end
   local me = localPlayer.UserId; state.leg = (state.leg or 0) + 1
-  state.target, state.receipt = target, { target = target, at = time, position = s.position, leg = state.leg }; state.pending, state.exchange = nil, nil
+  local distance = vector(s.position) and (s.position - state.root.Position).Magnitude or nil
+  state.target, state.receipt = target, { target = target, at = time, position = s.position, distance = distance, leg = state.leg }; state.pending, state.exchange = nil, nil
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.lastSwitchAt = time
   if previous == me and target ~= me then
@@ -373,14 +374,20 @@ local function dashPrediction(state, s, time)
   return nil, lastGate
 end
 local function chooseActivation(state, s, time)
-  local target = activationTarget(state, s, time)
-  local close = target == localPlayer.UserId and vector(s.position) and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
-  if close and not state.wasClose then state.closeVisit = (state.closeVisit or 0) + 1 end
-  state.wasClose = close; state.gates.close = "outside_close_range"
-  if close and (state.lastCloseLeg ~= state.leg or state.lastCloseVisit ~= state.closeVisit) then
+  local target = activationTarget(state, s, time); local receipt = state.receipt
+  state.gates.close = "waiting_close_receipt"
+  if
+    target == localPlayer.UserId
+    and receipt
+    and receipt.target == localPlayer.UserId
+    and receipt.leg == state.leg
+    and not receipt.used
+    and finite(receipt.distance)
+    and receipt.distance <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+  then
     local partner = nearPartner(state, state.previousOpponent, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
       or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
-    state.gates.close = "ready"; return { reason = "close_target", partner = partner, closeVisit = state.closeVisit }
+    state.gates.close = "ready"; return { reason = "close_target", partner = partner, closeReceipt = receipt }
   end
   if utils.getConfigValue("AutoSpamClashPrediction") ~= false then
     local candidate = solveReturn(state, s, time)
@@ -422,7 +429,7 @@ local function activate(state, candidate, s, time)
   if candidate.prediction then state.consumedLeg = state.leg end
   if candidate.attempt then candidate.attempt.used = true end
   if candidate.pending then candidate.pending.used = true end
-  if candidate.closeVisit then state.lastCloseLeg, state.lastCloseVisit = state.leg, candidate.closeVisit end
+  if candidate.closeReceipt then candidate.closeReceipt.used = true end
   state.activationEvidence = { at = time, ball = s.ball, partner = candidate.partner, target = activationTarget(state, s, time) }; state.cooldownSince = time
   local cd = cooldownInfo.getDeflectCooldownState(); state.cooldownEpisode = cd and cd.episode
   lastActivationReason, lastActivationAt = candidate.reason, time; clashStatsModule.begin(candidate.partner, time)

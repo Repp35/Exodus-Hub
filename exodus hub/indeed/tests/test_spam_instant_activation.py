@@ -8,9 +8,13 @@ from autospam_harness import check
 from test_logic_reliability import module
 
 class InstantActivation(unittest.TestCase):
-    def test_proximity_uses_current_ball_position_without_a_second_target_event(self):
+    def test_later_approach_does_not_replace_distance_when_target_was_received(self):
         check('''packet(42,0,50);snap.position=v(2);heartbeat(.016)
-assert(ap.isActive() and clicks>0,'closer render position was ignored')''')
+assert(not ap.isActive() and clicks==0,'later approach incorrectly created a proximity activation')''')
+
+    def test_moving_player_closer_does_not_rewrite_target_receipt(self):
+        check('''packet(42,0,20);me.root.Position=v(18);heartbeat(.016)
+assert(not ap.isActive(),'movement rewrote distance at the moment of targeting')''')
 
     def test_proximity_does_not_wait_for_identifying_the_partner(self):
         check('''other.root.Position=v(80);third.root.Position=v(100)
