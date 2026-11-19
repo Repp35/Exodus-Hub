@@ -175,6 +175,7 @@ function Pages.create(kit, parent, definitions, context)
     if not alive or kit.suspended or (id == active and animated ~= false) then return end
     kit.dismiss(); cancel()
     local old = active; local oldIndex, nextIndex = table.find(normal, old), table.find(normal, id)
+    local direction = oldIndex and nextIndex and (nextIndex < oldIndex and -1 or 1) or (oldIndex and 1 or -1)
     if oldIndex and not nextIndex then returnId = old end
     local outgoing
     for _, page in pairs(registry) do
