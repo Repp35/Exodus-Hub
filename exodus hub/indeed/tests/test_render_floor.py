@@ -92,7 +92,7 @@ assert(shouldHideVisual(another, 'floor'))
     def test_unhiding_is_rate_limited_and_carries_over(self):
         source=(ROOT/'extras/antilag.luau').read_text()
         helper=source[source.index('local revealedVisuals ='):source.index('-- configuration')]
-        loop=source[source.index('    local restoreLimit ='):source.index('\n\n  end\n  local function clearSpatial()')]
+        loop=source[source.index('    local restoreLimit ='):source.index('\n  end\n  local function clearSpatial()')]
         loop=loop.replace('revealCount += 1','revealCount = revealCount + 1').replace('hiddenCursor += 1','hiddenCursor = hiddenCursor + 1')
         run_lua(helper+'''
 local hiddenEntries={}; for i=1,10 do hiddenEntries[i]={object={Parent=true}} end

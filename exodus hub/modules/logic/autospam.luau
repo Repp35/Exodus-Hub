@@ -468,6 +468,10 @@ local function activeStop(state, s, time)
     state.physicalExitSince = nil
   end
 end
+local function deactivationGate(state, s, time, protectedUntil)
+  local reason = activeStop(state, s, time)
+  if reason and (reason == "player_died" or reason == "hub_inactive" or reason == "ball_reset" or time >= (protectedUntil or 0)) then return reason end
+end
 local function rememberContinuity(state, time)
   local h, returns = state.exchangeHistory, state.confirmedReturns
   if
@@ -532,7 +536,7 @@ evaluate = function(state, s, time, packet)
   local gate = lifecycleGate(state, s)
   if s and gate ~= "ball_reset" and gate ~= "training" and gate ~= "ball_paused" then observeTarget(state, s, time, packet) end
   if state.active then
-    stop = activeStop(state, s, time)
+    stop = deactivationGate(state, s, time, 0)
     if stop then
       deactivate(state, stop, time)
       if stop == "ball_reset" or stop == "ball_left_exchange" then clearEvidence(state) end
@@ -875,7 +879,7 @@ function AutoSpam.canSend()
   local state = current
   if not state or not state.active then return false end
   local time = now(); local s = selectSnapshot(state, gameInfo.getSnapshotAt(time), time)
-  local stop = activeStop(state, s, time)
+  local stop = deactivationGate(state, s, time, 0)
   if stop then
     deactivate(state, stop, time); state.lastSendBlockReason, state.lastSendBlockAt = stop, time
     return false
@@ -918,8 +922,8 @@ function AutoSpam.getManualStopReason(state, protectedUntil)
   local time = now(); local s = gameInfo.getSnapshotAt(time)
   if not state.partner then state.partner = nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) end
   if not state.ball and s then state.ball = s.ball end
-  local reason = activeStop(state, s, time)
-  if reason and (reason == "player_died" or reason == "hub_inactive" or reason == "ball_reset" or time >= (protectedUntil or 0)) then return reason, false end
+  local reason = deactivationGate(state, s, time, protectedUntil)
+  if reason then return reason, false end
   return nil, true
 end
 function AutoSpam.stopSpam(reason)

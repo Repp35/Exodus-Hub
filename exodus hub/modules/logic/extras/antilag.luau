@@ -24,7 +24,7 @@ local CONFIG = {
   defaults = {
     AntiLagEnabled = false,
     AntiLagFloorCull = true,
-    AntiLagRenderDistance = 128,
+    AntiLagRenderDistance = 300,
     AntiLagRemoveSwordSounds = true,
     AntiLagHideLobby = true,
     AntiLagRemoveEffects = true,
@@ -43,7 +43,7 @@ local PROFILE = {
   CullVerticalMargin = 20,
   HideLobbyInMatch = true,
   GameSwordSounds = false,
-  CullDistance = 128,
+  CullDistance = 300,
   CullKeepNear = 16,
   CullViewPadding = 12,
   CullViewDegrees = 8,
@@ -380,7 +380,7 @@ local function createOptimizer(services, initialConfig)
     if key == "MaxItemsPerFrame" then value = math.floor(math.clamp(value, 8, 1000)) end
     if key == "ReapplyInterval" then value = math.clamp(value, 0.1, 2) end
     local bounds = {
-      CullDistance = { 1, 1200 },
+      CullDistance = { 300, 1200 },
       CullKeepNear = { 8, 128 },
       CullViewPadding = { 0, 100 },
       CullViewDegrees = { 2, 30 },
@@ -995,7 +995,7 @@ end
 local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance"))
   if not distance or distance ~= distance or math.abs(distance) == math.huge then distance = CONFIG.defaults.AntiLagRenderDistance end
-  profile.CullDistance = math.clamp(distance, 1, 1200); local removeEffects = setting("AntiLagRemoveEffects") == true
+  profile.CullDistance = math.clamp(distance, 300, 1200); local removeEffects = setting("AntiLagRemoveEffects") == true
   profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = false
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects; profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects
   return profile
