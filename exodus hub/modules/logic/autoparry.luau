@@ -4,7 +4,7 @@
 local AutoParry = {}
 local deflectGeometry
 local requestInFlight = false
-local utils, gameInfo, remote, cooldownInfo
+local utils, gameInfo, remote, cooldownInfo, autoSpam
 local maxObservedCps, syncInterval, lastSyncAt, lastAcceptedSample
 local state = {
   phase = "detached",
@@ -381,6 +381,10 @@ local function manualClickOnCurrentTarget()
 end
 local function request(reason)
   local now = clock()
+  if autoSpam and state.mode ~= "training" then
+    autoSpam.onDefenseOpportunity(parrySnapshot(now))
+    if utils.isSpamActive() then return false end
+  end
   if
     requestInFlight
     or now < state.nextAttemptAt
@@ -542,6 +546,7 @@ local function tick(character, root, generation)
   end
   if finite(value.syncAt) and value.syncAt > 0 and (time < value.syncAt or time - value.syncAt > CONFIG.SNAPSHOT_MAX_AGE) then phase("waiting", "snapshot_stale"); return end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
+  if value.mode ~= "training" and autoSpam then autoSpam.onDefenseOpportunity(value) end
   if value.mode ~= "training" and utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
     state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "teleport_lock")
@@ -603,7 +608,7 @@ function AutoParry.setup(deps)
   then
     return false, "dependências inválidas"
   end
-  detach("setup"); deflectGeometry = deps.DeflectGeometry
+  detach("setup"); deflectGeometry, autoSpam = deps.DeflectGeometry, deps.AutoSpam
   utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown; state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
   resetTracking(); phase("detached", "setup_complete")
@@ -708,7 +713,7 @@ end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown()
-  detach("teardown"); utils, gameInfo, remote, cooldownInfo, state.player = nil, nil, nil, nil, nil
+  detach("teardown"); utils, gameInfo, remote, cooldownInfo, state.player, autoSpam = nil, nil, nil, nil, nil, nil
 end
 
 -- ball-sync
@@ -1024,8 +1029,10 @@ AutoParry.__contract = {
     GameInfo = "gameinfo",
     Utils = "utils",
     Cooldown = "cooldown",
+    AutoSpam = "autospam",
   },
   requiresMethods = {
+    AutoSpam = { "onDefenseOpportunity" },
     DeflectGeometry = {
       "getKillRadius",
       "getDeflectRangeParameters",

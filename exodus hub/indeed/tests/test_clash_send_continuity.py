@@ -96,9 +96,10 @@ for i=1,6 do packet(snap.targetId==42 and 99 or 42,.04,50) end
 snap.targetUncertain=true
 '''+mutation+";assert(not ap.canSend(),'hard stop was bridged')")
 
-    def test_uncertainty_without_confirmed_rapid_clash_is_not_bridged(self):
+    def test_fresh_return_authorizes_dispatch_during_immediate_cache_gap(self):
         check(START+'''
-snap.targetUncertain=true;assert(not ap.canSend(),'startup invented continuity evidence')
+snap.targetUncertain=true;assert(ap.canSend(),'fresh return lost its first dispatch to a cache gap')
+advance(.25);assert(not ap.canSend(),'initial evidence refreshed itself without another exchange')
 ''')
 
     def test_real_cooldown_mid_dispatch_guard_does_not_cancel_remaining_batch(self):

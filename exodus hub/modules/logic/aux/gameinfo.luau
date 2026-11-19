@@ -879,7 +879,10 @@ function GameInfo.installBallWatcher(track, onTargetChanged)
     if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
     if item then ballVisualConnection = item:GetPropertyChangedSignal("Color"):Connect(targetChanged); track(ballVisualConnection) end
   end
-  track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(targetChanged))
+  track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(function()
+    invalidateSnapshotCache()
+    if type(onTargetChanged) == "function" then onTargetChanged({ Source = "target", TargetPlayerID = world:GetAttribute("GameBallTarget") }) end
+  end))
   track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
     if item.Name == "GameBall" and item:IsA("BasePart") and ball ~= item then
       ball = item; watchVisual(item)
