@@ -109,6 +109,7 @@ local CONFIG = {
           column = 2,
           components = {
             { kind = "toggle", title = "Dynamic Parry", key = "DynamicParry" },
+            { kind = "toggle", title = "Dynamic Deactivation", key = "DynamicParryDeactivation", parentKey = "DynamicParry" },
             {
               kind = "segmented",
               title = "Activation Mode",
@@ -116,7 +117,6 @@ local CONFIG = {
               options = { { value = "Toggle", label = "Toggle" }, { value = "Hold", label = "Hold" } },
             },
             { kind = "keybind", title = "PC / Controller Button", key = "DynamicParryKey", desktopOnly = true },
-            { kind = "toggle", title = "Dynamic Deactivation", key = "DynamicParryDeactivation" },
           },
         },
         {
