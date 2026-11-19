@@ -156,6 +156,7 @@ function Controller.create(context)
 
     local data = {}
     if enabled.ap then data.ap = context.deps.Status.get("autoparry") end
+    if enabled.gates then data.dynamicParry = context.deps.Status.get("dynamicparry") end
     if enabled.gates or enabled.travel or enabled.distance then data.autoSpam = context.deps.Status.get("autospam") end
     if type(data.autoSpam) == "table" then
       local status = data.autoSpam

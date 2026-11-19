@@ -195,8 +195,9 @@ function Pages.create(kit, parent, definitions, context)
         page.Root.Visible = false; page.Root.GroupTransparency = 1
         page.Root.Position = origin
       end
-      local incoming = registry[active].Root; incoming.Visible = true
-      local tween = motion.play(incoming, "page", { GroupTransparency = 0 }, function()
+      local incoming = registry[active].Root; incoming.Position = UDim2.fromOffset(origin.X.Offset + T.PAGE_OFFSET * direction, origin.Y.Offset)
+      incoming.Visible = true
+      local tween = motion.play(incoming, "page", { GroupTransparency = 0, Position = origin }, function()
         if alive and revision == generation then
           tweens = {}; settle()
           notify()
@@ -204,7 +205,12 @@ function Pages.create(kit, parent, definitions, context)
       end)
       if tween then tweens[#tweens + 1] = tween end
     end
-    local tween = motion.play(outgoing, "page", { GroupTransparency = 1 }, reveal)
+    local tween = motion.play(
+      outgoing,
+      "page",
+      { GroupTransparency = 1, Position = UDim2.fromOffset(origin.X.Offset - T.PAGE_OFFSET * direction, origin.Y.Offset) },
+      reveal
+    )
     if tween then tweens[#tweens + 1] = tween end
     task.delay(0.8, function()
       if alive and revision == generation and transitioning then

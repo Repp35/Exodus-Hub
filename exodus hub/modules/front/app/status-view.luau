@@ -13,6 +13,10 @@ function StatusView.format(data)
   if positive(ap.maxObservedCps) then out.ap[1] = string.format("AP max: %.2f CPS", ap.maxObservedCps) end
   if text(auto.lastActivationReason) then out.gates[#out.gates + 1] = "Last activation: " .. auto.lastActivationReason end
   if text(auto.lastStopReason) then out.gates[#out.gates + 1] = "Last deactivation: " .. auto.lastStopReason end
+  local dynamic = object(data.dynamicParry)
+  if text(dynamic.lastStopReason) and dynamic.lastStopReason ~= "player_died" and dynamic.lastStopReason ~= "opponent_left_or_died" then
+    out.gates[#out.gates + 1] = "Dynamic deactivation: " .. dynamic.lastStopReason
+  end
   local start = object(stats.startSample)
   if finite(start.distance) and start.distance >= 0 then out.distance[#out.distance + 1] = string.format("Start: %.1f studs", start.distance) end
   local sample = object(stats.endSample)

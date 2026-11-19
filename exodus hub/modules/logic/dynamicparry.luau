@@ -6,6 +6,7 @@ local utils, gameInfo, autoSpam, remote
 local connections, uiConnections = {}, {}
 local binding, session, held, pressedAt, protectedUntil
 local editing = false
+local lastStopReason
 local active, pulseUntil, epoch = false, 0, 0
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("DynamicParry") == true end
 local function connect(list, signal, callback)
@@ -149,7 +150,10 @@ function Dynamic.canSend()
   if not humanoid or humanoid.Health <= 0 then stop(); return false end
   if utils.getConfigValue("DynamicParryDeactivation") ~= false then
     local reason, allowed = autoSpam.getManualStopReason(session, protectedUntil)
-    if reason then stop(); return false end
+    if reason then
+      if reason ~= "player_died" and reason ~= "opponent_left_or_died" then lastStopReason = reason end
+      stop(); return false
+    end
     return allowed ~= false
   end
   return true
@@ -224,7 +228,9 @@ function Dynamic.teardown()
   stop(); restore()
   disconnect(connections); utils, gameInfo, autoSpam, remote = nil, nil, nil, nil
 end
-function Dynamic.getStatus() return { active = active, held = held ~= nil, protectedUntil = protectedUntil, attached = binding ~= nil } end
+function Dynamic.getStatus()
+  return { active = active, held = held ~= nil, protectedUntil = protectedUntil, attached = binding ~= nil, lastStopReason = lastStopReason }
+end
 Dynamic.__contract = {
   requires = {
     Utils = "utils",

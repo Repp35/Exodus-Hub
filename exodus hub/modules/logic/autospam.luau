@@ -121,23 +121,12 @@ local function deactivate(state, reason, time)
   if reason == "cooldown" or reason == "ball_left_exchange" or reason == "ball_reset" then resetTargets(state) end
   state.anticipatingUntil = nil; state.physicalExitSince = nil
   state.sendContinuity = nil; state.active, state.reason, state.partner, state.lastGate = false, reason, nil, reason
-  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY; lastStopReason, lastStopAt = reason, time
+  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_DELAY
+  if reason ~= "player_died" and reason ~= "opponent_left_or_died" and reason ~= "opponent_left" then lastStopReason, lastStopAt = reason, time end
   utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
   return true
 end
-local function monitorCooldown(state)
-  local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
-  local reset = not cd or cd.source == "unknown" or cd.blocking ~= true or cd.predictedReset == true; local parried = cd and cd.lastParriedAt
-  if finite(parried) and parried ~= state.cooldownParriedAt then reset = true; state.cooldownParriedAt = parried end
-  if reset then
-    state.cooldownResetAt = time; state.cooldownSince, state.cooldownEpisode, state.cooldownStart, state.cooldownWindow, state.cooldownLimit = nil, nil, nil, nil, nil
-    return cd, false
-  end
-  local start = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or nil
-  if start and state.cooldownResetAt then start = math.max(start, state.cooldownResetAt) end
-  if not state.cooldownSince or state.cooldownEpisode ~= cd.episode or state.cooldownStart ~= start then
-    state.cooldownSince, state.cooldownEpisode, state.cooldownStart = start or time, cd.episode, start
-  end
+local function updateClashLimit(state, time)
   local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshotSpeed(snapshot)
   local g = speed and deflectGeometry.getDeflectGeometry(speed, "game", 1, false, 0); local window = g and g.deflectWindow
   state.cooldownWindow = finite(window) and window > 0 and window or CONFIG.DEACTIVATION.COOLDOWN_BASE_MAX; local opponent = playerPosition(state.partner)
@@ -157,7 +146,23 @@ local function monitorCooldown(state)
       CONFIG.DEACTIVATION.COOLDOWN_NORMAL_MAX_WAIT + state.proximityStrength * CONFIG.DEACTIVATION.COOLDOWN_CLOSE_ALLOWANCE
     )
   )
-  if confirmedContact(state, snapshot, time) then state.cooldownSince = math.max(state.cooldownSince, state.exchange.at) end
+  return snapshot
+end
+local function monitorCooldown(state)
+  local cd = cooldownInfo.getDeflectCooldownState(); local time = now()
+  local snapshot = updateClashLimit(state, time); local reset = not cd or cd.source == "unknown" or cd.blocking ~= true or cd.predictedReset == true
+  local parried = cd and cd.lastParriedAt
+  if finite(parried) and parried ~= state.cooldownParriedAt then reset = true; state.cooldownParriedAt = parried end
+  if reset then
+    state.cooldownResetAt = time; state.cooldownSince, state.cooldownEpisode, state.cooldownStart, state.cooldownWindow, state.cooldownLimit = nil, nil, nil, nil, nil
+    return cd, false
+  end
+  local start = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or nil
+  if start and state.cooldownResetAt then start = math.max(start, state.cooldownResetAt) end
+  if not state.cooldownSince or state.cooldownEpisode ~= cd.episode or state.cooldownStart ~= start then
+    state.cooldownSince, state.cooldownEpisode, state.cooldownStart = start or time, cd.episode, start
+  end
+  if confirmedContact(state, snapshot, time, true) then state.cooldownSince = math.max(state.cooldownSince, state.exchange.at) end
   return cd, state.cooldownLimit ~= nil and time - state.cooldownSince >= state.cooldownLimit
 end
 local function sampleGate(state, s, time)
@@ -236,7 +241,7 @@ local function pairDanger(state, s, partner)
   }
   return best
 end
-confirmedContact = function(state, s, time)
+confirmedContact = function(state, s, time, networkEvidence)
   local history, exchange = state.confirmedReturns, state.exchange
   if not state.active or not history or history.partner ~= state.partner or history.count < 2 or not exchange or exchange.partner ~= state.partner then return false end
   if not freshSnapshot(s, time) or s.ball ~= state.ball or s.resetting or s.teleported or s.locked then return false end
@@ -249,7 +254,7 @@ confirmedContact = function(state, s, time)
   local ownRange = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local otherRange = deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
   if not finite(ownRange) or not finite(otherRange) then return false end
   local travel = speed * (latency + CONFIG.DEACTIVATION.COOLDOWN_MARGIN); return (other - state.root.Position).Magnitude <= ownRange + otherRange + travel
-    and math.min((s.position - state.root.Position).Magnitude, (s.position - other).Magnitude) <= math.max(ownRange, otherRange) + travel
+    and (networkEvidence or math.min((s.position - state.root.Position).Magnitude, (s.position - other).Magnitude) <= math.max(ownRange, otherRange) + travel)
 end
 local function nearPartner(state, id, limit)
   if not id or id == localPlayer.UserId or not playerIsAlive(id) then return nil end
@@ -934,25 +939,23 @@ function AutoSpam.createManualSession()
 end
 function AutoSpam.getManualStopReason(state, protectedUntil)
   local time = now(); local s = gameInfo.getSnapshotAt(time)
-  if not state or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
-  if not utils.isActive() then return "hub_inactive" end
-  if s and (s.resetting or s.teleported or (state.ball and state.ball ~= s.ball)) then return "ball_reset" end
+  if not state or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died", false end
+  if not utils.isActive() then return "hub_inactive", false end
+  local target = s and userId(s.exchangeTargetId or s.targetId)
   if s then
     state.ball = s.ball; observeTarget(state, s, time, true, true)
-    observeExchangeContinuity(state, s, time); rememberSendContinuity(state, s, time)
-    if sequenceOrder(state, s.syncSequence) == "new" then state.sequence = s.syncSequence end
-    local target = userId(s.exchangeTargetId or s.targetId)
-    if state.exchange and not state.partnerConfirmed then state.partner, state.partnerConfirmed = state.exchange.partner, true end
+    observeExchangeContinuity(state, s, time)
     if not state.partner then state.partner = target ~= localPlayer.UserId and target or state.previousOpponent or nearestPartner(state, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) end
   end
-  local cd, expired = monitorCooldown(state)
+  if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died", false end
+  updateClashLimit(state, time)
+  if target == localPlayer.UserId then state.returnAwayAt = nil else state.returnAwayAt = state.returnAwayAt or time end
+  local other = playerPosition(state.partner)
+  if not other or (other - state.root.Position).Magnitude > CONFIG.DEACTIVATION.MAX_CLASH_DISTANCE then state.distanceSince = state.distanceSince or time else state.distanceSince = nil end
   if time < protectedUntil then return nil, true end
-  if not state.partner then return "no_clash_partner", false end
-  local stop = deactivationReason(state, s, time, cd, expired)
-  if stop then return stop, false end
-  local allowed, gate = activeSendDecision(state, s, time)
-  if not allowed then sendBlocked(state, gate, time) end
-  return nil, allowed
+  if state.distanceSince and time - state.distanceSince >= CONFIG.DEACTIVATION.CLASH_DISTANCE_TIMEOUT then return "clash_distance", false end
+  if state.returnAwayAt and time - state.returnAwayAt >= state.cooldownLimit then return "target_return_timeout", false end
+  return nil, true
 end
 function AutoSpam.stopSpam(reason)
   if current then deactivate(current, reason or "stop_spam", now()) end

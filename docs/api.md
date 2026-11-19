@@ -454,3 +454,16 @@ frame a frame. O relógio de cooldown considera a última troca confirmada; posi
 ou alvo repetidos não renovam esse relógio. Pacotes são observados antes da
 decisão de cooldown para não encerrar uma sessão no mesmo evento que confirma
 a continuidade. Não se acrescenta gate de ativação nem nova pontuação de risco.
+
+Dynamic usa somente três regras de saída de gameplay: alvo fora do jogador
+local além do limite calculado pelo cooldown, oponente além de 35 studs por
+250 ms, ou morte/saída de um dos jogadores. A proteção inicial de 300 ms mais
+ping adia as regras de alvo/distância; não a morte nem comandos explícitos de
+parada. Cooldown bloqueado, bola afastada, previsão expirada e redirecionamento
+não são saídas adicionais do Dynamic. O scheduler não reaproveita autorização
+de outro modo na mesma chamada. Morte não sobrescreve o motivo anterior no
+painel; o motivo próprio do Dynamic é apresentado separadamente.
+
+No AutoSpam, trocas confirmadas da dupla em contato renovam a referência do
+cooldown pela evidência de rede, mesmo quando a posição visual ainda está
+interpolando. A autorização física do clique continua verificando a bola.

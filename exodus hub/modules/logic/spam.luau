@@ -114,9 +114,9 @@ local function sync()
     end
     local function allowed()
       if not guard() then return false end
-      return (boundUtils.isDynamicSpamActive() and dynamicParry.canSend())
-        or (boundUtils.isManualSpamActive() and boundAutoSpam.canSendManual())
-        or boundAutoSpam.canSend()
+      if boundUtils.isDynamicSpamActive() then return dynamicParry.canSend() end
+      if boundUtils.isManualSpamActive() then return boundAutoSpam.canSendManual() end
+      return boundAutoSpam.canSend()
     end
     local ok, err = xpcall(function()
       local prepared = type(boundRemote.prepareParry) == "function" and boundRemote.prepareParry(allowed)
