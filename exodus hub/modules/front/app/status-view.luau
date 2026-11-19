@@ -11,6 +11,8 @@ function StatusView.format(data)
   data = object(data); local ap, auto = object(data.ap), object(data.autoSpam)
   local stats = object(auto.clashStats); local out = { ap = {}, gates = {}, travel = {}, distance = {} }
   if positive(ap.maxObservedCps) then out.ap[1] = string.format("AP max: %.2f CPS", ap.maxObservedCps) end
+  local predictionGate = object(auto.gates).prediction
+  if text(predictionGate) then out.gates[#out.gates + 1] = "Prediction: " .. predictionGate end
   if text(auto.lastActivationReason) then out.gates[#out.gates + 1] = "Last activation: " .. auto.lastActivationReason end
   if text(auto.lastStopReason) then out.gates[#out.gates + 1] = "Last deactivation: " .. auto.lastStopReason end
   local dynamic = object(data.dynamicParry)

@@ -15,7 +15,7 @@ local CONFIG = {
     EXTREME_TARGET_DELAY = 0.24,
     EXTREME_WINDOW_FACTOR = 0.3,
     CONTACT_WINDOW_FACTOR = 0.3,
-    EXTREME_MAX_LEAD = 0.08,
+    DEFLECT_ANIMATION_LIFETIME = 0.65,
     REACTIVATION_DELAY = 0.02,
     CLOSE_TARGET_DISTANCE = 5,
     CLOSE_OPPONENT_DISTANCE = 16,
@@ -366,7 +366,9 @@ local function activate(state, reason, partner, time, s)
   then
     state.lastGate, state.gates.common = "target_outside_pair", "target_outside_pair"; return false
   end
-  local danger = not receipt and pairDanger(state, s, partner) or nil
+  local evidence = reason == "extreme_return_prediction" and state.predictionEvidence
+  local verifiedPrediction = evidence and evidence.snapshot == s and evidence.at == time and evidence.partner == partner
+  local danger = verifiedPrediction and evidence.danger or (not receipt and pairDanger(state, s, partner) or nil)
   if not receipt and (not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) or not danger or not danger.ready) then
     state.lastGate, state.gates.common = "no_immediate_danger", "no_immediate_danger"; return false
   end
@@ -533,38 +535,49 @@ local function dashPrediction(state, s, time)
   return nil, lastGate
 end
 local function extremeReturnPartner(state, s, time, partner)
-  if not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
+  if not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then state.gates.prediction = "opponent_out_of_range"; return nil end
   local other = playerPosition(partner); local speed = snapshotSpeed(s)
   if not other or not playerIsAlive(partner) or not speed or speed <= 0 then return nil end
   local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
   if not finite(otherRadius) then return nil end
   local gap = (other - state.root.Position).Magnitude; local latency = networkLatency()
-  if
-    state.anticipationUsed
-    and state.anticipationUsedPartner == partner
-    and not (finite(state.anticipationUsedGap) and state.anticipationUsedGap - gap >= otherRadius * 0.25)
-  then
-    return nil
-  end
-  if gameInfo.getDeflectTargetPrediction(partner) ~= localPlayer.UserId then return nil end
+  if gameInfo.getDeflectTargetPrediction(partner) ~= localPlayer.UserId then state.gates.prediction = "return_not_aimed_at_self"; return nil end
   local budget = CONFIG.ACTIVATION.EXTREME_TARGET_DELAY + latency; local g = geometry(s, CONFIG.ACTIVATION.EXTREME_WINDOW_FACTOR)
   if not g then return nil end
   local contactTime = math.min(budget, g.effectiveWindow); local dangerRadius = deflectGeometry.projectRadius(otherRadius, speed, contactTime, 1, latency)
-  if not finite(dangerRadius) or gap > dangerRadius then return nil end
-  local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
-  if math.max(0, gap - kill) / speed > budget then return nil end
-  local lead = math.min(budget, math.min(g.effectiveWindow, CONFIG.ACTIVATION.EXTREME_MAX_LEAD) + latency); local _, motion = gameInfo.getPlayerMotion(partner)
-  local danger = deflectGeometry.getDanger(s.position, s.velocity, other, speed, otherRadius, lead, motion)
-  if not danger or not danger.ready then return nil end
+  if not finite(dangerRadius) or gap > dangerRadius then state.gates.prediction = "return_has_reaction_time"; return nil end
+  local kill = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics()); local lead = math.min(budget, g.effectiveWindow + latency)
+  local _, motion = gameInfo.getPlayerMotion(partner); local velocity = s.velocity
+  if (s.exchangeTargetId or s.targetId) == partner and vector(s.syncDirection) and s.syncDirection.Magnitude > 0.001 then velocity = s.syncDirection.Unit * speed
+  elseif vector(velocity) and velocity.Magnitude > 0.001 then velocity = velocity.Unit * speed end
+  local danger = deflectGeometry.getDanger(s.position, velocity, other, speed, otherRadius, lead, motion)
+  if not danger or not danger.ready then state.gates.prediction = "waiting_ball_contact"; return nil end
+  local arrival = finite(danger.entryTime) and math.max(0, danger.entryTime) or 0; local futureOwn = state.root.Position + state.root.AssemblyLinearVelocity * arrival
+  local futureOther = other + (vector(motion) and motion or Vector3.zero) * arrival; local delta = futureOwn - futureOther
+  if delta.Magnitude > 0.001 then
+    local returnDanger = deflectGeometry.getDanger(futureOther, delta.Unit * speed, futureOwn, speed, kill, budget, state.root.AssemblyLinearVelocity)
+    if not returnDanger or not returnDanger.ready then state.gates.prediction = "return_has_reaction_time"; return nil end
+  end
   local attempt = state.deflectAttempts and state.deflectAttempts[partner]
-  if not attempt or attempt.used or attempt.ball ~= s.ball or time < attempt.at or time - attempt.at > math.min(g.deflectWindow, 0.12 + latency) then
+  if
+    not attempt
+    or attempt.used
+    or attempt.ball ~= s.ball
+    or time < attempt.at
+    or time - attempt.at > math.min(g.deflectWindow, CONFIG.ACTIVATION.DEFLECT_ANIMATION_LIFETIME)
+  then
     state.gates.prediction = "waiting_deflect_animation"; return nil
   end
+  local playing = false
+  for track in pairs(attempt.tracks) do
+    if track.IsPlaying then playing = true; break end
+  end
+  if not playing then state.gates.prediction = "deflect_animation_stopped"; return nil end
   state.gates.prediction = "deflect_attempt"; state.danger = danger
-  return partner
+  state.predictionEvidence = { snapshot = s, at = time, partner = partner, danger = danger }; return partner
 end
 local function extremeReturn(state, s, time)
-  local target = userId(s.targetId)
+  state.gates.prediction = "waiting_opponent_target"; local target = userId(s.targetId)
   if target and target ~= localPlayer.UserId then return extremeReturnPartner(state, s, time, target) end
 end
 local function chooseActivation(state, s, time)
@@ -790,15 +803,25 @@ function AutoSpam.bindCharacter(character)
         listen(state, humanoid.Died, death)
         local function watchAnimator(animator)
           if not animator:IsA("Animator") then return end
-          listen(state, animator.AnimationPlayed, function(track)
+          local function observeAnimation(track, alreadyPlaying)
             if current ~= state or player == localPlayer or player.Character ~= character then return end
             local animation = track.Animation; local id = animation and animation.AnimationId:match("%d+")
+            local time = now()
+            if id and not deflectAnimationIds[id] and time >= (state.nextAnimationRefresh or 0) then
+              state.nextAnimationRefresh = time + 1; deflectAnimationIds = gameInfo.getDeflectAttemptAnimationIds()
+            end
             if not id or not deflectAnimationIds[id] then return end
-            local time = now(); local s = gameInfo.getSnapshotAt(time)
+            local s = gameInfo.getSnapshotAt(time); local age = alreadyPlaying and math.max(0, track.TimePosition) or 0
+            if age >= CONFIG.ACTIVATION.DEFLECT_ANIMATION_LIFETIME then return end
             local previous = state.deflectAttempts[player.UserId]
-            if previous and time - previous.at < 1 / 30 then return end
-            state.deflectAttempts[player.UserId] = { at = time, ball = s and s.ball }; evaluate(state, s, time, false)
-          end)
+            if previous and time - previous.at < 1 / 30 and previous.ball == (s and s.ball) then previous.tracks[track] = true
+            else state.deflectAttempts[player.UserId] = { at = time - age, ball = s and s.ball, tracks = { [track] = true } } end
+            evaluate(state, s, time, false)
+          end
+          listen(state, animator.AnimationPlayed, function(track) observeAnimation(track, false) end)
+          for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            observeAnimation(track, true)
+          end
         end
         local animator = humanoid:FindFirstChildOfClass("Animator")
         if animator then watchAnimator(animator) end
