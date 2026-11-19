@@ -29,7 +29,7 @@ local PROFILE = {
   StartEnabled = false,
   ShowMenu = false,
   CullEnabled = true,
-  CullView = true,
+  CullView = false,
   CullVertical = false,
   CullAbove = 200,
   CullBelow = 100,
@@ -41,8 +41,8 @@ local PROFILE = {
   CullViewPadding = 12,
   CullViewDegrees = 8,
   CullHideDelay = 0.15,
-  CullInterval = 1 / 60,
-  CullBudgetMs = 2,
+  CullInterval = 0.1,
+  CullBudgetMs = 0.8,
   GameGenerators = true,
   GameNoVFX = true,
   GameKeepIndicators = true,
@@ -166,6 +166,7 @@ local function createOptimizer(services, initialConfig)
         end
       end
     elseif object:IsA("BasePart") then
+      watch = false
       if options.Shadows then target.CastShadow = false end
       if options.FlatMaterials then target.Material = Enum.Material.SmoothPlastic; target.MaterialVariant, target.Reflectance = "", 0 end
       if options.HideTaggedDecorations and CollectionService:HasTag(object, "AntiLagDecoration") then target.LocalTransparencyModifier = 1 end
@@ -631,7 +632,7 @@ local function applyGamePolicy(object, target, watch, options)
   return target, watch
 end
 local function verticalDecision(minY, maxY, cameraY, previous, options)
-  if options.CullFloorY and minY < options.CullFloorY then return "floor" end
+  if options.CullFloorY and maxY < options.CullFloorY then return "floor" end
   if not options.CullVertical then return nil end
   local margin = options.CullVerticalMargin or 20
   local above = (options.CullAbove or 200) - (if previous == "above" then margin else 0)
@@ -674,7 +675,7 @@ end
 local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
   local delta = position - view.position; local options = view.options
   local origin = view.focus or view.position; local rangeDelta = position - origin
-  local dx, dy, dz = math.abs(rangeDelta.X) + half.X, math.abs(rangeDelta.Y) + half.Y, math.abs(rangeDelta.Z) + half.Z; local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
+  local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z); local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
   if surfaceDistance > options.CullDistance then return "distance", nil end
   local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
   if vertical then return vertical, nil end
@@ -882,7 +883,6 @@ local function createSpatialController(services, getOption)
       count += 1
     end
     if not camera then return end
-    local cameraChanged = camera.CFrame ~= lastCameraFrame
     local look = camera.CFrame.LookVector
     if lastLook and look:Dot(lastLook) < 0.75 then holdUntil = now + 0.15; nextCycleAt = 0 end
     lastLook = look
@@ -899,9 +899,10 @@ local function createSpatialController(services, getOption)
     if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
     if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
     if not active or not alive then return end
-    local restoreLimit = cameraChanged and #hiddenEntries or math.min(#hiddenEntries, 256)
+    local restoreLimit = math.min(#hiddenEntries, 32)
+    local restoreDeadline = os.clock() + math.max(0, deadline - os.clock()) * 0.5
     for _ = 1, restoreLimit do
-      if #hiddenEntries == 0 then break end
+      if #hiddenEntries == 0 or os.clock() >= restoreDeadline then break end
       if hiddenCursor > #hiddenEntries then hiddenCursor = 1 end
       local entry = hiddenEntries[hiddenCursor]; local object = entry.object
       if not object.Parent then
@@ -928,10 +929,9 @@ local function createSpatialController(services, getOption)
   local function refreshDriver()
     if driver then driver:Disconnect(); driver = nil end
     if not active or not option("CullEnabled", true) then return end
-    driver = (services.RunService.PreRender or services.RunService.Heartbeat):Connect(function(dt)
-      elapsed += dt; local camera = Workspace.CurrentCamera
-      local changed = camera and camera.CFrame ~= lastCameraFrame
-      if changed or #stack > 0 or head <= tail or work or cycling or elapsed >= option("CullInterval", 0.12) then elapsed = 0; controller:Tick(os.clock(), camera) end
+    driver = services.RunService.Heartbeat:Connect(function(dt)
+      elapsed += dt
+      if elapsed >= option("CullInterval", 0.1) then elapsed = 0; controller:Tick(os.clock(), Workspace.CurrentCamera) end
     end)
   end
   function controller:SetEnabled(value)
@@ -943,7 +943,8 @@ local function createSpatialController(services, getOption)
   end
   function controller:Refresh()
     if not active then return end
-    self:SetEnabled(true)
+    nextCycleAt, cycling, work = 0, false, nil
+    updateLobby()
   end
   function controller:GetStatus()
     return { Tracked = trackedCount, Hidden = hiddenCount, Chunks = #chunkList, LobbyHidden = lobbyHidden, Indexing = #stack > 0 or head <= tail }
@@ -972,7 +973,7 @@ local function applyScenePolicy(object, target, watch, options, masks, lobbyHidd
     elseif object:IsA("Humanoid") then target.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
     elseif object:IsA("ForceField") or object:IsA("Explosion") or object:IsA("PVAdornment") then target.Visible = false
     else target.Enabled = false end
-    watch = true
+    watch = not object:IsA("BasePart")
   end
   if lobbyHidden and lobby and object:IsDescendantOf(lobby) then
     if object:IsA("BasePart") and not object:IsA("Terrain") then
@@ -1090,8 +1091,11 @@ local function startSession()
     GetFloorY = function()
       local character = viewedCharacter(); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
       local root = character and character:FindFirstChild("HumanoidRootPart")
-      if root and humanoid and humanoid.Health > 0 then return root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5 - 2 end
-      return nil
+      if root and humanoid and humanoid.Health > 0 then
+        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5
+        owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
+      end
+      return owner.floorY and owner.floorY - 2 or nil
     end,
     GetFocusPosition = function()
       local character = viewedCharacter(); local root = character and character:FindFirstChild("HumanoidRootPart")
