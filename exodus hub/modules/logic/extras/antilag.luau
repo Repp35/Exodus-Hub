@@ -3,6 +3,14 @@
 -- module
 local AntiLag = {}
 local Utils, GameInfo
+local revealedVisuals = setmetatable({}, { __mode = "k" })
+local MAX_REVEALS_PER_TICK = 4
+local function shouldHideVisual(object, reason)
+  if revealedVisuals[object] then return false end
+  if reason then return true end
+  revealedVisuals[object] = true
+  return false
+end
 
 -- configuration
 local CONFIG = {
@@ -697,17 +705,17 @@ local function createSpatialController(services, getOption)
   end
   local active, alive = false, true; local records, chunks, chunkList = {}, {}, {}
   local stack, pending, queued = {}, {}, {}; local head, tail, chunkIndex = 1, 0, 1
-  local work, driver
+  local driver
   local connections = {}; local hiddenCount, trackedCount = 0, 0
   local lobbyHidden, lastLobby = false, nil; local elapsed, holdUntil, lastLook = 1, 0, nil
-  local nextCycleAt, cycling = 0, false; local stepsLeft = 0
-  local cameraSnapshot, lastCameraFrame
+    local cameraSnapshot, lastCameraFrame
   local hiddenEntries, hiddenCursor = {}, 1
   local function option(key, fallback)
     local value = getOption(key)
     return if value == nil then fallback else value
   end
   local function setHidden(entry, hidden)
+    if hidden and revealedVisuals[entry.object] then return end
     if entry.hidden == hidden then return end
     entry.hidden = hidden
     if hidden then
@@ -734,7 +742,6 @@ local function createSpatialController(services, getOption)
       chunkList[chunk.index] = lastChunk
       if lastChunk then lastChunk.index = chunk.index end
       chunkList[#chunkList] = nil
-      if work and work.chunk == chunk then work = nil end
     end
   end
   local function lobbyRoot()
@@ -807,7 +814,10 @@ local function createSpatialController(services, getOption)
     trackedCount += 1
     if cameraSnapshot then
       local actualPosition, half = visualBounds(object)
-      if actualPosition then entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false); setHidden(entry, entry.reason ~= nil) end
+      if not revealedVisuals[object] then
+        if actualPosition then entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false) end
+        setHidden(entry, shouldHideVisual(object, entry.reason))
+      end
     end
   end
   local function enqueue(object)
@@ -845,47 +855,13 @@ local function createSpatialController(services, getOption)
       CullVerticalMargin = option("CullVerticalMargin", PROFILE.CullVerticalMargin),
     }
   end
-  local function processChunk(now)
-    if not work then
-      if stepsLeft <= 0 or #chunkList == 0 then cycling = false; return false end
-      if chunkIndex > #chunkList then chunkIndex = 1 end
-      local chunk = chunkList[chunkIndex]; chunkIndex += 1
-      stepsLeft -= 1; work = { chunk = chunk, index = 1 }
-    end
-    local job = work; local entry = job.chunk.parts[job.index]
-    if not entry then work = nil; return true end
-    local object = entry.object
-    if not object.Parent then
-      forget(object)
-    else
-      local position, half = visualBounds(object)
-      local reason, outsideSince
-      if position then reason, outsideSince = renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil) end
-      entry.reason, entry.outsideSince = reason, outsideSince; setHidden(entry, reason ~= nil)
-      job.index += 1
-    end
-    return true
-  end
   function controller:Tick(now, camera)
     table.clear(modelBounds)
     if not active or not alive or not option("CullEnabled", true) then return end
     local deadline = os.clock() + option("CullBudgetMs", 2) / 1000; local count = 0
-    local scanDeadline = os.clock() + option("CullBudgetMs", 2) / 2000
-    while count < 80 and os.clock() < scanDeadline do
-      local object, descend = nextNode()
-      if not object then break end
-      if inScope(object) then
-        if descend then
-          local children = object:GetChildren()
-          if #children > 0 then stack[#stack + 1] = { items = children, index = 1 } end
-        end
-        register(object)
-      end
-      count += 1
-    end
     if not camera then return end
     local look = camera.CFrame.LookVector
-    if lastLook and look:Dot(lastLook) < 0.75 then holdUntil = now + 0.15; nextCycleAt = 0 end
+    if lastLook and look:Dot(lastLook) < 0.75 then holdUntil = now + 0.15 end
     lastLook = look
     cameraSnapshot = {
       position = camera.CFrame.Position,
@@ -900,30 +876,45 @@ local function createSpatialController(services, getOption)
     if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
     if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
     if not active or not alive then return end
+    local scanDeadline = os.clock() + option("CullBudgetMs", 2) / 2000
+    while count < 80 and os.clock() < scanDeadline do
+      local object, descend = nextNode()
+      if not object then break end
+      if inScope(object) then
+        if descend then
+          local children = object:GetChildren()
+          if #children > 0 then stack[#stack + 1] = { items = children, index = 1 } end
+        end
+        register(object)
+      end
+      count += 1
+    end
     local restoreLimit = math.min(#hiddenEntries, 32); local restoreDeadline = os.clock() + math.max(0, deadline - os.clock()) * 0.5
+    local revealCount = 0
     for _ = 1, restoreLimit do
-      if #hiddenEntries == 0 or os.clock() >= restoreDeadline then break end
+      if #hiddenEntries == 0 or revealCount >= MAX_REVEALS_PER_TICK or os.clock() >= restoreDeadline then break end
       if hiddenCursor > #hiddenEntries then hiddenCursor = 1 end
       local entry = hiddenEntries[hiddenCursor]; local object = entry.object
       if not object.Parent then
         forget(object)
       else
         local position, half = visualBounds(object); local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
-        if not reason then entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false) else hiddenCursor += 1 end
+        if not shouldHideVisual(object, reason) then
+          entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false); revealCount += 1
+        else
+          hiddenCursor += 1
+        end
       end
     end
-    if not cycling and now >= nextCycleAt then cycling, stepsLeft = true, #chunkList; nextCycleAt = now + option("CullInterval", PROFILE.CullInterval) end
-    while cycling and count < 160 and os.clock() < deadline do
-      if not processChunk(now) then break end
-      count += 1
-    end
+
   end
   local function clearSpatial()
     for _, entry in pairs(records) do
+      if entry.hidden then revealedVisuals[entry.object] = true end
       setHidden(entry, false)
     end
     records, chunks, chunkList, stack, pending, queued = {}, {}, {}, {}, {}, {}; head, tail, chunkIndex, trackedCount = 1, 0, 1, 0
-    work, cycling, lastLook = nil, false, nil; nextCycleAt, elapsed = 0, 1
+    lastLook, elapsed = nil, 1
     hiddenEntries, hiddenCursor, lastCameraFrame = {}, 1, nil
   end
   local function refreshDriver()
@@ -943,7 +934,7 @@ local function createSpatialController(services, getOption)
   end
   function controller:Refresh()
     if not active then return end
-    nextCycleAt, cycling, work = 0, false, nil; updateLobby()
+    updateLobby()
   end
   function controller:GetStatus()
     return { Tracked = trackedCount, Hidden = hiddenCount, Chunks = #chunkList, LobbyHidden = lobbyHidden, Indexing = #stack > 0 or head <= tail }
@@ -1007,7 +998,7 @@ local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance"))
   if not distance or distance ~= distance or math.abs(distance) == math.huge then distance = CONFIG.defaults.AntiLagRenderDistance end
   profile.CullDistance = math.clamp(distance, 1, 1200); local removeEffects = setting("AntiLagRemoveEffects") == true
-  profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = setting("AntiLagHideLobby")
+  profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = false
   profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects; profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects
   return profile
 end

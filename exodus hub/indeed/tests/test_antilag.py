@@ -79,7 +79,7 @@ local pages=uipages.create(kit,panel,uiconfig.pages,{desktop=DESKTOP,read=utils.
 pages.select('antilag',false)
 assert(#pages.get('antilag').columns==1)
 local enabled=pages.getControl('AntiLagEnabled')
-local children={'AntiLagRenderDistance','AntiLagRemoveSwordSounds','AntiLagHideLobby','AntiLagRemoveEffects'}
+local children={'AntiLagRenderDistance','AntiLagRemoveSwordSounds','AntiLagRemoveEffects'}
 for _,key in ipairs(children) do assert(not uiruntime.isVisible(pages.getControl(key).Root),key) end
 assert(enabled.activate());finishTweens()
 for _,key in ipairs(children) do assert(uiruntime.isVisible(pages.getControl(key).Root),key) end

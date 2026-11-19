@@ -191,7 +191,6 @@ local CONFIG = {
               valueName = "studs",
             },
             { kind = "toggle", title = "Remover som da espada", key = "AntiLagRemoveSwordSounds", parentKey = "AntiLagEnabled" },
-            { kind = "toggle", title = "Ocultar lobby na partida", key = "AntiLagHideLobby", parentKey = "AntiLagEnabled" },
             { kind = "toggle", title = "Remover efeitos", key = "AntiLagRemoveEffects", parentKey = "AntiLagEnabled" },
           },
         },

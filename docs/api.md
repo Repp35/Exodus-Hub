@@ -240,7 +240,11 @@ os limites permanecem visíveis para preservar o chão, paredes e personagens. L
 pós-processamento são desativados. As alterações são locais e reversíveis.
 
 A API utilizada não corta Terrain sólido e não impede a replicação de objetos.
-A indexação e as mudanças são graduais; colisões e consultas físicas permanecem.
+Depois que uma instância é liberada para aparecer, ela não é ocultada novamente
+pelo anti-lag enquanto existir, mesmo que saia do raio configurado. O corte
+inicial e a indexação são graduais. A liberação de objetos antes ocultos é limitada
+a 4 a cada 0,1 segundo e também por orçamento de tempo; colisões e consultas
+físicas permanecem.
 
 O AP avalia também `PreSimulation`, além do tick após física e dos eventos de
 sincronização. Qualquer fonte positiva de alvo local vence fontes negativas.
