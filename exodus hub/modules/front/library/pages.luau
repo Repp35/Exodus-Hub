@@ -255,14 +255,22 @@ function Pages.create(kit, parent, definitions, context)
   end
   refreshDisclosure = function(key, owner, immediate)
     local expanded = context.read and context.read(key) == true or false; local layout = owner.childContent:FindFirstChildOfClass("UIListLayout")
-    local scale, ancestor = 1, owner.childContent
-    while ancestor do
-      for _, child in ipairs(ancestor:GetChildren()) do
-        if child:IsA("UIScale") then scale *= child.Scale end
+    local height, count = 0, 0
+    if expanded then
+      for _, entry in ipairs(rows) do
+        if entry.Root.Parent == owner.childContent and entry.Root.Visible then
+          local rowHeight = entry.handle.Root.Visible and entry.handle.Root.Size.Y.Offset or 0
+          if entry.children and entry.children.Visible and entry.children.Size.Y.Offset > 0 then
+            if rowHeight > 0 then rowHeight += T.CARD_GAP end
+            rowHeight += entry.children.Size.Y.Offset
+          end
+          if rowHeight > 0 then
+            if count > 0 then height += layout.Padding.Offset end
+            height += rowHeight; count += 1
+          end
+        end
       end
-      ancestor = ancestor.Parent
     end
-    local height = expanded and (layout.AbsoluteContentSize.Y / math.max(scale, 0.001)) or 0
     if not immediate and owner.expanded == expanded and owner.targetHeight == height then return end
     local entering = expanded and not owner.children.Visible; owner.expanded, owner.targetHeight = expanded, height
     owner.revision = (owner.revision or 0) + 1; local revision = owner.revision
