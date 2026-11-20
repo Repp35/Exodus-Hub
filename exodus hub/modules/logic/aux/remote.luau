@@ -134,18 +134,8 @@ local function dispatchParry(info, guard, context, native)
   if method == "Direct" then return fireDirect(guard, context) end
   local ability = info.getDeflectAbility()
   if not allowed(guard) then return false, "Deflect cancelado" end
-  local previousCall = ability and ability.LastDeflectCallAt; local clicks = ability and ability.ClickInstances
-  local lastClick = type(clicks) == "table" and clicks[#clicks] or nil; local sent, detail = send(ability, CONFIG.PARRY_METHOD)
-  if sent and ability and type(ability.ClickInstances) == "table" then
-    local currentClicks = ability.ClickInstances
-    if
-      (type(ability.LastDeflectCallAt) == "number" and ability.LastDeflectCallAt == previousCall)
-      or (currentClicks == clicks and currentClicks[#currentClicks] == lastClick)
-    then
-      return false, "Deflect recusado pelo cliente"
-    end
-  end
-  return sent, detail
+  if not ability then return false, "Deflect não equipado ou indisponível" end
+  ability:Deflect(); return true
 end
 function Remote.prepareParry(callerGuard)
   local owner, info, context = epoch, gameInfo, {}

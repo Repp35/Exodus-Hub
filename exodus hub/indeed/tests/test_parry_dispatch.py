@@ -113,12 +113,13 @@ info.getDeflectAbility=function() return {GetKeybindBySlotID=function() permit=f
 assert(not module.fireParry(1,guard)); assert(sends==0)
 """)
 
-    def test_client_rejection_is_not_reported_as_a_sent_parry(self):
+    def test_standard_calls_native_once_without_inspecting_click_state(self):
         self.check("""
 method='Deflect'
-local ability={ClickInstances={},Deflect=function() end}
+local calls=0
+local ability=setmetatable({Deflect=function(self) calls=calls+1 end},{__index=function(_,key) error('unexpected native state read: '..key) end})
 info.getDeflectAbility=function() return ability end
-assert(not module.fireParry(1,guard),'nil rejection armed AP as if a packet was sent')
+assert(module.fireParry(1,guard));assert(calls==1 and sends==0 and #delayed==0)
 """)
 
     def test_valid_nil_return_with_new_click_is_accepted(self):

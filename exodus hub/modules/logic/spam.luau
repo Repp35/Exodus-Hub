@@ -289,13 +289,17 @@ local function run(token, mode, rate, U, R, G, A, D)
         and canSend() then
 
         send(1)
-        credit = -1
+        credit = 0
     end
 
     -- main loop
 
+    local previous = os.clock()
     while active() do
-        local dt = heartbeat:Wait()
+        heartbeat:Wait()
+        local now = os.clock()
+        local dt = math.max(0, now - previous)
+        previous = now
 
         if not active() then break end
 
