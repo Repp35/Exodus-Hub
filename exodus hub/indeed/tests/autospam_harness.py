@@ -64,6 +64,7 @@ local st={begin=function(id,t) stats={partnerId=id,startedAt=t,frozen=false} end
 local d={tick=function() end,getEstimate=function(id) return dashSamples[id] end}
 RaycastParams={new=function() return {} end}; Enum={RaycastFilterType={Exclude=1}}
 local r={fireParry=function(_,guard) if not guard() then return false,'Deflect cancelado' end clicks=clicks+1;return true end}
+r.fireNativeParry=function(guard) return r.fireParry(1,guard) end
 '''
 API = '''
 assert(ap.setup({Utils=u,GameInfo=g,Cooldown=c,ClashStats=st,Dash=d,AutoParry=defender}))

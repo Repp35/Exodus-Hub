@@ -28,11 +28,11 @@ packet(99,0,18);animationCatalog['777']='start';animate(99,777)
 assert(ap.isActive() and clicks>0,'new animation asset was missed')
 ''')
 
-    def test_start_loop_and_success_are_recognized(self):
+    def test_only_blockstart_triggers_prediction(self):
         for phase in (101,102,103):
             with self.subTest(phase=phase):
                 check(f'''g.getDeflectTargetPrediction=function() return 42 end
-packet(99,0,18);animate(99,{phase});assert(ap.isActive() and clicks>0)''')
+packet(99,0,18);animate(99,{phase});assert(ap.isActive()=={str(phase==101).lower()})''')
 
     def test_detach_releases_all_observers(self):
         check('''

@@ -76,8 +76,8 @@ stopped('cooldown')
             with self.subTest(reason=reason):
                 check("packet(42,0,2);"+action+";ap.canSend();stopped('"+reason+"')")
 
-    def test_distance_uses_its_own_continuous_timer(self):
-        check("packet(42,0,2);other.root.Position=v(36);ap.canSend();heartbeat(.249);assert(ap.isActive());heartbeat(.002);ap.canSend();stopped('clash_distance')")
+    def test_distance_alone_does_not_stop_auto_spam(self):
+        check("packet(42,0,2);other.root.Position=v(36);ap.canSend();heartbeat(.249);assert(ap.isActive());heartbeat(.002);assert(ap.canSend());assert(ap.isActive())")
 
     def test_invalid_samples_pause_without_restarting_or_clicking(self):
         for mutation in ("snap.syncSpeed=-1","snap.syncSpeed=1001","snap.syncSpeed=math.huge","snap.syncSpeed=0/0",

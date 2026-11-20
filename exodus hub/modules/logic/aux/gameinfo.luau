@@ -519,13 +519,13 @@ function GameInfo.getDeflectTargetPrediction(id)
       if candidate:GetAttribute("IsCloaked") ~= true then candidates[#candidates + 1] = { player = candidate, root = position } end
     end
   end
-  if #candidates == 1 then return candidates[1].player.UserId, 1, 1, "single_candidate" end
   local camera = source:GetAttribute("CamCFrame"); local observed = typeof(camera) == "CFrame"
   if not observed then camera = root.CFrame end
   if typeof(camera) ~= "CFrame" then return nil end
   local origin, look = camera.Position, camera.LookVector
   if (origin - root.Position).Magnitude > 64 then origin = root.Position end
   if not finiteVector(origin) or not finiteVector(look) or look.Magnitude < 0.5 then return nil end
+  if #candidates == 1 then return candidates[1].player.UserId, 1, 1, "single_candidate" end
   look = look.Unit; local winner, best, runner = nil, -math.huge, -math.huge
   for _, entry in ipairs(candidates) do
     local candidate, position = entry.player, entry.root; local delta = position.Position - origin
@@ -534,7 +534,11 @@ function GameInfo.getDeflectTargetPrediction(id)
       if score > best then winner, runner, best = candidate.UserId, best, score elseif score > runner then runner = score end
     end
   end
-  if winner then return winner, best, best - runner, observed and "camera" or "root" end
+  if winner then
+    local separation = best - runner
+    if separation < (observed and 0.03 or 0.15) or (not observed and best < 0.5) then return nil, best, separation, "aim_uncertain" end
+    return winner, best, separation, observed and "camera" or "root"
+  end
   return nil
 end
 function GameInfo.getPlayerDistance(id)

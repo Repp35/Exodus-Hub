@@ -2,7 +2,7 @@
 
 -- code
 local Dynamic = {}
-local utils, gameInfo, autoSpam, remote
+local utils, gameInfo, cooldownInfo, remote
 local connections, uiConnections = {}, {}
 local binding, session, held, pressedAt, protectedUntil
 local editing = false
@@ -23,6 +23,34 @@ local function stop()
   active, session = false, nil
   if utils then utils.setDynamicSpamActive(false) end
 end
+local function finite(x) return type(x) == "number" and x == x and x > -math.huge and x < math.huge end
+local function cooldownExpired(time)
+  local cd = cooldownInfo.getDeflectCooldownState()
+  if not cd or cd.source == "unknown" or cd.blocking ~= true or cd.predictedReset == true then session.cooldownSince, session.cooldownEpisode = nil, nil; return false end
+  if finite(cd.lastParriedAt) and cd.lastParriedAt ~= session.cooldownParriedAt then session.cooldownParriedAt, session.cooldownSince = cd.lastParriedAt, time end
+  if not session.cooldownSince or (cd.episode ~= nil and session.cooldownEpisode ~= cd.episode) then
+    session.cooldownSince = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time; session.cooldownEpisode = cd.episode
+  end
+  local s = gameInfo.getSnapshotAt(time); local speed = s and (s.syncSpeed ~= nil and s.syncSpeed or s.speed)
+  speed = finite(speed) and math.clamp(speed, 0, 1000) or 0; local low, high = gameInfo.getBallSpeedLimits()
+  local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local near = false
+  for _, player in ipairs(utils.getPlayers():GetPlayers()) do
+    local character = player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local position = player.UserId ~= utils.getLocalPlayer().UserId and gameInfo.getPlayerMotion(player.UserId); local lives = player:GetAttribute("Lives")
+    if
+      position
+      and humanoid
+      and humanoid.Health > 0
+      and player:GetAttribute("Playing") ~= false
+      and (not finite(lives) or lives > 0)
+      and (position - session.root.Position).Magnitude <= 10 + 6 * progress
+    then
+      near = true; break
+    end
+  end
+  local ping = gameInfo.getAveragePing(); local latency = finite(ping) and math.clamp(ping * 0.5, 0, 0.25) or 0
+  local limit = 0.225 - 0.125 * progress + latency + (near and 0.12 or 0); return time - session.cooldownSince >= limit
+end
 local function matches(input)
   local key = utils.getConfigValue("DynamicParryKey"); return key ~= nil and key ~= Enum.KeyCode.Unknown and (input.KeyCode == key or input.UserInputType == key)
 end
@@ -33,7 +61,8 @@ local function press(input)
   remote.fireNativeParry(function() return enabled() and epoch == owner end)
   task.delay(0.18, function()
     if epoch ~= owner or not held or not enabled() then return end
-    session = autoSpam.createManualSession()
+    local player = utils.getLocalPlayer(); local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart"); session = root and { character = character, root = root }
     if not session then return end
     local ping = gameInfo.getAveragePing(); protectedUntil = os.clock() + 0.3 + math.max(0, tonumber(ping) or 0)
     active = true; utils.setDynamicSpamActive(true)
@@ -148,18 +177,18 @@ function Dynamic.canSend()
   if not enabled() or not utils.isDynamicSpamActive() then stop(); return false end
   local player = utils.getLocalPlayer(); local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
   if not humanoid or humanoid.Health <= 0 then stop(); return false end
+  if not session or player.Character ~= session.character or not session.root.Parent or not session.character.Parent then stop(); return false end
   if utils.getConfigValue("DynamicParryDeactivation") ~= false then
-    local reason, allowed = autoSpam.getManualStopReason(session, protectedUntil)
-    if reason then
-      if reason ~= "player_died" and reason ~= "match_player_died" and reason ~= "opponent_left_or_died" then lastStopReason = reason end
-      stop(); return false
+    local time = os.clock(); local expired = cooldownExpired(time)
+    if expired and time >= (protectedUntil or 0) then
+      lastStopReason = "cooldown"; stop()
+      return false
     end
-    return allowed ~= false
   end
   return true
 end
 function Dynamic.setup(deps)
-  Dynamic.teardown(); utils, gameInfo, autoSpam, remote = deps.Utils, deps.GameInfo, deps.AutoSpam, deps.Remote
+  Dynamic.teardown(); utils, gameInfo, cooldownInfo, remote = deps.Utils, deps.GameInfo, deps.Cooldown, deps.Remote
   local input = game:GetService("UserInputService")
   connect(connections, input.InputBegan, function(event, processed)
     local desktop = input.KeyboardEnabled or input.MouseEnabled or not input.TouchEnabled or utils.getConfigValue("ForcePCUI") == true
@@ -226,7 +255,7 @@ end
 function Dynamic.teardown()
   epoch += 1; held = nil
   stop(); restore()
-  disconnect(connections); utils, gameInfo, autoSpam, remote = nil, nil, nil, nil
+  disconnect(connections); utils, gameInfo, cooldownInfo, remote = nil, nil, nil, nil
 end
 function Dynamic.getStatus()
   return { active = active, held = held ~= nil, protectedUntil = protectedUntil, attached = binding ~= nil, lastStopReason = lastStopReason }
@@ -235,13 +264,13 @@ Dynamic.__contract = {
   requires = {
     Utils = "utils",
     GameInfo = "gameinfo",
-    AutoSpam = "autospam",
+    Cooldown = "cooldown",
     Remote = "remote",
   },
   requiresMethods = {
-    Utils = { "setDynamicSpamActive", "isDynamicSpamActive", "getConfigValue", "isActive", "getLocalPlayer", "getRunService", "observeConfig" },
-    GameInfo = { "getDeflectAbility", "getAveragePing", "getNativeButtonAnimations" },
-    AutoSpam = { "createManualSession", "getManualStopReason" },
+    Utils = { "setDynamicSpamActive", "isDynamicSpamActive", "getConfigValue", "isActive", "getLocalPlayer", "getPlayers", "getRunService", "observeConfig" },
+    GameInfo = { "getDeflectAbility", "getAveragePing", "getNativeButtonAnimations", "getSnapshotAt", "getBallSpeedLimits", "getPlayerMotion" },
+    Cooldown = { "getDeflectCooldownState" },
     Remote = { "fireNativeParry" },
   },
   provides = { "setup", "teardown", "canSend", "getStatus" },

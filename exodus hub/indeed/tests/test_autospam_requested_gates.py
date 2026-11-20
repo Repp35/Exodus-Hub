@@ -11,12 +11,11 @@ other.root.Position=v(10); packet(99,.01,5)
 assert(ap.isActive()); assert(ap.getActivationContext().partner==99)
 ''')
 
-    def test_auto_has_no_opponent_distance_exit_and_dynamic_keeps_its_own(self):
+    def test_auto_has_no_opponent_distance_exit(self):
         check('''
 packet(42,0,5);packet(99,.01,5);packet(42,.01,5)
-local session=ap.createManualSession(); other.root.Position=v(40)
-assert(ap.getManualStopReason(session,0)==nil)
-heartbeat(.26); assert(ap.isActive()); assert(ap.getManualStopReason(session,0)=='clash_distance')
+other.root.Position=v(40)
+heartbeat(.26); assert(ap.isActive())
 ''')
 
     def test_cooldown_near_boundary_updates_while_blocked(self):
@@ -36,14 +35,16 @@ cd.blocking=true;ap.canSend();advance({0.24 if speed == 16 else 0.15});snap.sync
 assert(ap.canSend()=={str(stays_active).lower()})
 ''')
 
-    def test_target_return_timeout_is_independent_of_cooldown(self):
+    def test_outbound_target_does_not_stop_without_cooldown(self):
         check('''
 packet(42,0,5);packet(99,.01,5); assert(ap.isActive())
 advance(.21); snap.syncAt=tm; assert(ap.canSend())
-advance(.02); snap.syncAt=tm; assert(not ap.canSend()); stopped('target_return_timeout')
+advance(1); snap.syncAt=tm; assert(ap.canSend()); assert(ap.isActive())
+cd.blocking=true;cd.blockingSince=tm;ap.canSend()
+advance(.3);snap.syncAt=tm;assert(not ap.canSend());stopped('cooldown')
 ''')
 
-    def test_target_return_resets_timer_and_new_episode_is_independent(self):
+    def test_target_switches_do_not_create_a_stop_timer(self):
         check('''
 packet(42,0,5);packet(99,.01,5);advance(.18);packet(42,0,5)
 advance(.1);packet(99,0,5);advance(.15);snap.syncAt=tm
@@ -56,12 +57,12 @@ packet(42,0,5);ap.stopSpam('stop_spam');assert(not ap.isActive())
 packet(99,.01,10);packet(42,.50,10);assert(ap.isActive())
 ''')
 
-    def test_visual_return_without_network_target_or_partner(self):
+    def test_visual_target_without_round_trip_does_not_activate_return(self):
         check('''
 snap.targetUncertain=true;snap.targetId=-1;snap.position=v(10)
 snap.targetSignals={known=false,signals={{name='ball.targetColor',available=true,targeted=true}}}
-heartbeat(.01); assert(ap.isActive(),ap.getStatus().gates.returnTarget)
-assert(ap.getActivationContext().partner==-1); assert(clicks>0)
+heartbeat(.01); assert(not ap.isActive())
+assert(ap.getStatus().gates.returnTarget=='return_no_round_trip'); assert(clicks==0)
 ''')
 
     def test_prediction_requires_animation(self):
@@ -69,7 +70,7 @@ assert(ap.getActivationContext().partner==-1); assert(clicks>0)
 g.getDeflectTargetPrediction=function() return 42 end
 packet(42,0,10);packet(99,.01,10)
 assert(not ap.isActive(),'prediction fired without animation')
-animate(99,103); assert(ap.isActive(),ap.getStatus().gates.prediction)
+animate(99,101); assert(ap.isActive(),ap.getStatus().gates.prediction)
 assert(ap.getActivationContext().reason=='extreme_return_prediction')
 ''')
 

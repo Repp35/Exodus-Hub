@@ -72,14 +72,14 @@ function Geometry.getPlayerRawRadius(id, speed, includePing)
   if not finite(latency) or latency < 0 then latency = 0 end
   return range + (finite(speed) and math.max(0, speed) * latency or 0)
 end
-function Geometry.getDeflectWindow(speed, includeResilience)
+function Geometry.getDeflectWindow(speed, includeResilience, playerId)
   local low, high = gameInfo.getBallSpeedLimits(); local gameBall = gameInfo.getDefenseSource()
   if not finite(speed) then
     local sync = gameInfo.getSyncData()
     if sync and finite(sync.Speed) then speed = sync.Speed end
   end
   if not finite(speed) or high <= low then return nil end
-  local window = CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer
+  local window = CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = playerId and players:GetPlayerByUserId(playerId) or players.LocalPlayer
   local inClash = false
   if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
   if inClash and type(gameBall.GetClashMinWindow) == "function" then
@@ -165,11 +165,11 @@ function Geometry.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
     windowFactor = factor,
   }
 end
-function Geometry.getAutoParryGeometry(speed, factor, frameLead, latencyOverride)
+function Geometry.getAutoParryGeometry(speed, factor, frameLead, latencyOverride, playerId)
   if not validBallSpeed(speed) then return nil end
   local low, high = gameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or high <= low then return nil end
-  local window = Geometry.getDeflectWindow(speed, false); local range = Geometry.getDeflectRange()
+  local window = Geometry.getDeflectWindow(speed, false, playerId); local range = playerId and Geometry.getPlayerDeflectRange(playerId) or Geometry.getDeflectRange()
   if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
   if not finite(window) or window < 0 then return nil end
   local latency = finite(latencyOverride) and math.max(0, latencyOverride) or gameInfo.getAveragePing()

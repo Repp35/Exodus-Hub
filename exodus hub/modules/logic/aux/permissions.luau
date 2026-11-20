@@ -199,8 +199,6 @@ local POLICY_JSON = [=[
       "methods": {
         "canSend": "combat.runtime",
         "canSendManual": "combat.runtime",
-        "createManualSession": "combat.runtime",
-        "getManualStopReason": "combat.runtime",
         "stopSpam": "combat.runtime"
       }
     },

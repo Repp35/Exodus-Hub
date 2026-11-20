@@ -256,10 +256,14 @@ O envio usa `Remote.fireNativeParry`, independentemente de `ClickMethod`, para
 manter o fluxo e as animações nativas. A rajada usa o scheduler único de Spam,
 com estado independente de manual spam e AutoSpam.
 
-`AutoSpam.createManualSession()` cria o contexto manual independente e
-`getManualStopReason(session, protectedUntil)` avalia a política própria do
-Dynamic. `DynamicParryDeactivation` habilita suas saídas após 300 ms mais ping;
-a proteção não impede morte, reset ou desligamento.
+O Dynamic mantém sua própria sessão e consulta `Cooldown` diretamente, sem
+usar o estado, a configuração ou funções do AutoSpam. `DynamicParryDeactivation`
+habilita somente a saída automática por cooldown contínuo, após 300 ms mais ping.
+O limite varia com velocidade, latência e proximidade (10–16 studs), como no
+AutoSpam, mas os timers são independentes. Alvo, reset da bola e distância não
+encerram o Dynamic. Morte, desligamento e controles manuais continuam encerrando.
+O AutoSpam também não encerra por `target_return_timeout` nem por `ball_reset`;
+resets ainda limpam evidências para impedir ativações com dados de outra bola.
 
 ## Clique manual e controle
 
@@ -380,3 +384,42 @@ a referência do clash ativo sem compartilhar suas tabelas mutáveis.
 
 Filhos usam frames sem máscara intermediária, preservando bordas e strokes.
 Abertura/fechamento altera visibilidade e altura sem recortar o componente.
+
+### Gate de retorno do AutoSpam
+
+`return_target` exige a sequência de alvo local → adversário → local na mesma
+bola, com retorno em até 600 ms mais a compensação de latência já usada pelo
+módulo. A distância deve estar dentro do `fullRadius` calculado com window
+factor `0.8` no instante do retorno e na avaliação da ativação. Essa window é
+um limite espacial, não um substituto da sequência de alvo. Uma volta fora do
+raio não fica armada para ativar por aproximação posterior. A cor da bola só
+serve como fallback quando não existe alvo conhecido; sozinha não comprova
+uma ida e volta nem sobrescreve um alvo confirmado. O painel distingue
+`return_no_round_trip`, `return_expired` e `return_outside_window`.
+
+### Clash Prediction: armar e aguardar BlockStart
+
+A previsão usa apenas o jogador que é alvo atual da bola. Primeiro simula a
+geometria do AP no oponente, com o raio publicado daquele jogador, sua janela
+de clash, movimento e tempo até o contato. Se esse AP estaria pronto, prevê o
+alvo pela câmera (`CamCFrame`), respeitando equipes, invisibilidade e Dark Seal;
+a orientação do corpo é apenas fallback e exige maior separação entre alvos.
+Cabeça não substitui a câmera: no dump ela acompanha a câmera com interpolação.
+A câmera enviada no clique pode diferir da última câmera replicada, portanto a
+seleção continua sendo uma previsão, não uma confirmação do servidor.
+
+O retorno hipotético é testado contra o maior raio de ativação entre AP e
+retorno do AutoSpam, considerando movimento e atraso de percepção. A margem
+base é `max(220 ms, ping considerado pelo módulo) + 2 frames`, multiplicada por
+`AutoSpamPredictionMargin` (padrão `1`, slider de `0.5x` a `2x`). Os 220 ms são
+uma base de ajuste para o atraso observado em jogo, não uma medição automática.
+Esse fator altera somente a margem temporal do perigo; não modifica proximidade,
+raio, velocidade, window do gate de retorno ou o gatilho de animação.
+
+Passando as duas simulações, o painel mostra `armed_waiting_blockstart` sem
+enviar cliques. Somente um `BlockStart` recente do mesmo oponente e trecho da
+trajetória libera o spam, após revalidar alvo, mira, proximidade e perigo.
+`BlockLoop` e `Parry` não disparam prediction. O scan recupera um BlockStart
+perdido respeitando seu tempo real de reprodução; eventos que chegam logo antes
+da atualização do alvo podem ser associados à troca em até 40 ms. Reset,
+troca de alvo e desligamento invalidam o estado armado.

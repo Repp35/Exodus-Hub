@@ -56,5 +56,21 @@ near(ap.deflectWindow,.2);near(ap.effectiveWindow,.05+.2*.3+1/60)
 near(ap.fullRadius,10.5+600*ap.effectiveWindow)
 ''')
 
+    def test_opponent_geometry_uses_opponent_range_and_clash_window(self):
+        self.check('''
+local opponent={UserId=99,GetAttribute=function(_,key) if key=='DeflectRange' then return 12 end end}
+players.GetPlayerByUserId=function(_,id) if id==99 then return opponent elseif id==42 then return player end end
+local ball={IsInClash=function(_,p) return p==opponent end,
+ GetClashMinWindow=function() return .4 end,ApplyClashPressure=function(window,p) return window end}
+-- The pressure callback follows the native method signature.
+ball.ApplyClashPressure=function(_,window,p) assert(p==opponent);return window end
+data.getDefenseSource=function() return ball end
+local own=mod.getAutoParryGeometry(600,.4,0,0)
+local other=mod.getAutoParryGeometry(600,.4,0,0,99)
+near(own.noWindowParryRadius,10.5);near(other.noWindowParryRadius,12)
+near(own.deflectWindow,.2);near(other.deflectWindow,.4)
+assert(other.fullRadius>own.fullRadius)
+''')
+
 if __name__ == '__main__':
     unittest.main()
