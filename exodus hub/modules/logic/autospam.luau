@@ -290,8 +290,8 @@ local function solveReturn(state, s, time)
   local aimed, score, margin, source = gameInfo.getDeflectTargetPrediction(partner)
   if aimed ~= localPlayer.UserId then state.gates.prediction = "return_not_aimed_at_self"; return nil end
   if
-    (source == "camera" and finite(margin) and margin < 0.03)
-    or (source == "root" and (not finite(score) or score < 0.5 or not finite(margin) or margin < 0.15))
+    (source == "camera" and (not finite(score) or score < 0.75 or not finite(margin) or margin < 0.03))
+    or (source == "root" and (not finite(score) or score < 0.9 or not finite(margin) or margin < 0.15))
   then
     state.gates.prediction = "return_aim_uncertain"; return nil
   end
@@ -304,19 +304,22 @@ local function solveReturn(state, s, time)
   local opponentGeometry = deflectGeometry.getAutoParryGeometry(speed, apFactor, frameLead(state), 0, partner)
   local ownGeometry = deflectGeometry.getAutoParryGeometry(speed, apFactor, frameLead(state), networkLatency() * 2, localPlayer.UserId)
   if not finite(otherRadius) or not finite(ownRadius) or not opponentGeometry or not ownGeometry then return nil end
+  local delay, factor = predictionMargin(state); local gap = (other - own).Magnitude
+  local dangerRadius = deflectGeometry.projectRadius(otherRadius, speed, math.min(delay, g.effectiveWindow), 1, networkLatency())
+  local killRadius = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
+  if not finite(dangerRadius) or not finite(killRadius) then return nil end
+  if gap > dangerRadius or math.max(0, gap - killRadius) / speed > delay then state.gates.prediction = "pair_has_reaction_time"; return nil end
   local opponentTrigger = otherRadius + opponentGeometry.fullRadius - opponentGeometry.noWindowParryRadius
   local contactLead = math.min(opponentGeometry.effectiveWindow, 0.08 + networkLatency(), 0.16)
   local danger = deflectGeometry.getDanger(position, velocity, other, speed, otherRadius, contactLead, motion)
   if (position - other).Magnitude > opponentTrigger or not danger or not danger.ready or not finite(danger.entryTime) then state.gates.prediction = "opponent_not_ready"; return nil end
+  if (position - other).Magnitude > 0.1 and (not finite(danger.closingSpeed) or danger.closingSpeed <= 0) then state.gates.prediction = "ball_leaving_opponent"; return nil end
   local arrival = math.max(0, danger.entryTime); local contact = position + velocity * arrival
   local ownMotion = vector(state.root.AssemblyLinearVelocity) and state.root.AssemblyLinearVelocity or Vector3.zero; local futureOwn = own + ownMotion * arrival
   local delta = futureOwn - contact
   if delta.Magnitude <= 0.001 then state.gates.prediction = "return_geometry_invalid"; return nil end
-  local returnVelocity = delta / delta.Magnitude * speed; local delay, factor = predictionMargin(state)
-  local ownTrigger = ownRadius + ownGeometry.fullRadius - ownGeometry.noWindowParryRadius; local returnTrigger = ownRadius
-  local returnDanger = deflectGeometry.getDanger(contact, returnVelocity, futureOwn, speed, returnTrigger, delay, ownMotion)
-  local killRadius = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
-  if not finite(killRadius) then return nil end
+  local returnVelocity = delta / delta.Magnitude * speed; local ownTrigger = ownRadius + ownGeometry.fullRadius - ownGeometry.noWindowParryRadius
+  local returnTrigger = ownRadius; local returnDanger = deflectGeometry.getDanger(contact, returnVelocity, futureOwn, speed, returnTrigger, delay, ownMotion)
   local lethalReturnTime = math.max(0, delta.Magnitude - killRadius) / speed
   if not returnDanger or not returnDanger.ready or arrival + lethalReturnTime > delay then state.gates.prediction = "return_has_reaction_time"; return nil end
   local returnTime = math.max(0, delta.Magnitude - ownRadius) / speed
@@ -332,6 +335,7 @@ local function solveReturn(state, s, time)
     reactionMargin = delay,
     marginFactor = factor,
     opponentTriggerRadius = opponentTrigger,
+    pairDangerRadius = dangerRadius,
     returnTriggerRadius = returnTrigger,
     deadline = time + arrival + returnTime + delay,
     aimSource = source,

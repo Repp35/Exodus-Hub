@@ -440,3 +440,10 @@ O BlockStart precisa ter idade inferior a `120 ms + latência` (máximo 250 ms),
 e o contato deve ocorrer antes de sua validade expirar. Estar tocando não
 renova essa evidência. O fator de margem não altera esses limites de contato
 ou idade da animação. São estimativas locais que precisam de validação em jogo.
+
+A previsão também exige alinhamento absoluto mínimo de 0.75 pela câmera ou
+0.9 no fallback do corpo, além da separação entre os melhores candidatos.
+Ser apenas o candidato mais alinhado não basta. A distância da dupla precisa
+caber no raio de perigo calculado pela velocidade e window 0.3, e seu tempo
+estimado até a área de acerto deve caber na margem. Uma bola já se afastando
+do oponente é recusada mesmo se ainda estiver dentro do raio físico dele.

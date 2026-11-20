@@ -536,7 +536,7 @@ function GameInfo.getDeflectTargetPrediction(id)
   end
   if winner then
     local separation = best - runner
-    if separation < (observed and 0.03 or 0.15) or (not observed and best < 0.5) then return nil, best, separation, "aim_uncertain" end
+    if best < (observed and 0.75 or 0.9) or separation < (observed and 0.03 or 0.15) then return nil, best, separation, "aim_uncertain" end
     return winner, best, separation, observed and "camera" or "root"
   end
   return nil

@@ -114,7 +114,7 @@ g.getDeflectTargetPrediction=function() return 42 end
 snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16);other.root.Position=v(13)
 packet(99,0,21.5);animate(99,101)
 assert(not ap.isActive() and not ap.getStatus().predictionArmed)
-assert(ap.getStatus().gates.prediction=='return_has_reaction_time')
+assert(ap.getStatus().gates.prediction=='pair_has_reaction_time')
 ''')
 
     def test_blockstart_must_be_recent_not_merely_still_playing(self):
@@ -130,4 +130,17 @@ g.getDeflectTargetPrediction=function() return 42 end
 snap.syncSpeed=83;snap.speed=83;snap.velocity=v(-83)
 packet(99,0,32);animate(99,101)
 assert(not ap.isActive() and not ap.getStatus().predictionArmed)
+''')
+
+    def test_mira_requires_old_absolute_alignment_thresholds(self):
+        for source,score,active in [('camera',.74,False),('camera',.75,True),('root',.89,False),('root',.9,True)]:
+            with self.subTest(source=source,score=score):
+                check(f"g.getDeflectTargetPrediction=function() return 42,{score},.2,'{source}' end;packet(99,0,18);animate(99,101);assert(ap.isActive()=={str(active).lower()})")
+
+    def test_ball_already_leaving_opponent_cannot_predict_from_overlap(self):
+        check('''
+g.getDeflectTargetPrediction=function() return 42,1,.2,'camera' end
+snap.velocity=v(-600);packet(99,0,9);animate(99,101)
+assert(not ap.isActive() and not ap.getStatus().predictionArmed)
+assert(ap.getStatus().gates.prediction=='ball_leaving_opponent')
 ''')
