@@ -31,6 +31,7 @@ local cd={blocking=false,miss=false,source='local'}
 local cfg={AutoSpam=true,SpamRateMode='CPS',CPS=24};local enabled,manual,auto=true,false,false
 local wall,frozen=false,false;local dashSamples={};local clicks=0;local transitions={}
 local world={attrs={MatchStatus=6},changed=signal()}
+function world:GetServerTimeNow() return tm end
 function world:GetAttribute(key) return self.attrs[key] end
 function world:GetAttributeChangedSignal() return self.changed end
 function world:Raycast() return wall and {} or nil end

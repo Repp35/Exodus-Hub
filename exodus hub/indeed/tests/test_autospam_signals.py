@@ -38,7 +38,7 @@ packet(99,0,18);animate(99,{phase});assert(ap.isActive()=={str(phase==101).lower
         check('''
 packet(42,0,2);ap.detachCharacter()
 assert(not ap.canSend() and next(tracked)==nil,'detached character retained observers')
-assert(ap.bindCharacter(me.Character));packet(42,.03,2)
+assert(ap.bindCharacter(me.Character));packet(42,.01,50);packet(99,.01,50);packet(42,.03,2)
 assert(ap.isActive(),'rebind did not recover')
 ''')
 

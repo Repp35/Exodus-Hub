@@ -408,13 +408,11 @@ Cabeça não substitui a câmera: no dump ela acompanha a câmera com interpola�
 A câmera enviada no clique pode diferir da última câmera replicada, portanto a
 seleção continua sendo uma previsão, não uma confirmação do servidor.
 
-O retorno hipotético é testado contra o maior raio de ativação entre AP e
-retorno do AutoSpam, considerando movimento e atraso de percepção. A margem
-base é `max(220 ms, ping considerado pelo módulo) + 2 frames`, multiplicada por
-`AutoSpamPredictionMargin` (padrão `1`, slider de `0.5x` a `2x`). Os 220 ms são
-uma base de ajuste para o atraso observado em jogo, não uma medição automática.
-Esse fator altera somente a margem temporal do perigo; não modifica proximidade,
-raio, velocidade, window do gate de retorno ou o gatilho de animação.
+O retorno hipotético é testado contra a região física de acerto. A margem
+base é 240 ms mais a latência de uma via, multiplicada por
+`AutoSpamPredictionMargin` (padrão `1`, slider de `0.5x` a `2x`).
+Esse fator altera somente a margem temporal do perigo, sem ampliar o prazo de
+contato nem a validade da animação.
 
 Passando as duas simulações, o painel mostra `armed_waiting_blockstart` sem
 enviar cliques. Somente um `BlockStart` recente do mesmo oponente e trecho da
@@ -430,3 +428,15 @@ impedindo reativação a partir do mesmo retorno após uma parada.
 
 A evidência de ida e volta exige alvos confirmados nas três etapas. Cor visual
 sozinha não confirma posse nem cria uma ida ou uma volta para este gate.
+
+### Refinamento da previsão baseado na primeira implementação com animação
+
+A decisão de perigo não usa mais o maior raio expandido entre AP e AutoSpam.
+O retorno precisa alcançar a região física de acerto, considerando contato e
+trajetória de devolução, dentro de `(240 ms + latência de uma via) × fator`.
+A geometria do AP do oponente continua sendo exigida, mas o contato também deve
+ser iminente: no máximo `80 ms + latência`, limitado a 160 ms e à janela do AP.
+O BlockStart precisa ter idade inferior a `120 ms + latência` (máximo 250 ms),
+e o contato deve ocorrer antes de sua validade expirar. Estar tocando não
+renova essa evidência. O fator de margem não altera esses limites de contato
+ou idade da animação. São estimativas locais que precisam de validação em jogo.

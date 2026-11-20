@@ -55,7 +55,7 @@ assert(not ap.isActive() and not ap.getStatus().predictionArmed)''')
             with self.subTest(factor=factor):
                 check(f'''g.getDeflectTargetPrediction=function() return 42 end
 cfg.AutoSpamPredictionMargin={factor}
-snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16);other.root.Position=v(13)
+snap.syncSpeed=83;snap.speed=83;snap.velocity=v(-83);other.root.Position=v(13)
 packet(99,0,21.5);animate(99,101)
 assert(ap.isActive()=={str(active).lower()},tostring(ap.getStatus().gates.prediction))
 ''')
@@ -106,4 +106,28 @@ packet(99,0,18);animate(99,101);assert(ap.isActive())
 assert(not ap.getStatus().predictionArmed)
 ap.stopSpam('stop_spam');animate(99,101);heart:Fire()
 assert(not ap.isActive())
+''')
+
+    def test_slow_safe_return_does_not_arm_even_inside_expanded_ap_radius(self):
+        check('''
+g.getDeflectTargetPrediction=function() return 42 end
+snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16);other.root.Position=v(13)
+packet(99,0,21.5);animate(99,101)
+assert(not ap.isActive() and not ap.getStatus().predictionArmed)
+assert(ap.getStatus().gates.prediction=='return_has_reaction_time')
+''')
+
+    def test_blockstart_must_be_recent_not_merely_still_playing(self):
+        check('''
+g.getDeflectTargetPrediction=function() return 42 end
+packet(99,0,18);animate(99,101,.2,1,false);heartbeat(.016)
+assert(not ap.isActive() and ap.getStatus().gates.prediction=='armed_waiting_blockstart')
+''')
+
+    def test_opponent_click_window_alone_is_not_imminent_contact(self):
+        check('''
+g.getDeflectTargetPrediction=function() return 42 end
+snap.syncSpeed=83;snap.speed=83;snap.velocity=v(-83)
+packet(99,0,32);animate(99,101)
+assert(not ap.isActive() and not ap.getStatus().predictionArmed)
 ''')

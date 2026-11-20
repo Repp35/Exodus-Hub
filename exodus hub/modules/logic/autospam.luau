@@ -31,7 +31,7 @@ local CONFIG = {
     PACKET_CACHE_AGE = 0.2,
     HISTORY_MAX_AGE = 0.75,
     PHYSICAL_EXIT_DELAY = 0.12,
-    PREDICTION_OBSERVATION_DELAY = 0.22,
+    PREDICTION_OBSERVATION_DELAY = 0.24,
   },
 }
 
@@ -263,11 +263,12 @@ local function autoHardStop(state, s)
 end
 local function predictionMargin(state)
   local factor = tonumber(utils.getConfigValue("AutoSpamPredictionMargin")); factor = finite(factor) and math.clamp(factor, 0.5, 2) or 1
-  local delay = math.max(CONFIG.TIMING.PREDICTION_OBSERVATION_DELAY, networkLatency() * 2) + frameLead(state) * 2; return delay * factor, factor
+  local delay = CONFIG.TIMING.PREDICTION_OBSERVATION_DELAY + networkLatency(); return delay * factor, factor
 end
 local function liveAttempt(state, partner, time)
   local sensor = state.sensors and state.sensors[partner]; local attempt = sensor and sensor.attempt
   if not attempt or attempt.phase ~= "start" or attempt.ball ~= state.ball or attempt.leg ~= state.leg or time < attempt.at or time > attempt.expiresAt then return nil end
+  if time - attempt.at > math.min(0.12 + networkLatency(), 0.25) then return nil end
   local playing = false
   for track in pairs(attempt.tracks) do
     if track.IsPlaying then playing = true; break end
@@ -282,7 +283,7 @@ local function solveReturn(state, s, time)
   if gate then state.gates.prediction = gate; return nil end
   local partner = observedTarget(s)
   if not partner or partner == localPlayer.UserId then return nil end
-  local g = geometry(s, 0.8)
+  local g = geometry(s, 0.3)
   if not g or not vector(s.position) then state.gates.prediction = "prediction_geometry_invalid"; return nil end
   if not nearPartner(state, partner, math.max(13, g.noWindowParryRadius)) then state.gates.prediction = "opponent_out_of_range"; return nil end
   if state.consumedLeg == state.leg then state.gates.prediction = "leg_consumed"; return nil end
@@ -304,16 +305,20 @@ local function solveReturn(state, s, time)
   local ownGeometry = deflectGeometry.getAutoParryGeometry(speed, apFactor, frameLead(state), networkLatency() * 2, localPlayer.UserId)
   if not finite(otherRadius) or not finite(ownRadius) or not opponentGeometry or not ownGeometry then return nil end
   local opponentTrigger = otherRadius + opponentGeometry.fullRadius - opponentGeometry.noWindowParryRadius
-  local danger = deflectGeometry.getDanger(position, velocity, other, speed, otherRadius, opponentGeometry.effectiveWindow, motion)
+  local contactLead = math.min(opponentGeometry.effectiveWindow, 0.08 + networkLatency(), 0.16)
+  local danger = deflectGeometry.getDanger(position, velocity, other, speed, otherRadius, contactLead, motion)
   if (position - other).Magnitude > opponentTrigger or not danger or not danger.ready or not finite(danger.entryTime) then state.gates.prediction = "opponent_not_ready"; return nil end
   local arrival = math.max(0, danger.entryTime); local contact = position + velocity * arrival
   local ownMotion = vector(state.root.AssemblyLinearVelocity) and state.root.AssemblyLinearVelocity or Vector3.zero; local futureOwn = own + ownMotion * arrival
   local delta = futureOwn - contact
   if delta.Magnitude <= 0.001 then state.gates.prediction = "return_geometry_invalid"; return nil end
   local returnVelocity = delta / delta.Magnitude * speed; local delay, factor = predictionMargin(state)
-  local ownTrigger = ownRadius + ownGeometry.fullRadius - ownGeometry.noWindowParryRadius; local returnTrigger = math.max(ownTrigger, g.fullRadius)
+  local ownTrigger = ownRadius + ownGeometry.fullRadius - ownGeometry.noWindowParryRadius; local returnTrigger = ownRadius
   local returnDanger = deflectGeometry.getDanger(contact, returnVelocity, futureOwn, speed, returnTrigger, delay, ownMotion)
-  if not returnDanger or not returnDanger.ready then state.gates.prediction = "return_has_reaction_time"; return nil end
+  local killRadius = deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics())
+  if not finite(killRadius) then return nil end
+  local lethalReturnTime = math.max(0, delta.Magnitude - killRadius) / speed
+  if not returnDanger or not returnDanger.ready or arrival + lethalReturnTime > delay then state.gates.prediction = "return_has_reaction_time"; return nil end
   local returnTime = math.max(0, delta.Magnitude - ownRadius) / speed
   local evidence = {
     partner = partner,
@@ -322,6 +327,8 @@ local function solveReturn(state, s, time)
     at = time,
     contactIn = arrival,
     returnIn = returnTime,
+    lethalReturnIn = lethalReturnTime,
+    contactLead = contactLead,
     reactionMargin = delay,
     marginFactor = factor,
     opponentTriggerRadius = opponentTrigger,
@@ -337,7 +344,9 @@ local function solveReturn(state, s, time)
   state.predictionEvidence, state.predictionArmed = evidence, evidence; local attempt = liveAttempt(state, partner, time)
   if not attempt then state.gates.prediction = "armed_waiting_blockstart"; return nil end
   if attempt.used then state.gates.prediction = "attempt_consumed"; return nil end
-  if time + arrival > attempt.expiresAt then state.gates.prediction = "attempt_expires_before_contact"; return nil end
+  if time + arrival > math.min(attempt.expiresAt, attempt.at + math.min(opponentGeometry.deflectWindow, 0.12 + networkLatency())) then
+    state.gates.prediction = "attempt_expires_before_contact"; return nil
+  end
   evidence.source, evidence.animationPhase = attempt.source, "start"; state.gates.prediction = "ready"
   return { reason = "extreme_return_prediction", partner = partner, prediction = evidence, attempt = attempt }
 end
