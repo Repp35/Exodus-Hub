@@ -119,6 +119,37 @@ local function run(token, mode, rate, U, R, G, A, D)
     if type(minimum) ~= "number" or minimum ~= minimum or minimum <= 0 or minimum == math.huge then minimum = 0.0301 end
     return (delay == nil or (type(delay) == "number" and delay == delay and delay <= 0)) and os.clock() - status.lastRequestAt >= minimum
   end
+  if mode == "CPF" then
+    local credit, frameId, frameDuration = 0, 0, 1 / 60
+    local lastSent, lastSpacing
+    while active() do
+      frameId += 1; local owner, started = frameId, os.clock()
+      credit += rate; local count = math.floor(credit)
+      credit -= count
+      if count > 0 then
+        local spacing = frameDuration / count; local expires = started + frameDuration
+        local function slot(index)
+          if owner ~= frameId or not active() then return end
+          local now = os.clock()
+          if now >= expires or index >= count then return end
+          local due = started + index * spacing
+          if now < due then task.delay(due - now, slot, index); return end
+          if (not lastSent or now - lastSent + 1e-9 >= math.max(spacing, lastSpacing or 0)) and canSend() then
+            local ok, err = pcall(send, 1)
+            if not ok then reportError(U, err); return end
+            lastSent, lastSpacing = os.clock(), spacing
+          end
+          local nextIndex = math.max(index + 1, math.floor((os.clock() - started) / spacing) + 1)
+          if nextIndex < count then task.delay(math.max(0, started + nextIndex * spacing - os.clock()), slot, nextIndex) end
+        end
+        slot(0)
+      end
+      local before = os.clock(); local dt = heartbeat:Wait()
+      local elapsed = os.clock() - before
+      if type(dt) == "number" and dt == dt and dt > 0 then frameDuration = dt elseif elapsed > 0 then frameDuration = elapsed end
+    end
+    frameId += 1; return
+  end
   local frameDuration = 1 / 60
   local function interval()
     local requested
