@@ -579,6 +579,17 @@ assert(not findDescendant(automatic,'AutoJump').Parent.Visible)
 _G.ExodusUICleanup();assert(listenerCount()==baseline and activeTweenCount()==0,'mobile cleanup leaked')
 ''')
 
+    def test_prediction_controls_follow_capability(self):
+        self.run_lua('''
+for _,enabled in ipairs({false,true}) do
+ local kit=newKit()
+ local pages=uipages.create(kit,panel,uiconfig.pages,{desktop=true,capabilities={clashPrediction=enabled}})
+ assert((pages.getControl('AutoSpamClashPrediction')~=nil)==enabled)
+ assert((pages.getControl('AutoSpamPredictionMargin')~=nil)==enabled)
+ pages.destroy();kit.destroy()
+end
+''')
+
     def test_schema_rejects_invalid_page_and_child_relationships(self):
         self.run_lua('''
 local kit=newKit()
