@@ -30,10 +30,10 @@ frame(.001);assert(count==3,'deadline used scheduled instead of actual dispatch 
 for i=2,#stamps do assert(stamps[i]-stamps[i-1]>=.05-1e-9) end
 ''')
 
-    def test_standard_native_minimum_spacing_applies_to_cps_ms_and_cpf(self):
+    def test_manual_rates_are_not_clamped_to_native_eight_ms(self):
         for mode, rate in (('CPS',1000),('MS',1),('CPF',20)):
             with self.subTest(mode=mode):
-                self.check(f"mode='{mode}';rate={rate};assert(mod.setup({{Utils=u,Remote=r,GameInfo=g,AutoSpam=a}}));for i=1,100 do frame(.001) end;for i=2,#stamps do assert(stamps[i]-stamps[i-1]>=.008-1e-9) end;assert(count>1)")
+                self.check(f"mode='{mode}';rate={rate};assert(mod.setup({{Utils=u,Remote=r,GameInfo=g,AutoSpam=a}}));for i=1,100 do frame(.001) end;for i=2,#stamps do assert(stamps[i]>stamps[i-1]) end;assert(count>13,'scheduler still clamps to eight milliseconds')")
 
     def test_cancellation_stops_queued_click(self):
         self.check("mode='CPS';rate=20;assert(mod.setup({Utils=u,Remote=r,GameInfo=g,AutoSpam=a}));assert(count==1);manual=false;frame(.1);assert(count==1)")
