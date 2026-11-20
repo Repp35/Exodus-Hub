@@ -25,3 +25,25 @@ values.Child=false;pages.refresh();finishTweens()
 assert(container.Size.Y.Offset==0 and not container.Visible,'collapsed child left empty space')
 kit.destroy()
 ''')
+
+    def test_nested_disclosures_preserve_control_opacity(self):
+        ui_tests.UILibraryTests().run_lua('''
+local values={Parent=false,Child=false}
+local kit=newKit({reducedMotion=false})
+local definitions={{id='main',title='Main',columns=1,sections={{components={
+ {kind='toggle',key='Parent'},
+ {kind='toggle',key='Child',parentKey='Parent'},
+ {kind='slider',key='Margin',parentKey='Child',min=.5,max=2,increment=.05},
+}}}}}
+local pages=uipages.create(kit,panel,definitions,{desktop=true,read=function(k) return values[k] end})
+local slider=pages.getControl('Margin').Root
+local original=slider.BackgroundTransparency
+for i=1,5 do
+ values.Parent=true;pages.refresh()
+ values.Child=true;pages.refresh()
+ values.Parent=false;pages.refresh()
+ values.Parent=true;pages.refresh();finishTweens()
+ assert(slider.BackgroundTransparency==original,'nested animation made slider transparent')
+end
+kit.destroy()
+''')
