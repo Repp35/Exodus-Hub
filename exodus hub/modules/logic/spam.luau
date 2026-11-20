@@ -247,66 +247,41 @@ local function run(token, mode, rate, U, R, G, A, D)
         ) and os.clock() - status.lastRequestAt >= minimum
     end
 
-    -- scheduler
-
-    local credit = 0
-
-    local function tick(dt)
-        if not canSend() then
-            credit = 0
-            return
-        end
-
+    -- One request per deadline. Late wakeups never become catch-up bursts.
+    local frameDuration = 1 / 60
+    local function interval()
+        local requested
         if mode == "Auto" then
-            if autoReady() then
-                send(1)
-            end
-            return
-        end
-
-        credit += mode == "CPF" and rate or rate * dt
-
-        local count = math.floor(credit)
-        credit -= count
-
-        if count > 0 then
-            send(count)
-        end
-    end
-
-    -- immediate activation
-
-    local skipFirstFrame = false
-
-    if mode == "CPF" then
-        tick(0)
-        skipFirstFrame = true
-
-    elseif mode == "Auto" then
-        tick(0)
-
-    elseif (U.isAutoSpamActive() or U.isDynamicSpamActive())
-        and canSend() then
-
-        send(1)
-        credit = 0
-    end
-
-    -- main loop
-
-    local previous = os.clock()
-    while active() do
-        heartbeat:Wait()
-        local now = os.clock()
-        local dt = math.max(0, now - previous)
-        previous = now
-
-        if not active() then break end
-
-        if skipFirstFrame then
-            skipFirstFrame = false
+            requested = G.getMinimumSpamInterval()
+            if type(requested) ~= "number" or requested ~= requested or requested <= 0 or requested == math.huge then requested = 0.0301 end
+        elseif mode == "CPF" then
+            requested = frameDuration / rate
         else
-            tick(dt)
+            requested = 1 / rate
+        end
+        local native = U.isDynamicSpamActive() or U.getConfigValue("ClickMethod") == "Deflect"
+        return math.max(native and 0.008 or 0, requested)
+    end
+    local nextAt = math.max(os.clock(), status.lastRequestAt > 0 and status.lastRequestAt + interval() or 0)
+    while active() do
+        local now = os.clock()
+        if now >= nextAt then
+            if canSend() and (mode ~= "Auto" or autoReady()) then
+                send(1)
+                nextAt = os.clock() + interval()
+            else
+                nextAt = now + interval()
+            end
+        end
+        if not active() then break end
+        if mode == "CPF" then
+            local before = os.clock()
+            local dt = heartbeat:Wait()
+            local elapsed = os.clock() - before
+            if type(dt) == "number" and dt == dt and dt > 0 then frameDuration = dt
+            elseif elapsed > 0 then frameDuration = elapsed end
+        else
+            task.wait(math.max(0, nextAt - os.clock()))
         end
     end
 end
