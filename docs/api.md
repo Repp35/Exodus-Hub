@@ -423,3 +423,10 @@ trajetória libera o spam, após revalidar alvo, mira, proximidade e perigo.
 perdido respeitando seu tempo real de reprodução; eventos que chegam logo antes
 da atualização do alvo podem ser associados à troca em até 40 ms. Reset,
 troca de alvo e desligamento invalidam o estado armado.
+
+A proximidade de até 5 studs também exige essa ida e volta válida; uma chegada
+comum não inicia AutoSpam. Ativar consome a evidência em ambos os gates,
+impedindo reativação a partir do mesmo retorno após uma parada.
+
+A evidência de ida e volta exige alvos confirmados nas três etapas. Cor visual
+sozinha não confirma posse nem cria uma ida ou uma volta para este gate.

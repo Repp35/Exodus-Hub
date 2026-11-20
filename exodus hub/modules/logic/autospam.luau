@@ -190,7 +190,7 @@ local function observeTarget(state, s, time, packet)
   if not packet and not (s.targetSignals and s.targetSignals.known) and not localColorTarget(s) then return end
   local target = observedTarget(s)
   if not target then return end
-  local previous = state.target
+  local previous, previousReceipt = state.target, state.receipt; local confirmed = not s.targetUncertain and targetOf(s) == target
   if previous == target then return end
   local me = localPlayer.UserId; state.leg = (state.leg or 0) + 1
   local sensor = state.sensors and state.sensors[target]; local attempt = sensor and sensor.attempt
@@ -209,16 +209,23 @@ local function observeTarget(state, s, time, packet)
     if partner and playerIsAlive(partner) then state.partner = partner end
   end
   local distance = vector(s.position) and (s.position - state.root.Position).Magnitude or nil
-  state.target, state.receipt = target, { target = target, at = time, position = s.position, distance = distance, leg = state.leg, color = localColorTarget(s) }
+  state.target, state.receipt =
+    target, { target = target, at = time, position = s.position, distance = distance, leg = state.leg, color = localColorTarget(s), confirmed = confirmed }
   state.pending, state.exchange = nil, nil
   if state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.lastSwitchAt = time
   if previous == me and target ~= me then
-    state.outbound = { partner = target, at = time }; state.previousOpponent = target
+    state.outbound = confirmed and previousReceipt and previousReceipt.confirmed and { partner = target, at = time } or nil; state.previousOpponent = target
     state.exchange = { partner = target, at = time }
   elseif target == me and previous and previous ~= me then
     local outbound = state.outbound
-    if outbound and outbound.partner == previous and time >= outbound.at and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency() then
+    if
+      confirmed
+      and outbound
+      and outbound.partner == previous
+      and time >= outbound.at
+      and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
+    then
       local h = state.confirmedReturns; local count = h and h.partner == previous and time - h.at <= CONFIG.TIMING.HISTORY_MAX_AGE and h.count + 1 or 1
       local returnGeometry = geometry(s, 0.8); state.confirmedReturns = { partner = previous, count = count, at = time }
       state.pending = {
@@ -404,8 +411,14 @@ local function chooseActivation(state, s, time)
     and not receipt.used
     and finite(receipt.distance)
     and receipt.distance <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+    and state.pending
+    and not state.pending.used
+    and state.pending.leg == state.leg
+    and state.pending.inWindow
+    and time >= state.pending.at
+    and time - state.pending.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
   then
-    state.gates.close = "ready"; return { reason = "close_target", closeReceipt = receipt }
+    state.gates.close = "ready"; return { reason = "close_target", partner = state.pending.partner, pending = state.pending, closeReceipt = receipt }
   end
   if utils.getConfigValue("AutoSpamClashPrediction") ~= false then
     local candidate = solveReturn(state, s, time)
