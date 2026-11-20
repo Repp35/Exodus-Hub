@@ -130,7 +130,7 @@ local function run(token, mode, rate, U, R, G, A, D)
     else
       requested = 1 / rate
     end
-    local native = U.isDynamicSpamActive() or U.getConfigValue("ClickMethod") == "Deflect"; return math.max(native and 0.008 or 0, requested)
+    return requested
   end
   local nextAt = math.max(os.clock(), status.lastRequestAt > 0 and status.lastRequestAt + interval() or 0)
   while active() do
