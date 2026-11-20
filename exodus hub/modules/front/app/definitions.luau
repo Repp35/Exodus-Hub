@@ -31,7 +31,6 @@ local CONFIG = {
               description = "Sensibilidade da margem de perigo. 1x mantém a margem base.",
               key = "AutoSpamPredictionMargin",
               parentKey = "AutoSpamClashPrediction",
-              requiresCapability = "clashPrediction",
               min = 0.5,
               max = 2,
               increment = 0.05,
