@@ -78,22 +78,19 @@ end
 local function notifyCritical(moduleName)
   notifyPersistent(("Critical error in %s. Check the console."):format(tostring(moduleName or "the hub")), "critical", "critical")
 end
-local updater
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 
 -- configuration
 local CONFIG = {
-  DELIVERY_BASE_URL = "https://repp35.github.io/Exodus-v2/",
-  MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
+  REPOSITORY_URL = "https://raw.githubusercontent.com/Repp35/Exodus-v2/",
+  HEAD_URL = "https://api.github.com/repos/Repp35/Exodus-v2/git/ref/heads/main",
   DOWNLOAD_WORKERS = 12,
   REQUEST_TIMEOUT = 8,
   MAX_PENDING_REQUESTS = 24,
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
-  AUTHORIZATION_PATH = "security/entitlements.luau",
   MODULES = {
-    { name = "updater", path = "modules/core/updater.luau" },
     { name = "status", path = "modules/core/status.luau" },
     { name = "runtime", path = "modules/core/runtime.luau" },
     { name = "permissions", path = "modules/logic/aux/permissions.luau" },
@@ -155,9 +152,8 @@ local CONFIG = {
 }
 
 local PROJECT_PATH = CONFIG.PROJECT_PATH
-local AUTHORIZATION_PATH = CONFIG.AUTHORIZATION_PATH
-local BASE_URL = CONFIG.DELIVERY_BASE_URL
-local MANIFEST_URL = CONFIG.MANIFEST_URL
+local BASE_URL = CONFIG.REPOSITORY_URL
+local HEAD_URL = CONFIG.HEAD_URL
 local HttpService = game:GetService("HttpService")
 local cacheSequence = 0
 local function cacheBuster()
@@ -271,35 +267,6 @@ local function request(url, headers)
   local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message, lastMeta
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
-local releaseSignatures
-local function fingerprint(source)
-  local a, b = 1, 0
-  for i = 1, #source do
-    a = (a + string.byte(source, i)) % 65521; b = (b + a) % 65521
-  end
-  return string.format("%04x%04x", b, a)
-end
-local function signatureFor(path) return type(releaseSignatures) == "table" and releaseSignatures["exodus hub/" .. path] or nil end
-local function signatureValid(value) return type(value) == "string" and #value == 8 and value:match("^[%x]+$") ~= nil end
-local sourceCache = type(_G.ExodusSourceCache) == "table" and _G.ExodusSourceCache or {}
-_G.ExodusSourceCache = sourceCache
-local function cachedSource(path, signature)
-  local source = sourceCache[path]
-  if type(source) == "string" and fingerprint(source) == signature then return source end
-  sourceCache[path] = nil; return nil
-end
-local function sameRuntimeSignatures(left, right)
-  if type(left) ~= "table" or type(right) ~= "table" then return false end
-  local function matches(path)
-    local a, b = left[path], right[path]; return signatureValid(a) and signatureValid(b) and a == b
-  end
-  if not matches("exodus hub/loader.luau") then return false end
-  for _, entry in ipairs(MODULE_MANIFEST) do
-    if not matches("exodus hub/" .. entry.path) then return false end
-  end
-  return true
-end
-
 -- registry
 local function register(name, module)
   Modules[name] = module; return module
@@ -324,7 +291,12 @@ local function cleanupCall(name, action)
   return ok and result ~= false, result
 end
 local function stopPreviousRuntime()
-  local clean = true; updater.stop()
+  local clean = true
+  -- Stop any update channel left by a previously loaded version.
+  local stop = _G.ExodusUpdateStop
+  if type(stop) == "function" then pcall(stop) end
+  _G.ExodusUpdateStop = nil; _G.ExodusUpdateToken = nil
+  _G.ExodusSourceCache = nil; _G.ExodusRequestedRevision = nil
   local function attempt(name, action)
     local ok, result = cleanupCall(name, action)
     if not ok and name ~= "invisicam" then clean = false end
@@ -383,13 +355,16 @@ local function execute(name, chunk)
   return module
 end
 local function resolveLatestRevision()
-  local body, requestError, requestMeta =
-    request(MANIFEST_URL .. "?exodus_cache=" .. cacheBuster(), { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" })
-  if body then
-    local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.revision
-    if validRevision(sha) and type(document.signatures) == "table" then return sha, nil, nil, document.signatures end
-  end
-  return nil, requestError or "manifesto de versão indisponível", requestMeta
+  local body, requestError = request(HEAD_URL .. "?exodus_cache=" .. cacheBuster(), {
+    ["Accept"] = "application/vnd.github+json",
+    ["User-Agent"] = "Exodus-Hub-Loader",
+    ["Cache-Control"] = "no-cache, no-store",
+  })
+  if not body then return nil, requestError end
+  local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
+  local sha = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
+  if not validRevision(sha) then return nil, "revisão atual da main inválida" end
+  return sha
 end
 local function buildURLs(revision)
   local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local urls = {}
@@ -398,86 +373,10 @@ local function buildURLs(revision)
   end
   return urls
 end
-local function deliveryFallbackURL(url)
-  if type(url) ~= "string" or string.sub(url, 1, #BASE_URL) ~= BASE_URL then return nil end
-  local revision, path = string.match(string.sub(url, #BASE_URL + 1), "^([%da-fA-F]+)/(.+)$")
-  if not validRevision(revision) or string.sub(path, 1, #PROJECT_PATH) ~= PROJECT_PATH then return nil end
-  return "https://raw.githubusercontent.com/Repp35/Exodus-v2/" .. revision .. "/" .. path
-end
-local function requestDelivery(url)
-  local source, detail = request(url)
-  if source then return source end
-  local fallback = deliveryFallbackURL(url)
-  if fallback then
-    local recovered, fallbackError = request(fallback)
-    if recovered then return recovered end
-    detail = tostring(detail) .. "; GitHub: " .. tostring(fallbackError)
-  end
-  return nil, detail
-end
-local function buildCDNURL(url)
-  local repository, version, path = string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/([^/]+)/(.+)$")
-  if not repository or not version or not path then return nil end
-  return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
-end
 local function loadModule(name, relativePath, url)
-  local signature = signatureFor(relativePath)
-  if not signatureValid(signature) then return nil, "assinatura inválida: " .. relativePath end
-  local cacheKey = "exodus hub/" .. relativePath; local source, fetchError = cachedSource(cacheKey, signature), nil
-  local sourceKind = source and "cache" or "delivery"
-  if not source and url then source, fetchError = requestDelivery(url) end
-  if not source then
-    local fallbackURL = buildCDNURL(deliveryFallbackURL(url) or url)
-    if fallbackURL then
-      local fallbackSource, fallbackError = request(fallbackURL)
-      if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn" else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
-    end
-  end
-  if source then
-    if fingerprint(source) ~= signature then return nil, "assinatura divergente: " .. relativePath end
-    local chunk, compileError = compile(name, source)
-    if chunk then sourceCache[cacheKey] = source; return chunk, nil, sourceKind end
-    fetchError = compileError
-  end
-  return nil, fetchError or "origem remota indisponível"
-end
-local function authorizationURL(revision) return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH end
-local function setContains(set, value)
-  if type(set) ~= "table" then return false end
-  if set[value] == true or set[tostring(value)] == true then return true end
-  for _, item in pairs(set) do
-    if tostring(item) == tostring(value) then return true end
-  end
-  return false
-end
-local function waitForAuthorizationPlayer(timeout)
-  local players = game:GetService("Players")
-  if players.LocalPlayer then return players.LocalPlayer end
-  local deadline = os.clock() + timeout
-  while os.clock() < deadline do
-    if type(task) == "table" and type(task.wait) == "function" then task.wait() end
-    if players.LocalPlayer then return players.LocalPlayer end
-  end
-  return nil
-end
-local function authorizeRevision(revision)
-  if not validRevision(revision) then return false, "revisão de autorização inválida" end
-  local player = waitForAuthorizationPlayer(10)
-  if not player or type(player.UserId) ~= "number" then return false, "LocalPlayer/UserId indisponível" end
-  local source, fetchError = request(authorizationURL(revision), { ["Accept"] = "text/plain", ["User-Agent"] = "Exodus-Hub-Authorization" })
-  if not source then return false, "autorização indisponível: " .. tostring(fetchError) end
-  local chunk, compileError = compile("Exodus authorization", source)
-  if not chunk then return false, "autorização inválida: " .. tostring(compileError) end
-  local executed, entitlements = pcall(chunk)
-  if not executed or type(entitlements) ~= "table" then return false, "manifesto de autorização inválido" end
-  if entitlements.schema ~= 1 or entitlements.product ~= "Exodus-v2" or entitlements.revision ~= revision then return false, "manifesto de autorização incompatível" end
-  if type(entitlements.blockedUserIds) ~= "table" then return false, "manifesto de bloqueio inválido" end
-  if setContains(entitlements.blockedUserIds, player.UserId) then return false, "usuário bloqueado" end
-  if type(entitlements.gameIds) == "table" and next(entitlements.gameIds) ~= nil and not setContains(entitlements.gameIds, game.GameId) then return false, "experiência não autorizada" end
-  if type(entitlements.placeIds) == "table" and next(entitlements.placeIds) ~= nil and not setContains(entitlements.placeIds, game.PlaceId) then return false, "lugar não autorizado" end
-  local expiresAt = tonumber(entitlements.expiresAt or 0) or 0
-  if expiresAt > 0 and os.time() > expiresAt then return false, "autorização expirada" end
-  return true
+  local source, fetchError = request(url .. "?exodus_cache=" .. cacheBuster(), { ["Cache-Control"] = "no-cache, no-store" })
+  if not source then return nil, fetchError end
+  return compile(name, source)
 end
 local function orderModulesByDependencies(loaded)
   local positions, state, ordered = {}, {}, {}
@@ -674,21 +573,6 @@ local function matchInProgress()
   if type(loaded) ~= "table" or type(loaded.gameinfo) ~= "table" or type(loaded.gameinfo.getGameContext) ~= "function" then return false end
   local ok, context = pcall(loaded.gameinfo.getGameContext); return ok and type(context) == "table" and (context.inMatch == true)
 end
-local function waitForMatchToEnd(onWaiting, isCurrent)
-  local waiting, clearSince = false, nil
-  while Exodus.Started == true and (not isCurrent or isCurrent()) do
-    if matchInProgress() then
-      if not waiting and type(onWaiting) == "function" then onWaiting() end
-      waiting, clearSince = true, nil
-    else
-      if not waiting then return true, false end
-      clearSince = clearSince or os.clock()
-      if os.clock() - clearSince >= 0.1 then return true, true end
-    end
-    task.wait(0.1)
-  end
-  return false
-end
 local function waitForClashToEnd(onWaiting, isCurrent)
   local loaded = Exodus.Context
   if type(loaded) ~= "table" or type(loaded.utils) ~= "table" then return true end
@@ -707,53 +591,40 @@ local function waitForClashToEnd(onWaiting, isCurrent)
   end
   return false
 end
-local function prepareLoader(revision, signatures)
-  local loaderKey = "exodus hub/loader.luau"; local signature = type(signatures) == "table" and signatures[loaderKey] or nil
-  if not signatureValid(signature) then return nil, "Invalid loader signature" end
-  local source, fetchError = cachedSource(loaderKey, signature), nil
-  if not source then source, fetchError = requestDelivery(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau") end
-  if not source then return nil, fetchError end
-  if fingerprint(source) ~= signature then return nil, "Loader signature mismatch" end
-  sourceCache[loaderKey] = source; return compile("reload loader", source)
+local function prepareLoader()
+  local revision, revisionError = resolveLatestRevision()
+  if not revision then return nil, revisionError end
+  return loadModule("reload loader", "loader.luau", BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
 end
-local function reloadLatest(...) return updater.reload(...) end
+local reloadInFlight = false
+local function reloadLatest(onFailure)
+  if reloadInFlight then return false, "reload already in progress" end
+  reloadInFlight = true
+  local session = _G.ExodusLoaderSessionToken
+  task.spawn(function()
+    local ok, detail = xpcall(function()
+      local chunk, prepareError = prepareLoader()
+      if not chunk then error(prepareError, 0) end
+      if _G.ExodusLoaderSessionToken ~= session then return end
+      chunk()
+    end, function(err) return debug.traceback(tostring(err), 2) end)
+    reloadInFlight = false
+    if not ok then
+      printRawError("Loader", detail)
+      if type(onFailure) == "function" then task.defer(onFailure, detail) end
+    end
+  end)
+  return true
+end
 local startupPerformed = false
 local function startInternal()
-  local wasStarted = Exodus.Started == true; local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil
-  _G.ExodusRequestedRevision = nil; local version, _, _, signatures = resolveLatestRevision()
-  if requestedRevision and version ~= requestedRevision then return false, "Loader", "revisão solicitada não é a atual" end
-  releaseSignatures = signatures
-  if not version then return false, "Authorization", "revisão de distribuição indisponível" end
-  local urls = buildURLs(version); local authorizationDone, authorized, authorizationError = false, false, nil
-  task.spawn(function()
-    local ok, result, detail = pcall(authorizeRevision, version); authorized, authorizationError, authorizationDone = ok and result == true, ok and detail or result, true
-  end)
+  local wasStarted = Exodus.Started == true
+  local version, revisionError = resolveLatestRevision()
+  if not version then return false, "Loader", revisionError or "revisão atual indisponível" end
+  local urls = buildURLs(version)
   local prepared, prepareModule, prepareError = loadModules(urls)
   if not prepared then return false, prepareModule, prepareError end
-  local authorizationDeadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
-  while not authorizationDone and os.clock() < authorizationDeadline do
-    task.wait()
-  end
-  if not authorizationDone then return false, "Authorization", "tempo limite ao verificar autorização" end
-  if not authorized then return false, "Authorization", authorizationError end
-  local updaterModule = execute("updater", prepared.updater.chunk); prepared.updater.module = updaterModule
-  updater = updaterModule.create({
-    Exodus = Exodus,
-    HttpService = HttpService,
-    resolveLatestRevision = resolveLatestRevision,
-    validRevision = validRevision,
-    waitForMatchToEnd = waitForMatchToEnd,
-    waitForClashToEnd = waitForClashToEnd,
-    notifyPersistent = notifyPersistent,
-    clearPersistent = clearPersistent,
-    sameRuntimeSignatures = sameRuntimeSignatures,
-    authorizeRevision = authorizeRevision,
-    buildURLs = buildURLs,
-    prepareLoader = prepareLoader,
-    signatures = releaseSignatures,
-    onSignatures = function(signatures) releaseSignatures = signatures end,
-  })
-  printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
+  printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
   _G.ExodusShutdownReason = nil; startupPerformed = true
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
@@ -808,7 +679,7 @@ local function startInternal()
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
   Exodus.Revision = version; _G.ExodusLastLoadedRevision = version
-  if requestedRevision then clearPersistent("update"); printStartup("Exodus: Update completed.") elseif wasStarted then printStartup("Exodus: Reloaded.") else printStartup("Exodus: Initialized.") end
+  if wasStarted then printStartup("Exodus: Reloaded.") else printStartup("Exodus: Initialized.") end
   return true
 end
 
@@ -874,6 +745,5 @@ local function startSafely()
 end
 local started = startSafely()
 if started ~= nil then Exodus.Started = started == true end
-if started and startupPerformed then updater.start() end
 
 return Loader

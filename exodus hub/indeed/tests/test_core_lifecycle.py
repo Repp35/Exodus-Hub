@@ -5,23 +5,6 @@ from test_raw_target_parry import run_lua
 ROOT = Path(__file__).resolve().parents[2]
 
 class CoreLifecycle(unittest.TestCase):
-    def test_updater_factory_has_no_background_work_and_releases_failed_reload(self):
-        source = (ROOT / 'modules/core/updater.luau').read_text()
-        run_lua('''
-local spawned=0; task={spawn=function(f) spawned=spawned+1; f() end,defer=function(f,...) f(...) end}
-warn=function() end
-local Updater=(function()
-''' + source + '''
-end)()
-local failures=0
-local instance=Updater.create({Exodus={Started=true},clearPersistent=function() end,validRevision=function() return false end,
- resolveLatestRevision=function() error('offline') end})
-assert(spawned==0)
-assert(instance.reload(function() failures=failures+1 end))
-assert(instance.reload(function() failures=failures+1 end))
-assert(failures==2 and spawned==2)
-''')
-
     def test_runtime_binds_once_and_dispatches_by_priority(self):
         source = (ROOT / 'modules/core/runtime.luau').read_text()
         run_lua('''

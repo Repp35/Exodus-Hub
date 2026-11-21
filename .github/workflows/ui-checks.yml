@@ -29,7 +29,6 @@ jobs:
       - name: Validate close and reload transitions
         run: |
           python3 "exodus hub/indeed/tests/ui_transition_regression.py"
-          python3 "exodus hub/indeed/tests/update_channel_regression.py"
       - name: Check Luau syntax and formatting
         run: |
           chmod +x "exodus hub/indeed/formatting/resources/stylua-linux-x86_64"
