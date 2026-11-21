@@ -44,4 +44,20 @@ class FastReturn(unittest.TestCase):
     check('''local age=.1;snap.position=v(8);snap.targetId=99;snap.targeted=false
      g.getClashStatus=function() return {active=true,partnerId=99,age=age} end
      '''+condition+''';ap.onDefenseOpportunity(snap);assert(not ap.isActive())''',NATIVE)
+ def test_retreating_opponent_delays_entry_without_an_added_timer(self):
+  check('''snap.speed=200;snap.syncSpeed=200;snap.velocity=v(200);snap.position=v(9)
+   other.root.Position=v(20);other.root.AssemblyLinearVelocity=v(180)
+   packet(42);packet(99,.2);native=true
+   ap.onDefenseOpportunity(snap);assert(not ap.isActive(),'retreating opponent is not yet in contact range')
+   other.root.AssemblyLinearVelocity=v(0)
+   ap.onDefenseOpportunity(snap);assert(ap.isActive(),'stationary contact opportunity activates in same callback')''',NATIVE)
+ def test_ball_moving_away_from_opponent_cannot_activate(self):
+  check('''snap.speed=200;snap.syncSpeed=200;snap.velocity=v(-200);snap.position=v(9)
+   other.root.Position=v(20);packet(42);packet(99,.2);native=true
+   ap.onDefenseOpportunity(snap);assert(not ap.isActive())''',NATIVE)
+ def test_contact_margin_never_exceeds_five_studs(self):
+  check('''snap.speed=600;snap.syncSpeed=600;snap.velocity=v(600);snap.position=v(6)
+   other.root.Position=v(20);packet(42);packet(99,.2);native=true
+   ap.onDefenseOpportunity(snap);assert(not ap.isActive(),'5.5 studs beyond physical radius is too early')
+   snap.position=v(7);ap.onDefenseOpportunity(snap);assert(ap.isActive())''',NATIVE)
 if __name__=='__main__':unittest.main()

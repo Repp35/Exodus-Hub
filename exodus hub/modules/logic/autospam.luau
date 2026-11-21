@@ -613,10 +613,31 @@ local function observeFastTargetId(state, s, time)
     state.fastDeparture, state.fastReturn, state.targetIdExchange = nil, nil, nil
   end
 end
+local function opponentContactReady(state, s, partner)
+  local target = targetOf(s)
+  if target == localPlayer.UserId then return true end
+  if target and target ~= partner then return false end
+  if not vector(s.position) or not vector(s.velocity) then return false end
+  local speed = snapshotSpeed(s)
+  if not speed or speed < 16 then return false end
+  local position, motion = gameInfo.getPlayerMotion(partner)
+  if not vector(position) or not vector(motion) then return false end
+  local radius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
+  if not finite(radius) or radius <= 0 then return false end
+  local delta = position - s.position; local distance = delta.Magnitude
+  if not finite(distance) then return false end
+  if distance <= radius then return true end
+  local closing = (s.velocity - motion):Dot(delta) / distance
+  if not finite(closing) or closing <= 0 then return false end
+  local lead = math.min(0.1, networkLatency() + frameLead(state)); local margin = math.min(5, closing * lead)
+  if distance - radius > margin then return false end
+  local danger = deflectGeometry.getDanger(s.position, s.velocity, position, speed, radius, lead, motion); return danger ~= nil and danger.ready == true
+end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then return nil end
   local context = gameInfo.getClashStatus(); local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
+  if not opponentContactReady(state, s, partner) then return nil end
   local exchange = state.targetIdExchange; local paired = exchange
     and exchange.partner == partner
     and exchange.ball == s.ball
