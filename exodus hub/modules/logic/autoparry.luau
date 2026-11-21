@@ -1737,7 +1737,7 @@ function AutoParry.bindCharacter(character)
   state.root, state.character, state.player, state.alive, state.bound = root, character, player, true, true; resetTracking()
   phase("waiting", "character_bound")
   local controller, detail = createParryRuntime({
-    getClashContext = gameInfo.getNativeClashContext,
+    getClashContext = gameInfo.getExodusClashContext,
     canAct = function(mode)
       if generation ~= state.generation or not state.bound or not utils.isActive() or utils.getConfigValue("AutoParry") == false then return false end
       if clock() < state.fierceUntil then return false end
@@ -2233,7 +2233,7 @@ AutoParry.__contract = {
     Remote = { "fireParry" },
     Cooldown = { "getDeflectCooldownState", "recordDeflectAttempt", "recordTrainingDeflectAttempt", "getTrainingCooldownState" },
     GameInfo = {
-      "getNativeClashContext",
+      "getExodusClashContext",
       "isTrainingArea",
       "getDeflectAbility",
       "observeTraining",

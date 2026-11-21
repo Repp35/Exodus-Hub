@@ -69,43 +69,31 @@ class NativeClashTests(unittest.TestCase):
   check('''native=true;ap.onDefenseOpportunity(snap);ap.detachCharacter();local n=clicks
    world.changed:Fire();heartbeat();assert(not ap.isActive());assert(clicks==n)''',NATIVE)
 
-class NativeProviderTests(unittest.TestCase):
- def test_actual_gameinfo_provider_calls_native_without_inferred_age_gate(self):
-  source=(Path(__file__).resolve().parents[2]/'modules/logic/aux/gameinfo.luau').read_text()
-  method=source[source.index('function GameInfo.getNativeClashContext()'):source.index('function GameInfo.getClashContext(')]
-  run_case(r"""
-   local reads,ready=0,true
-   local player={UserId=42};local players={LocalPlayer=player}
-   local world={attrs={LastParryBy=99,LastParryTarget=42,LastParryAt=-100}}
-   function world:GetAttribute(k) return self.attrs[k] end
-   local gameBall={IsInClash=function(_,p) assert(p==player);reads=reads+1;return ready end}
-   local GameInfo={getBallSpeedLimits=function() return 16,600 end}
-   local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
-  """+method+r"""
-   assert(GameInfo.getNativeClashContext().partnerId==99);assert(reads==1)
-   world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99
-   assert(GameInfo.getNativeClashContext().partnerId==99)
-   ready=false;assert(GameInfo.getNativeClashContext()==nil)
-   ready=true;world.attrs.LastParryTarget=42;assert(GameInfo.getNativeClashContext()==nil)
-  """)
-
 class ExodusClashStatusTests(unittest.TestCase):
- def test_filters_and_live_settings(self):
+ def test_local_rules_and_live_settings_without_native_calls(self):
   source=(Path(__file__).resolve().parents[2]/'modules/logic/aux/gameinfo.luau').read_text()
   method=source[source.index('function GameInfo.getClashStatus()'):source.index('function GameInfo.getClashContext(')]
   run_case(COMMON+ENGINE+r"""
-   local utils=u;local at=tm
-   world.attrs.ClashHits=1
+   local utils=u
    local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
-   local GameInfo={getNativeClashContext=function() return {partnerId=99,lastParryAt=at} end}
+   local GameInfo={}
+   local gameBall={IsInClash=function() error('must never call native') end}
+   world.attrs.LastParryAt=tm;world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99
   """+method+r"""
-   assert(GameInfo.getClashStatus().reason=='waiting_exchange')
-   world.attrs.ClashHits=2;assert(GameInfo.getClashStatus().active)
-   other.root.Position=v(26);assert(GameInfo.getClashStatus().reason=='distance')
-   cfg.ClashMaxDistance=30;assert(GameInfo.getClashStatus().active)
-   at=tm-.6;assert(GameInfo.getClashStatus().reason=='expired')
-   cfg.ClashMaxAge=.7;assert(GameInfo.getClashStatus().active)
-   cfg.ClashMinHits=3;assert(not GameInfo.getClashStatus().active)
+   assert(GameInfo.IsInClash(),'one parry suffices as in dump')
+   assert(GameInfo.getClashStatus().source=='exodus')
+   world.attrs.LastParryAt=tm-1.1;world.attrs.GameBallTarget=42
+   assert(GameInfo.getClashStatus().reason=='target_changed')
+   world.attrs.GameBallTarget=99;assert(GameInfo.IsInClash())
+   world.attrs.LastParryAt=tm-2.6;assert(not GameInfo.IsInClash())
+   world.attrs.LastParryAt=tm;other.root.Position=v(35);assert(GameInfo.IsInClash())
+   other.root.Position=v(35.01);assert(not GameInfo.IsInClash())
+   cfg.ClashMaxDistance=20;other.root.Position=v(21);assert(not GameInfo.IsInClash())
+   other.root.Position=v(10);world.attrs.LastParryAt=tm-.6;cfg.ClashMaxAge=.5
+   assert(not GameInfo.IsInClash())
+   cfg.ClashMaxAge=2.5;cfg.ClashGrace=.3;world.attrs.GameBallTarget=42
+   assert(not GameInfo.IsInClash())
+   world.attrs.LastParryAt=tm+.1;assert(not GameInfo.IsInClash())
   """)
 
 if __name__=='__main__':unittest.main()

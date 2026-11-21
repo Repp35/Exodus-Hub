@@ -944,33 +944,32 @@ function GameInfo.spinCrate(network, crate, guard)
   network:CSendEvent(owned == true and CONFIG.GAME_IDS.CRATE_OWNED or CONFIG.GAME_IDS.CRATE_NEW, crate); return true
 end
 function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
-function GameInfo.getNativeClashContext()
-  GameInfo.getBallSpeedLimits(); local player = players.LocalPlayer
-  if not player or not gameBall or type(gameBall.IsInClash) ~= "function" or gameBall:IsInClash(player) ~= true then return nil end
-  local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget"); local partner = by == player.UserId and target or (target == player.UserId and by or nil)
-  if not finite(partner) or partner <= 0 or partner == player.UserId then return nil end
-  return { partnerId = partner, lastParryAt = world:GetAttribute("LastParryAt") }
-end
 function GameInfo.getClashStatus()
-  local status = { active = false, native = false, reason = "native_inactive" }; local context = GameInfo.getNativeClashContext()
-  if not context then return status end
-  status.native, status.partnerId = true, context.partnerId
+  local status = { active = false, source = "exodus", reason = "no_parry" }; local player = players.LocalPlayer
+  local at = world:GetAttribute("LastParryAt")
+  if not player or not finite(at) then return status end
   local function setting(key, fallback, low, high)
     local value = utils.getConfigValue(key); return finite(value) and math.clamp(value, low, high) or fallback
   end
-  status.minHits = math.floor(setting("ClashMinHits", 2, 1, 10)); status.maxDistance = setting("ClashMaxDistance", 25, 1, 35)
-  status.maxAge = setting("ClashMaxAge", 0.5, 0.05, 2.5); local hits = world:GetAttribute("ClashHits")
-  status.hits = finite(hits) and hits or 0
-  if status.hits < status.minHits then status.reason = "waiting_exchange"; return status end
-  local at = context.lastParryAt; status.age = finite(at) and world:GetServerTimeNow() - at or math.huge
-  if status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end
-  local player, partner = players.LocalPlayer, players:GetPlayerByUserId(context.partnerId); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-  local other = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
+  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = setting("ClashMaxDistance", 35, 1, 35)
+  status.maxAge = setting("ClashMaxAge", 2.5, 0.05, 2.5); status.grace = math.min(setting("ClashGrace", 1, 0, 2.5), status.maxAge)
+  local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
+  if not finite(status.age) or status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end
+  if status.age > status.grace and world:GetAttribute("GameBallTarget") ~= target then status.reason = "target_changed"; return status end
+  local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
+  if not finite(partnerId) or partnerId <= 0 or partnerId == player.UserId then status.reason = "not_in_pair"; return status end
+  status.partnerId = partnerId; local partner = players:GetPlayerByUserId(partnerId)
+  local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); local other = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
   if not root or not other then status.reason = "missing_player"; return status end
   status.distance = (root.Position - other.Position).Magnitude
   if not finite(status.distance) or status.distance > status.maxDistance then status.reason = "distance"; return status end
   status.active, status.reason = true, "clashing"; return status
 end
+function GameInfo.IsInClash() return GameInfo.getClashStatus().active end
+function GameInfo.getExodusClashContext()
+  local status = GameInfo.getClashStatus(); return status.active and status or nil
+end
+function GameInfo.getNativeClashContext() return GameInfo.getExodusClashContext() end
 function GameInfo.getClashContext(ignoreDistance)
   local player = players.LocalPlayer
   if not player then return nil end
@@ -1064,6 +1063,8 @@ GameInfo.__contract = {
     "getClashContext",
     "getNativeClashContext",
     "getClashStatus",
+    "IsInClash",
+    "getExodusClashContext",
     "getStatus",
     "getSnapshot",
     "getSnapshotAt",
