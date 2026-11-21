@@ -83,6 +83,17 @@ class DefenseEngineTests(unittest.TestCase):
    c.stop()
   """)
 
+ def test_normal_flights_do_not_wait_for_cooldown_or_read_it(self):
+  run_case(FIXTURE + parry_runtime() + r"""
+   setup();local reads=0
+   local c=assert(mod.create({canAct=function() return true end,getCooldown=function()
+    reads=reads+1;return {source='local',blocking=true,miss=false} end}))
+   matchPacket(123);assert(S.ability.calls==1 and reads==0,'first flight bypasses cooldown lookup')
+   matchPacket(456);matchPacket(123)
+   assert(S.ability.calls==2 and reads==0,'ordinary return bypasses stale blocking cooldown')
+   c.stop()
+  """)
+
  def test_geometry_and_invalid_data(self):
   self.check_lua(r"""
    setup();local c=start();S.ball.Position=vec(1000);matchPacket(123,{distance=8})

@@ -356,8 +356,6 @@ local function createParryRuntime(deps)
         sending = true; success, detail = pcall(trainingBlock.FireServer, trainingBlock, camera.CFrame.Position, camera.CFrame.LookVector)
         accepted = success
       else
-        local cd = deps.getCooldown and deps.getCooldown()
-        if deps.getCooldown and (not cd or cd.source == "unknown" or cd.blocking == true) then return end
         local ability = client and client.Abilities and client.Abilities[1]
         if type(ability) ~= "table" or type(ability.Deflect) ~= "function" then return end
         local last = ability.LastDeflectCallAt
