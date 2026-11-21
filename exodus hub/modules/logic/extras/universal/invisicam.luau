@@ -3,6 +3,7 @@
 -- code
 local Invisicam = {}
 local Utils, configObserver
+local applied = false
 local CONFIG = {
   schema = { UniversalInvisicam = "boolean" },
   defaults = { UniversalInvisicam = false },
@@ -20,7 +21,7 @@ local function applyMode(enabled)
     if not cameras or type(cameras.ActivateOcclusionModule) ~= "function" then return false end
     cameras:ActivateOcclusionModule(mode); return true
   end)
-  if propertyOk or (cameraOk and cameraError == true) then return true end
+  if propertyOk or (cameraOk and cameraError == true) then applied = enabled == true; return true end
   return false, tostring(propertyError or cameraError)
 end
 function Invisicam.setEnabled(enabled)
@@ -32,7 +33,7 @@ end
 function Invisicam.teardown()
   if configObserver then configObserver:Disconnect(); configObserver = nil end
   local ok, reason = true, nil
-  if Utils then ok, reason = applyMode(false) end
+  if Utils and applied then ok, reason = applyMode(false) end
   Utils = nil; return ok, reason
 end
 function Invisicam.setup(deps)
@@ -44,7 +45,8 @@ function Invisicam.setup(deps)
       if not ok then Utils.recordError("Invisicam", reason) end
     end
   end)
-  return applyMode(Utils.getConfigValue("UniversalInvisicam") == true)
+  if Utils.getConfigValue("UniversalInvisicam") == true then return applyMode(true) end
+  return true
 end
 Invisicam.__config = CONFIG
 Invisicam.__contract = {
