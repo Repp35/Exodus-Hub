@@ -3,6 +3,12 @@ from pathlib import Path
 import unittest
 from test_logic_reliability import module, run_case
 
+def parry_runtime():
+ source=(Path(__file__).resolve().parents[2]/'modules/logic/autoparry.luau').read_text()
+ start=source.index('local function createParryRuntime(deps)')
+ end=source.index('-- ap-adapter',start)
+ return 'local mod=(function()\n'+source[start:end]+'\nreturn {create=createParryRuntime}\nend)()\n'
+
 FIXTURE = (Path(__file__).parent / 'fixtures/defenseengine.lua').read_text()
 BOOT = r"""
 local enabled, spam = true, false
@@ -20,9 +26,9 @@ end
 
 class DefenseEngineTests(unittest.TestCase):
  def check_lua(self, case):
-  run_case(FIXTURE + module('aux/defenseengine.luau') + BOOT + case + r"""
+  run_case(FIXTURE + parry_runtime() + BOOT + case + r"""
   for _,msg in ipairs(logs) do
-   assert(not msg:find('[DefenseEngine] ',1,true),msg)
+   assert(not msg:find('[AutoParry] ',1,true),msg)
   end
   """)
 
@@ -104,7 +110,7 @@ class DefenseEngineTests(unittest.TestCase):
 
 class HubAdapterTests(unittest.TestCase):
  def test_toggle_rebind_and_single_driver(self):
-  run_case(FIXTURE + module('aux/defenseengine.luau') + 'local engine=mod\n' + module('autoparry.luau') + r"""
+  run_case(FIXTURE + parry_runtime() + 'local engine=mod\n' + module('autoparry.luau') + r"""
    setup();S.char.AncestryChanged=signal()
    local enabled,spam=true,false;local opportunities,attempts=0,0
    local u={getLocalPlayer=function() return S.player end,getRunService=function() return S.runs end,
@@ -122,7 +128,7 @@ class HubAdapterTests(unittest.TestCase):
    assert(mod.bindCharacter(S.char));matchPacket(456);matchPacket(123);assert(S.ability.calls==3,'rebind has one driver')
    mod.detachCharacter();assert(S.native.ApplySnapshot==original,'detach restores native hook')
    matchPacket(456);matchPacket(123);assert(S.ability.calls==3)
-   for _,msg in ipairs(logs) do assert(not msg:find('[DefenseEngine] ',1,true),msg) end
+   for _,msg in ipairs(logs) do assert(not msg:find('[AutoParry] ',1,true),msg) end
   """)
 
 if __name__ == '__main__':

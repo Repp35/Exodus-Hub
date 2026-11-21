@@ -132,7 +132,6 @@ local CONFIG = {
     { name = "gravity", path = "modules/logic/extras/universal/gravity.luau" },
     { name = "remote", path = "modules/logic/aux/remote.luau" },
     { name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
-    { name = "defenseengine", path = "modules/logic/aux/defenseengine.luau" },
     { name = "autoparry", path = "modules/logic/autoparry.luau" },
     { name = "dash", path = "modules/logic/aux/dash.luau" },
     { name = "autospam", path = "modules/logic/autospam.luau" },
