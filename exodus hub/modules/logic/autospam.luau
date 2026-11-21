@@ -186,19 +186,25 @@ local function autoStop(state, s, time)
     local ownDelta, otherDelta = state.root.Position - s.position, otherPosition - s.position; local g = geometry(s, 1)
     local radius = g and g.noWindowParryRadius
     if finite(radius) and ownDelta.Magnitude > radius and otherDelta.Magnitude > radius and s.velocity:Dot(ownDelta) < 0 and s.velocity:Dot(otherDelta) < 0 then return "ball_left_exchange" end
+    if finite(radius) and ownDelta.Magnitude > radius then
+      local speed = snapshotSpeed(s); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
+      if finite(otherRadius) and otherDelta.Magnitude > otherRadius then
+        local _, otherVelocity = gameInfo.getPlayerMotion(state.partner)
+        local own = deflectGeometry.getDanger(s.position, s.velocity, state.root.Position, speed, radius, 0, state.root.AssemblyLinearVelocity)
+        local opponent = deflectGeometry.getDanger(s.position, s.velocity, otherPosition, speed, otherRadius, 0, otherVelocity)
+        if own and opponent and not finite(own.entryTime) and not finite(opponent.entryTime) then return "trajectory_misses_exchange" end
+      end
+    end
   end
   local speed = snapshotSpeed(s) or 0; local low, high = gameInfo.getBallSpeedLimits()
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
   state.cooldownLimit = limit; local cd = cooldownInfo.getDeflectCooldownState()
   state.cooldown = cd
-  if not cd or cd.source == "unknown" or cd.blocking ~= true or cd.predictedReset == true then
-    state.cooldownSince, state.cooldownEpisode = nil, nil
+  if not cd or cd.active ~= true then
+    state.cooldownSince = nil
   else
-    if finite(cd.lastParriedAt) and cd.lastParriedAt ~= state.cooldownParriedAt then state.cooldownParriedAt, state.cooldownSince = cd.lastParriedAt, time end
-    if not state.cooldownSince or (cd.episode ~= nil and state.cooldownEpisode ~= cd.episode) then
-      state.cooldownSince = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time; state.cooldownEpisode = cd.episode
-    end
+    local began = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time; state.cooldownSince = math.min(state.cooldownSince or began, began)
     if time - state.cooldownSince >= limit then return "cooldown" end
   end
 end

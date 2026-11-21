@@ -56,7 +56,7 @@ local g={getDeflectAnimationCatalog=function() return animationCatalog end,getDe
  getHaunterEvent=function() end,areAbilitiesEnabled=function() return true end,getTargetId=function() return snap.targetId end,
  getClashContext=function() end,getDefensePhysics=function() return {killRadius=4} end,
  getAutoSpamDelay=function() return 0 end,getMinimumSpamInterval=function() return .0301 end}
-local c={getDeflectCooldownState=function() return cd end}
+local c={getDeflectCooldownState=function() cd.active=cd.blocking;return cd end}
 local defense={enabled=true,responseBudget=1/4.73}
 local defender={getPressureDetector=function() return defense end}
 local stats

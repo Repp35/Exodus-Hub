@@ -48,7 +48,7 @@ local function eligible()
   if not t or not t.ready or (not t.approaching and t.timeToKill ~= 0) then return nil end
   local recovery = cooldown.getDeflectRecoveryState(t.timeToKill, 1 / 60)
   if not recovery or not recovery.needsFierce then return nil end
-  local episode = recovery.cooldown.episode
+  local observedCooldown = recovery.cooldown; local episode = observedCooldown.episode
   if type(episode) ~= "number" or episode <= lastEpisode then return nil end
   return value, episode
 end

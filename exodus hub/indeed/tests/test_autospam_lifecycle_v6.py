@@ -75,6 +75,11 @@ packet(99,.01,5);snap.velocity=v(600);assert(ap.canSend());assert(ap.isActive())
   self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap)
 other.root.Position=v(25);snap.position=v(60);snap.velocity=v(600);snap.targetId=99
 local n=clicks;assert(not ap.canSend());assert(not ap.isActive());advance(.1);assert(clicks==n)''')
+ def test_ball_above_both_players_cannot_keep_sending_during_clash(self):
+  self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap);assert(ap.isActive())
+snap.position=v(5,20);snap.velocity=v(600);snap.targetId=99
+local n=clicks;assert(not ap.canSend(),'trajectory missed both players but sending stayed authorized')
+assert(not ap.isActive());advance(.1);assert(clicks==n)''')
  def test_confirmed_third_target_stops_before_send(self):
   self.case('native=true;snap.position=v(5);ap.onDefenseOpportunity(snap);snap.targetId=88;snap.targetUncertain=false;assert(not ap.canSend());assert(not ap.isActive())')
  def test_fast_return_cannot_override_confirmed_miss(self):
@@ -89,6 +94,20 @@ packet(42,.01,5);packet(99,.01,5);packet(42,.01,5);assert(not ap.isActive(),'rea
 cd.blocking=false;ap.onDefenseOpportunity(snap);assert(ap.isActive(),'did not rearm after ready')''')
  def test_reversible_cooldown_does_not_cut_legitimate_return(self):
   self.case('cd.blocking=true;cd.miss=false;cd.predictedReset=true;packet(42,0,5);packet(99,.01,5);packet(42,.01,5);assert(ap.isActive())')
+ def test_cooldown_duration_cannot_be_reset_by_parry_or_prediction_or_miss_flags(self):
+  self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap)
+cd.blocking=true;cd.miss=false;cd.predictedReset=true;cd.episode=1;cd.blockingSince=tm
+assert(ap.canSend())
+advance(.1);cd.lastParriedAt=tm;assert(ap.canSend())
+advance(.13);cd.lastParriedAt=tm
+assert(not ap.canSend(),'active cooldown exceeded its duration but another flag prevented stop')
+assert(ap.getStatus().lastStopReason=='cooldown')''')
+ def test_slow_ball_stops_on_first_check_after_cooldown_time_limit(self):
+  self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap)
+cd.blocking=true;cd.miss=false;cd.blockingSince=tm
+snap.syncSpeed=16;snap.speed=16;snap.velocity=v(-16)
+assert(ap.canSend());advance(.346)
+local n=clicks;assert(not ap.canSend());assert(not ap.isActive());assert(clicks==n)''')
  def test_old_packet_cannot_create_round_trip(self):
   self.case('packet(42,0,5,10);packet(99,.01,5,11);packet(42,.01,5,10);assert(not ap.isActive())')
  def test_duplicate_packet_cannot_create_round_trip(self):
