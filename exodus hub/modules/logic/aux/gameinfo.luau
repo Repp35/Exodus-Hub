@@ -951,30 +951,16 @@ function GameInfo.getClashStatus()
   local function setting(key, fallback, low, high)
     local value = utils.getConfigValue(key); return finite(value) and math.clamp(value, low, high) or fallback
   end
-  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = setting("ClashMaxDistance", 35, 1, 35)
-  status.maxAge = setting("ClashMaxAge", 2.5, 0.05, 2.5); status.grace = math.min(setting("ClashGrace", 1, 0, 2.5), status.maxAge)
+  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = setting("ClashMaxDistance", 25, 1, 35)
+  status.maxAge = setting("ClashMaxAge", 0.8, 0.05, 2.5); status.grace = math.min(setting("ClashGrace", 0.35, 0, 2.5), status.maxAge)
   local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
   if not finite(status.age) or status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end
   if status.age > status.grace and world:GetAttribute("GameBallTarget") ~= target then status.reason = "target_changed"; return status end
   local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
   if not finite(partnerId) or partnerId <= 0 or partnerId == player.UserId then status.reason = "not_in_pair"; return status end
-  if by % 1 ~= 0 or target % 1 ~= 0 or by <= 0 or target <= 0 or by == target then status.reason = "invalid_pair"; return status end
-  local currentTarget = world:GetAttribute("GameBallTarget")
-  if finite(currentTarget) and currentTarget > 0 and currentTarget % 1 == 0 and currentTarget ~= player.UserId and currentTarget ~= partnerId then status.reason = "redirected"; return status end
   status.partnerId = partnerId; local partner = players:GetPlayerByUserId(partnerId)
   local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); local other = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
-  if not root or not other or not root.Parent or not other.Parent then status.reason = "missing_player"; return status end
-  local ownHumanoid = player.Character:FindFirstChildOfClass("Humanoid"); local partnerHumanoid = partner.Character:FindFirstChildOfClass("Humanoid")
-  if
-    not ownHumanoid
-    or not partnerHumanoid
-    or not finite(ownHumanoid.Health)
-    or not finite(partnerHumanoid.Health)
-    or ownHumanoid.Health <= 0
-    or partnerHumanoid.Health <= 0
-  then
-    status.reason = "player_dead"; return status
-  end
+  if not root or not other then status.reason = "missing_player"; return status end
   status.distance = (root.Position - other.Position).Magnitude
   if not finite(status.distance) or status.distance > status.maxDistance then status.reason = "distance"; return status end
   status.active, status.reason = true, "clashing"; return status
