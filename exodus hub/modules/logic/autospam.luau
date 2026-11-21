@@ -76,7 +76,7 @@ local function clearEvidence(state)
   state.outbound, state.pending, state.receipt, state.haunter, state.exchange = nil, nil, nil, nil, nil
   state.target, state.previousOpponent, state.confirmedReturns, state.exchangeHistory = nil, nil, nil, nil
   state.lastPairExchangeAt, state.sendContinuity, state.prediction, state.predictionEvidence = nil, nil, nil, nil; state.leg = (state.leg or 0) + 1
-  state.activationEvidence, state.predictionArmed, state.predictionEvidence = nil, nil, nil
+  state.activationEvidence, state.predictionArmed, state.predictionEvidence, state.fastReturn = nil, nil, nil, nil
   for _, sensor in pairs(state.sensors or {}) do
     sensor.attempt = nil
   end
@@ -162,10 +162,10 @@ local function geometry(s, factor)
   if not g or not finite(g.effectiveWindow) or not finite(g.noWindowParryRadius) then return nil end
   local low, high = gameInfo.getBallSpeedLimits(); return deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1), speed
 end
-local function insideSpamWindow(state, s, time)
+local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end
   if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
-  local g = geometry(s, CONFIG.ACTIVATION.WINDOW_FACTOR)
+  local g = geometry(s, factor or CONFIG.ACTIVATION.WINDOW_FACTOR)
   if not g or not finite(g.fullRadius) or g.fullRadius < 0 then return false end
   local delta = s.position - state.root.Position; return delta:Dot(delta) <= g.fullRadius * g.fullRadius
 end
@@ -235,6 +235,12 @@ local function observeTarget(state, s, time, packet)
       and time >= outbound.at
       and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
     then
+      local speed = snapshotSpeed(s); local low, high = gameInfo.getBallSpeedLimits()
+      if speed and finite(low) and finite(high) and high > low and speed >= low then
+        local progress = math.clamp((speed - low) / (high - low), 0, 1); local duration = time - outbound.at
+        local limit = 0.25 - 0.15 * progress
+        if duration <= limit then state.fastReturn = { partner = previous, at = time, leg = state.leg, ball = s.ball } end
+      end
       local h = state.confirmedReturns; local count = h and h.partner == previous and time - h.at <= CONFIG.TIMING.HISTORY_MAX_AGE and h.count + 1 or 1
       local returnGeometry = geometry(s, 0.8); state.confirmedReturns = { partner = previous, count = count, at = time }
       state.pending = {
@@ -607,7 +613,7 @@ evaluate = function(state, s, time, packet)
   end
   if s and s.ball ~= state.ball then state.ball, state.sequence, state.packetSnapshot, state.packetAt = s.ball, nil, nil, nil; clearEvidence(state) end
   local order = sequenceOrder(state, s and s.syncSequence)
-  if order == "old" or order == "invalid" then packet = false end
+  if order == "old" or order == "invalid" then return end
   if order == "new" then state.sequence = s.syncSequence end
   if packet then state.packetSnapshot, state.packetAt = table.clone(s), time end
   local gate = lifecycleGate(state, s)
@@ -634,7 +640,24 @@ evaluate = function(state, s, time, packet)
     if gate == "ball_reset" or gate == "training" or gate == "ball_paused" then clearEvidence(state) end
     return
   end
-  local candidate = nativeActivation(state, s, time)
+  local candidate
+  local cd = cooldownInfo.getDeflectCooldownState(); local cooldownLocked = state.cooldownSince
+    and cd
+    and cd.blocking == true
+    and cd.predictedReset ~= true
+    and time - state.cooldownSince >= (state.cooldownLimit or math.huge)
+  local fast = state.fastReturn
+  if
+    fast
+    and fast.at == time
+    and fast.leg == state.leg
+    and fast.ball == s.ball
+    and insideSpamWindow(state, s, time, 0.6)
+    and nearPartner(state, fast.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
+  then
+    candidate = { partner = fast.partner, reason = "fast_return" }
+  end
+  state.fastReturn = nil; candidate = candidate or nativeActivation(state, s, time)
   if candidate then activate(state, candidate, s, time); rememberContinuity(state, time) else state.lastGate = "no_activation_evidence" end
   observeStats(state, s, time, packet)
 end
