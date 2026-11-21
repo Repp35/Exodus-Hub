@@ -11,6 +11,7 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.6,
     MAX_CLASH_DISTANCE = 35,
+    WINDOW_FACTOR = 0.9,
     CLOSE_TARGET_DISTANCE = 5,
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
@@ -160,6 +161,13 @@ local function geometry(s, factor)
   local g = deflectGeometry.getDeflectGeometry(speed, "game", factor or 1, false, networkLatency())
   if not g or not finite(g.effectiveWindow) or not finite(g.noWindowParryRadius) then return nil end
   local low, high = gameInfo.getBallSpeedLimits(); return deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1), speed
+end
+local function insideSpamWindow(state, s, time)
+  if not s or not vector(s.position) or not vector(state.root.Position) then return false end
+  if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
+  local g = geometry(s, CONFIG.ACTIVATION.WINDOW_FACTOR)
+  if not g or not finite(g.fullRadius) or g.fullRadius < 0 then return false end
+  local delta = s.position - state.root.Position; return delta:Dot(delta) <= g.fullRadius * g.fullRadius
 end
 local function compensatedRadius(id, speed)
   local radius = deflectGeometry.getPlayerRawRadius(id, speed, false)
@@ -492,6 +500,7 @@ end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
   if reason then return reason end
+  if not insideSpamWindow(state, s, time) then return "outside_spam_window" end
   local speed = snapshotSpeed(s) or 0; local low, high = gameInfo.getBallSpeedLimits()
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
@@ -580,6 +589,7 @@ local function observeStats(state, s, time, packet)
   clashStatsModule.observe(state, s, time, packet == true)
 end
 local function nativeActivation(state, s, time)
+  if not insideSpamWindow(state, s, time) then return nil end
   local context = gameInfo.getNativeClashContext(); local partner = context and context.partnerId
   if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
   local cd = cooldownInfo.getDeflectCooldownState()

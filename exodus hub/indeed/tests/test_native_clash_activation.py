@@ -1,4 +1,4 @@
-"""Native clash is the sole entry; exercise real AutoSpam + Spam scheduler."""
+"""Native clash plus the shared 0.9 window control entry; exercise real AutoSpam + Spam scheduler."""
 import unittest
 from pathlib import Path
 from test_logic_reliability import run_case
@@ -13,12 +13,25 @@ local native=false;local nativeReads=0
 g.getNativeClashContext=function() nativeReads=nativeReads+1;return native and {partnerId=99,lastParryAt=tm} or nil end
 '''
 class NativeClashTests(unittest.TestCase):
- def test_native_is_sufficient_without_target_or_window(self):
-  check('''snap.targetId=-1;snap.targeted=false;snap.position=v(1000)
+ def test_native_inside_window_is_sufficient_without_target(self):
+  check('''snap.targetId=-1;snap.targeted=false;snap.position=v(50)
    native=true;ap.onDefenseOpportunity(snap)
    assert(ap.isActive());assert(ap.getActivationContext().reason=='native_clash')
    assert(clicks==1,'first send occurs in activation callback, no frame wait')
    assert(ap.canSend(),'no target confirmation gate')''',NATIVE)
+ def test_window_boundary_blocks_entry_and_cuts_before_send(self):
+  check('''local old=g.getDeflectGeometry
+   g.getDeflectGeometry=function(speed,mode,factor,...) return old(speed,mode,factor,...) end
+   local radius=old(600,"game",.9).fullRadius+600*(.65*.20)*.9
+   native=true;snap.position=v(radius+.001);ap.onDefenseOpportunity(snap);assert(not ap.isActive())
+   snap.position=v(radius);ap.onDefenseOpportunity(snap);assert(ap.isActive(),'boundary inclusive')
+   local n=clicks;snap.position=v(radius+.001);assert(not ap.canSend());assert(not ap.isActive());assert(clicks==n)
+   ap.onDefenseOpportunity(snap);assert(not ap.isActive(),'cannot reactivate outside')
+   snap.position=v(radius-.001);ap.onDefenseOpportunity(snap);assert(ap.isActive(),'return inside renews entry')''',NATIVE)
+ def test_window_exit_event_and_invalid_input_stop(self):
+  for change in ('snap.position=v(1000)', 'snap.position=v(0/0)', 'snap.syncAt=tm-1', 'snap.syncSpeed=0/0'):
+   with self.subTest(change=change):
+    check('native=true;ap.onDefenseOpportunity(snap);assert(ap.isActive());'+change+';ap.onDefenseOpportunity(snap);assert(not ap.isActive())',NATIVE)
  def test_old_activations_cannot_enter(self):
   check('''cfg.AutoSpamClashPrediction=true
    packet(99);animate(99,101);packet(42);heartbeat()
