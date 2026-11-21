@@ -1,9 +1,17 @@
 import unittest
-from test_native_clash_activation import check, NATIVE
+from autospam_harness import COMMON, ENGINE, API
+from test_logic_reliability import module, run_case
+from test_autospam_lifecycle_v6 import CONTEXT
+NATIVE = CONTEXT
+
+def check(case, extra):
+ run_case(COMMON + ENGINE + module('autospam.luau').replace('local mod=', 'local ap=', 1)
+  + module('spam.luau').replace('local mod=', 'local spam=', 1) + extra + API + case)
+
 
 class FastReturn(unittest.TestCase):
  def test_speeds_and_window(self):
-  for speed, delay, should in [(16,.149,True),(16,.15,True),(16,.151,False),(600,.149,True),(600,.15,True),(600,.151,False),(308,.149,True),(308,.151,False)]:
+  for speed, delay, should in [(16,.149,True),(16,.15,True),(16,.151,True),(600,.149,True),(600,.15,True),(600,.151,True),(308,.149,True),(308,.151,True)]:
    with self.subTest(speed=speed,delay=delay):
     check(f'''snap.speed={speed};snap.syncSpeed={speed};snap.position=v(8);packet(42);packet(99);packet(42,{delay});assert(ap.isActive()=={str(should).lower()});if ap.isActive() then assert(ap.getActivationContext().reason=='fast_return') end''',NATIVE)
  def test_window_and_invalid_target(self):
@@ -13,27 +21,18 @@ class FastReturn(unittest.TestCase):
   check('''snap.speed=16;snap.syncSpeed=16;snap.position=v(20);packet(42);packet(99);packet(42,.05);assert(not ap.isActive())''',NATIVE)
  def test_immediate_first_send(self):
   check('''snap.position=v(8);packet(42);packet(99);packet(42,.05);assert(ap.isActive() and clicks==1)''',NATIVE)
- def test_attributes_cannot_create_fast_return(self):
-  check('''snap.position=v(8)
+ def test_attributes_are_valid_return_evidence(self):
+  check("""snap.position=v(8)
    local function attr(id) ap.onBallSync({Source='target',TargetPlayerID=id}) end
-   attr(42);attr(99);attr(42);assert(not ap.isActive())
-   packet(42);packet(99);attr(42);assert(not ap.isActive())
-   packet(42,.05);assert(ap.isActive(),'only network target return activates')''',NATIVE)
- def test_clash_requires_one_targetid_switch_in_either_direction(self):
-  for first,second in [(42,99),(99,42)]:
-   with self.subTest(first=first):
-    check(f'''native=true;snap.position=v(8);world.changed:Fire();assert(not ap.isActive(),'proximity alone cannot activate')
-     packet({first});assert(not ap.isActive(),'one target alone cannot activate')
-     packet({second},.2);assert(ap.isActive(),'one pair switch permits clash entry')
-     assert(ap.getActivationContext().reason=='native_clash')''',NATIVE)
- def test_attributes_cannot_fake_clash_exchange(self):
-  check('''native=true;snap.position=v(8)
-   ap.onBallSync({Source='target',TargetPlayerID=42});ap.onBallSync({Source='target',TargetPlayerID=99})
-   assert(not ap.isActive());packet(99);assert(not ap.isActive());packet(42,.2);assert(ap.isActive())''',NATIVE)
+   attr(42);attr(99);attr(42);assert(ap.isActive());assert(clicks==1)""",NATIVE)
+ def test_fresh_tight_context_enters_without_waiting_for_pair_packets(self):
+  check("""native=true;snap.position=v(8);world:fireAttr("LastParryAt");assert(ap.isActive());assert(clicks==1)""",NATIVE)
+ def test_unrelated_attribute_targets_cannot_fake_clash_exchange(self):
+  check("""snap.position=v(8);ap.onBallSync({Source='target',TargetPlayerID=88});ap.onBallSync({Source='target',TargetPlayerID=99});assert(not ap.isActive())""",NATIVE)
  def test_clash_pair_must_match_targetid_exchange(self):
-  check('''snap.position=v(8);packet(42);packet(99);packet(42,.2);assert(not ap.isActive())
-   g.getClashStatus=function() return {active=true,partnerId=88} end
-   native=true;world.changed:Fire();assert(not ap.isActive())''',NATIVE)
+  check('''snap.position=v(8);packet(42);packet(99);packet(42,.5);assert(not ap.isActive())
+   g.getClashStatus=function() return {active=true,partnerId=88,age=.1,lastParryAt=world.attrs.LastParryAt} end
+   native=true;world:fireAttr("LastParryAt");assert(not ap.isActive())''',NATIVE)
  def test_tight_clash_can_enter_without_local_target_history(self):
   check('''snap.position=v(8);snap.targetId=99;snap.targeted=false
    g.getClashStatus=function() return {active=true,partnerId=99,age=.1} end

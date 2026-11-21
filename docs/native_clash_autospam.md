@@ -1,11 +1,53 @@
-# Native clash activation
+# AutoSpam session lifecycle (v6)
 
-AutoSpam requires the ball inside its existing geometry with window factor 0.9, including the physical radius, and enters through GameInfo.getNativeClashContext(), which calls the actual GameBall:IsInClash(localPlayer). AP uses the same provider. LastParry attributes select the native pair, not an inferred activation. No target confirmation, animation, dash, Haunter, prediction, block timer or 40 ms block is required to enter. The same 0.9 boundary stops active spam, both on update and before every send. Invalid/stale geometry also fails closed. Identical entry/exit thresholds are not true hysteresis.
+AutoSpam recognizes exchanges; Spam remains the only high-rate sender. AP's
+existing dispatch exclusion is unchanged. Configured CPS/CPF and transport are
+unchanged. The module no longer contains disconnected animation, dash, Haunter,
+prediction or legacy activation implementations. Public compatibility methods
+used by other modules remain available.
 
-The existing spam scheduler and configured cadence remain intact. Native activation sets the existing spam flag synchronously; its observer starts the scheduler without waiting for a physics frame. LastParry attribute events, runtime sync callbacks and the V14 AP opportunity callback all reach the native entry. The AP opportunity callback runs before AP dispatch arbitration, including when AP clicking is disabled. Old animation scanning and Haunter subscriptions are no longer installed.
+## Evidence and entry
 
-Existing cooldown and physical exit behavior remain. Stops also cover opponent distance (35 studs), death, confirmed third-party redirect, match end, missing/replaced/reset ball, configuration and hub lifecycle. Freeze means BallData.Frozen, not a zero velocity or a visual frozen flag. Reset/lock states can still block sends. A sustained native flag cannot immediately undo an expired cooldown stop. Native false alone is not a new deactivation rule.
+One ordered target-leg tracker consumes packet and explicit target-attribute
+transitions. Observing a snapshot does not mark its packet event as processed.
+Duplicate target values do not create another leg; duplicate/old network packets
+are rejected with uint16 wrap ordering. A return belongs to one ball and leg.
+If it arrives outside the entry geometry, it remains pending until entry,
+replacement or expiry. Return pressure uses the geometry's effective window,
+network estimate and frame interval instead of the old fixed 150 ms cutoff.
+This is an observation budget, not an assumed AP CPS or measured response SLA.
 
-Target freshness/confirmation gates no longer delay the active native spam send path; lifecycle and deactivation checks run before sends. Lifecycle teardown cancels observers and scheduled sends through the existing scheduler generation guard.
+Native/context entry retains partner/contact checks. Tight entry may anticipate
+before the local player becomes the target. A stale own parry plus an ordinary
+inbound approach cannot start it. The context provider is GameInfo.getClashStatus
+(local LastParry attributes), not a call to the game's IsInClash method.
 
-Validation: 13 native provider/AutoSpam/scheduler tests, 7 V14 engine/adapter tests and 5 loader/API contract tests pass. The first send is verified inside the activation callback in deterministic mocks, including unavailable target and exact window boundary/exit. These tests do not establish real Roblox latency or server acceptance. Historical tests of the removed activation heuristics are superseded by the native-entry suite; the repository already had broad unrelated failures before this change.
+## Exit and rearm
+
+A session stops for lifecycle changes, third-party redirect, invalid/stale
+geometry, sustained cooldown or physical departure past both players. An
+outgoing leg toward the current partner does not by itself end a clash.
+Every send still goes through AutoSpam.canSend, so cancellation does not wait
+for a later render/physics callback.
+
+Stopping records the consumed target leg and parry stamp and cancels the pending
+return. The same context cannot reopen the session when distance jitters back
+inside the window. A new valid return or newer parry can rearm immediately;
+there is no arbitrary sleep/debounce. A cooldown stop also records its episode;
+a new candidate cannot reset that episode's deadline. Confirmed misses block all
+entry paths, while predicted reset/reversible cooldown does not block a real
+return. Ball replacement resets ball-specific evidence.
+
+## Validation and limits
+
+`test_autospam_lifecycle_v6.py` exercises the real AutoSpam with the real Spam
+scheduler and explicit engine doubles: immediate dispatch, pre-read packet
+ordering, attribute-only returns, echo deduplication, pending evidence,
+expiry/wraparound, stale-context hysteresis, fresh-event rearm, outward clash
+continuity, departure/redirect cancellation and cooldown ownership. The fast
+return tests now cover valid attribute evidence and the geometry-based budget.
+API contract and integrated AP engine tests check compatibility.
+
+These tests do not replay the unrecorded inputs of the submitted video and do
+not measure Roblox server acceptance, FPS or guarantee zero misses. Full-suite
+baseline failures must be reported separately from these focused regressions.
