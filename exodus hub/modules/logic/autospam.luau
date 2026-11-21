@@ -617,14 +617,26 @@ local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then return nil end
   local context = gameInfo.getClashStatus(); local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
-  local exchange = state.targetIdExchange
-  if not exchange or exchange.partner ~= partner or exchange.ball ~= s.ball then return nil end
-  if state.fastTargetId ~= localPlayer.UserId and state.fastTargetId ~= partner then return nil end
-  if not state.fastTargetAt or time < state.fastTargetAt or time - state.fastTargetAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE then return nil end
-  if time < exchange.at or time - exchange.at > (context.maxAge or 0.8) then return nil end
+  local exchange = state.targetIdExchange; local paired = exchange
+    and exchange.partner == partner
+    and exchange.ball == s.ball
+    and (state.fastTargetId == localPlayer.UserId or state.fastTargetId == partner)
+    and state.fastTargetAt
+    and time >= state.fastTargetAt
+    and time - state.fastTargetAt <= CONFIG.TIMING.SNAPSHOT_MAX_AGE
+    and time >= exchange.at
+    and time - exchange.at <= (context.maxAge or 0.8)
+  local reason = "native_clash"
+  if not paired then
+    local age = context.age; local currentTarget = targetOf(s)
+    if currentTarget and currentTarget ~= localPlayer.UserId and currentTarget ~= partner then return nil end
+    if not finite(age) or age < 0 or age > 0.25 then return nil end
+    if not nearPartner(state, partner, 15) or not insideSpamWindow(state, s, time, 0.6) then return nil end
+    reason = "close_clash"
+  end
   local cd = cooldownInfo.getDeflectCooldownState()
   if state.cooldownSince and cd and cd.blocking == true and cd.predictedReset ~= true and time - state.cooldownSince >= (state.cooldownLimit or math.huge) then return nil end
-  return { partner = partner, reason = "native_clash" }
+  return { partner = partner, reason = reason }
 end
 evaluate = function(state, s, time, packet)
   if current ~= state then return end
