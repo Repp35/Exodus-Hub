@@ -94,6 +94,25 @@ class DefenseEngineTests(unittest.TestCase):
    c.stop()
   """)
 
+ def test_only_native_deflect_enforces_interval_and_cps(self):
+  run_case(FIXTURE + parry_runtime() + r"""
+   setup();local attempts=0;local native=S.ability.Deflect
+   S.ability.ClickInstances={1};S.world:SetAttribute('CPS_LIMIT',1)
+   function S.ability:Deflect()
+    attempts=attempts+1
+    if #self.ClickInstances >= 1 then return end
+    return native(self)
+   end
+   local c=assert(mod.create({canAct=function() return true end}))
+   matchPacket(123);assert(attempts==1,'hub must call native despite CPS count')
+   S.runs.PreSimulation:Fire();assert(attempts==2,'no hub spacing cap')
+   S.ability.ClickInstances={};S.ability.LastDeflectCallAt=clock
+   S.runs.PostSimulation:Fire();assert(attempts==3 and S.ability.calls==0,'native interval owns refusal')
+   clock=clock+.009;S.runs.PostSimulation:Fire()
+   assert(attempts==4 and S.ability.calls==1,'native accepts when ready')
+   c.stop()
+  """)
+
  def test_geometry_and_invalid_data(self):
   self.check_lua(r"""
    setup();local c=start();S.ball.Position=vec(1000);matchPacket(123,{distance=8})

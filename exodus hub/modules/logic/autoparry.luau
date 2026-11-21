@@ -345,8 +345,7 @@ local function createParryRuntime(deps)
     end
     local function dispatch(now)
       if not deps.canAct(mode or "match") or UserInputService:GetFocusedTextBox() then return end
-      local minInterval = mode == "training" and CONFIG.TRAINING_INTERVAL or CONFIG.NATIVE_INTERVAL
-      if now - lastAttempt < minInterval then return end
+      if mode == "training" and now - lastAttempt < CONFIG.TRAINING_INTERVAL then return end
       local success, detail, accepted
       local sentGeneration, sentEpisode, sentMode = generation, episodeStart, mode
       if mode == "training" then
@@ -358,14 +357,8 @@ local function createParryRuntime(deps)
       else
         local ability = client and client.Abilities and client.Abilities[1]
         if type(ability) ~= "table" or type(ability.Deflect) ~= "function" then return end
-        local last = ability.LastDeflectCallAt
-        if finite(last) and now - last < CONFIG.NATIVE_INTERVAL then return end
-        if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then return end
-        local limit = workspace:GetAttribute("CPS_LIMIT")
-        if not finite(limit) then limit = 50 end
-        if type(ability.ClickInstances) == "table" and #ability.ClickInstances >= limit then return end
-        sending = true; success, detail = pcall(ability.Deflect, ability)
-        accepted = success and ability.LastDeflectCallAt ~= last
+        local last = ability.LastDeflectCallAt; sending = true
+        success, detail = pcall(ability.Deflect, ability); accepted = success and ability.LastDeflectCallAt ~= last
       end
       sending, lastAttempt = false, now
       if not success then report(detail); return end
@@ -861,15 +854,10 @@ local function createParryRuntime(deps)
       if sending or spent or not deps.canAct("match") or not roleIsActive() or UserInputService:GetFocusedTextBox() then return end
       local ability = client and client.Abilities and client.Abilities[1]
       if type(ability) ~= "table" or type(ability.Deflect) ~= "function" then return end
-      local last = ability.LastDeflectCallAt
-      if now - lastAttempt < CONFIG.NATIVE_INTERVAL or (finite(last) and now - last < CONFIG.NATIVE_INTERVAL) then return end
-      if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then return end
-      local limit = workspace:GetAttribute("CPS_LIMIT")
-      if not finite(limit) then limit = 50 end
-      if type(ability.ClickInstances) == "table" and #ability.ClickInstances >= limit then return end
-      local expectedGeneration, expectedEpisode, version = generation, episodeStart, packetVersion; sending = true
-      local nativeStarted = os.clock(); local ok, detail = pcall(ability.Deflect, ability)
-      metrics.maxNativeMs = math.max(metrics.maxNativeMs or 0, (os.clock() - nativeStarted) * 1000); sending, lastAttempt = false, now
+      local last = ability.LastDeflectCallAt; local expectedGeneration, expectedEpisode, version = generation, episodeStart, packetVersion
+      sending = true; local nativeStarted = os.clock()
+      local ok, detail = pcall(ability.Deflect, ability); metrics.maxNativeMs = math.max(metrics.maxNativeMs or 0, (os.clock() - nativeStarted) * 1000)
+      sending, lastAttempt = false, now
       if not ok then report(detail); return end
       if ability.LastDeflectCallAt == last then metrics.rejectedNative = metrics.rejectedNative + 1; return end
       if not running then return end
@@ -913,7 +901,6 @@ local function createParryRuntime(deps)
       if not cd or cd.source == "unknown" or cd.blocking ~= false or cd.miss ~= true then return false end
       if finite(cd.lastParriedAt) and cd.lastParriedAt >= lastShot.at then return false end
       if not finite(cd.pressAt) or cd.pressAt < lastShot.at - 0.001 or cd.pressAt > now then return false end
-      if now - lastShot.at < CONFIG.NATIVE_INTERVAL then return false end
       spent, departure = false, nil; return true
     end
     function evaluate()
@@ -988,7 +975,7 @@ local function createParryRuntime(deps)
     local function ownParry(kind, owner)
       if kind ~= "parry" or owner ~= userId or not running or not roleActive or not spent or not lastShot then return end
       local now = os.clock()
-      if confirmedToken == lastShot.token or now - lastAckAt < CONFIG.NATIVE_INTERVAL then return end
+      if confirmedToken == lastShot.token then return end
       lastAckAt = now; confirmedToken = lastShot.token
       metrics.confirmations = metrics.confirmations + 1
       departure = { token = lastShot.token, version = lastShot.version, floor = math.max(lastShot.serverTime, workspace:GetServerTimeNow() - (ping or 0)) }; safeEvaluate()
