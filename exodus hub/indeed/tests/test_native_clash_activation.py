@@ -80,7 +80,13 @@ class ExodusClashStatusTests(unittest.TestCase):
    local gameBall={IsInClash=function() error('must never call native') end}
    world.attrs.LastParryAt=tm;world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99
   """+method+r"""
-   assert(GameInfo.IsInClash(),'one parry suffices as in dump')
+   assert(GameInfo.IsInClash(),'one valid parry suffices')
+   world.attrs.GameBallTarget=88;assert(GameInfo.getClashStatus().reason=='redirected')
+   world.attrs.GameBallTarget=nil;assert(GameInfo.IsInClash(),'missing target is not a third player')
+   other.hum.Health=0;assert(GameInfo.getClashStatus().reason=='player_dead')
+   other.hum.Health=100;assert(GameInfo.IsInClash())
+   world.attrs.LastParryTarget=99.5;assert(not GameInfo.IsInClash())
+   world.attrs.LastParryTarget=99
    assert(GameInfo.getClashStatus().source=='exodus')
    world.attrs.LastParryAt=tm-1.1;world.attrs.GameBallTarget=42
    assert(GameInfo.getClashStatus().reason=='target_changed')
