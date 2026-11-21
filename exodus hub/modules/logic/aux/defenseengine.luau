@@ -839,6 +839,7 @@ function DefenseEngine.create(deps)
       activeFactor, factorAt = math.clamp(activeFactor, CONFIG.WINDOW_FACTOR, CONFIG.MAX_FACTOR), now; return activeFactor
     end
     local function inClash()
+      if deps.getClashContext then return deps.getClashContext() ~= nil end
       if not gameBall or type(gameBall.IsInClash) ~= "function" then return false end
       local ok, yes = pcall(gameBall.IsInClash, gameBall, player); return ok and yes == true
     end

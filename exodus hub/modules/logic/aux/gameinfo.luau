@@ -883,6 +883,11 @@ function GameInfo.installBallWatcher(track, onTargetChanged)
     if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
     if item then ballVisualConnection = item:GetPropertyChangedSignal("Color"):Connect(targetChanged); track(ballVisualConnection) end
   end
+  for _, name in ipairs({ "LastParryAt", "LastParryBy", "LastParryTarget", "ClashStartedAt", "ClashHits" }) do
+    track(world:GetAttributeChangedSignal(name):Connect(function()
+      if type(onTargetChanged) == "function" then onTargetChanged({ Source = "clash" }) end
+    end))
+  end
   track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(function()
     invalidateSnapshotCache()
     if type(onTargetChanged) == "function" then onTargetChanged({ Source = "target", TargetPlayerID = world:GetAttribute("GameBallTarget") }) end
@@ -939,6 +944,13 @@ function GameInfo.spinCrate(network, crate, guard)
   network:CSendEvent(owned == true and CONFIG.GAME_IDS.CRATE_OWNED or CONFIG.GAME_IDS.CRATE_NEW, crate); return true
 end
 function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
+function GameInfo.getNativeClashContext()
+  GameInfo.getBallSpeedLimits(); local player = players.LocalPlayer
+  if not player or not gameBall or type(gameBall.IsInClash) ~= "function" or gameBall:IsInClash(player) ~= true then return nil end
+  local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget"); local partner = by == player.UserId and target or (target == player.UserId and by or nil)
+  if not finite(partner) or partner <= 0 or partner == player.UserId then return nil end
+  return { partnerId = partner, lastParryAt = world:GetAttribute("LastParryAt") }
+end
 function GameInfo.getClashContext(ignoreDistance)
   local player = players.LocalPlayer
   if not player then return nil end
@@ -1029,6 +1041,7 @@ GameInfo.__contract = {
     "getBallSpeedLimits",
     "getManifestRemote",
     "getClashContext",
+    "getNativeClashContext",
     "getStatus",
     "getSnapshot",
     "getSnapshotAt",

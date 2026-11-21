@@ -2,7 +2,7 @@
 
 The loader injects DefenseEngine into AutoParry. The engine uses the V14 native snapshot hook, multiple target sources, two-render-frame visual validation, native trajectory simulation, relative closing velocity, one-way ping and adaptive window factor. Match window is 500–300 ms. Training retains its native window and Block remote, including UnreliableRemoteEvent BallState support.
 
-Hub dispatch is one call per validated incoming flight. Clash repetition is excluded. A confirmed own parry plus a newer inbound snapshot can establish a new flight when the away packet was lost. Predicted parries cannot rearm. AutoSpam activation rules and click scheduler are unchanged; the existing opportunity notification is retained.
+Hub dispatch is one call per validated incoming flight. Clash repetition is excluded. A confirmed own parry plus a newer inbound snapshot can establish a new flight when the away packet was lost. Predicted parries cannot rearm. The existing opportunity notification is retained. The follow-up native AutoSpam integration replaces activation rules with the native clash provider; see native_clash_autospam.md.
 
 AutoParry owns engine teardown and rebind. The engine creates no UI. Direct legacy consumers without the loader keep the previous adapter; the loader contract requires the new engine.
 
