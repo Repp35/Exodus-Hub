@@ -73,7 +73,7 @@ local function disconnectPool(state, pool)
   table.clear(pool)
 end
 local function clearEvidence(state)
-  state.outbound, state.pending, state.receipt, state.haunter, state.exchange = nil, nil, nil, nil, nil
+  state.fastTargetId, state.fastDeparture = nil, nil; state.outbound, state.pending, state.receipt, state.haunter, state.exchange = nil, nil, nil, nil, nil
   state.target, state.previousOpponent, state.confirmedReturns, state.exchangeHistory = nil, nil, nil, nil
   state.lastPairExchangeAt, state.sendContinuity, state.prediction, state.predictionEvidence = nil, nil, nil, nil; state.leg = (state.leg or 0) + 1
   state.activationEvidence, state.predictionArmed, state.predictionEvidence, state.fastReturn = nil, nil, nil, nil
@@ -235,8 +235,6 @@ local function observeTarget(state, s, time, packet)
       and time >= outbound.at
       and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
     then
-      local duration = time - outbound.at
-      if duration > 0 and duration <= 0.15 + 1e-9 then state.fastReturn = { partner = previous, at = time, leg = state.leg, ball = s.ball } end
       local h = state.confirmedReturns; local count = h and h.partner == previous and time - h.at <= CONFIG.TIMING.HISTORY_MAX_AGE and h.count + 1 or 1
       local returnGeometry = geometry(s, 0.8); state.confirmedReturns = { partner = previous, count = count, at = time }
       state.pending = {
@@ -590,6 +588,23 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
+local function observeFastTargetId(state, s, time)
+  if not s.fastTargetPacket then return end
+  local target = userId(s.fastTargetId)
+  if not target then state.fastTargetId, state.fastDeparture, state.fastReturn = nil, nil, nil; return end
+  local previous = state.fastTargetId
+  if previous == target then return end
+  state.fastTargetId = target
+  if previous == localPlayer.UserId then
+    state.fastDeparture, state.fastReturn = { partner = target, at = time, ball = s.ball }, nil
+  elseif target == localPlayer.UserId then
+    local away = state.fastDeparture
+    if away and away.partner == previous and away.ball == s.ball and time > away.at and time - away.at <= 0.15 + 1e-9 then state.fastReturn = { partner = previous, at = time, ball = s.ball } end
+    state.fastDeparture = nil
+  else
+    state.fastDeparture, state.fastReturn = nil, nil
+  end
+end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then return nil end
   local context = gameInfo.getClashStatus(); local partner = context and context.active and context.partnerId
@@ -614,7 +629,10 @@ evaluate = function(state, s, time, packet)
   if packet then state.packetSnapshot, state.packetAt = table.clone(s), time end
   local gate = lifecycleGate(state, s)
   if gate == "ball_reset" then clearEvidence(state) end
-  if s and gate ~= "ball_reset" and gate ~= "training" and gate ~= "ball_paused" then observeTarget(state, s, time, packet) end
+  if s and gate ~= "ball_reset" and gate ~= "training" and gate ~= "ball_paused" then
+    if packet then observeFastTargetId(state, s, time) end
+    observeTarget(state, s, time, packet)
+  end
   if state.active then
     stop = deactivationGate(state, s, time)
     if stop then
@@ -646,7 +664,6 @@ evaluate = function(state, s, time, packet)
   if
     fast
     and fast.at == time
-    and fast.leg == state.leg
     and fast.ball == s.ball
     and insideSpamWindow(state, s, time, 0.6)
     and nearPartner(state, fast.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE)
@@ -924,6 +941,7 @@ function AutoSpam.onBallSync(data)
     local incoming = data.Sequence or data.TeleportSequence; local order = sequenceOrder(state.ball == s.ball and state or {}, incoming)
     if order == "old" or order == "invalid" or (order == "same" and data.Teleported ~= true) then return end
     s = table.clone(s); s.syncSequence, s.syncAt = incoming, time
+    s.fastTargetPacket, s.fastTargetId = data.TargetPlayerID ~= nil, data.TargetPlayerID
     if data.TargetPlayerID ~= nil then
       s.exchangeTargetId, s.targetId, s.targetUncertain = data.TargetPlayerID, data.TargetPlayerID, not userId(data.TargetPlayerID); s.targeted = data.TargetPlayerID == localPlayer.UserId
     end
@@ -937,7 +955,8 @@ function AutoSpam.onBallSync(data)
   local targetEvent = data.Source == "target" and userId(data.TargetPlayerID) or nil or nil
   if targetEvent then
     s = table.clone(s); s.syncSequence = state.sequence or s.syncSequence
-    s.targetId, s.exchangeTargetId = targetEvent, targetEvent; s.targeted, s.targetUncertain = targetEvent == localPlayer.UserId, false
+    s.fastTargetPacket = false; s.targetId, s.exchangeTargetId = targetEvent, targetEvent
+    s.targeted, s.targetUncertain = targetEvent == localPlayer.UserId, false
   end
   evaluate(state, s, time, received or targetEvent ~= nil)
   if received then state.packetSnapshot, state.packetAt = s, time end

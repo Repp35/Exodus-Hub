@@ -13,4 +13,10 @@ class FastReturn(unittest.TestCase):
   check('''snap.speed=16;snap.syncSpeed=16;snap.position=v(20);packet(42);packet(99);packet(42,.05);assert(not ap.isActive())''',NATIVE)
  def test_immediate_first_send(self):
   check('''snap.position=v(8);packet(42);packet(99);packet(42,.05);assert(ap.isActive() and clicks==1)''',NATIVE)
+ def test_attributes_cannot_create_fast_return(self):
+  check('''snap.position=v(8)
+   local function attr(id) ap.onBallSync({Source='target',TargetPlayerID=id}) end
+   attr(42);attr(99);attr(42);assert(not ap.isActive())
+   packet(42);packet(99);attr(42);assert(not ap.isActive())
+   packet(42,.05);assert(ap.isActive(),'only network target return activates')''',NATIVE)
 if __name__=='__main__':unittest.main()
