@@ -11,6 +11,7 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.6,
     MAX_CLASH_DISTANCE = 35,
+    WINDOW_FACTOR = 0.9,
     CLOSE_TARGET_DISTANCE = 5,
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
@@ -116,7 +117,8 @@ local function lifecycleGate(state, s)
   if not s or not s.ball or not s.ball.Parent then return "snapshot_invalid" end
   if s.ball ~= state.ball or s.teleported or s.resetting or s.ballValid == false or s.valid == false then return "ball_reset" end
   if s.mode == "training" then return "training" end
-  if s.locked or s.frozen or s.ballCanMove == false or gameInfo.getBallFrozen() == true then return "ball_paused" end
+  if gameInfo.getBallFrozen() == true then return "ball_paused" end
+  if s.locked or s.ballCanMove == false then return "ball_reset" end
 end
 local function sampleGate(state, s, time)
   local gate = lifecycleGate(state, s)
@@ -159,6 +161,13 @@ local function geometry(s, factor)
   local g = deflectGeometry.getDeflectGeometry(speed, "game", factor or 1, false, networkLatency())
   if not g or not finite(g.effectiveWindow) or not finite(g.noWindowParryRadius) then return nil end
   local low, high = gameInfo.getBallSpeedLimits(); return deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1), speed
+end
+local function insideSpamWindow(state, s, time)
+  if not s or not vector(s.position) or not vector(state.root.Position) then return false end
+  if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
+  local g = geometry(s, CONFIG.ACTIVATION.WINDOW_FACTOR)
+  if not g or not finite(g.fullRadius) or g.fullRadius < 0 then return false end
+  local delta = s.position - state.root.Position; return delta:Dot(delta) <= g.fullRadius * g.fullRadius
 end
 local function compensatedRadius(id, speed)
   local radius = deflectGeometry.getPlayerRawRadius(id, speed, false)
@@ -255,6 +264,10 @@ end
 local function autoHardStop(state, s)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  if utils.getWorkspace():GetAttribute("MatchStatus") ~= 6 then return "match_ended" end
+  if gameInfo.getBallFrozen() == true then return "ball_paused" end
+  if state.active and (not s or not s.ball or not s.ball.Parent or s.ball ~= state.ball or s.teleported or s.resetting) then return "ball_reset" end
+  if state.active and state.partner and not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return "opponent_out_of_range" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
@@ -487,6 +500,7 @@ end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
   if reason then return reason end
+  if not insideSpamWindow(state, s, time) then return "outside_spam_window" end
   local speed = snapshotSpeed(s) or 0; local low, high = gameInfo.getBallSpeedLimits()
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
@@ -574,6 +588,14 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
+local function nativeActivation(state, s, time)
+  if not insideSpamWindow(state, s, time) then return nil end
+  local context = gameInfo.getNativeClashContext(); local partner = context and context.partnerId
+  if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
+  local cd = cooldownInfo.getDeflectCooldownState()
+  if state.cooldownSince and cd and cd.blocking == true and cd.predictedReset ~= true and time - state.cooldownSince >= (state.cooldownLimit or math.huge) then return nil end
+  return { partner = partner, reason = "native_clash" }
+end
 evaluate = function(state, s, time, packet)
   if current ~= state then return end
   state.gates = {}
@@ -585,7 +607,7 @@ evaluate = function(state, s, time, packet)
   end
   if s and s.ball ~= state.ball then state.ball, state.sequence, state.packetSnapshot, state.packetAt = s.ball, nil, nil, nil; clearEvidence(state) end
   local order = sequenceOrder(state, s and s.syncSequence)
-  if order == "old" or order == "invalid" then state.lastGate = "packet_" .. order; return end
+  if order == "old" or order == "invalid" then packet = false end
   if order == "new" then state.sequence = s.syncSequence end
   if packet then state.packetSnapshot, state.packetAt = table.clone(s), time end
   local gate = lifecycleGate(state, s)
@@ -612,7 +634,7 @@ evaluate = function(state, s, time, packet)
     if gate == "ball_reset" or gate == "training" or gate == "ball_paused" then clearEvidence(state) end
     return
   end
-  local candidate = chooseActivation(state, s, time)
+  local candidate = nativeActivation(state, s, time)
   if candidate then activate(state, candidate, s, time); rememberContinuity(state, time) else state.lastGate = "no_activation_evidence" end
   observeStats(state, s, time, packet)
 end
@@ -755,24 +777,6 @@ local function watchPlayer(state, player)
     local function watchHumanoid(humanoid)
       if current ~= state or player.Character ~= character or not humanoid:IsA("Humanoid") or sensor.humanoid == humanoid then return end
       sensor.humanoid = humanoid; listen(state, humanoid.Died, death, sensor.characterConnections)
-      local function watchAnimator(animator)
-        if current ~= state or player.Character ~= character or sensor.humanoid ~= humanoid or not animator:IsA("Animator") or sensor.animator == animator then return end
-        if sensor.animationConnection then sensor.characterConnections[sensor.animationConnection] = nil; disconnectPool(state, { [sensor.animationConnection] = true }) end
-        sensor.animator = animator
-        sensor.attempt = nil; table.clear(sensor.tracks)
-        sensor.animationConnection = listen(
-          state,
-          animator.AnimationPlayed,
-          function(track) observeAnimation(state, sensor, track, false) end,
-          sensor.characterConnections
-        )
-        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-          observeAnimation(state, sensor, track, true)
-        end
-      end
-      local animator = humanoid:FindFirstChildOfClass("Animator")
-      if animator then watchAnimator(animator) end
-      listen(state, humanoid.ChildAdded, watchAnimator, sensor.characterConnections)
     end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then watchHumanoid(humanoid) end
@@ -816,11 +820,11 @@ function AutoSpam.bindCharacter(character)
     gates = {},
     leg = 0,
     lastRootPosition = root.Position,
-    animationCatalog = gameInfo.getDeflectAnimationCatalog(),
+    animationCatalog = {},
   }
 
   current = state; local initial = gameInfo.getSnapshotAt(now())
-  state.ball = initial and initial.ball; connectHaunter(state)
+  state.ball = initial and initial.ball
   for _, player in ipairs(players:GetPlayers()) do
     watchPlayer(state, player)
   end
@@ -836,7 +840,17 @@ function AutoSpam.bindCharacter(character)
     if state.partner == player.UserId then deactivate(state, "opponent_left_or_died", now()) end
     if state.previousOpponent == player.UserId then clearEvidence(state) end
   end)
+  local function refreshNative()
+    if current == state then evaluate(state, gameInfo.getSnapshotAt(now()), now(), false) end
+  end
+  if type(utils.observeConfig) == "function" then
+    local c = utils.observeConfig(refreshNative); state.connections[c] = true
+    utils.trackCharacter(c)
+  end
   local world = utils.getWorkspace()
+  for _, name in ipairs({ "LastParryAt", "LastParryBy", "LastParryTarget", "ClashHits" }) do
+    listen(state, world:GetAttributeChangedSignal(name), refreshNative)
+  end
   listen(state, world:GetAttributeChangedSignal("MatchStatus"), function()
     clearEvidence(state)
     for _, sensor in pairs(state.sensors) do
@@ -855,11 +869,10 @@ function AutoSpam.bindCharacter(character)
     if current ~= state then return end
     local time = now()
     if finite(dt) and dt > 0 then state.frameInterval = dt end
-    if time >= (state.nextHaunterCheck or 0) then state.nextHaunterCheck = time + 0.5; connectHaunter(state) end
     if vector(state.lastRootPosition) and (root.Position - state.lastRootPosition).Magnitude > CONFIG.ACTIVATION.HAUNTER_RANGE then
       state.recentRootPosition, state.recentRootAt = state.lastRootPosition, time
     end
-    scanAnimations(state, time); evaluate(state, selectSnapshot(state, gameInfo.getSnapshotAt(time), time), time, false)
+    evaluate(state, selectSnapshot(state, gameInfo.getSnapshotAt(time), time), time, false)
     if state.active then rememberContinuity(state, time) end
     state.lastRootPosition = root.Position
   end)
@@ -875,7 +888,7 @@ function AutoSpam.bindCharacter(character)
   listen(state, character.AncestryChanged, function(_, parent)
     if not parent and current == state then detach("character_removed") end
   end)
-  return true
+  refreshNative(); return true
 end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
@@ -935,22 +948,11 @@ function AutoSpam.canSend()
     deactivate(state, stop, time); state.lastSendBlockReason, state.lastSendBlockAt = stop, time
     return false
   end
-  local gate = sampleGate(state, s, time); local activation = state.activationEvidence
-  local recentActivation = activation
-    and activation.ball == state.ball
-    and time >= activation.at
-    and time - activation.at <= math.max(0.1, frameLead(state) * 2 + networkLatency())
-    and not lifecycleGate(state, s)
-  if
-    gate
-    and not (recentActivation and (gate == "target_unknown" or gate == "snapshot_stale" or gate == "packet_old"))
-    and not canBridge(state, s, time, gate)
-  then
-    state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false
-  end
+  local gate = lifecycleGate(state, s)
+  if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
   return true
 end
-function AutoSpam.hasClashPrediction() return true end
+function AutoSpam.hasClashPrediction() return false end
 function AutoSpam.stopSpam(reason)
   if current then deactivate(current, reason or "stop_spam", now()) end
 end
@@ -1054,6 +1056,7 @@ AutoSpam.__contract = {
       "apiVersion",
     },
     GameInfo = {
+      "getNativeClashContext",
       "getDeflectTargetPrediction",
       "getDeflectAnimationCatalog",
       "areAbilitiesEnabled",

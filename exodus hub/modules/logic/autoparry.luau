@@ -2,6 +2,7 @@
 
 -- module
 local AutoParry = {}
+local defenseEngine, activeEngine
 local deflectGeometry
 local requestInFlight = false
 local utils, gameInfo, remote, cooldownInfo, autoSpam
@@ -130,10 +131,12 @@ local function resetTracking()
   state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
   state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
   state.apNativePressAt = nil; state.danger = nil
-  state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil; state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
-  table.clear(state.clicks); table.clear(state.returns)
+  state.engineCycle = nil; state.safetyRisk, state.killTime, state.predictionSource = 0, math.huge, nil
+  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
+  if activeEngine then activeEngine.stop(); activeEngine = nil end
   state.generation += 1; disconnect()
   state.lifeGeneration += 1; state.alive, state.bound, state.character, state.root = false, false, nil, nil
   resetTracking(); phase("detached", reason)
@@ -608,8 +611,9 @@ function AutoParry.setup(deps)
   then
     return false, "dependências inválidas"
   end
-  detach("setup"); deflectGeometry, autoSpam = deps.DeflectGeometry, deps.AutoSpam
-  utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown; state.player = utils.getLocalPlayer()
+  detach("setup"); defenseEngine = deps.DefenseEngine
+  deflectGeometry, autoSpam = deps.DeflectGeometry, deps.AutoSpam; utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown
+  state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
   resetTracking(); phase("detached", "setup_complete")
   return true
@@ -623,20 +627,54 @@ function AutoParry.bindCharacter(character)
   local service, player = utils.getRunService(), utils.getLocalPlayer(); local signal = service and (service.PostSimulation or service.Heartbeat)
   if not signal or not player then return false, "RunService ou jogador indisponível" end
   state.root, state.character, state.player, state.alive, state.bound = root, character, player, true, true; resetTracking()
-  phase("waiting", "character_bound"); cooldownInfo.getDeflectCooldownState()
-  track(signal:Connect(function(deltaTime)
-    if generation ~= state.generation then return end
-    if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE) end
-    tick(character, root, generation)
-  end))
-  if service.PreSimulation and service.PreSimulation ~= signal then
-    track(service.PreSimulation:Connect(function()
-      if generation == state.generation and not gameInfo.isTrainingArea() then tick(character, root, generation) end
+  if not defenseEngine then
+    phase("waiting", "character_bound"); cooldownInfo.getDeflectCooldownState()
+    track(signal:Connect(function(deltaTime)
+      if generation ~= state.generation then return end
+      if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE) end
+      tick(character, root, generation)
     end))
+    if service.PreSimulation and service.PreSimulation ~= signal then
+      track(service.PreSimulation:Connect(function()
+        if generation == state.generation and not gameInfo.isTrainingArea() then tick(character, root, generation) end
+      end))
+    end
+    track(gameInfo.observeTraining(function()
+      if generation == state.generation and gameInfo.isTrainingArea() then tick(character, root, generation) end
+    end))
+  else
+    phase("waiting", "character_bound")
+    local controller, detail = defenseEngine.create({
+      getClashContext = gameInfo.getNativeClashContext,
+      canAct = function(mode)
+        if generation ~= state.generation or not state.bound or not utils.isActive() or utils.getConfigValue("AutoParry") == false then return false end
+        if clock() < state.fierceUntil then return false end
+        return mode == "training" or not utils.isSpamActive()
+      end,
+      onOpportunity = function()
+        if generation == state.generation and autoSpam and utils.isActive() then autoSpam.onDefenseOpportunity(parrySnapshot(clock())) end
+      end,
+      onState = function(value)
+        if generation ~= state.generation then return end
+        if value.mode ~= state.mode or value.ball ~= state.lastBall or value.cycle ~= state.engineCycle then state.cycle = state.cycle + 1; state.engineCycle = value.cycle end
+        state.mode, state.lastBall = value.mode, value.ball; state.targetKnown, state.lastTargeted, state.target = value.targeted ~= nil, value.targeted == true, value.targetId or -1
+        state.fired = value.fired == true; state.speed, state.distance, state.closingSpeed = value.speed or 0, value.distance or 0, value.closing or 0
+        state.triggerDistance, state.windowFactor = value.threshold or 8.5, value.factor or 0.45
+        state.adaptiveFactor, state.adaptiveWindow, state.timeToRange = state.windowFactor, (value.window or 0.5) * state.windowFactor, value.tti or math.huge
+        state.ping, state.approaching = value.ping or 0, (value.closing or 0) > 0; state.predictionSource = "v14_engine"
+      end,
+      onAttempt = function(mode, now)
+        if generation ~= state.generation then return end
+        state.fired, state.lastFireAt, state.mode = true, now, mode; local previous = state.lastAutoParryClickAt
+        state.autoParryCps = previous and now > previous and 1 / (now - previous) or 0; state.lastAutoParryClickAt = now
+        if mode == "training" then cooldownInfo.recordTrainingDeflectAttempt(now) else cooldownInfo.recordDeflectAttempt(now, state.speed) end
+        phase("waiting", "target_already_parried")
+      end,
+      onStats = function(stats) maxObservedCps = math.max(maxObservedCps or 0, stats.maxCps or 0) end,
+    })
+    if not controller then detach("engine_failed"); return false, detail end
+    activeEngine = controller
   end
-  track(gameInfo.observeTraining(function()
-    if generation == state.generation and gameInfo.isTrainingArea() then tick(character, root, generation) end
-  end))
   track(character.AncestryChanged:Connect(function(_, parent)
     if not parent and generation == state.generation then detach("character_removed") end
   end))
@@ -674,12 +712,14 @@ function AutoParry.cancelFierce(token)
   end
 end
 function AutoParry.fire()
+  if activeEngine then return activeEngine.pulse() end
   if not state.alive or not state.bound or state.fired or state.teleported then return false end
   if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return false end
   if not state.player or state.target ~= state.player.UserId or clock() < state.nextAttemptAt then return false end
   return request("manual_parry")
 end
 function AutoParry.tryRedirectReturn(value, redirectAt)
+  if activeEngine then return activeEngine.pulse() end
   if not state.alive or not state.bound or not state.player or state.teleported then return false end
   if not state.root or not state.root.Parent then return false end
   if not utils.isActive() or utils.isSpamActive() or utils.getConfigValue("AutoParry") == false then return false end
@@ -718,6 +758,14 @@ end
 
 -- ball-sync
 function AutoParry.onBallSync(data)
+  if activeEngine then
+    if type(data) == "table" and (data.Source == "packet" or data.Source == "replicator" or data.Source == nil) then
+      local now = clock()
+      if lastSyncAt and now > lastSyncAt then syncInterval = now - lastSyncAt end
+      lastSyncAt = now; lastAcceptedSample = parrySnapshot(now)
+    end
+    return true
+  end
   if type(data) ~= "table" or not state.alive or not state.bound then return end
   if gameInfo.isTrainingArea() then return true end
   local sequence = data.Sequence or data.TeleportSequence
@@ -810,7 +858,46 @@ local function rootPosition()
   local character = state.player and state.player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
   return root and root.Parent and gameInfo.getRootPosition(root) or nil
 end
+local function engineTiming(value)
+  if not activeEngine then return nil end
+  local v = activeEngine.getSnapshot()
+  if not v or not finite(v.window) or not finite(v.speed) or (value and value.ball ~= v.ball) then return nil end
+  local radius, factor, speed, ping = v.radius or 8.5, v.factor or 0.45, v.speed, v.ping or 0; local lead = v.window * factor + ping
+  local closing = v.closing or speed; local threshold = v.threshold or radius + math.max(0, closing) * lead
+  local tti = v.tti or (closing > 0 and math.max(0, (v.distance or 0) - radius) / closing or math.huge)
+  return {
+    distance = v.distance or 0,
+    speed = speed,
+    parryRadius = threshold,
+    fullRadius = threshold,
+    pureRadius = 8.5,
+    noWindowParryRadius = radius,
+    pingRadius = math.max(0, closing) * ping,
+    resilienceBonus = radius - 8.5,
+    deflectWindow = v.window,
+    effectiveWindow = lead,
+    leadTime = lead,
+    windowFactor = factor,
+    adaptiveWindowFactor = factor,
+    triggerPadding = 0,
+    triggerDistance = threshold,
+    distanceToParryRadius = (v.distance or 0) - threshold,
+    timeToRange = tti,
+    defenseRadius = radius + speed * ping,
+    radiusGateLead = v.window,
+    predictionTimeToRange = tti,
+    timeToTrigger = math.max(0, tti - lead),
+    tti = tti,
+    approaching = closing > 0,
+    targeted = v.targeted == true,
+    predictionSource = "v14_engine",
+    noWindowRadius = radius,
+    training = v.mode == "training",
+  }
+end
 function AutoParry.getTiming(value, time, root, factor, baseWindow)
+  local live = engineTiming(value)
+  if live and factor == nil and baseWindow == nil then return live end
   if type(value) ~= "table" or not gameInfo then return nil end
   time = finite(time) and time or clock()
   if value.mode ~= "training" and type(gameInfo.getParrySnapshot) == "function" then
@@ -873,6 +960,11 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   }
 end
 function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
+  local live = engineTiming()
+  if live and factor == nil and speedOverride == nil and baseWindow == nil then
+    live.mode, live.resilience = mode or "geometry", resilience(); live.value = mode == "tti" and live.tti or live.fullRadius
+    return live
+  end
   if not gameInfo then return nil end
   if mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
   local speed = tonumber(speedOverride)
@@ -1024,6 +1116,7 @@ end
 -- contract
 AutoParry.__contract = {
   requires = {
+    DefenseEngine = "defenseengine",
     DeflectGeometry = "deflectgeometry",
     Remote = "remote",
     GameInfo = "gameinfo",
@@ -1032,6 +1125,7 @@ AutoParry.__contract = {
     AutoSpam = "autospam",
   },
   requiresMethods = {
+    DefenseEngine = { "create" },
     AutoSpam = { "onDefenseOpportunity" },
     DeflectGeometry = {
       "getKillRadius",
@@ -1050,6 +1144,7 @@ AutoParry.__contract = {
     Remote = { "fireParry" },
     Cooldown = { "getDeflectCooldownState", "recordDeflectAttempt", "recordTrainingDeflectAttempt", "getTrainingCooldownState" },
     GameInfo = {
+      "getNativeClashContext",
       "isTrainingArea",
       "getDeflectAbility",
       "observeTraining",
