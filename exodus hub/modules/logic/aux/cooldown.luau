@@ -100,8 +100,18 @@ function Cooldown.getHeldDeflectServerCooldown()
 end
 function Cooldown.recordDeflectAttempt(pressedAt)
   if not finite(pressedAt) or pressedAt <= 0 then return end
+  local ability = gameInfo and gameInfo.getDeflectAbility()
+  if ability ~= observedAbility then observedAbility, deflectAttempt, blockingSince, previousBlocking = ability, nil, nil, nil end
   if deflectAttempt and pressedAt <= deflectAttempt.pressedAt then return end
-  deflectAttempt = { pressedAt = pressedAt, missed = false }
+  local remaining = ability and ability.Cooldown; local deadline = ability and ability.PendingPredictUntil
+  deflectAttempt = {
+    pressedAt = pressedAt,
+    missed = false,
+    hadCooldown = finite(remaining) and remaining > 0,
+    cooldownEndsAt = finite(remaining) and remaining > 0 and os.clock() + remaining or nil,
+    windowEndsAt = finite(deadline) and deadline or nil,
+  }
+
 end
 function Cooldown.getDeflectCooldownState()
   if not cooldown or not utils or not gameInfo then return nil end
@@ -167,8 +177,11 @@ function Cooldown.getDeflectCooldownState()
   if cooldown.remaining ~= nil then cooldown.active = cooldown.remaining > 0 end
   cooldown.blocking = cooldown.active; cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
   local pendingAt = ability and ability.PendingPressAt; local pendingUntil = ability and ability.PendingPredictUntil
-  if finite(pendingAt) and pendingAt > 0 and pendingAt <= time then Cooldown.recordDeflectAttempt(pendingAt) end
-  if deflectAttempt and finite(pendingAt) and pendingAt == deflectAttempt.pressedAt and finite(pendingUntil) then
+  if finite(pendingAt) and pendingAt > 0 and pendingAt <= time then
+    if deflectAttempt and pendingAt >= deflectAttempt.pressedAt and pendingAt - deflectAttempt.pressedAt <= 0.01 then deflectAttempt.nativePressAt = pendingAt
+    else Cooldown.recordDeflectAttempt(pendingAt) end
+  end
+  if deflectAttempt and finite(pendingAt) and (pendingAt == deflectAttempt.pressedAt or pendingAt == deflectAttempt.nativePressAt) and finite(pendingUntil) then
     deflectAttempt.windowEndsAt = math.max(deflectAttempt.windowEndsAt or pendingUntil, pendingUntil)
   end
   if cooldown.blocking then
@@ -182,9 +195,19 @@ function Cooldown.getDeflectCooldownState()
   previousBlocking = cooldown.blocking; cooldown.blockingSince, cooldown.episode = blockingSince, cooldownEpisode
   local attempt = deflectAttempt; local pendingOpen = finite(pendingUntil) and pendingUntil > time
   local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false
-  local missActive = cooldown.source ~= "unknown" and cooldown.blocking == true and not pendingOpen
+  local missActive = cooldown.source ~= "unknown" and cooldown.blocking == true and not pendingOpen and not cooldown.predictedReset
+  if attempt and cooldown.blocking == true then
+    attempt.hadCooldown = true
+    if finite(cooldown.remaining) then attempt.cooldownEndsAt = time + cooldown.remaining end
+  end
+  local completedMiss = attempt
+    and attempt.hadCooldown
+    and cooldown.source ~= "unknown"
+    and not cooldown.predictedReset
+    and not pendingOpen
+    and ((finite(attempt.windowEndsAt) and time >= attempt.windowEndsAt) or (finite(attempt.cooldownEndsAt) and time >= attempt.cooldownEndsAt))
   if attempt then
-    if parried then attempt.missed = false elseif missActive then attempt.missed = true end
+    if parried then attempt.missed = false elseif missActive or completedMiss then attempt.missed = true end
   end
   cooldown.pressAt = attempt and attempt.pressedAt or nil; cooldown.missDeadline = pendingOpen and pendingUntil or nil
   cooldown.windowEndsAt = attempt and attempt.windowEndsAt or nil; cooldown.windowExpired = finite(cooldown.windowEndsAt) and time >= cooldown.windowEndsAt

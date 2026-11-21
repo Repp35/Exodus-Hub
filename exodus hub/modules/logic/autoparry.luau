@@ -2017,6 +2017,11 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
   local radiusEntry, defenseRadius, gateLead = radiusTiming(position, velocity, root, speed, geometry, state.ping)
   local timeToTrigger = math.min(math.max(entry - lead, 0), math.max(radiusEntry - gateLead, 0))
   if not geometry.training then timeToTrigger = match and match.ready and 0 or math.max(0, entry - lead) end
+  local killRadius = match and match.killRadius or deflectGeometry.getKillRadius(deflectGeometry.getDefensePhysics()); local killTime = match and match.killTime
+  if not finite(killTime) then
+    local ownVelocity = state.root and state.root.Parent and state.root.AssemblyLinearVelocity; local danger = deflectGeometry.getDanger(position, velocity, root, speed, killRadius, 0, ownVelocity)
+    killTime = danger and danger.entryTime or math.huge
+  end
   return {
     distance = distance,
     speed = speed,
@@ -2042,8 +2047,8 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
     timeToTrigger = timeToTrigger,
     tti = radiusEntry,
     approaching = closing > 0 and speed >= CONFIG.MIN_PARRY_SPEED,
-    timeToKill = match and match.killTime or nil,
-    killRadius = match and match.killRadius or nil,
+    timeToKill = killTime,
+    killRadius = killRadius,
     danger = match and match.danger or nil,
     safetyRisk = match and match.risk or nil,
     predictionSource = value.predictionSource or "visual_fallback",

@@ -82,6 +82,9 @@ local function sustainedCooldown(cooldown, now, timing)
   local startedAt = cooldown.blockingSince
   if not finite(startedAt) or startedAt <= 0 or startedAt > now then return false end
   if not finite(cooldown.episode) or cooldown.episode <= 0 then return false end
+  local deadline = finite(cooldown.windowEndsAt) and cooldown.windowEndsAt or cooldown.missDeadline; local pendingOpen = finite(deadline) and deadline > now
+  if cooldown.predictedReset == true then return false end
+  if timing and cooldown.miss == true and not pendingOpen and cooldown.windowExpired ~= false then return true end
   local physics = deflectGeometry.getDefensePhysics(); local ping = gameInfo.getAveragePing()
   if not finite(ping) or ping < 0 then return false end
   local responseMargin = math.min(ping * 2, 1) + CONFIG.SERVER_FRAME_MARGIN
@@ -92,7 +95,6 @@ local function sustainedCooldown(cooldown, now, timing)
   end
   if finite(cooldown.missDeadline) then timerReadyAt = math.max(timerReadyAt, cooldown.missDeadline + responseMargin) end
   if cooldown.predictedReset == true then return false end
-  local deadline = finite(cooldown.windowEndsAt) and cooldown.windowEndsAt or cooldown.missDeadline; local pendingOpen = finite(deadline) and deadline > now
   if timing then
     local entry = timing.predictionTimeToRange or timing.timeToRange; local killTime = timing.timeToKill
     if finite(killTime) and finite(cooldown.remaining) and cooldown.remaining + ping + CONFIG.SERVER_FRAME_MARGIN < killTime then return false end
