@@ -951,6 +951,26 @@ function GameInfo.getNativeClashContext()
   if not finite(partner) or partner <= 0 or partner == player.UserId then return nil end
   return { partnerId = partner, lastParryAt = world:GetAttribute("LastParryAt") }
 end
+function GameInfo.getClashStatus()
+  local status = { active = false, native = false, reason = "native_inactive" }; local context = GameInfo.getNativeClashContext()
+  if not context then return status end
+  status.native, status.partnerId = true, context.partnerId
+  local function setting(key, fallback, low, high)
+    local value = utils.getConfigValue(key); return finite(value) and math.clamp(value, low, high) or fallback
+  end
+  status.minHits = math.floor(setting("ClashMinHits", 2, 1, 10)); status.maxDistance = setting("ClashMaxDistance", 25, 1, 35)
+  status.maxAge = setting("ClashMaxAge", 0.5, 0.05, 2.5); local hits = world:GetAttribute("ClashHits")
+  status.hits = finite(hits) and hits or 0
+  if status.hits < status.minHits then status.reason = "waiting_exchange"; return status end
+  local at = context.lastParryAt; status.age = finite(at) and world:GetServerTimeNow() - at or math.huge
+  if status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end
+  local player, partner = players.LocalPlayer, players:GetPlayerByUserId(context.partnerId); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+  local other = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
+  if not root or not other then status.reason = "missing_player"; return status end
+  status.distance = (root.Position - other.Position).Magnitude
+  if not finite(status.distance) or status.distance > status.maxDistance then status.reason = "distance"; return status end
+  status.active, status.reason = true, "clashing"; return status
+end
 function GameInfo.getClashContext(ignoreDistance)
   local player = players.LocalPlayer
   if not player then return nil end
@@ -970,6 +990,7 @@ function GameInfo.getStatus()
   local now = utils.now(); local value = snapshot(now)
   return {
     schema = utils.apiVersion(),
+    clash = GameInfo.getClashStatus(),
     generatedAt = now,
     available = value ~= nil,
     targetId = value and value.targetId or -1,
@@ -1042,6 +1063,7 @@ GameInfo.__contract = {
     "getManifestRemote",
     "getClashContext",
     "getNativeClashContext",
+    "getClashStatus",
     "getStatus",
     "getSnapshot",
     "getSnapshotAt",

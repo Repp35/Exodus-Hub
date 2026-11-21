@@ -11,6 +11,7 @@ def check(case, extra):
 NATIVE = '''
 local native=false;local nativeReads=0
 g.getNativeClashContext=function() nativeReads=nativeReads+1;return native and {partnerId=99,lastParryAt=tm} or nil end
+g.getClashStatus=function() local c=g.getNativeClashContext();return {active=c~=nil,partnerId=c and c.partnerId} end
 '''
 class NativeClashTests(unittest.TestCase):
  def test_native_inside_window_is_sufficient_without_target(self):
@@ -86,6 +87,25 @@ class NativeProviderTests(unittest.TestCase):
    assert(GameInfo.getNativeClashContext().partnerId==99)
    ready=false;assert(GameInfo.getNativeClashContext()==nil)
    ready=true;world.attrs.LastParryTarget=42;assert(GameInfo.getNativeClashContext()==nil)
+  """)
+
+class ExodusClashStatusTests(unittest.TestCase):
+ def test_filters_and_live_settings(self):
+  source=(Path(__file__).resolve().parents[2]/'modules/logic/aux/gameinfo.luau').read_text()
+  method=source[source.index('function GameInfo.getClashStatus()'):source.index('function GameInfo.getClashContext(')]
+  run_case(COMMON+ENGINE+r"""
+   local utils=u;local at=tm
+   world.attrs.ClashHits=1
+   local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
+   local GameInfo={getNativeClashContext=function() return {partnerId=99,lastParryAt=at} end}
+  """+method+r"""
+   assert(GameInfo.getClashStatus().reason=='waiting_exchange')
+   world.attrs.ClashHits=2;assert(GameInfo.getClashStatus().active)
+   other.root.Position=v(26);assert(GameInfo.getClashStatus().reason=='distance')
+   cfg.ClashMaxDistance=30;assert(GameInfo.getClashStatus().active)
+   at=tm-.6;assert(GameInfo.getClashStatus().reason=='expired')
+   cfg.ClashMaxAge=.7;assert(GameInfo.getClashStatus().active)
+   cfg.ClashMinHits=3;assert(not GameInfo.getClashStatus().active)
   """)
 
 if __name__=='__main__':unittest.main()

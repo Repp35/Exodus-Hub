@@ -590,7 +590,7 @@ local function observeStats(state, s, time, packet)
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then return nil end
-  local context = gameInfo.getNativeClashContext(); local partner = context and context.partnerId
+  local context = gameInfo.getClashStatus(); local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
   local cd = cooldownInfo.getDeflectCooldownState()
   if state.cooldownSince and cd and cd.blocking == true and cd.predictedReset ~= true and time - state.cooldownSince >= (state.cooldownLimit or math.huge) then return nil end
@@ -1057,6 +1057,7 @@ AutoSpam.__contract = {
     },
     GameInfo = {
       "getNativeClashContext",
+      "getClashStatus",
       "getDeflectTargetPrediction",
       "getDeflectAnimationCatalog",
       "areAbilitiesEnabled",
