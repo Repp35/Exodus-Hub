@@ -235,12 +235,8 @@ local function observeTarget(state, s, time, packet)
       and time >= outbound.at
       and time - outbound.at <= CONFIG.ACTIVATION.RETURN + networkLatency()
     then
-      local speed = snapshotSpeed(s); local low, high = gameInfo.getBallSpeedLimits()
-      if speed and finite(low) and finite(high) and high > low and speed >= low then
-        local progress = math.clamp((speed - low) / (high - low), 0, 1); local duration = time - outbound.at
-        local limit = 0.25 - 0.15 * progress
-        if duration <= limit then state.fastReturn = { partner = previous, at = time, leg = state.leg, ball = s.ball } end
-      end
+      local duration = time - outbound.at
+      if duration > 0 and duration <= 0.15 + 1e-9 then state.fastReturn = { partner = previous, at = time, leg = state.leg, ball = s.ball } end
       local h = state.confirmedReturns; local count = h and h.partner == previous and time - h.at <= CONFIG.TIMING.HISTORY_MAX_AGE and h.count + 1 or 1
       local returnGeometry = geometry(s, 0.8); state.confirmedReturns = { partner = previous, count = count, at = time }
       state.pending = {

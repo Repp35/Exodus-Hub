@@ -3,7 +3,7 @@ from test_native_clash_activation import check, NATIVE
 
 class FastReturn(unittest.TestCase):
  def test_speeds_and_window(self):
-  for speed, delay, should in [(16,.249,True),(16,.251,False),(600,.099,True),(600,.101,False),(308,.174,True),(308,.176,False)]:
+  for speed, delay, should in [(16,.149,True),(16,.15,True),(16,.151,False),(600,.149,True),(600,.15,True),(600,.151,False),(308,.149,True),(308,.151,False)]:
    with self.subTest(speed=speed,delay=delay):
     check(f'''snap.speed={speed};snap.syncSpeed={speed};snap.position=v(8);packet(42);packet(99);packet(42,{delay});assert(ap.isActive()=={str(should).lower()});if ap.isActive() then assert(ap.getActivationContext().reason=='fast_return') end''',NATIVE)
  def test_window_and_invalid_target(self):
