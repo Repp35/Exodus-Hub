@@ -168,11 +168,11 @@ class HubAdapterTests(unittest.TestCase):
    assert(mod.setup({Utils=u,GameInfo=g,Remote={},Cooldown=cd,DefenseEngine=engine,DeflectGeometry={},
     AutoSpam={onDefenseOpportunity=function() opportunities=opportunities+1 end}}))
    local original=S.native.ApplySnapshot
-   assert(mod.bindCharacter(S.char));matchPacket(123);assert(S.ability.calls==1 and attempts==1)
+   assert(mod.bindCharacter(S.char));assert(mod.beginFierce());matchPacket(123);assert(S.ability.calls==1 and attempts==1,'manual Fierce must not pause AP')
    assert(opportunities>0,'old AutoSpam notification retained')
    enabled=false;matchPacket(456);matchPacket(123);assert(S.ability.calls==1)
    enabled=true;S.runs.PostSimulation:Fire();assert(S.ability.calls==2)
-   assert(mod.bindCharacter(S.char));matchPacket(456);matchPacket(123);assert(S.ability.calls==3,'rebind has one driver')
+   assert(mod.bindCharacter(S.char));assert(mod.beginFierce());matchPacket(456);matchPacket(123);assert(S.ability.calls==3,'Fierce does not pause a rebound AP')
    mod.detachCharacter();assert(S.native.ApplySnapshot==original,'detach restores native hook')
    matchPacket(456);matchPacket(123);assert(S.ability.calls==3)
    for _,msg in ipairs(logs) do assert(not msg:find('[AutoParry] ',1,true),msg) end

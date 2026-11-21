@@ -1497,16 +1497,7 @@ local function request(reason)
     autoSpam.onDefenseOpportunity(parrySnapshot(now))
     if utils.isSpamActive() then return false end
   end
-  if
-    requestInFlight
-    or now < state.nextAttemptAt
-    or fierceActive(now, safeCooldown())
-    or state.fired
-    or not state.player
-    or (not state.targetKnown or state.target ~= state.player.UserId)
-  then
-    return false
-  end
+  if requestInFlight or now < state.nextAttemptAt or state.fired or not state.player or (not state.targetKnown or state.target ~= state.player.UserId) then return false end
   if manualClickOnCurrentTarget() then
     state.fired = true; phase("waiting", "manual_target_already_clicked")
     return false
@@ -1665,7 +1656,6 @@ local function tick(character, root, generation)
     return
   end
   local cooldown = safeCooldown()
-  if fierceActive(time, cooldown) then phase("waiting", "fierce_active"); return end
   if value.mode == "training" then tickTraining(value, root, time); return end
   if not cooldown or cooldown.source == "unknown" then phase("waiting", "cooldown_unknown"); return end
   if state.fired and state.retryPending and cooldown then
@@ -1740,7 +1730,6 @@ function AutoParry.bindCharacter(character)
     getClashContext = gameInfo.getExodusClashContext,
     canAct = function(mode)
       if generation ~= state.generation or not state.bound or not utils.isActive() or utils.getConfigValue("AutoParry") == false then return false end
-      if clock() < state.fierceUntil then return false end
       return mode == "training" or not utils.isSpamActive()
     end,
     onOpportunity = function()
@@ -1775,33 +1764,9 @@ end
 -- actions
 function AutoParry.beginFierce()
   if not state.alive or not state.bound then return nil end
-  local time = clock(); local target = gameInfo.getTargetId()
-  if finite(target) then observeTarget(target, time) end
-  local token = {
-    generation = state.generation,
-    cycle = state.cycle,
-    previouslyFired = state.fired,
-    oldUntil = state.fierceUntil,
-    oldStartedAt = state.fierceStartedAt,
-    oldCycle = state.fierceCycle,
-    oldPreviouslyFired = state.fiercePreviouslyFired,
-    startedAt = time,
-  }
-
-  if state.fierceUntil <= time then state.fiercePreviouslyFired = state.fired; state.fierceCycle = state.cycle end
-  local ping = gameInfo.getAveragePing()
-  if not finite(ping) or ping < 0 then ping = 0 end
-  state.fierceUntil, state.fierceStartedAt = time + CONFIG.FIERCE_DURATION + ping + CONFIG.FIERCE_END_MARGIN, time
-  if state.player and state.targetKnown and state.target == state.player.UserId then state.fired = true end
-  return token
+  return { generation = state.generation, cycle = state.cycle, startedAt = clock() }
 end
-function AutoParry.cancelFierce(token)
-  if token and state.generation == token.generation and state.cycle == token.cycle and state.fierceStartedAt == token.startedAt then
-    state.fired = token.previouslyFired
-    state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired =
-      token.oldUntil, token.oldStartedAt, token.oldCycle, token.oldPreviouslyFired
-  end
-end
+function AutoParry.cancelFierce(token) return token ~= nil and token.generation == state.generation end
 function AutoParry.fire()
   if activeRuntime then return activeRuntime.pulse() end
   if not state.alive or not state.bound or state.fired or state.teleported then return false end
