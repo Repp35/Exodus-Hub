@@ -73,7 +73,8 @@ local function disconnectPool(state, pool)
   table.clear(pool)
 end
 local function clearEvidence(state)
-  state.fastTargetId, state.fastDeparture = nil, nil; state.outbound, state.pending, state.receipt, state.haunter, state.exchange = nil, nil, nil, nil, nil
+  state.fastTargetId, state.fastDeparture, state.targetIdExchange, state.fastTargetAt = nil, nil, nil, nil
+  state.outbound, state.pending, state.receipt, state.haunter, state.exchange = nil, nil, nil, nil, nil
   state.target, state.previousOpponent, state.confirmedReturns, state.exchangeHistory = nil, nil, nil, nil
   state.lastPairExchangeAt, state.sendContinuity, state.prediction, state.predictionEvidence = nil, nil, nil, nil; state.leg = (state.leg or 0) + 1
   state.activationEvidence, state.predictionArmed, state.predictionEvidence, state.fastReturn = nil, nil, nil, nil
@@ -591,24 +592,36 @@ end
 local function observeFastTargetId(state, s, time)
   if not s.fastTargetPacket then return end
   local target = userId(s.fastTargetId)
-  if not target then state.fastTargetId, state.fastDeparture, state.fastReturn = nil, nil, nil; return end
-  local previous = state.fastTargetId
+  if not target then state.fastTargetId, state.fastDeparture, state.fastReturn, state.targetIdExchange = nil, nil, nil, nil; return end
+  state.fastTargetAt = time; local previous = state.fastTargetId
   if previous == target then return end
   state.fastTargetId = target
+  if previous and (previous == localPlayer.UserId or target == localPlayer.UserId) then
+    state.targetIdExchange = { partner = previous == localPlayer.UserId and target or previous, at = time, ball = s.ball }
+  else
+    state.targetIdExchange = nil
+  end
   if previous == localPlayer.UserId then
     state.fastDeparture, state.fastReturn = { partner = target, at = time, ball = s.ball }, nil
   elseif target == localPlayer.UserId then
     local away = state.fastDeparture
-    if away and away.partner == previous and away.ball == s.ball and time > away.at and time - away.at <= 0.15 + 1e-9 then state.fastReturn = { partner = previous, at = time, ball = s.ball } end
+    if away and away.partner == previous and away.ball == s.ball and time > away.at then
+      if time - away.at <= 0.15 + 1e-9 then state.fastReturn = { partner = previous, at = time, ball = s.ball } end
+    end
     state.fastDeparture = nil
   else
-    state.fastDeparture, state.fastReturn = nil, nil
+    state.fastDeparture, state.fastReturn, state.targetIdExchange = nil, nil, nil
   end
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then return nil end
   local context = gameInfo.getClashStatus(); local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return nil end
+  local exchange = state.targetIdExchange
+  if not exchange or exchange.partner ~= partner or exchange.ball ~= s.ball then return nil end
+  if state.fastTargetId ~= localPlayer.UserId and state.fastTargetId ~= partner then return nil end
+  if not state.fastTargetAt or time < state.fastTargetAt or time - state.fastTargetAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE then return nil end
+  if time < exchange.at or time - exchange.at > (context.maxAge or 0.8) then return nil end
   local cd = cooldownInfo.getDeflectCooldownState()
   if state.cooldownSince and cd and cd.blocking == true and cd.predictedReset ~= true and time - state.cooldownSince >= (state.cooldownLimit or math.huge) then return nil end
   return { partner = partner, reason = "native_clash" }

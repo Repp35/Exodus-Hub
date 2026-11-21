@@ -19,4 +19,19 @@ class FastReturn(unittest.TestCase):
    attr(42);attr(99);attr(42);assert(not ap.isActive())
    packet(42);packet(99);attr(42);assert(not ap.isActive())
    packet(42,.05);assert(ap.isActive(),'only network target return activates')''',NATIVE)
+ def test_clash_requires_one_targetid_switch_in_either_direction(self):
+  for first,second in [(42,99),(99,42)]:
+   with self.subTest(first=first):
+    check(f'''native=true;snap.position=v(8);world.changed:Fire();assert(not ap.isActive(),'proximity alone cannot activate')
+     packet({first});assert(not ap.isActive(),'one target alone cannot activate')
+     packet({second},.2);assert(ap.isActive(),'one pair switch permits clash entry')
+     assert(ap.getActivationContext().reason=='native_clash')''',NATIVE)
+ def test_attributes_cannot_fake_clash_exchange(self):
+  check('''native=true;snap.position=v(8)
+   ap.onBallSync({Source='target',TargetPlayerID=42});ap.onBallSync({Source='target',TargetPlayerID=99})
+   assert(not ap.isActive());packet(99);assert(not ap.isActive());packet(42,.2);assert(ap.isActive())''',NATIVE)
+ def test_clash_pair_must_match_targetid_exchange(self):
+  check('''snap.position=v(8);packet(42);packet(99);packet(42,.2);assert(not ap.isActive())
+   g.getClashStatus=function() return {active=true,partnerId=88} end
+   native=true;world.changed:Fire();assert(not ap.isActive())''',NATIVE)
 if __name__=='__main__':unittest.main()
