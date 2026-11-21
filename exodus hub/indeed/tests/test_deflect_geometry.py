@@ -5,6 +5,7 @@ from test_logic_reliability import COMMON, module, run_case
 class GeometryAPI(unittest.TestCase):
     def check(self, case):
         run_case(COMMON + module('aux/deflectgeometry.luau') + '''
+function V:Dot(b) return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
 local attributes={DeflectRange=10.5}
 local player={UserId=42,GetAttribute=function(_,key) return attributes[key] end}
 local players={LocalPlayer=player,GetPlayerByUserId=function(_,id) if id==42 then return player end end}
@@ -70,6 +71,15 @@ local other=mod.getAutoParryGeometry(600,.4,0,0,99)
 near(own.noWindowParryRadius,10.5);near(other.noWindowParryRadius,12)
 near(own.deflectWindow,.2);near(other.deflectWindow,.4)
 assert(other.fullRadius>own.fullRadius)
+''')
+
+    def test_consumer_window_and_factor_do_not_change_native_base(self):
+        self.check('''
+local t=mod.getParryTiming({position=Vector3.new(40,0,0),velocity=Vector3.new(-600,0,0),syncSpeed=600,targeted=true},Vector3.zero,{window=.3,factor=.3,ping=0,frameLead=1/60})
+near(t.deflectWindow,.3);near(t.effectiveWindow,.3*.3+1/60)
+near(mod.getDeflectWindow(600,false),.2)
+local other=mod.getParryTiming({position=Vector3.new(40,0,0),velocity=Vector3.new(-600,0,0),syncSpeed=600,targeted=true},Vector3.zero,{factor=1.2,ping=0})
+near(other.deflectWindow,.2);near(other.windowFactor,1.2);near(other.effectiveWindow,.24)
 ''')
 
 if __name__ == '__main__':

@@ -124,7 +124,11 @@ local function fireInput(guard)
 end
 
 -- public-api
-local function dispatchParry(info, guard, context, native)
+local function dispatchParry(info, guard, context, native, checked)
+  if checked then
+    local input = game:GetService("UserInputService")
+    if input and type(input.GetFocusedTextBox) == "function" and input:GetFocusedTextBox() then return false, "entrada de texto ativa" end
+  end
   local method = native and "Deflect" or utils.getConfigValue("ClickMethod")
   if method == "Input" then return fireInput(guard) end
   if info.isTrainingArea() then
@@ -135,6 +139,15 @@ local function dispatchParry(info, guard, context, native)
   local ability = info.getDeflectAbility()
   if not allowed(guard) then return false, "Deflect cancelado" end
   if not ability then return false, "Deflect não equipado ou indisponível" end
+  if checked then
+    local before = info.getDeflectCallStamp(ability); local result = ability:Deflect()
+    if result == false then return false, "Deflect recusado pelo cliente" end
+    local after = info.getDeflectCallStamp(ability)
+    if type(before) == "number" or type(after) == "number" then
+      if after == before then return false, "Deflect recusado pelo cliente" end
+    end
+    return true
+  end
   ability:Deflect(); return true
 end
 function Remote.prepareParry(callerGuard)
@@ -147,6 +160,7 @@ function Remote.prepareParry(callerGuard)
 end
 function Remote.fireNativeParry(guard) return dispatchParry(gameInfo, guard, {}, true) end
 function Remote.fireParry(_flag, callerGuard) return Remote.prepareParry(callerGuard)() end
+function Remote.fireCheckedParry(guard) return dispatchParry(gameInfo, guard, {}, false, true) end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
   local owner = epoch; local ability = gameInfo and gameInfo.getFierceDeflectAbility()
@@ -168,6 +182,7 @@ Remote.__contract = {
       "isTrainingArea",
       "fireTrainingParry",
       "getDeflectAbility",
+      "getDeflectCallStamp",
       "getDarkSealAbility",
       "getFierceDeflectAbility",
       "getDashAbility",
@@ -177,6 +192,7 @@ Remote.__contract = {
     "setup",
     "teardown",
     "fireParry",
+    "fireCheckedParry",
     "prepareParry",
     "fireNativeParry",
     "fireDark",

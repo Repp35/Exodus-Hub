@@ -7,6 +7,7 @@ local ball, searchAt, watching = nil, 0, false
 local ballVisualConnection
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local ballSync, targeting, targetCache, targetCacheAt
+local targetAttributeAt = 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 local minimumSpeed, maximumSpeed, speedAt
@@ -386,7 +387,7 @@ function GameInfo.setup(deps)
   if type(deps.Targeting) ~= "table" or type(deps.Targeting.create) ~= "function" then return false, "dependência ausente: Targeting" end
   GameInfo.stopMaintenance(); utils = deps.Utils
   ballSync = deps.BallSync.create({ getReplicator = getReplicator, invalidateSnapshotCache = invalidateSnapshotCache, packetAge = CONFIG.PACKET_AGE })
-  targeting = deps.Targeting.create({ storage = storage }); targetCache, targetCacheAt = nil, -math.huge
+  targeting = deps.Targeting.create({ storage = storage }); targetCache, targetCacheAt, targetAttributeAt = nil, -math.huge, 0
   players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
@@ -548,10 +549,18 @@ function GameInfo.getPlayerDistance(id)
   return (ownRoot.Position - otherRoot.Position).Magnitude
 end
 function GameInfo.getDeflectAbility() return getAbility(CONFIG.GAME_IDS.DEFLECT, "Deflect") end
+function GameInfo.getDeflectCallStamp(ability)
+  ability = ability or GameInfo.getDeflectAbility()
+  if not ability then return nil end
+  local called, pressed = ability.LastDeflectCallAt, ability.LastPressClock
+  if not finite(called) or called < 0 then called = nil end
+  if not finite(pressed) or pressed < 0 then pressed = nil end
+  return called and pressed and math.max(called, pressed) or called or pressed
+end
 function GameInfo.getLastDeflectPressAt()
   local ability = GameInfo.getDeflectAbility()
   if not ability then return nil end
-  local pressedAt = ability.LastPressClock
+  local pressedAt = GameInfo.getDeflectCallStamp(ability)
   if finite(pressedAt) and pressedAt > 0 then return pressedAt end
   local latest
   if type(ability.ClickInstances) == "table" then
@@ -681,6 +690,8 @@ local function resolveTarget(time, provider, sync, currentBall)
     ball = currentBall,
     sync = sync,
     syncFresh = fresh,
+    receivedAt = receivedAt,
+    attributeAt = targetAttributeAt,
     provider = provider,
     serverNow = serverNow,
     sequence = syncSequence(sync, provider),
@@ -757,8 +768,8 @@ local function snapshot(time)
   local currentBall = getBall()
   if not currentBall then return nil end
   local provider = getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
-  local targetReport = resolveTarget(time, provider, sync, currentBall); local exchangeTarget = targetId(sync)
-  local syncReceivedAt = ballSync.getReceivedAt(); local syncFresh = syncReceivedAt > 0 and time >= syncReceivedAt and time - syncReceivedAt <= CONFIG.PACKET_AGE
+  local targetReport = resolveTarget(time, provider, sync, currentBall); local syncReceivedAt = ballSync.getReceivedAt()
+  local syncFresh = syncReceivedAt > 0 and time >= syncReceivedAt and time - syncReceivedAt <= CONFIG.PACKET_AGE
   if not syncFresh then sync = nil; syncReceivedAt = nil end
   local target = targetReport.targetId; local frozen = GameInfo.getBallFrozen() == true
   if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
@@ -793,7 +804,7 @@ local function snapshot(time)
     targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
     targetSource = targetReport.source or "unavailable",
     targetSignals = targetReport,
-    exchangeTargetId = exchangeTarget,
+    exchangeTargetId = targetId(sync),
     targetUncertain = not targetReport.known,
     teleported = sync and sync.Teleported == true or false,
     locked = sync and sync.Locked == true or false,
@@ -872,6 +883,22 @@ function GameInfo.isSnapshotValid(value)
     and finite(value.targetId)
     and type(value.targeted) == "boolean"
 end
+function GameInfo.getDefenseSnapshot(time, predict)
+  time = finite(time) and time or os.clock(); local value = predict == false and snapshot(time) or GameInfo.getParrySnapshot(time)
+  if not GameInfo.isSnapshotValid(value) then return nil, "snapshot_unavailable" end
+  if value.teleported or value.locked or value.resetting or value.ballCanMove == false or value.frozen then return nil, "ball_unavailable" end
+  if value.targetUncertain or value.targetId <= 0 or value.targetId % 1 ~= 0 then return nil, "target_unknown" end
+  if finite(value.syncAt) and (time < value.syncAt or time - value.syncAt > CONFIG.PACKET_AGE) then return nil, "snapshot_stale" end
+  if value.syncAt ~= nil and not finite(value.syncAt) then return nil, "snapshot_invalid" end
+  if value.mode ~= "training" and not GameInfo.getGameContext().inMatch then return nil, "not_in_match" end
+  return value
+end
+function GameInfo.isSnapshotAfterDeflect(value, confirmedAt)
+  if type(value) ~= "table" or not finite(value.serverTime) or not finite(confirmedAt) then return false end
+  local elapsed = os.clock() - confirmedAt
+  if elapsed < 0 then return false end
+  local floor = world:GetServerTimeNow() - elapsed - GameInfo.getAveragePing(); return value.serverTime >= floor - 0.000001
+end
 function GameInfo.applySync(value) return ballSync.applySync(value) end
 function GameInfo.installBallWatcher(track, onTargetChanged)
   if type(track) ~= "function" then return false, "trackConnection invalido" end
@@ -889,7 +916,7 @@ function GameInfo.installBallWatcher(track, onTargetChanged)
     end))
   end
   track(world:GetAttributeChangedSignal("GameBallTarget"):Connect(function()
-    invalidateSnapshotCache()
+    targetAttributeAt = os.clock(); invalidateSnapshotCache()
     if type(onTargetChanged) == "function" then onTargetChanged({ Source = "target", TargetPlayerID = world:GetAttribute("GameBallTarget") }) end
   end))
   track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
@@ -1047,6 +1074,7 @@ GameInfo.__contract = {
     "getBallFrozen",
     "getDeflectAbility",
     "getLastDeflectPressAt",
+    "getDeflectCallStamp",
     "getAutoSpamDelay",
     "getMinimumSpamInterval",
     "getDashAbility",
@@ -1069,6 +1097,8 @@ GameInfo.__contract = {
     "getSnapshot",
     "getSnapshotAt",
     "getParrySnapshot",
+    "getDefenseSnapshot",
+    "isSnapshotAfterDeflect",
     "isSnapshotValid",
     "getSyncData",
     "getSyncSequence",

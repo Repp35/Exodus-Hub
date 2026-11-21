@@ -1,7 +1,7 @@
 # AutoSpam session lifecycle (v6)
 
 AutoSpam recognizes exchanges; Spam remains the only high-rate sender. AP's
-existing dispatch exclusion is unchanged. Configured CPS/CPF and transport are
+modular scheduler preserves exclusive dispatch while Spam is active. Configured CPS/CPF and transport are
 unchanged. The module no longer contains disconnected animation, dash, Haunter,
 prediction or legacy activation implementations. Public compatibility methods
 used by other modules remain available.

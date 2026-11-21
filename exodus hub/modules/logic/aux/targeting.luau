@@ -8,7 +8,6 @@ function Targeting.create(deps)
   local resolver = {}
   function resolver.resolve(context)
     local me = context.player and context.player.UserId; local report = { mode = "match", targeted = false, known = false, targetId = -1, conflict = false, positive = {}, signals = {} }
-    local negative, fallback, fallbackSource, firstKnown = false, nil, nil, nil
     local function add(name, family, read)
       local signal = { name = name, family = family, available = false, state = "unavailable" }; report.signals[#report.signals + 1] = signal
       if context.active == false then signal.reason = "round_inactive"; return end
@@ -23,9 +22,8 @@ function Targeting.create(deps)
       else
         return
       end
-      signal.available, signal.state, report.known = true, signal.targeted and "yes" or "no", true; firstKnown = firstKnown or name
-      if signal.targetId and signal.targetId > 0 and not fallback then fallback, fallbackSource = signal.targetId, name end
-      if signal.targeted then report.targeted = true; report.positive[#report.positive + 1] = name else negative = true end
+      signal.available, signal.state, report.known = true, signal.targeted and "yes" or "no", true
+      if signal.targeted then report.targeted = true; report.positive[#report.positive + 1] = name end
     end
     local sync, provider = context.sync, context.provider
     local function freshSync() return context.syncFresh == true end
@@ -60,11 +58,19 @@ function Targeting.create(deps)
     local ok, attribute = pcall(function() return context.world:GetAttribute("GameBallTarget") end)
     attribute = ok and validId(attribute) or nil; local selected = packet or attribute
     report.conflict = packet ~= nil and attribute ~= nil and packet ~= attribute
-    if context.active == false then selected = nil; report.conflict = false end
-    if report.conflict then report.targeted, report.known, report.targetId, report.source = false, false, -1, "target_transition"; return report end
+    if context.active == false then report.targeted, report.known, report.targetId, report.conflict, report.source = false, false, -1, false, "round_inactive"; return report end
+    if report.conflict then
+      if finite(context.receivedAt) and finite(context.attributeAt) then selected = context.attributeAt > context.receivedAt and attribute or packet
+      else report.targeted, report.known, report.targetId, report.source = false, false, -1, "target_transition"; return report end
+    end
     if selected then
-      report.targetId, report.targeted, report.known = selected, selected == me, true; report.source = packet and "sync.target" or "workspace.GameBallTarget"
+      report.targetId, report.targeted, report.known = selected, selected == me, true; report.source = selected == packet and "sync.target" or "workspace.GameBallTarget"
       return report
+    end
+    if freshProvider() and not packet and not attribute then
+      for _, signal in ipairs(report.signals) do
+        if signal.name == "replicator.IsLocalTarget" and signal.targeted then report.targeted, report.known, report.targetId, report.source = true, true, me, signal.name; return report end
+      end
     end
     local highlighted, multiple
     for _, player in ipairs(context.players and context.players:GetPlayers() or {}) do

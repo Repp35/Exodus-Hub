@@ -195,15 +195,48 @@ function Geometry.getAutoParryGeometry(speed, factor, frameLead, latencyOverride
     killRadius = 4,
   }
 end
+function Geometry.getParryTiming(value, own, options)
+  options = type(options) == "table" and options or EMPTY_OPTIONS
+  if type(value) ~= "table" or not vector(value.position) or not vector(own) or not vector(value.velocity) then return nil end
+  local speed = value.syncSpeed ~= nil and value.syncSpeed or value.speed
+  if not validBallSpeed(speed) or speed < (value.mode == "training" and 1 or 16) then return nil end
+  local ping = finite(options.ping) and math.max(0, options.ping) or gameInfo.getAveragePing(); local factor = finite(options.factor) and math.max(0, options.factor) or 1
+  local training = value.mode == "training"; local window = finite(options.window) and math.max(0, options.window) or nil
+  local g = training and Geometry.getTrainingGeometry(speed, factor, window)
+    or Geometry.getDeflectGeometry(speed, window or Geometry.getDeflectWindow(speed, false), factor, false, ping, { latencyFactor = 1 })
+  if not g then return nil end
+  local frame = finite(options.frameLead) and math.max(0, options.frameLead) or 0; local lead = g.effectiveWindow + frame + (training and Geometry.getTrainingLatency(ping) or 0)
+  if finite(options.maxWindowLead) then lead = math.min(lead, ping + math.max(0, options.maxWindowLead)) end
+  local distance, closing, _, entry = Geometry.getTrajectory(value.position, value.velocity, own, speed, g, nil, options.rootVelocity)
+  local killRadius = Geometry.getKillRadius(Geometry.getDefensePhysics()); local danger = Geometry.getDanger(value.position, value.velocity, own, speed, killRadius, 0, options.rootVelocity)
+  local timing = table.clone(g); timing.speed, timing.velocity, timing.distance, timing.closingSpeed = speed, value.velocity, distance, closing
+  local _, cap, step = Geometry.getDeflectRangeParameters()
+  timing.resilience = {
+    size = g.resilienceBonus,
+    cap = cap,
+    perParry = step,
+    stack = math.floor(g.resilienceBonus / step + 0.5),
+    maxStack = math.ceil(cap / step),
+    source = "DeflectRange",
+  }
+  timing.fullRadius = g.noWindowParryRadius + (g.triggerPadding or 0) + math.max(0, closing) * lead
+  timing.parryRadius, timing.triggerDistance, timing.effectiveWindow = timing.fullRadius, timing.fullRadius, lead; timing.timeToRange, timing.predictionTimeToRange, timing.tti = entry, entry, entry
+  timing.timeToTrigger = math.max(0, entry - lead); timing.timeToKill, timing.killRadius = danger and danger.entryTime or math.huge, killRadius
+  timing.ready = entry == 0 or (closing > 0 and entry <= lead); timing.approaching, timing.targeted = closing > 0, value.targeted == true
+  timing.distanceToParryRadius, timing.adaptiveWindowFactor = distance - timing.fullRadius, factor
+  timing.defenseRadius, timing.radiusGateLead = Geometry.getGuaranteedRadius(g, speed, ping), g.deflectWindow
+  timing.predictionSource, timing.training = value.predictionSource or "visual_fallback", training; return timing
+end
 function Geometry.getProjectedDeflectRadius(geometry, closingSpeed)
   if type(geometry) ~= "table" or not finite(geometry.noWindowParryRadius) or not finite(geometry.effectiveWindow) or not finite(closingSpeed) then return nil end
   return geometry.noWindowParryRadius + math.max(0, closingSpeed) * geometry.effectiveWindow
 end
-function Geometry.getTrainingGeometry(speed, factor)
+function Geometry.getTrainingGeometry(speed, factor, windowOverride)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
   local progress = span > 0 and math.clamp((speed - CONFIG.TRAINING_BASE_SPEED) / span, 0, 1) or 1
   local blockWindow = CONFIG.TRAINING_WINDOW_SLOW + (CONFIG.TRAINING_WINDOW_FAST - CONFIG.TRAINING_WINDOW_SLOW) * progress; local deflectDistance = CONFIG.TRAINING_DEFLECT_DISTANCE
-  factor = finite(factor) and math.clamp(factor, 0, CONFIG.TRAINING_MAX_LEAD_FACTOR) or CONFIG.TRAINING_WINDOW_FACTOR
+  if finite(windowOverride) and windowOverride >= 0 then blockWindow = windowOverride end
+  factor = finite(factor) and math.max(0, factor) or CONFIG.TRAINING_WINDOW_FACTOR
   local effectiveWindow = blockWindow * factor
   return {
     fullRadius = deflectDistance + speed * effectiveWindow + CONFIG.TRAINING_TRIGGER_PADDING,
@@ -360,6 +393,7 @@ Geometry.__contract = {
     "getDefensePhysics",
     "getDeflectGeometry",
     "getAutoParryGeometry",
+    "getParryTiming",
     "getProjectedDeflectRadius",
     "getTrainingGeometry",
     "isBallWithinDeflectRadius",

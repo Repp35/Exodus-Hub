@@ -1,203 +1,131 @@
 -- [[ autofierce ]]
 
--- module
+-- code
 local AutoFierce = {}
-local deflectGeometry
-local utils, gameInfo, remote, autoParry, cooldownInfo, autoSpam
+local utils, gameInfo, geometry, cooldown, remote, autoParry, autoSpam
 local connections = {}
-local lastFierceEpisode, localUserId
-local pendingEpisode
-local hookedAbility, hookedRaw, hookedWrapper
-local epoch = 0
-local errorAt = -math.huge
-
--- configuration
-local CONFIG = {
-  SYNC_MAX_AGE = 0.25,
-  WINDOW_FACTOR = 0.3,
-}
-
--- helpers
-local function track(connection)
-  connections[#connections + 1] = connection; utils.trackGlobal(connection)
-  return connection
-end
+local generation, pending = 0, false
+local lastEpisode, errorAt = 0, -math.huge
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
-local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
-local function unhookManualFierce()
-  local ability, wrapper, raw = hookedAbility, hookedWrapper, hookedRaw
-  if ability and wrapper then
-    pcall(function()
-      if ability.ActivateAndBlock == wrapper then ability.ActivateAndBlock = raw end
-    end)
-  end
-  hookedAbility, hookedRaw, hookedWrapper = nil, nil, nil
-end
-local function bindManualFierce()
+local function fierceReady()
   local ability = gameInfo.getFierceDeflectAbility()
-  if ability == hookedAbility and ability and ability.ActivateAndBlock == hookedWrapper then return end
-  unhookManualFierce()
-  if type(ability) ~= "table" or type(ability.ActivateAndBlock) ~= "function" then return end
-  local original, raw = ability.ActivateAndBlock, rawget(ability, "ActivateAndBlock"); local owner, boundParry = epoch, autoParry
-  local wrapper = function(self, ...)
-    local token
-    if owner == epoch and pendingEpisode == nil and (not finite(self.Cooldown) or self.Cooldown <= 0) then
-      local ok, value = pcall(boundParry.beginFierce)
-      if ok then token = value end
-    end
-    local result = table.pack(pcall(original, self, ...))
-    if owner == epoch and (not result[1] or result[2] == false) then boundParry.cancelFierce(token) end
-    if not result[1] then error(result[2], 0) end
-    return table.unpack(result, 2, result.n)
-  end
-  local ok = pcall(function() ability.ActivateAndBlock = wrapper end)
-  if ok and ability.ActivateAndBlock == wrapper then hookedAbility, hookedRaw, hookedWrapper = ability, raw, wrapper end
-end
-local function validTargetSnapshot(now)
-  local snapshot = gameInfo.getSnapshotAt(now)
   if
-    not gameInfo.isSnapshotValid(snapshot)
-    or snapshot.teleported
-    or snapshot.locked
-    or snapshot.resetting
-    or snapshot.ballCanMove == false
-    or snapshot.targetUncertain
+    type(ability) ~= "table"
+    or type(ability.ActivateAndBlock) ~= "function"
+    or type(ability.Cooldown) ~= "number"
+    or ability.Cooldown ~= ability.Cooldown
+    or math.abs(ability.Cooldown) == math.huge
+    or ability.Cooldown > 0
+  then
+    return false
+  end
+  if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then return false end
+  return type(ability.IsAvailable) ~= "function" or ability:IsAvailable(false)
+end
+local function eligible()
+  if not enabled() or not fierceReady() then return nil end
+  local now = os.clock(); local value = gameInfo.getDefenseSnapshot(now)
+  local player = utils.getLocalPlayer(); local character = player and player.Character
+  local root = character and character:FindFirstChild("HumanoidRootPart"); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  if
+    not value
+    or value.mode == "training"
+    or not player
+    or value.targetId ~= player.UserId
+    or not root
+    or not root.Parent
+    or not humanoid
+    or humanoid.Health <= 0
   then
     return nil
   end
-  if localUserId == nil or snapshot.targetId ~= localUserId or gameInfo.getBallFrozen() == true then return nil end
-  if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or now < snapshot.syncAt or now - snapshot.syncAt > CONFIG.SYNC_MAX_AGE then return nil end
-  return snapshot
+  local t = geometry.getParryTiming(value, root.Position, {
+    factor = 0.3,
+    ping = gameInfo.getAveragePing(),
+    frameLead = 1 / 60,
+    rootVelocity = root.AssemblyLinearVelocity,
+  })
+  if not t or not t.ready or (not t.approaching and t.timeToKill ~= 0) then return nil end
+  local recovery = cooldown.getDeflectRecoveryState(t.timeToKill, 1 / 60)
+  if not recovery or not recovery.needsFierce then return nil end
+  local episode = recovery.cooldown.episode
+  if type(episode) ~= "number" or episode <= lastEpisode then return nil end
+  return value, episode
 end
-local function currentInWindow(snapshot)
-  local player = utils.getLocalPlayer(); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-  if not root or not root.Parent or typeof(snapshot.position) ~= "Vector3" then return false end
-  local speed = snapshot.syncSpeed or snapshot.speed
-  if not finite(speed) or speed < 16 or speed > 1000 then return false end
-  local geometry = deflectGeometry.getAutoParryGeometry(speed, CONFIG.WINDOW_FACTOR, 0, 0)
-  if not geometry or not finite(geometry.fullRadius) or geometry.fullRadius <= 0 then return false end
-  local distance = (snapshot.position - root.Position).Magnitude; return finite(distance) and distance <= geometry.fullRadius
-end
-local function confirmedMiss(cooldown)
-  return cooldown ~= nil
-    and (cooldown.source == "local" or cooldown.source == "server")
-    and cooldown.miss == true
-    and cooldown.blocking == true
-    and finite(cooldown.remaining)
-    and cooldown.remaining > 0
-    and finite(cooldown.episode)
-    and cooldown.episode > 0
-end
-local function fierceReady()
-  local ability = gameInfo.getFierceDeflectAbility()
-  if type(ability) ~= "table" or type(ability.ActivateAndBlock) ~= "function" or not finite(ability.Cooldown) or ability.Cooldown > 0 then return false end
-  if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then return false end
-  if type(ability.IsAvailable) == "function" and not ability:IsAvailable(false) then return false end
-  return true
-end
-
--- detection
 local function update()
-  if pendingEpisode ~= nil then return end
-  local now = os.clock(); local cooldown = cooldownInfo.getDeflectCooldownState()
-  if not enabled() or not fierceReady() or not confirmedMiss(cooldown) then return end
-  local snapshot = validTargetSnapshot(now)
-  if not snapshot or not currentInWindow(snapshot) or cooldown.episode <= lastFierceEpisode then return end
-  local episode, ball, token = cooldown.episode, snapshot.ball, nil; local owner = epoch
-  pendingEpisode = episode
-  local ok, sent = pcall(function()
-    return remote.fireFierce(function()
-      if owner ~= epoch or not enabled() or not fierceReady() then return false end
-      local currentSnapshot = validTargetSnapshot(os.clock())
-      if not currentSnapshot or currentSnapshot.ball ~= ball then return false end
-      local current = cooldownInfo.getDeflectCooldownState()
-      if not confirmedMiss(current) or current.episode ~= episode or not currentInWindow(currentSnapshot) then return false end
-      if not token then token = autoParry.beginFierce() end
-      return true
-    end)
+  if pending then return end
+  local value, episode = eligible()
+  if not value then return end
+  local owner, token = generation, nil; local boundParry = autoParry
+  pending = true
+  local ok, sent = pcall(remote.fireFierce, function()
+    if owner ~= generation then return false end
+    local current, currentEpisode = eligible()
+    if not current or current.ball ~= value.ball or currentEpisode ~= episode then return false end
+    if not token then token = boundParry.beginFierce(); autoSpam.stopSpam("fierce_rescue") end
+    return true
   end)
-  if owner ~= epoch then return end
-  pendingEpisode = nil
-  if ok and sent == true then
-    if episode then lastFierceEpisode = math.max(lastFierceEpisode, episode) end
-  else
-    autoParry.cancelFierce(token)
-  end
-  if not ok and os.clock() - errorAt >= 1 then errorAt = os.clock(); warn("[AutoFierce] " .. tostring(sent)) end
+  if owner ~= generation then return end
+  pending = false
+  if ok and sent == true then lastEpisode = episode else boundParry.cancelFierce(token) end
+  if not ok and os.clock() - errorAt >= 1 then errorAt = os.clock(); utils.recordError("AutoFierce", tostring(sent)) end
 end
-
--- lifecycle
+local function safeUpdate()
+  local ok, detail = pcall(update)
+  if not ok and utils and os.clock() - errorAt >= 1 then errorAt = os.clock(); utils.recordError("AutoFierce", tostring(detail)) end
+end
 function AutoFierce.setup(deps)
-  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
-  if
-    type(deps) ~= "table"
-    or type(deps.Utils) ~= "table"
-    or type(deps.GameInfo) ~= "table"
-    or type(deps.Remote) ~= "table"
-    or type(deps.AutoParry) ~= "table"
-    or type(deps.Cooldown) ~= "table"
-    or type(deps.AutoSpam) ~= "table"
-  then
-    return false, "dependências ausentes: Utils, GameInfo ou Remote"
+  if type(deps) ~= "table" then return false, "dependências ausentes" end
+  for _, name in ipairs({ "Utils", "GameInfo", "DeflectGeometry", "Cooldown", "Remote", "AutoParry", "AutoSpam" }) do
+    if type(deps[name]) ~= "table" then return false, "dependência ausente: " .. name end
   end
-  AutoFierce.teardown(); deflectGeometry = deps.DeflectGeometry
-  utils, gameInfo, remote, autoParry, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry, deps.Cooldown; autoSpam = deps.AutoSpam
-  lastFierceEpisode, pendingEpisode = 0, nil; local player = utils.getLocalPlayer()
-  localUserId = player and player.UserId; local runService = utils.getRunService()
-  if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
-  bindManualFierce(); local owner = epoch
-  track(runService.Heartbeat:Connect(function()
-    if owner ~= epoch then return end
-    bindManualFierce(); update()
-  end))
+  AutoFierce.teardown()
+  utils, gameInfo, geometry, cooldown, remote, autoParry, autoSpam =
+    deps.Utils, deps.GameInfo, deps.DeflectGeometry, deps.Cooldown, deps.Remote, deps.AutoParry, deps.AutoSpam
+  local service, owner = utils.getRunService(), generation
+  if not service or not service.Heartbeat then return false, "Heartbeat indisponível" end
+  local function track(c)
+    connections[#connections + 1] = c; utils.trackGlobal(c)
+  end
+  local function pulse()
+    if owner == generation then safeUpdate() end
+  end
+  track(service.Heartbeat:Connect(pulse)); track(cooldown.observeDeflect(pulse))
   return true
+end
+function AutoFierce.onBallSync()
+  safeUpdate(); return true
 end
 function AutoFierce.teardown()
-  epoch += 1; errorAt = -math.huge
-  unhookManualFierce()
-  for _, connection in ipairs(connections) do
-    if utils then utils.untrackGlobal(connection) end
-    connection:Disconnect()
+  generation += 1
+  for _, c in ipairs(connections) do
+    if utils then utils.untrackGlobal(c) end
+    c:Disconnect()
   end
-  connections = {}; lastFierceEpisode, localUserId, pendingEpisode = nil, nil, nil
-  utils, gameInfo, remote, autoParry, cooldownInfo, autoSpam = nil, nil, nil, nil, nil, nil
+  table.clear(connections); pending, lastEpisode, errorAt = false, 0, -math.huge
+  utils, gameInfo, geometry, cooldown, remote, autoParry, autoSpam = nil, nil, nil, nil, nil, nil, nil
 end
-
--- contract
 AutoFierce.__contract = {
   requires = {
-    DeflectGeometry = "deflectgeometry",
     Utils = "utils",
     GameInfo = "gameinfo",
+    DeflectGeometry = "deflectgeometry",
+    Cooldown = "cooldown",
     Remote = "remote",
     AutoParry = "autoparry",
-    Cooldown = "cooldown",
     AutoSpam = "autospam",
   },
   requiresMethods = {
-    DeflectGeometry = { "getAutoParryGeometry" },
-    Utils = {
-      "getConfigValue",
-      "getLocalPlayer",
-      "getRunService",
-      "isActive",
-      "observeConfig",
-      "trackGlobal",
-      "untrackGlobal",
-    },
-    GameInfo = {
-      "areAbilitiesEnabled",
-      "getFierceDeflectAbility",
-      "getSnapshotAt",
-      "isSnapshotValid",
-      "getBallFrozen",
-    },
-    Cooldown = { "getDeflectCooldownState" },
-    AutoParry = { "beginFierce", "cancelFierce" },
+    Utils = { "isActive", "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "recordError" },
+    GameInfo = { "getDefenseSnapshot", "getAveragePing", "areAbilitiesEnabled", "getFierceDeflectAbility" },
+    DeflectGeometry = { "getParryTiming" },
+    Cooldown = { "getDeflectRecoveryState", "observeDeflect" },
     Remote = { "fireFierce" },
+    AutoParry = { "beginFierce", "cancelFierce" },
     AutoSpam = { "stopSpam" },
   },
-  provides = { "setup", "teardown" },
+  provides = { "setup", "teardown", "onBallSync" },
+  onBallSync = true,
 }
 
 return AutoFierce

@@ -17,22 +17,12 @@ class TargetAuthorization(unittest.TestCase):
         check("context.syncFresh=false;world.attrs.GameBallTarget=nil;other.Character.children.PlayerBallHighlight=nil;me.Character.children.PlayerBallHighlight=highlight;ball.Color=red;local r=resolver.resolve(context);assert(r.known and r.targeted)")
 
     def test_range_decision_accepts_all_directions(self):
-        source=(ROOT/'autoparry.luau').read_text()
-        code=source[source.index('local function matchTiming('):source.index('-- target-sync')]
-        run_case(COMMON+'''
-function V:Dot(b) return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
-local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end
-local function vector(x) return typeof(x)=='Vector3' end
-local function validBallSpeed(x) return finite(x) and x>=0 and x<=1000 end
-local function activeWindowFactor() return .3 end
-local state={}
-local function radius() return {fullRadius=30,noWindowParryRadius=8.5,effectiveWindow=.2,windowFactor=.3} end
-local deflectGeometry={getKillRadius=function() return 4 end}
-'''+code+'''
+        from test_defenseengine import STACK
+        run_case(STACK+r'''
 for _,velocity in ipairs({v(-100),v(100),v(0,100),v()}) do
- local result=matchTiming({position=v(8),velocity=velocity,speed=100},tm,v())
+ local result=geom.getParryTiming({position=v(8),velocity=velocity,speed=100},v(),{factor=.3,ping=0})
  assert(result.ready,'velocity vetoed physical parry range')
 end
-local incoming=matchTiming({position=v(20),velocity=v(-100),speed=100},tm,v())
+local incoming=geom.getParryTiming({position=v(20),velocity=v(-100),speed=100},v(),{factor=.3,ping=0})
 assert(incoming.ready,'window extension lost incoming ball')
 ''')

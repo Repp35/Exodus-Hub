@@ -9,6 +9,7 @@ local deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldown
 local trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil
 local cooldownSignal, parriedSignal
 local epoch = 0
+local observers = {}
 
 -- configuration
 local CONFIG = {
@@ -28,6 +29,22 @@ local CONFIG = {
 local nextTrainingAt, nextParriedAt = 0, 0
 local updateErrorAt = -math.huge
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+function Cooldown.observeDeflect(callback)
+  assert(type(callback) == "function", "cooldown callback required"); local entry = { Connected = true }
+  function entry:Disconnect()
+    self.Connected = false; observers[self] = nil
+  end
+  observers[entry] = callback; return entry
+end
+local function notify()
+  local current = Cooldown.getDeflectCooldownState()
+  for entry, callback in pairs(table.clone(observers)) do
+    if entry.Connected then
+      local ok, detail = pcall(callback, current)
+      if not ok and utils then utils.recordError("Cooldown.observer", tostring(detail)) end
+    end
+  end
+end
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function disconnect(connection)
   if not connection then return end
@@ -136,7 +153,7 @@ function Cooldown.getDeflectCooldownState()
         if not kind then return end
         cooldown.known, cooldown.serverKnown, cooldown.lastEventAt = true, true, os.clock(); cooldown.rawActive = kind == "started"
         if kind == "started" then cooldown.lastStartedAt = cooldown.lastEventAt end
-        cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
+        cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil; notify()
       end)
       utils.trackGlobal(cooldownConnection); missingAt = nil
     elseif not signal then
@@ -152,7 +169,7 @@ function Cooldown.getDeflectCooldownState()
       local owner = epoch
       parriedConnection = signals.parried:Connect(function()
         if owner ~= epoch or parriedSignal ~= signal or not cooldown then return end
-        cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock()
+        cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock(); notify()
       end)
       utils.trackGlobal(parriedConnection)
     end
@@ -222,6 +239,20 @@ function Cooldown.getDeflectCooldownState()
   cooldown.localRemaining = localRemaining; cooldown.serverRemaining = serverRemaining
   return cooldown
 end
+function Cooldown.getDeflectRecoveryState(timeToImpact, responseLead)
+  local current = Cooldown.getDeflectCooldownState()
+  if not current then return nil end
+  local known = current.source == "local" or current.source == "server"; local blocked = known and current.blocking == true and finite(current.remaining) and current.remaining > 0
+  local pending = finite(current.missDeadline) and math.max(0, current.missDeadline - os.clock()) or nil; local recovery = blocked and current.remaining or 0
+  if pending then recovery = math.min(recovery, pending) end
+  local imminent = finite(timeToImpact) and timeToImpact >= 0 and timeToImpact <= recovery + (finite(responseLead) and math.max(0, responseLead) or 0)
+  return {
+    cooldown = current,
+    ready = known and current.blocking == false,
+    recoveryIn = recovery,
+    needsFierce = blocked and not current.predictedReset and (current.miss == true or imminent),
+  }
+end
 
 -- lifecycle
 function Cooldown.setup(deps)
@@ -242,9 +273,13 @@ function Cooldown.setup(deps)
 end
 function Cooldown.teardown()
   epoch += 1; disconnect(heartbeatConnection)
-  disconnect(cooldownConnection); disconnect(parriedConnection)
-  disconnect(trainingConnection); heartbeatConnection, cooldownConnection, parriedConnection, trainingConnection, trainingRemote = nil, nil, nil, nil, nil
-  cooldownSignal, parriedSignal = nil, nil; cooldown, deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, nil, nil
+  for entry in pairs(observers) do
+    entry.Connected = false
+  end
+  table.clear(observers); disconnect(cooldownConnection)
+  disconnect(parriedConnection); disconnect(trainingConnection)
+  heartbeatConnection, cooldownConnection, parriedConnection, trainingConnection, trainingRemote = nil, nil, nil, nil, nil; cooldownSignal, parriedSignal = nil, nil
+  cooldown, deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, nil, nil
   trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil = nil, nil, nil, nil; utils, gameInfo = nil, nil
 end
 
@@ -266,6 +301,8 @@ Cooldown.__contract = {
     "getHeldDeflectServerCooldown",
     "recordDeflectAttempt",
     "getDeflectCooldownState",
+    "getDeflectRecoveryState",
+    "observeDeflect",
   },
 }
 

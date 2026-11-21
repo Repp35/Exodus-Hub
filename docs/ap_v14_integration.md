@@ -1,11 +1,67 @@
-# V14 AP integration
+# Modular defense (AP v15)
 
-The V14 runtime is implemented directly inside AutoParry, with no extra loader module. The engine uses the V14 native snapshot hook, multiple target sources, two-render-frame visual validation, native trajectory simulation, relative closing velocity, one-way ping and adaptive window factor. Match window is 500–300 ms. Training retains its native window and Block remote, including UnreliableRemoteEvent BallState support.
+The embedded V14 engine and the second, mostly bypassed AP implementation have
+been replaced by one flight scheduler. AutoParry no longer imports game modules,
+hooks `BallReplicator.ApplySnapshot`, decodes packets, resolves target votes,
+simulates trajectories, or computes defense radii/windows. Existing loader entry
+and public action/status endpoints remain available.
 
-Hub dispatch is one call per validated incoming flight. Clash repetition is excluded. A confirmed own parry plus a newer inbound snapshot can establish a new flight when the away packet was lost. Predicted parries cannot rearm. The existing opportunity notification is retained. The follow-up native AutoSpam integration replaces activation rules with the native clash provider; see native_clash_autospam.md.
+| Owner | Responsibility |
+| --- | --- |
+| BallSync | Decode, validate and order network observations |
+| Targeting | Resolve target metadata and safe fallback sources |
+| GameInfo | Membership, current observations, shared native simulation cache |
+| DeflectGeometry | Native base, parameterized relative trajectory, radius and collision/kill timing |
+| Cooldown | Readiness, attempts, confirmation, reversible windows and recovery |
+| AutoParry | Own window/factor policy, flight ownership, dispatch, rearm and cancellation |
+| AutoSpam / Spam | Exchange/session authorization / configured high-rate sending |
+| AutoFierce | Emergency decision when Deflect cannot recover before impact |
+| Remote | Transport and final guard; optional native acceptance observation for AP |
 
-AutoParry owns engine teardown and rebind. The engine creates no UI. The loader uses its existing AutoParry entry; there is no DefenseEngine dependency.
+AP observes target legs while Spam owns sending. Its final guard checks ownership
+again, so an opportunity which starts Spam cannot also send an AP click. Handover
+ignores the final Spam native press as a manual click. Native refusals do not
+spend the flight and do not install an arbitrary retry delay. A completed miss
+associated with the current attempt can rearm the same target. A successful
+confirmation needs a later incoming snapshot; each confirmation is consumed once.
 
-Validation: seven actual-engine/adapter mock tests and five loader/API contract tests pass. Full unittest comparison against commit 3ca4d8be has no additional failures: both have 189 failing cases and nine errors already present in the baseline. These offline tests do not establish live latency or server acceptance. Roblox match/training testing is still required.
+Native trajectory simulation, relative player motion, ping, adaptive cadence,
+physical-range fallback, training Block transport and character lifecycle remain
+in the modular pipeline. AP defines its own 500–300 ms base and fractional,
+adaptive factor. Geometry retains the native 850–200 ms base. Each consumer
+supplies its own window, factor, latency and optional lead cap; these overrides
+do not mutate the native base or another consumer. AP also keeps its clash
+pressure adjustment and training policy inside AP.
+Trajectory timing outside physical range requires an actual sphere intersection.
+Training uses GameInfo's existing state/events and Cooldown's training lockout.
 
-AP cooldown recovery is restored: the existing cooldown provider is consulted only for recovery of an already-spent attempt, not as a gate on normal incoming flights. A completed miss tied to the latest attempt can rearm the same target without requiring an away/return edge. Confirmed parries and old miss records cannot rearm. Target and physical window are reevaluated before retry. Nine runtime/adapter tests now cover this recovery.
+Target metadata conflicts use local receive timestamps. A stale target attribute
+cannot permanently veto newer accepted packets, and a newer attribute can take
+over until a later packet. Visual colors/provider positives cannot override an
+explicit current opponent ID. Expired packets expose no current exchange ID.
+
+Fierce uses the same eligible snapshot and geometry as AP. Cooldown decides
+whether ordinary defense is ready, failed, or still reversible but too late for
+an imminent impact. The send guard recomputes these conditions; a finished
+cooldown cannot trigger an unnecessary rescue. A rescue stops AutoSpam, and one
+successful Fierce dispatch is allowed per cooldown episode. Manual Fierce does
+not install a five-second AP pause or modify native ability methods.
+
+The normal Spam sender, configured CPS/CPF and expected client/server refusals
+are unchanged. AP alone uses `Remote.fireCheckedParry`: native press timestamp
+changes are evidence of a client attempt, never proof of server acceptance.
+Direct/Input modes report submission because they expose no native confirmation.
+
+## Validation
+
+`test_defenseengine.py` runs production GameInfo, Targeting, BallSync,
+DeflectGeometry, Cooldown, Remote, AP and Fierce together. Roblox instances,
+network events and native abilities are doubles. Its training cases exercise the
+real training observers and Block route. The focused Fierce/miss/authorization
+checks use this shared fixture rather than extracting private functions from AP.
+AutoSpam regressions also run the production Spam scheduler.
+
+The repository-wide suite has pre-existing failures and must be compared against
+the untouched parent, not described as green. Offline tests do not reproduce all
+unrecorded game inputs from the video, measure live scheduling latency, or prove
+zero misses. Match/training validation in Roblox remains necessary.

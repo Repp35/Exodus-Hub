@@ -46,8 +46,11 @@ alcance fixo. `latencyFactor` permite outro fator para o ping. `windowScale` e
 alcance base e `ping = false` desconsidera latência.
 
 `profile = "autoParry"` aplica as regras de antecipação por frame e latência;
-`profile = "training"`, as regras do treino. O AP escolhe o fator adaptativo e
-solicita a recomposição por `withAutoParryFactor`. `compose` combina parcelas
+`profile = "training"`, as regras do treino. `getParryTiming(snapshot, rootPosition, options)` concentra a trajetória relativa,
+o instante de colisão e a projeção da janela efetiva. Cada consumidor escolhe
+`window`, `factor`, `frameLead`, `ping` e, se necessário, `maxWindowLead`. O AP
+define sua base de 500–300 ms e seu fator adaptativo; a base nativa da Geometry
+continua 850–200 ms. A Geometry não escolhe a política adaptativa do AP. `compose` combina parcelas
 explícitas; `projectRadius` fornece o cálculo numérico sem alocar uma tabela.
 
 ## Targeting
@@ -57,30 +60,23 @@ atual e expõe `getTargetSignals(time?)`; `getStatus().targeting` traz o mesmo
 formato para diagnóstico. O treino usa seu próprio `BallState.goal` e não consulta
 os leitores da partida.
 
-Os dois leitores são `replicator.IsLocalTarget` e `workspace.GameBallTarget`.
+Pacotes aceitos e `workspace.GameBallTarget` são os metadados explícitos.
+Em conflito, prevalece a observação mais recente pelo relógio local de recebimento;
+sem esses tempos o conflito continua desconhecido. Um positivo antigo do provider
+ou uma cor antiga não substitui um ID explícito de outro jogador. Sem metadados,
+um provider recente pode confirmar o alvo local; o fallback visual exige destaque
+único e cor da bola compatível. Fora da rodada ativa a resolução fica indisponível.
 
 ```lua
 local report = GameInfo.getTargetSignals()
--- report.targeted: qualquer fonte disponível confirmou o jogador local
--- report.known: pelo menos uma fonte conseguiu responder
--- report.targetId: jogador local se houve positivo; senão, primeiro ID disponível
--- report.positive: nomes das fontes positivas
--- report.conflict: coexistem respostas positivas e negativas
-for _, signal in ipairs(report.signals) do
-  -- signal.name, family, state = "yes" / "no" / "unavailable"
-  -- signal.available, targeted (boolean quando disponível), targetId (opcional)
-  -- signal.reason explica indisponibilidade, ambiguidade ou falha de leitura
-end
+-- known / targeted / targetId: resultado resolvido, não OR de votos antigos
+-- source: fonte selecionada; conflict: IDs explícitos divergentes
+-- signals / positive: observações para diagnóstico
 ```
 
-A regra de autorização é OR: um positivo prevalece mesmo com votos negativos.
-Cada leitor isola suas falhas. Replicador vencido ou mais antigo que o pacote
-aceito não confirma alvo. Fora da rodada ativa os votos são limpos. Sinais
-visuais derivados não participam da autorização.
-
 Snapshots expõem `targetSignals` e `targetSource`; `targetId`/`targeted` refletem a
-resolução. `exchangeTargetId` preserva a identidade recebida pela rede, usada nas
-trocas do AutoSpam. Sinais visuais não criam evidência de troca por dash/retorno.
+resolução. `exchangeTargetId` preserva a identidade de um pacote ainda válido, usada nas
+trocas do AutoSpam. Após expirar, retorna -1. Sinais visuais não criam evidência de troca por dash/retorno.
 Se houver conflito de alvo, o AP não simula a trajetória de outro jogador como
 se fosse local. Se a identificação continua válida após expirar a sincronização,
 o movimento usa a observação atual da bola, sem reciclar posição/direção antigas.
@@ -447,3 +443,17 @@ Ser apenas o candidato mais alinhado não basta. A distância da dupla precisa
 caber no raio de perigo calculado pela velocidade e window 0.3, e seu tempo
 estimado até a área de acerto deve caber na margem. Uma bola já se afastando
 do oponente é recusada mesmo se ainda estiver dentro do raio físico dele.
+
+## Agendamento e recuperação
+
+`GameInfo.getDefenseSnapshot(time?, predict?)` aplica a elegibilidade comum de
+bola/alvo/rodada; `predict = false` permite observar uma troca sem repetir a
+simulação quando o consumidor ainda não pode agir. A predição fica em GameInfo.
+
+`Cooldown.observeDeflect(callback)` sinaliza eventos de cooldown/parry;
+`getDeflectRecoveryState(timeToImpact, responseLead)` expõe readiness e a decisão
+de resgate para o Fierce, distinguindo janela reversível de miss confirmado.
+
+`Remote.fireCheckedParry(guard)` observa a recusa nativa para o AP. O envio de
+alta frequência mantém `prepareParry`/`fireParry`, sem analisar cada tentativa.
+A aceitação do servidor continua sendo um evento distinto do envio local.
