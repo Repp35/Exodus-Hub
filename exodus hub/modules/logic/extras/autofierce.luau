@@ -7,7 +7,6 @@ local utils, gameInfo, remote, autoParry, cooldownInfo, autoSpam
 local connections = {}
 local lastFierceEpisode, localUserId
 local pendingEpisode
-local timerEpisode, timerStartedAt, timerReadyAt, timerWindowEndsAt
 local hookedAbility, hookedRaw, hookedWrapper
 local epoch = 0
 local errorAt = -math.huge
@@ -16,7 +15,6 @@ local errorAt = -math.huge
 local CONFIG = {
   SYNC_MAX_AGE = 0.25,
   WINDOW_FACTOR = 0.3,
-  SERVER_FRAME_MARGIN = 1 / 60,
 }
 
 -- helpers
@@ -56,7 +54,7 @@ local function bindManualFierce()
   if ok and ability.ActivateAndBlock == wrapper then hookedAbility, hookedRaw, hookedWrapper = ability, raw, wrapper end
 end
 local function validTargetSnapshot(now)
-  local snapshot = type(gameInfo.getParrySnapshot) == "function" and gameInfo.getParrySnapshot(now) or gameInfo.getSnapshotAt(now)
+  local snapshot = gameInfo.getSnapshotAt(now)
   if
     not gameInfo.isSnapshotValid(snapshot)
     or snapshot.teleported
@@ -71,42 +69,24 @@ local function validTargetSnapshot(now)
   if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or now < snapshot.syncAt or now - snapshot.syncAt > CONFIG.SYNC_MAX_AGE then return nil end
   return snapshot
 end
-local function incomingInWindow(snapshot, now)
-  local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR)
-  if not timing or not finite(timing.distance) or not finite(timing.triggerDistance) or timing.distance > timing.triggerDistance then return nil end
-  return timing.approaching and timing or nil
+local function currentInWindow(snapshot)
+  local player = utils.getLocalPlayer(); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+  if not root or not root.Parent or typeof(snapshot.position) ~= "Vector3" then return false end
+  local speed = snapshot.syncSpeed or snapshot.speed
+  if not finite(speed) or speed < 16 or speed > 1000 then return false end
+  local geometry = deflectGeometry.getAutoParryGeometry(speed, CONFIG.WINDOW_FACTOR, 0, 0)
+  if not geometry or not finite(geometry.fullRadius) or geometry.fullRadius <= 0 then return false end
+  local distance = (snapshot.position - root.Position).Magnitude; return finite(distance) and distance <= geometry.fullRadius
 end
-local function sustainedCooldown(cooldown, now, timing)
-  if not cooldown or cooldown.blocking ~= true then return false end
-  if cooldown.source ~= "local" and cooldown.source ~= "server" then return false end
-  local startedAt = cooldown.blockingSince
-  if not finite(startedAt) or startedAt <= 0 or startedAt > now then return false end
-  if not finite(cooldown.episode) or cooldown.episode <= 0 then return false end
-  local deadline = finite(cooldown.windowEndsAt) and cooldown.windowEndsAt or cooldown.missDeadline; local pendingOpen = finite(deadline) and deadline > now
-  if cooldown.predictedReset == true then return false end
-  if timing and cooldown.miss == true and not pendingOpen and cooldown.windowExpired ~= false then return true end
-  local physics = deflectGeometry.getDefensePhysics(); local ping = gameInfo.getAveragePing()
-  if not finite(ping) or ping < 0 then return false end
-  local responseMargin = math.min(ping * 2, 1) + CONFIG.SERVER_FRAME_MARGIN
-  if timerEpisode ~= cooldown.episode or timerStartedAt ~= startedAt then
-    local window = deflectGeometry.getDeflectWindow()
-    if not finite(window) or window <= 0 then return false end
-    timerEpisode, timerStartedAt, timerReadyAt = cooldown.episode, startedAt, startedAt + window + responseMargin; timerWindowEndsAt = startedAt + window
-  end
-  if finite(cooldown.missDeadline) then timerReadyAt = math.max(timerReadyAt, cooldown.missDeadline + responseMargin) end
-  if cooldown.predictedReset == true then return false end
-  if timing then
-    local entry = timing.predictionTimeToRange or timing.timeToRange; local killTime = timing.timeToKill
-    if finite(killTime) and finite(cooldown.remaining) and cooldown.remaining + ping + CONFIG.SERVER_FRAME_MARGIN < killTime then return false end
-    local miss = cooldown.miss == true and cooldown.windowExpired ~= false and not pendingOpen
-    if miss then return true end
-    if finite(killTime) and killTime <= responseMargin then
-      local closesAt = finite(deadline) and deadline or timerWindowEndsAt; local canStillParry = closesAt and closesAt > now and (not finite(entry) or entry <= closesAt - now)
-      if not canStillParry then return true end
-    end
-  end
-  if physics and physics.inClash == true then return false end
-  return now > timerReadyAt
+local function confirmedMiss(cooldown)
+  return cooldown ~= nil
+    and (cooldown.source == "local" or cooldown.source == "server")
+    and cooldown.miss == true
+    and cooldown.blocking == true
+    and finite(cooldown.remaining)
+    and cooldown.remaining > 0
+    and finite(cooldown.episode)
+    and cooldown.episode > 0
 end
 local function fierceReady()
   local ability = gameInfo.getFierceDeflectAbility()
@@ -120,13 +100,9 @@ end
 local function update()
   if pendingEpisode ~= nil then return end
   local now = os.clock(); local cooldown = cooldownInfo.getDeflectCooldownState()
-  sustainedCooldown(cooldown, now)
-  if not enabled() or not fierceReady() then return end
-  local snapshot = validTargetSnapshot(now); local timing = snapshot and incomingInWindow(snapshot, now)
-  if not timing or not finite(timing.timeToKill) or timing.timeToKill < 0 or not cooldown or not finite(cooldown.remaining) or cooldown.remaining <= 0 then return end
-  local ping = gameInfo.getAveragePing()
-  if not finite(ping) or ping < 0 or timing.timeToKill > cooldown.remaining + ping + CONFIG.SERVER_FRAME_MARGIN then return end
-  if not sustainedCooldown(cooldown, now, timing) or cooldown.episode <= lastFierceEpisode then return end
+  if not enabled() or not fierceReady() or not confirmedMiss(cooldown) then return end
+  local snapshot = validTargetSnapshot(now)
+  if not snapshot or not currentInWindow(snapshot) or cooldown.episode <= lastFierceEpisode then return end
   local episode, ball, token = cooldown.episode, snapshot.ball, nil; local owner = epoch
   pendingEpisode = episode
   local ok, sent = pcall(function()
@@ -134,15 +110,8 @@ local function update()
       if owner ~= epoch or not enabled() or not fierceReady() then return false end
       local currentSnapshot = validTargetSnapshot(os.clock())
       if not currentSnapshot or currentSnapshot.ball ~= ball then return false end
-      local current = cooldownInfo.getDeflectCooldownState(); local currentTiming = incomingInWindow(currentSnapshot, os.clock())
-      if not current or current.episode ~= episode or not currentTiming or not finite(currentTiming.timeToKill) or currentTiming.timeToKill < 0 then return false end
-      local currentPing = gameInfo.getAveragePing()
-      if not finite(current.remaining) or current.remaining <= 0 or not finite(currentPing) or currentPing < 0 then return false end
-      if
-        currentTiming.timeToKill > current.remaining + currentPing + CONFIG.SERVER_FRAME_MARGIN or not sustainedCooldown(current, os.clock(), currentTiming)
-      then
-        return false
-      end
+      local current = cooldownInfo.getDeflectCooldownState()
+      if not confirmedMiss(current) or current.episode ~= episode or not currentInWindow(currentSnapshot) then return false end
       if not token then token = autoParry.beginFierce() end
       return true
     end)
@@ -185,7 +154,7 @@ function AutoFierce.setup(deps)
 end
 function AutoFierce.teardown()
   epoch += 1; errorAt = -math.huge
-  unhookManualFierce(); timerEpisode, timerStartedAt, timerReadyAt, timerWindowEndsAt = nil, nil, nil, nil
+  unhookManualFierce()
   for _, connection in ipairs(connections) do
     if utils then utils.untrackGlobal(connection) end
     connection:Disconnect()
@@ -206,7 +175,7 @@ AutoFierce.__contract = {
     AutoSpam = "autospam",
   },
   requiresMethods = {
-    DeflectGeometry = { "getDefensePhysics", "getDeflectWindow" },
+    DeflectGeometry = { "getAutoParryGeometry" },
     Utils = {
       "getConfigValue",
       "getLocalPlayer",
@@ -220,13 +189,11 @@ AutoFierce.__contract = {
       "areAbilitiesEnabled",
       "getFierceDeflectAbility",
       "getSnapshotAt",
-      "getParrySnapshot",
       "isSnapshotValid",
       "getBallFrozen",
-      "getAveragePing",
     },
     Cooldown = { "getDeflectCooldownState" },
-    AutoParry = { "beginFierce", "cancelFierce", "getTiming" },
+    AutoParry = { "beginFierce", "cancelFierce" },
     Remote = { "fireFierce" },
     AutoSpam = { "stopSpam" },
   },
