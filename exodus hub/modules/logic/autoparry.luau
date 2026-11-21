@@ -356,6 +356,8 @@ local function createParryRuntime(deps)
         sending = true; success, detail = pcall(trainingBlock.FireServer, trainingBlock, camera.CFrame.Position, camera.CFrame.LookVector)
         accepted = success
       else
+        local cd = deps.getCooldown and deps.getCooldown()
+        if deps.getCooldown and (not cd or cd.source == "unknown" or cd.blocking == true) then return end
         local ability = client and client.Abilities and client.Abilities[1]
         if type(ability) ~= "table" or type(ability.Deflect) ~= "function" then return end
         local last = ability.LastDeflectCallAt
@@ -875,7 +877,7 @@ local function createParryRuntime(deps)
       if not running then return end
       shotToken = shotToken + 1; metrics.calls = metrics.calls + 1
       if expectedGeneration == generation and expectedEpisode == episodeStart then
-        spent = true; lastShot = { token = shotToken, version = version, serverTime = latestSample and latestSample.serverTime or -math.huge }
+        spent = true; lastShot = { token = shotToken, version = version, at = now, serverTime = latestSample and latestSample.serverTime or -math.huge }
       end
       recordCall(now)
     end
@@ -907,10 +909,19 @@ local function createParryRuntime(deps)
       departure = nil; metrics.recovered = metrics.recovered + 1
       packetSignals(latestAt); return true
     end
+    local function recoverCooldown(now)
+      if not spent or not lastShot or not deps.getCooldown or confirmedToken == lastShot.token then return false end
+      local cd = deps.getCooldown()
+      if not cd or cd.source == "unknown" or cd.blocking ~= false or cd.miss ~= true then return false end
+      if finite(cd.lastParriedAt) and cd.lastParriedAt >= lastShot.at then return false end
+      if not finite(cd.pressAt) or cd.pressAt < lastShot.at - 0.001 or cd.pressAt > now then return false end
+      if now - lastShot.at < CONFIG.NATIVE_INTERVAL then return false end
+      spent, departure = false, nil; return true
+    end
     function evaluate()
       if not running or not deps.canAct("match") or sending or not roleActive or not root or not root.Parent or not humanoid or humanoid.Health <= 0 then return end
       local now = os.clock(); local clash = false
-      if spent and (not departure or not recoverReturn(now)) then return end
+      if spent and not (departure and recoverReturn(now)) and not recoverCooldown(now) then return end
       local targeted = resolve(now)
       publish({
         mode = "match",

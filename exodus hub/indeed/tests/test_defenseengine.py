@@ -66,6 +66,23 @@ class DefenseEngineTests(unittest.TestCase):
    check(peak==20,'20 proved mock cycles per second');c.stop()
   """)
 
+ def test_completed_miss_rearms_same_target_without_repeating_stale_cooldown(self):
+  run_case(FIXTURE + parry_runtime() + r"""
+   setup();local cd={source='local',blocking=false}
+   local c=assert(mod.create({canAct=function() return true end,getCooldown=function() return cd end,
+    onAttempt=function(_,at) cd.pressAt=at;cd.blocking=true;cd.miss=false end}))
+   matchPacket(123);assert(S.ability.calls==1)
+   matchPacket(123);assert(S.ability.calls==1,'blocking cooldown prevents retry')
+   cd.miss=true;cd.phase='miss_finished';cd.blocking=false
+   S.runs.PostSimulation:Fire();assert(S.ability.calls==2,'completed cooldown retries same target')
+   matchPacket(123);assert(S.ability.calls==2,'new attempt locks again')
+   cd.blocking=false;cd.miss=true;cd.pressAt=clock-1
+   S.runs.PostSimulation:Fire();assert(S.ability.calls==2,'old miss cannot rearm')
+   cd.pressAt=clock-.02;cd.lastParriedAt=clock
+   S.runs.PostSimulation:Fire();assert(S.ability.calls==2,'successful parry is not retry')
+   c.stop()
+  """)
+
  def test_geometry_and_invalid_data(self):
   self.check_lua(r"""
    setup();local c=start();S.ball.Position=vec(1000);matchPacket(123,{distance=8})
