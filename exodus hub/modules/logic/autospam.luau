@@ -2,20 +2,14 @@
 
 -- module
 local AutoSpam = {}
-
--- dependencies
 local utils
 local gameInfo
 local clashStatsModule
 local cooldownInfo
 local deflectGeometry
-
--- services
 local players
 local runService
 local localPlayer
-
--- state
 local current
 local generation = 0
 local matchDeathSerial = 0
@@ -23,8 +17,6 @@ local lastActivationReason
 local lastActivationAt
 local lastStopReason
 local lastStopAt
-
--- forward
 local evaluate
 
 -- configuration
