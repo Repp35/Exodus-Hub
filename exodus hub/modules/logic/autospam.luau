@@ -73,8 +73,7 @@ local function clearEvidence(state, newBall)
   state.packetSnapshot, state.packetAt, state.receivedSequence = nil, nil, nil; state.leg = (state.leg or 0) + 1
   state.stoppedLeg = state.leg
   if newBall then
-    state.cooldownStopAt, state.cooldownStopEpisode = nil, nil
-    state.stoppedParryAt, state.lastNativeParryAt = nil, nil
+    state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; state.stoppedParryAt, state.lastNativeParryAt = nil, nil
   else
     local stamp = utils.getWorkspace():GetAttribute("LastParryAt")
     if finite(stamp) then state.stoppedParryAt = math.max(state.stoppedParryAt or -math.huge, stamp) end
@@ -82,10 +81,9 @@ local function clearEvidence(state, newBall)
 end
 local function deactivate(state, reason, time)
   if not state.active then return false end
-  time = time or now()
-  state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason; state.stoppedLeg = state.leg
-  local stamp = utils.getWorkspace():GetAttribute("LastParryAt"); state.stoppedParryAt = finite(stamp) and math.max(stamp, state.lastNativeParryAt or -math.huge) or state.lastNativeParryAt
-  state.returnEvidence = nil
+  time = time or now(); state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason
+  state.stoppedLeg = state.leg; local stamp = utils.getWorkspace():GetAttribute("LastParryAt")
+  state.stoppedParryAt = finite(stamp) and math.max(stamp, state.lastNativeParryAt or -math.huge) or state.lastNativeParryAt; state.returnEvidence = nil
   if reason == "cooldown" then local cd = cooldownInfo.getDeflectCooldownState(); state.cooldownStopAt, state.cooldownStopEpisode = time, cd and cd.episode end
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
   state.partner, state.deathSerial = nil, nil; lastStopReason, lastStopAt = reason, time
@@ -265,9 +263,7 @@ local function autoHardStop(state, s)
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   local target = s and (userId(s.exchangeTargetId) or (not s.targetUncertain and targetOf(s)))
-  if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then
-    return "target_redirected_far"
-  end
+  if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then return "target_redirected_far" end
   if state.active then
     local risk = externalGate(state, s, now())
     if risk then return risk end
@@ -282,9 +278,7 @@ local function activate(state, candidate, s, time)
 end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
-  if reason then
-    return reason
-  end
+  if reason then return reason end
   if not insideSpamWindow(state, s, time) then return "outside_spam_window" end
   local otherPosition = playerPosition(state.partner)
   if vector(otherPosition) and vector(s.velocity) then
@@ -424,14 +418,9 @@ evaluate = function(state, s, time, packet)
   if s and gate ~= "ball_reset" and gate ~= "training" and gate ~= "ball_paused" then observeTarget(state, s, time, packet) end
   if state.active then
     local risk = externalGate(state, s, time)
-    if risk then
-      deactivate(state, risk, time)
-      return
-    end
+    if risk then deactivate(state, risk, time); return end
     stop = deactivationGate(state, s, time)
-    if stop then
-      deactivate(state, stop, time); return
-    end
+    if stop then deactivate(state, stop, time); return end
     if gate == "ball_paused" or gate == "training" or gate == "ball_not_moving" then
       deactivate(state, gate, time); clearEvidence(state)
       return
@@ -557,8 +546,7 @@ function AutoSpam.bindCharacter(character)
     if current ~= state then return end
     local time = now()
     if finite(dt) and dt > 0 then state.frameInterval = dt end
-    local snapshot = selectSnapshot(state, gameInfo.getSnapshotAt(time), time)
-    evaluate(state, snapshot, time, false)
+    local snapshot = selectSnapshot(state, gameInfo.getSnapshotAt(time), time); evaluate(state, snapshot, time, false)
   end)
   local fastSignals = {}
   for _, signal in pairs({ runService.PreSimulation, runService.PostSimulation, runService.RenderStepped }) do
