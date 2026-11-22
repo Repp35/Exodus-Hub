@@ -93,8 +93,13 @@ local function cooldownState(mode)
   if mode == "training" then return cooldown.getTrainingCooldownState() end
   return cooldown.getDeflectCooldownState()
 end
-local function ready(cd, mode) return cd ~= nil and cd.blocking == false and (mode == "training" or cd.source == "local") end
+-- Match cooldown is observational only: it never blocks a deflect attempt.
+-- Training keeps its original cooldown requirement.
+local function ready(cd, mode)
+  return mode ~= "training" or (cd ~= nil and cd.blocking == false)
+end
 local function recover(value, cd, now)
+  cd = cd or {}
   local shot = state.shot
   if not state.fired or not shot then return end
   local confirmed = state.mode == "training" and value.trainingParryAt or cd.lastParriedAt
@@ -103,8 +108,10 @@ local function recover(value, cd, now)
     state.fired, state.shot = false, nil; phase("training_cooldown_finished")
     return
   end
-  if ready(cd, state.mode) and cd.miss == true and not acknowledged and finite(cd.pressAt) and cd.pressAt >= shot.at - 0.001 and cd.pressAt <= now then
-    state.fired, state.shot = false, nil; phase("cooldown_finished")
+  -- A confirmed miss can rearm immediately, even while cooldown is active.
+  if state.mode ~= "training" and cd.miss == true and not acknowledged
+    and finite(cd.pressAt) and cd.pressAt >= shot.at - 0.001 and cd.pressAt <= now then
+    state.fired, state.shot = false, nil; phase("miss_rearmed")
     return
   end
   if not acknowledged or confirmed <= state.consumedParry or not finite(value.serverTime) or value.serverTime <= shot.serverTime then return end
@@ -132,7 +139,7 @@ local function dispatch(value, now)
     if mode ~= "training" then
       if utils.isSpamActive() then return false end
     end
-    if not ready(cooldownState(mode), mode) or observeManual(clock()) then return false end
+    if (mode == "training" and not ready(cooldownState(mode), mode)) or observeManual(clock()) then return false end
     local t = timing(current, clock()); return t ~= nil and t.ready
   end
   sending = true; local ok, sent, detail = pcall(remote.fireCheckedParry, guard)
@@ -164,7 +171,7 @@ local function tick()
   end
   if not state.known or state.target ~= state.player.UserId then phase("not_target"); return false end
   local cd = cooldownState(state.mode)
-  if not cd then phase("cooldown_unknown"); return false end
+  if state.mode == "training" and not cd then phase("cooldown_unknown"); return false end
   recover(value, cd, now)
   if state.fired then phase("awaiting_return"); return false end
   local manual = observeManual(now)
@@ -173,7 +180,7 @@ local function tick()
     cooldown.recordDeflectAttempt(manual); phase("manual_deflect")
     return false
   end
-  if not ready(cd, state.mode) then phase("deflect_cooldown"); return false end
+  if state.mode == "training" and not ready(cd, state.mode) then phase("deflect_cooldown"); return false end
   value = gameInfo.getDefenseSnapshot(now)
   if not value or value.ball ~= state.ball or value.targetId ~= state.player.UserId then phase("snapshot_changed"); return false end
   local t = timing(value, now)
