@@ -244,13 +244,22 @@ end
 local function departingExchange(state, s, partner)
   if not s or not vector(s.position) or not vector(s.velocity) or s.velocity.Magnitude < 1 then return false end
   if not vector(playerPosition(localPlayer.UserId)) or not vector(playerPosition(partner)) then return false end
-  local direction = s.velocity
+  local speed = snapshotSpeed(s)
+  if not speed or speed <= 0 then return false end
   for _, player in ipairs(players:GetPlayers()) do
     if player.UserId == localPlayer.UserId or player.UserId == partner or nearPartner(state, player.UserId, opponentDistanceLimit(state, s, player.UserId)) then
-      local position = playerPosition(player.UserId)
-      if vector(position) and playerIsAlive(player.UserId) then
+      local position, motion = gameInfo.getPlayerMotion(player.UserId)
+      local radius = deflectGeometry.getPlayerRawRadius(player.UserId, speed, false)
+      if vector(position) and finite(radius) and radius > 0 and playerIsAlive(player.UserId) then
+        local relative = s.velocity - (vector(motion) and motion or Vector3.zero)
         local delta = position - s.position
-        if delta.Magnitude < 0.01 or direction:Dot(delta) / (direction.Magnitude * delta.Magnitude) > 0.25 then return false end
+        local squaredSpeed = relative:Dot(relative)
+        local projection = delta:Dot(relative)
+        if squaredSpeed > 1 and projection > 0 then
+          local time = projection / squaredSpeed
+          local closest = delta - relative * time
+          if time <= 1 and closest:Dot(closest) <= radius * radius then return false end
+        end
       end
     end
   end
@@ -259,7 +268,9 @@ end
 local function directionFrame(state, s)
   if state.active and state.partner then
     if departingExchange(state, s, state.partner) then state.directionFrames = (state.directionFrames or 0) + 1 else state.directionFrames = 0 end
-    if state.directionFrames >= 3 then state.directionBlocked = { ball = s.ball, partner = state.partner }; deactivate(state, "ball_departed", now()) end
+    if state.directionFrames >= 3 then deactivate(state, "ball_departed", now()) end
+  else
+    state.directionFrames = 0
   end
 end
 local function externalGate(state, s, time)
@@ -413,7 +424,6 @@ local function chooseActivation(state, s, time)
     if candidate then
       local proposed = table.clone(state); proposed.active, proposed.partner = true, candidate.partner
       local stop = autoStop(proposed, s, time)
-      if not stop and departingExchange(proposed, s, candidate.partner) then stop = "ball_departed" end
       if not stop then state.directionBlocked, state.directionFrames = nil, 0; return candidate end
       state.gates.common = stop
     end
