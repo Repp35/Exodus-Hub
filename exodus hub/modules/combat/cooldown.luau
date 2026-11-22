@@ -142,6 +142,7 @@ function Cooldown.recordDeflectAttempt(pressedAt)
     missed = false,
     initialCooldown = finite(remaining) and remaining > 0 and remaining or nil,
   }
+
 end
 function Cooldown.getDeflectCooldownState()
   if not cooldown or not utils or not gameInfo then return nil end
@@ -211,7 +212,6 @@ function Cooldown.getDeflectCooldownState()
     if deflectAttempt and pendingAt >= deflectAttempt.pressedAt and pendingAt - deflectAttempt.pressedAt <= 0.01 then deflectAttempt.nativePressAt = pendingAt
     else Cooldown.recordDeflectAttempt(pendingAt) end
   end
-
   if cooldown.blocking then
     if previousBlocking ~= true then
       blockingSince = time; cooldownEpisode = (cooldownEpisode or 0) + 1
