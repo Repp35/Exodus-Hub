@@ -267,7 +267,6 @@ local function externalGate(state, s, time)
   end
   return recipientRisk(state, s)
 end
--- Stop only for a confirmed target outside the complete deflect radius (range + full window + latency).
 local function distantTargetGate(state, s)
   if not state.active or not s then return nil end
   local target = userId(s.exchangeTargetId)
