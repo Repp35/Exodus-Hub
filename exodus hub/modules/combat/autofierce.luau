@@ -54,7 +54,12 @@ local function eligible()
   if not t or not t.ready or (not t.approaching and t.timeToKill ~= 0) then return nil end
   local recovery = cooldown.getDeflectRecoveryState(t.timeToKill, 1 / 60)
   if not recovery or not recovery.needsFierce then return nil end
-  local observedCooldown = recovery.cooldown; local episode = observedCooldown.episode
+  local observedCooldown = recovery.cooldown
+  -- Only a measured miss on an ongoing local Deflect cooldown can trigger
+  -- Fierce. A new cooldown or imminent impact alone never qualifies.
+  if not observedCooldown or observedCooldown.source ~= "local"
+    or observedCooldown.blocking ~= true or observedCooldown.miss ~= true then return nil end
+  local episode = observedCooldown.episode
   if type(episode) ~= "number" or episode <= lastEpisode then return nil end
   return value, episode
 end
