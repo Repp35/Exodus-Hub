@@ -248,16 +248,12 @@ local function departingExchange(state, s, partner)
   if not speed or speed <= 0 then return false end
   for _, player in ipairs(players:GetPlayers()) do
     if player.UserId == localPlayer.UserId or player.UserId == partner or nearPartner(state, player.UserId, opponentDistanceLimit(state, s, player.UserId)) then
-      local position, motion = gameInfo.getPlayerMotion(player.UserId)
-      local radius = deflectGeometry.getPlayerRawRadius(player.UserId, speed, false)
+      local position, motion = gameInfo.getPlayerMotion(player.UserId); local radius = deflectGeometry.getPlayerRawRadius(player.UserId, speed, false)
       if vector(position) and finite(radius) and radius > 0 and playerIsAlive(player.UserId) then
-        local relative = s.velocity - (vector(motion) and motion or Vector3.zero)
-        local delta = position - s.position
-        local squaredSpeed = relative:Dot(relative)
-        local projection = delta:Dot(relative)
+        local relative = s.velocity - (vector(motion) and motion or Vector3.zero); local delta = position - s.position
+        local squaredSpeed = relative:Dot(relative); local projection = delta:Dot(relative)
         if squaredSpeed > 1 and projection > 0 then
-          local time = projection / squaredSpeed
-          local closest = delta - relative * time
+          local time = projection / squaredSpeed; local closest = delta - relative * time
           if time <= 1 and closest:Dot(closest) <= radius * radius then return false end
         end
       end
