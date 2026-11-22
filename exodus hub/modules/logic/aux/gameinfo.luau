@@ -1004,22 +1004,36 @@ function GameInfo.spinCrate(network, crate, guard)
 end
 function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
 function GameInfo.getClashStatus(maxDistance)
-  local status = { active = false, source = "exodus", reason = "no_parry" }; local player = players.LocalPlayer
+  local status = { active = false, source = "exodus", reason = "no_parry" }
+  local player = players.LocalPlayer
   local at = world:GetAttribute("LastParryAt")
   if not player or not finite(at) then return status end
-  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = finite(maxDistance) and math.max(0, maxDistance) or math.huge
-  status.maxAge = 0.8; status.grace = 0.35
   local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
-  if not finite(status.age) or status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end
-  if status.age > status.grace and world:GetAttribute("GameBallTarget") ~= target then status.reason = "target_changed"; return status end
-  local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
-  if not finite(partnerId) or partnerId <= 0 or partnerId == player.UserId then status.reason = "not_in_pair"; return status end
-  status.partnerId = partnerId; local partner = players:GetPlayerByUserId(partnerId)
-  local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); local other = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
+  local age = world:GetServerTimeNow() - at
+  status.lastParryAt, status.age = at, age
+  status.maxAge, status.grace = 0.8, 0
+  status.maxDistance = finite(maxDistance) and math.max(0, maxDistance) or math.huge
+  if not finite(age) or age < 0 or age > status.maxAge then status.reason = "expired"; return status end
+  local partnerId
+  if by == player.UserId then partnerId = target
+  elseif target == player.UserId then partnerId = by
+  else status.reason = "not_in_pair"; return status end
+  if not finite(partnerId) or partnerId <= 0 or partnerId % 1 ~= 0 or partnerId == player.UserId then status.reason = "not_in_pair"; return status end
+  status.partnerId = partnerId
+  local hits = world:GetAttribute("ClashHits")
+  if not finite(hits) or hits < 2 then status.reason = "no_pair_exchange"; return status end
+  local currentTarget = world:GetAttribute("GameBallTarget")
+  if finite(currentTarget) and currentTarget ~= player.UserId and currentTarget ~= partnerId then status.reason = "third_target"; return status end
+  local partner = players:GetPlayerByUserId(partnerId)
+  local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+  local other = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
   if not root or not other then status.reason = "missing_player"; return status end
+  local humanoid = partner.Character:FindFirstChildOfClass("Humanoid")
+  if not humanoid or humanoid.Health <= 0 or partner:GetAttribute("Playing") == false then status.reason = "player_dead"; return status end
   status.distance = (root.Position - other.Position).Magnitude
   if not finite(status.distance) or status.distance > status.maxDistance then status.reason = "distance"; return status end
-  status.active, status.reason = true, "clashing"; return status
+  status.active, status.reason = true, "clashing"
+  return status
 end
 function GameInfo.IsInClash() return GameInfo.getClashStatus().active end
 function GameInfo.getExodusClashContext()

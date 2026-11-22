@@ -142,13 +142,12 @@ local function geometry(s, factor)
 end
 local function opponentDistanceLimit(state, s, partner)
   local speed = snapshotSpeed(s)
-  if not speed or not partner then return 0 end
-  local factor = utils.getConfigValue("AutoParryWindowFactor"); factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
-  local frame, ping = frameLead(state), gameInfo.getAveragePing(); local own = deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping)
-  local other = partner and deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping, partner); local ownRadius = own and own.fullRadius
-  local otherRadius = other and other.fullRadius
-  if not finite(ownRadius) or ownRadius < 0 or not finite(otherRadius) or otherRadius < 0 then return 0 end
-  return ownRadius + otherRadius
+  if not speed then return 0 end
+  local factor = utils.getConfigValue("AutoParryWindowFactor")
+  factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
+  local own = deflectGeometry.getAutoParryGeometry(speed, factor, frameLead(state), gameInfo.getAveragePing())
+  local radius = own and own.fullRadius
+  return finite(radius) and radius >= 0 and math.max(10, radius) or 0
 end
 local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end

@@ -31,7 +31,7 @@ assert(ap.getActivationContext().reason=='native_clash')
 local function finite(x) return type(x)=='number' and x==x and x<math.huge and x>-math.huge end
 '''+status+'''
 g.getClashStatus=GameInfo.getClashStatus
-world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99;world.attrs.LastParryAt=tm;world.attrs.GameBallTarget=99
+world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99;world.attrs.LastParryAt=tm;world.attrs.GameBallTarget=99;world.attrs.ClashHits=2
 third.root.Position=v(200);other.root.Position=v(25);snap.position=v(95);snap.velocity=v(-600);snap.targetId=99
 ap.onDefenseOpportunity(snap);assert(ap.isActive());assert(clicks==1);assert(ap.getActivationContext().reason=='native_clash')
 ''')
