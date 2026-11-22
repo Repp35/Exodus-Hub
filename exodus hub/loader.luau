@@ -167,8 +167,6 @@ local PROJECT_PATH = CONFIG.PROJECT_PATH
 local BASE_URL = CONFIG.REPOSITORY_URL
 local HEAD_URL = CONFIG.HEAD_URL
 local HttpService = game:GetService("HttpService")
-local sourceBranch = _G.ExodusSourceBranch
-if type(sourceBranch) == "string" and sourceBranch ~= "" then HEAD_URL = "https://api.github.com/repos/Repp35/Exodus-v2/git/ref/heads/" .. HttpService:UrlEncode(sourceBranch) end
 local cacheSequence = 0
 local function cacheBuster()
   cacheSequence += 1; return ("%d-%d-%d"):format(os.time(), math.floor(os.clock() * 1000000), cacheSequence)

@@ -103,7 +103,7 @@ _G.Exodus.Context.profiler.setEnabled(false)
 ```
 
 A instrumentação é desabilitada por padrão e mantém no máximo 64 categorias.
-A validação em cliente real continua sendo necessária antes de integrar o rework.
+A validação em cliente real continua sendo necessária para confirmar o resultado.
 
 ## Resultado das verificações locais
 
@@ -115,17 +115,15 @@ A validação em cliente real continua sendo necessária antes de integrar o rew
 Esses resultados verificam carregamento e compatibilidade estrutural. O smoke
 não compõe a UI em um cliente Roblox nem confirma resultado de ações no servidor.
 
-## Testar a branch antes da integração
+## Execução pela main
 
-O loader usa `main` por padrão. Para testar este PR sem misturar seus módulos
-com os da main, selecione a branch antes de executar o loader:
+O hub executa exclusivamente o código publicado na `main`. O loader resolve o
+commit atual dessa branch e fixa todos os downloads nessa revisão, inclusive
+em reload. Não existe seletor de branch nem leitura de `ExodusSourceBranch`.
 
 ```lua
-_G.ExodusSourceBranch = "refactor/combat-runtime-20261122"
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Repp35/Exodus-v2/refactor/combat-runtime-20261122/exodus%20hub/loader.luau"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Repp35/Exodus-v2/main/exodus%20hub/loader.luau"))()
 ```
 
-O loader resolve o commit dessa branch e fixa todos os downloads nessa revisão,
-inclusive em reload. Ao voltar ao loader principal, limpe
-`_G.ExodusSourceBranch = nil`. O ambiente continua exigindo as APIs de executor
-que o loader original utilizava.
+O ambiente continua exigindo as APIs de executor utilizadas pelo loader original.
+A captura de desempenho descrita acima deve ser feita nessa versão da `main`.
