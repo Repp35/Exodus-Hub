@@ -318,47 +318,28 @@ local function observeStats(state, s, time, packet)
   clashStatsModule.observe(state, s, time, packet == true)
 end
 local function nativeActivation(state, s, time)
-  local world = utils.getWorkspace()
-  local by = userId(world:GetAttribute("LastParryBy"))
-  local targetId = userId(world:GetAttribute("LastParryTarget"))
-  local me = localPlayer.UserId
+  local world = utils.getWorkspace(); local by = userId(world:GetAttribute("LastParryBy"))
+  local targetId = userId(world:GetAttribute("LastParryTarget")); local me = localPlayer.UserId
   local expectedPartner = by == me and targetId or (targetId == me and by or nil)
   if not expectedPartner then state.gates.native = "no_clash_pair"; return nil end
-
-  -- Our confirmed parry to the partner is the outbound leg. Arm before the
-  -- opponent's next click, without waiting for the ball to return to us.
   local outbound = by == me and targetId == expectedPartner
-  if not outbound and not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then
-    state.gates.native = "outside_spam_window"; return nil
-  end
-
+  if not outbound and not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then state.gates.native = "outside_spam_window"; return nil end
   local context = gameInfo.getClashContext(true)
-  if not context or context.partnerId ~= expectedPartner then
-    state.gates.native = "no_clash_partner"; return nil
-  end
+  if not context or context.partnerId ~= expectedPartner then state.gates.native = "no_clash_partner"; return nil end
   local age = context.age
-  if not finite(age) or age < 0 or
-    (age > CONFIG.ACTIVATION.NATIVE_RECENT_PARRY
-      and (age > CONFIG.ACTIVATION.NATIVE_MAX_AGE or world:GetAttribute("GameBallTarget") ~= targetId)) then
+  if
+    not finite(age)
+    or age < 0
+    or (age > CONFIG.ACTIVATION.NATIVE_RECENT_PARRY and (age > CONFIG.ACTIVATION.NATIVE_MAX_AGE or world:GetAttribute("GameBallTarget") ~= targetId))
+  then
     state.gates.native = "stale_native_parry"; return nil
   end
-  -- Partner distance is unrelated to our current ball distance.
-  if not nearPartner(state, expectedPartner, CONFIG.ACTIVATION.NATIVE_MAX_DISTANCE) then
-    state.gates.native = "no_clash_partner"; return nil
-  end
+  if not nearPartner(state, expectedPartner, CONFIG.ACTIVATION.NATIVE_MAX_DISTANCE) then state.gates.native = "no_clash_partner"; return nil end
   local target = targetOf(s)
-  if target and target ~= me and target ~= expectedPartner then
-    state.gates.native = "third_target"; return nil
-  end
-  -- Block animation is just a recent-time activation unlock.
+  if target and target ~= me and target ~= expectedPartner then state.gates.native = "third_target"; return nil end
   local blockAt = state.lastBlockAt and state.lastBlockAt[by]
-  if not finite(blockAt) or time < blockAt
-    or (time - blockAt) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then
-    state.gates.native = "block_animation_not_recent"; return nil
-  end
-
-  state.gates.native = "ready"
-  return { partner = expectedPartner, reason = "native_clash" }
+  if not finite(blockAt) or time < blockAt or (time - blockAt) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then state.gates.native = "block_animation_not_recent"; return nil end
+  state.gates.native = "ready"; return { partner = expectedPartner, reason = "native_clash" }
 end
 local function fastReturnActivation(state, s, time)
   if not s then state.gates.fastReturn = "snapshot_unavailable"; return nil end
@@ -597,12 +578,7 @@ function AutoSpam.canSend()
   end
   local gate = lifecycleGate(state, s)
   if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
-  -- The native clash can start sending on the outgoing leg, before the
-  -- partner's click. Other activation modes keep their local send window.
-  if state.reason ~= "native_clash" and not insideSpamWindow(state, s, time) then
-    state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time
-    return false
-  end
+  if state.reason ~= "native_clash" and not insideSpamWindow(state, s, time) then state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time; return false end
   return true
 end
 function AutoSpam.hasClashPrediction() return false end
