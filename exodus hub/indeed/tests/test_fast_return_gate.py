@@ -38,7 +38,7 @@ class FastReturn(unittest.TestCase):
    g.getClashStatus=function() return {active=true,partnerId=99,age=.1} end
    ap.onDefenseOpportunity(snap);assert(ap.isActive());assert(ap.getActivationContext().reason=='close_clash')''',NATIVE)
  def test_tight_clash_rejects_age_distance_and_large_window(self):
-  for condition in ('other.root.Position=v(15.01)', 'age=.251', 'snap.position=v(150)', 'snap.targetId=88'):
+  for condition in ('other.root.Position=v(10000)', 'age=.251', 'snap.position=v(150)', 'snap.targetId=88'):
    with self.subTest(condition=condition):
     check('''local age=.1;snap.position=v(8);snap.targetId=99;snap.targeted=false
      g.getClashStatus=function() return {active=true,partnerId=99,age=age} end

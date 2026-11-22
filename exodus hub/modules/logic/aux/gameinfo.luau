@@ -971,15 +971,12 @@ function GameInfo.spinCrate(network, crate, guard)
   network:CSendEvent(owned == true and CONFIG.GAME_IDS.CRATE_OWNED or CONFIG.GAME_IDS.CRATE_NEW, crate); return true
 end
 function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
-function GameInfo.getClashStatus()
+function GameInfo.getClashStatus(maxDistance)
   local status = { active = false, source = "exodus", reason = "no_parry" }; local player = players.LocalPlayer
   local at = world:GetAttribute("LastParryAt")
   if not player or not finite(at) then return status end
-  local function setting(key, fallback, low, high)
-    local value = utils.getConfigValue(key); return finite(value) and math.clamp(value, low, high) or fallback
-  end
-  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = setting("ClashMaxDistance", 25, 1, 35)
-  status.maxAge = setting("ClashMaxAge", 0.8, 0.05, 2.5); status.grace = math.min(setting("ClashGrace", 0.35, 0, 2.5), status.maxAge)
+  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = finite(maxDistance) and math.max(11, maxDistance) or 11
+  status.maxAge = 0.8; status.grace = 0.35
   local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
   if not finite(status.age) or status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end
   if status.age > status.grace and world:GetAttribute("GameBallTarget") ~= target then status.reason = "target_changed"; return status end

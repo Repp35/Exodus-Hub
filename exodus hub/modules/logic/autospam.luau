@@ -8,7 +8,7 @@ local generation, matchDeathSerial = 0, 0
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 local evaluate
 local CONFIG = {
-  ACTIVATION = { RETURN = 0.6, MAX_CLASH_DISTANCE = 35, WINDOW_FACTOR = 0.9 },
+  ACTIVATION = { RETURN = 0.6, MIN_CLASH_DISTANCE = 11, WINDOW_FACTOR = 0.9 },
   TIMING = { SNAPSHOT_MAX_AGE = 0.5, PACKET_CACHE_AGE = 0.2 },
 }
 
@@ -117,6 +117,13 @@ local function geometry(s, factor)
   if not g or not finite(g.effectiveWindow) or not finite(g.noWindowParryRadius) then return nil end
   local low, high = gameInfo.getBallSpeedLimits(); return deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1), speed
 end
+local function opponentDistanceLimit(state, s)
+  local speed = snapshotSpeed(s)
+  if not speed then return CONFIG.ACTIVATION.MIN_CLASH_DISTANCE end
+  local factor = utils.getConfigValue("AutoParryWindowFactor"); factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
+  local g = deflectGeometry.getAutoParryGeometry(speed, factor, frameLead(state), gameInfo.getAveragePing()); local radius = g and g.fullRadius
+  return finite(radius) and math.max(CONFIG.ACTIVATION.MIN_CLASH_DISTANCE, radius) or CONFIG.ACTIVATION.MIN_CLASH_DISTANCE
+end
 local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end
   if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
@@ -163,7 +170,7 @@ local function autoHardStop(state, s)
   if utils.getWorkspace():GetAttribute("MatchStatus") ~= 6 then return "match_ended" end
   if gameInfo.getBallFrozen() == true then return "ball_paused" end
   if state.active and (not s or not s.ball or not s.ball.Parent or s.ball ~= state.ball or s.teleported or s.resetting) then return "ball_reset" end
-  if state.active and state.partner and not nearPartner(state, state.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then return "opponent_out_of_range" end
+  if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s)) then return "opponent_out_of_range" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
@@ -245,8 +252,8 @@ local function missLocked(state)
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then state.gates.native = "outside_spam_window"; return nil end
-  local context = gameInfo.getClashStatus(); local partner = context and context.active and context.partnerId
-  if not partner or not nearPartner(state, partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then state.gates.native = "no_clash_partner"; return nil end
+  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s)); local partner = context and context.active and context.partnerId
+  if not partner or not nearPartner(state, partner, opponentDistanceLimit(state, s)) then state.gates.native = "no_clash_partner"; return nil end
   local stamp = context.lastParryAt
   if not finite(stamp) and finite(context.age) then stamp = utils.getWorkspace():GetServerTimeNow() - context.age end
   if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
@@ -259,7 +266,13 @@ local function nativeActivation(state, s, time)
   if world:GetAttribute("LastParryBy") == localPlayer.UserId and target == localPlayer.UserId then state.gates.native = "waiting_return_evidence"; return nil end
   local exchange = state.exchange; local paired = exchange and exchange.partner == partner and exchange.ball == s.ball and time >= exchange.at and time - exchange.at <= (context.maxAge or 0.8)
   if not paired then
-    if not finite(context.age) or context.age < 0 or context.age > 0.25 or not nearPartner(state, partner, 15) or not insideSpamWindow(state, s, time, 0.6) then
+    if
+      not finite(context.age)
+      or context.age < 0
+      or context.age > 0.25
+      or not nearPartner(state, partner, opponentDistanceLimit(state, s))
+      or not insideSpamWindow(state, s, time, 0.6)
+    then
       state.gates.native = "waiting_pair_evidence"; return nil
     end
   end
@@ -275,7 +288,7 @@ local function chooseActivation(state, s, time)
       state.returnEvidence = nil; state.gates.fastReturn = "return_consumed"
     elseif targetOf(s) ~= localPlayer.UserId then
       state.gates.fastReturn = "return_not_self"
-    elseif not nearPartner(state, evidence.partner, CONFIG.ACTIVATION.MAX_CLASH_DISTANCE) then
+    elseif not nearPartner(state, evidence.partner, opponentDistanceLimit(state, s)) then
       state.gates.fastReturn = "partner_unavailable"
     elseif not insideSpamWindow(state, s, time, 0.6) then
       state.gates.fastReturn = "return_outside_window"
@@ -571,6 +584,7 @@ AutoSpam.__contract = {
   },
   requiresMethods = {
     DeflectGeometry = {
+      "getAutoParryGeometry",
       "getDanger",
       "getPlayerRawRadius",
       "getDeflectGeometry",

@@ -72,7 +72,7 @@ class NativeClashTests(unittest.TestCase):
 class ExodusClashStatusTests(unittest.TestCase):
  def test_local_rules_and_live_settings_without_native_calls(self):
   source=(Path(__file__).resolve().parents[2]/'modules/logic/aux/gameinfo.luau').read_text()
-  method=source[source.index('function GameInfo.getClashStatus()'):source.index('function GameInfo.getClashContext(')]
+  method=source[source.index('function GameInfo.getClashStatus('):source.index('function GameInfo.getClashContext(')]
   run_case(COMMON+ENGINE+r"""
    local utils=u
    local function finite(x) return type(x)=='number' and x==x and math.abs(x)<math.huge end

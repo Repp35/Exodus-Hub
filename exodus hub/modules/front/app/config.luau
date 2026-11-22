@@ -23,7 +23,6 @@ local CONFIG = {
     rateMode = "SpamRateMode inválido",
     clickMethod = "ClickMethod inválido",
     miniScale = "tamanho do Manual Spam inválido",
-    predictionMargin = "margem de previsão inválida",
     spamActivation = "ManualSpamMode inválido",
   },
 }
@@ -50,7 +49,6 @@ local validators = {
   rateMode = function(value) return value == "CPS" or value == "CPF" or value == "MS" or value == "Auto" end,
   clickMethod = function(value) return value == "Deflect" or value == "Direct" or value == "Input" end,
   miniScale = function(value) return isFiniteNumber(value) and value >= 0.5 and value <= 2 end,
-  predictionMargin = function(value) return isFiniteNumber(value) and value >= 0.5 and value <= 2 end,
   spamActivation = function(value) return value == "Toggle" or value == "Hold" end,
 }
 
