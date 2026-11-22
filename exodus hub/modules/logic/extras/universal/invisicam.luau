@@ -2,7 +2,8 @@
 
 -- code
 local Invisicam = {}
-local Utils, configObserver
+local Utils
+local configObserver
 local applied = false
 local CONFIG = {
   schema = { UniversalInvisicam = "boolean" },

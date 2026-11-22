@@ -7,8 +7,14 @@ local configObserver
 
 -- configuration
 local CONFIG = {
-  schema = { UniversalFly = "boolean", UniversalFlySpeed = "rate" },
-  defaults = { UniversalFly = false, UniversalFlySpeed = 1 },
+  schema = {
+    UniversalFly = "boolean",
+    UniversalFlySpeed = "rate",
+  },
+  defaults = {
+    UniversalFly = false,
+    UniversalFlySpeed = 1,
+  },
 }
 
 local Workspace = game:GetService("Workspace")
@@ -16,9 +22,15 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local states = { Fly = false }
 local epoch = 0
-local flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro
-local flyPlatformStand, flyAutoRotate
-local playerControls, playerControlsModule
+local flyCharacter
+local flyHumanoid
+local flyRoot
+local flyVelocity
+local flyGyro
+local flyPlatformStand
+local flyAutoRotate
+local playerControls
+local playerControlsModule
 local pressedKeys = {}
 local controls = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
 local bindings = {

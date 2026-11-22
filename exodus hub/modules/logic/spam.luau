@@ -2,10 +2,17 @@
 
 local Spam = {}
 
-local Utils, Remote, GameInfo, AutoSpam, DynamicParry
-local spamObserver, configObserver
-local generation, running = 0, false
-local currentMode, currentRate
+local Utils
+local Remote
+local GameInfo
+local AutoSpam
+local DynamicParry
+local spamObserver
+local configObserver
+local generation = 0
+local running = false
+local currentMode
+local currentRate
 local status = {
   phase = "stopped",
   lastRequestAt = 0,
@@ -14,8 +21,10 @@ local status = {
 }
 
 local samples = {}
-local head, tail = 1, 0
-local attempts, accepted = 0, 0
+local head = 1
+local tail = 0
+local attempts = 0
+local accepted = 0
 
 -- statistics
 local function clearSamples()

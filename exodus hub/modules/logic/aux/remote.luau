@@ -2,9 +2,11 @@
 
 -- module
 local Remote = {}
-local gameInfo, utils
+local gameInfo
+local utils
 local epoch = 0
-local keybindObject, inputService
+local keybindObject
+local inputService
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 

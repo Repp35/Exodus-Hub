@@ -7,15 +7,24 @@ local configObserver
 
 -- configuration
 local CONFIG = {
-  schema = { UniversalGravityEnabled = "boolean", UniversalGravity = "rate" },
-  defaults = { UniversalGravityEnabled = false, UniversalGravity = 196.2 },
+  schema = {
+    UniversalGravityEnabled = "boolean",
+    UniversalGravity = "rate",
+  },
+  defaults = {
+    UniversalGravityEnabled = false,
+    UniversalGravity = 196.2,
+  },
 }
 
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local gravityValue
 local enabledState = false
-local connection, gravityRoot, attachment, force
+local connection
+local gravityRoot
+local attachment
+local force
 local function clearGravity()
   if force then force:Destroy(); force = nil end
   if attachment then attachment:Destroy(); attachment = nil end

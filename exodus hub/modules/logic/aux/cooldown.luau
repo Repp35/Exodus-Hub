@@ -2,12 +2,29 @@
 
 -- module
 local Cooldown = {}
-local utils, gameInfo
-local cooldownConnection, parriedConnection, heartbeatConnection, trainingConnection, trainingRemote
-local cooldown, signalAt, heldAt, missingAt, warningAt
-local deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode
-local trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil
-local cooldownSignal, parriedSignal
+local utils
+local gameInfo
+local cooldownConnection
+local parriedConnection
+local heartbeatConnection
+local trainingConnection
+local trainingRemote
+local cooldown
+local signalAt
+local heldAt
+local missingAt
+local warningAt
+local deflectAttempt
+local observedAbility
+local blockingSince
+local previousBlocking
+local cooldownEpisode
+local trainingSharedModule
+local trainingShared
+local trainingLockoutUntil
+local trainingAttemptUntil
+local cooldownSignal
+local parriedSignal
 local epoch = 0
 local observers = {}
 
@@ -26,7 +43,8 @@ local CONFIG = {
 }
 
 -- helpers
-local nextTrainingAt, nextParriedAt = 0, 0
+local nextTrainingAt = 0
+local nextParriedAt = 0
 local updateErrorAt = -math.huge
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 function Cooldown.observeDeflect(callback)

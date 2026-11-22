@@ -2,9 +2,15 @@
 
 -- code
 local AutoParry = {}
-local utils, gameInfo, geometry, cooldown, remote, autoSpam
+local utils
+local gameInfo
+local geometry
+local cooldown
+local remote
+local autoSpam
 local state = { generation = 0, cycle = 0, bound = false, connections = {}, phase = "detached", reason = "initial" }
-local evaluating, sending = false, false
+local evaluating = false
+local sending = false
 local errorAt = -math.huge
 local function finite(v) return type(v) == "number" and v == v and math.abs(v) < math.huge end
 local function clock() return os.clock() end

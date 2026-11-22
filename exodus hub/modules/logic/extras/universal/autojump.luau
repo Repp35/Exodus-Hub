@@ -3,7 +3,9 @@
 -- module
 local AutoJump = {}
 local utils
-local jumpConnection, jumpCharacter, jumpHumanoid
+local jumpConnection
+local jumpCharacter
+local jumpHumanoid
 local configObserver
 local epoch = 0
 

@@ -2,7 +2,9 @@
 
 -- module
 local Movement = {}
-local utils, gameInfo, remote
+local utils
+local gameInfo
+local remote
 
 -- configuration
 local CONFIG = {

@@ -2,9 +2,16 @@
 
 -- module
 local Character = {}
-local utils, spam, binds
-local added, removing, currentLife
-local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
+local utils
+local spam
+local binds
+local added
+local removing
+local currentLife
+local generation = 0
+local setupEpoch = 0
+local phase = "stopped"
+local workerRunning = false
 local startWorker
 
 -- configuration

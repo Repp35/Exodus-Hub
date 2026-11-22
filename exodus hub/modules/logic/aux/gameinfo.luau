@@ -2,28 +2,60 @@
 
 -- module
 local GameInfo = {}
-local utils, players, world
-local ball, searchAt, watching = nil, 0, false
+local utils
+local players
+local world
+local ball = nil
+local searchAt = 0
+local watching = false
 local ballVisualConnection
-local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local ballSync, targeting, targetCache, targetCacheAt
+local abilityScript
+local abilities
+local replicatorScript
+local replicator
+local gameBallScript
+local gameBall
+local ballSync
+local targeting
+local targetCache
+local targetCacheAt
 local targetAttributeAt = 0
-local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
-local ballData, dashAnimation
-local minimumSpeed, maximumSpeed, speedAt
+local sampledBall
+local sampledPosition
+local sampledAt
+local measuredVelocity
+local movedAt
+local ballData
+local dashAnimation
+local minimumSpeed
+local maximumSpeed
+local speedAt
 local errors = {}
-local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
+local syncConnection = nil
+local syncRemote = nil
+local snapshotConnection = nil
+local snapshotRemote = nil
+local maintenance = 0
 local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
-local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
-local trainingEventConnection, trainingEventRemote
+local trainingConnection = nil
+local trainingRemote = nil
+local trainingState = nil
+local trainingSequence = 0
+local trainingEventConnection
+local trainingEventRemote
 local trainingZone
-local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
+local trainingRound = 0
+local trainingDespawned = false
+local trainingServerTime = nil
 local trainingObservers = {}
 local trainingParryAt
-local trainingDataModule, trainingData
+local trainingDataModule
+local trainingData
 local snapshotCache, snapshotCacheAt = nil, -math.huge
 local presence, presenceConnections, presenceDeath = {}, {}, nil
-local presenceHumanoid, lobbyRegion, lobbySearchAt
+local presenceHumanoid
+local lobbyRegion
+local lobbySearchAt
 local updatePresence
 local dashStateCache = setmetatable({}, { __mode = "k" })
 

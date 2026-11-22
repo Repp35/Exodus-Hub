@@ -2,7 +2,10 @@
 
 -- module
 local Dash = {}
-local utils, gameInfo, players, handler
+local utils
+local gameInfo
+local players
+local handler
 local records, recordList, connections = {}, {}, {}
 local generation, lastTick = 0, -math.huge
 

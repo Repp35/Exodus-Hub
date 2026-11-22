@@ -4,7 +4,10 @@
 local Camera = {}
 local utils
 local cameraEpoch = 0
-local cameraInput, cameraOriginal, cameraWrapped, configConnection
+local cameraInput
+local cameraOriginal
+local cameraWrapped
+local configConnection
 local sensitivity = 1.5
 
 -- configuration

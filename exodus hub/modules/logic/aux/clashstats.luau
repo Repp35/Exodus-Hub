@@ -2,7 +2,11 @@
 
 -- module
 local ClashStats = {}
-local utils, gameInfo, players, localPlayer, deflectGeometry
+local utils
+local gameInfo
+local players
+local localPlayer
+local deflectGeometry
 local stats
 
 -- configuration

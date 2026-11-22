@@ -2,12 +2,21 @@
 
 -- code
 local Dynamic = {}
-local utils, gameInfo, cooldownInfo, remote
+local utils
+local gameInfo
+local cooldownInfo
+local remote
 local connections, uiConnections = {}, {}
-local binding, session, held, pressedAt, protectedUntil
+local binding
+local session
+local held
+local pressedAt
+local protectedUntil
 local editing = false
 local lastStopReason
-local active, pulseUntil, epoch = false, 0, 0
+local active = false
+local pulseUntil = 0
+local epoch = 0
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("DynamicParry") == true end
 local function connect(list, signal, callback)
   local c = signal:Connect(callback); list[#list + 1] = c

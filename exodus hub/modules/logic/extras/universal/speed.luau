@@ -7,8 +7,14 @@ local configObserver
 
 -- configuration
 local CONFIG = {
-  schema = { UniversalSpeedEnabled = "boolean", UniversalSpeed = "rate" },
-  defaults = { UniversalSpeedEnabled = false, UniversalSpeed = 40 },
+  schema = {
+    UniversalSpeedEnabled = "boolean",
+    UniversalSpeed = "rate",
+  },
+  defaults = {
+    UniversalSpeedEnabled = false,
+    UniversalSpeed = 40,
+  },
 }
 
 local RunService = game:GetService("RunService")

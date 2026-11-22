@@ -2,8 +2,12 @@
 
 -- module
 local AutoDark = {}
-local utils, remote, gameInfo, world
-local connection, configObserver
+local utils
+local remote
+local gameInfo
+local world
+local connection
+local configObserver
 local epoch = 0
 
 -- configuration

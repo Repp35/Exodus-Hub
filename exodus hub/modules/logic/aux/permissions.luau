@@ -5,7 +5,10 @@ local Permissions = {}
 
 -- configuration
 local CONFIG = {
-  RESERVED = { __contract = true, __config = true },
+  RESERVED = {
+    __contract = true,
+    __config = true,
+  },
 }
 
 local POLICY_JSON = [=[

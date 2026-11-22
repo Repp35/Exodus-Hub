@@ -2,8 +2,13 @@
 
 -- code
 local InfiniteZoom = {}
-local utils, configObserver, zoomConnection, player, savedMaximum
-local enabled, writing = false, false
+local utils
+local configObserver
+local zoomConnection
+local player
+local savedMaximum
+local enabled = false
+local writing = false
 local CONFIG = {
   schema = { UniversalInfiniteZoom = "boolean" },
   defaults = { UniversalInfiniteZoom = false },

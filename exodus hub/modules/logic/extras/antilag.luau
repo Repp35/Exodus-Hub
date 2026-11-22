@@ -2,7 +2,8 @@
 
 -- module
 local AntiLag = {}
-local Utils, GameInfo
+local Utils
+local GameInfo
 local revealedVisuals = setmetatable({}, { __mode = "k" })
 local MAX_REVEALS_PER_TICK = 4
 local function shouldHideVisual(object, reason)

@@ -2,8 +2,12 @@
 
 local Servers = {}
 
-local utils, failureConnection
-local generation, busy, busyUntil, reporter = 0, false, 0, nil
+local utils
+local failureConnection
+local generation = 0
+local busy = false
+local busyUntil = 0
+local reporter = nil
 local pendingServerId
 
 -- configuration

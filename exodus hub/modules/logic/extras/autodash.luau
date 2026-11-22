@@ -3,11 +3,21 @@
 -- module
 local AutoDash = {}
 local deflectGeometry
-local utils, gameInfo, dash, movement, autoSpam, localPlayer, runService
-local root, heartbeat
+local utils
+local gameInfo
+local dash
+local movement
+local autoSpam
+local localPlayer
+local runService
+local root
+local heartbeat
 local lastTickAt = -math.huge
 local inFlight, handledSignals = nil, {}
-local exchangePartner, exchangeTarget, exchangeChanges, exchangeAt = nil, nil, 0, nil
+local exchangePartner = nil
+local exchangeTarget = nil
+local exchangeChanges = 0
+local exchangeAt = nil
 
 -- configuration
 local CONFIG = {

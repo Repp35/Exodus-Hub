@@ -2,7 +2,9 @@
 
 -- code
 local Geometry = {}
-local gameInfo, players, world
+local gameInfo
+local players
+local world
 local CONFIG = {
   WINDOW_BASE = 0.85,
   WINDOW_SPREAD = 0.65,

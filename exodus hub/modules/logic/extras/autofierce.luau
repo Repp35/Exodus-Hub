@@ -2,9 +2,16 @@
 
 -- code
 local AutoFierce = {}
-local utils, gameInfo, geometry, cooldown, remote, autoParry, autoSpam
+local utils
+local gameInfo
+local geometry
+local cooldown
+local remote
+local autoParry
+local autoSpam
 local connections = {}
-local generation, pending = 0, false
+local generation = 0
+local pending = false
 local lastEpisode, errorAt = 0, -math.huge
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
 local function fierceReady()

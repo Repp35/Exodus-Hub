@@ -28,8 +28,12 @@ local state = {
 local configModule, modules, persistenceReady = nil, {}, false
 local connectionIndexes = { global = {}, character = {} }
 local observerIndexes = { spam = {}, config = {} }
-local savePending, saveToken, saveDirty, saveRevision = false, 0, false, 0
-local refreshPending, refreshing = false, false
+local savePending = false
+local saveToken = 0
+local saveDirty = false
+local saveRevision = 0
+local refreshPending = false
+local refreshing = false
 local spamObservers, configObservers = {}, {}
 
 -- configuration
