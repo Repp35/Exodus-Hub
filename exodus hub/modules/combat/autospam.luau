@@ -358,7 +358,6 @@ local function nativeActivation(state, s, time)
     end
   end
   if not partner or not nearPartner(state, partner, radius) then state.gates.native = "no_clash_partner"; return nil end
-  -- One witnessed target switch in either direction is sufficient.
   local hits = world:GetAttribute("ClashHits"); local evidence = state.exchange
   if
     not finite(hits)
