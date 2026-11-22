@@ -303,6 +303,8 @@ local function autoStop(state, s, time)
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
   local cd = cooldownInfo.getDeflectCooldownState(); state.cooldown = cd
+  -- A confirmed miss on the current local cooldown stops AutoSpam immediately.
+  if cd and cd.source == "local" and cd.blocking == true and cd.miss == true then return "miss_confirmed" end
   local localBlocked = cd and ((cd.source == "local" and finite(cd.localRemaining) and cd.localRemaining > 0) or (cd.source == nil and cd.blocking == true))
   if not localBlocked then
     state.cooldownSince, state.cooldownInitialRemaining = nil, nil; state.cooldownLimit = limit
