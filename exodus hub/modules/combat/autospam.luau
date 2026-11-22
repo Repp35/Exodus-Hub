@@ -351,21 +351,21 @@ local function nativeActivation(state, s, time)
       and hint.age >= 0
       and hint.age <= CONFIG.ACTIVATION.NATIVE_MAX_AGE
       and finite(hits)
-      and hits >= 2
+      and hits >= 1
       and (not targetNow or targetNow == localPlayer.UserId or targetNow == expectedPartner)
     then
       partner, context = expectedPartner, hint
     end
   end
   if not partner or not nearPartner(state, partner, radius) then state.gates.native = "no_clash_partner"; return nil end
-  local hits = world:GetAttribute("ClashHits"); local evidence = state.returnEvidence
+  -- One witnessed target switch in either direction is sufficient.
+  local hits = world:GetAttribute("ClashHits"); local evidence = state.exchange
   if
     not finite(hits)
-    or hits < 2
+    or hits < 1
     or not evidence
     or evidence.partner ~= partner
     or evidence.ball ~= s.ball
-    or evidence.leg ~= state.leg
     or time < evidence.at
     or time - evidence.at > CONFIG.ACTIVATION.NATIVE_MAX_AGE
   then
