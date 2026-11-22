@@ -121,7 +121,6 @@ local function selectSnapshot(state, s, time)
     order == "same"
     and s.targetSignals
     and s.targetSignals.known
-    and not s.targetUncertain
     and targetOf(s) == localPlayer.UserId
     and targetOf(cached) ~= localPlayer.UserId
     and cached.exchangeTargetId ~= nil
@@ -179,6 +178,11 @@ local function predictedRecipient(s)
   return best, earliest
 end
 local function recipientRisk(state, s)
+  local authoritativeTarget = s and userId(s.exchangeTargetId)
+  if authoritativeTarget and authoritativeTarget ~= localPlayer.UserId
+    and not nearPartner(state, authoritativeTarget, opponentDistanceLimit(state, s, authoritativeTarget)) then
+    return "confirmed_far_target", authoritativeTarget
+  end
   local recipient, arrival = predictedRecipient(s)
   if recipient == localPlayer.UserId then return nil, recipient, arrival end
   if recipient and not nearPartner(state, recipient, opponentDistanceLimit(state, s, recipient)) then return "predicted_far_recipient", recipient, arrival end
@@ -279,7 +283,7 @@ local function autoHardStop(state, s)
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
-  local target = s and not s.targetUncertain and targetOf(s)
+  local target = s and (userId(s.exchangeTargetId) or (not s.targetUncertain and targetOf(s)))
   if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then
     state.directionBlocked = { ball = s.ball, leg = state.leg }; return "target_redirected_far"
   end
@@ -628,8 +632,8 @@ function AutoSpam.onBallSync(data)
     s = table.clone(s); s.syncSequence = state.sequence or s.syncSequence
     s.targetId, s.exchangeTargetId = targetEvent, targetEvent; s.targeted, s.targetUncertain = targetEvent == localPlayer.UserId, false
   end
+  if received or targetEvent then state.packetSnapshot, state.packetAt = table.clone(s), time end
   evaluate(state, s, time, received or targetEvent ~= nil)
-  if received then state.packetSnapshot, state.packetAt = s, time end
 end
 function AutoSpam.onDefenseOpportunity(snapshot)
   local state = current
