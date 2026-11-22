@@ -93,14 +93,9 @@ local function cooldownState(mode)
   if mode == "training" then return cooldown.getTrainingCooldownState() end
   return cooldown.getDeflectCooldownState()
 end
--- Match cooldown is observational only: it never blocks a deflect attempt.
--- Training keeps its original cooldown requirement.
-local function ready(cd, mode)
-  return mode ~= "training" or (cd ~= nil and cd.blocking == false)
-end
+local function ready(cd, mode) return mode ~= "training" or (cd ~= nil and cd.blocking == false) end
 local function recover(value, cd, now)
-  cd = cd or {}
-  local shot = state.shot
+  cd = cd or {}; local shot = state.shot
   if not state.fired or not shot then return end
   local confirmed = state.mode == "training" and value.trainingParryAt or cd.lastParriedAt
   local acknowledged = finite(confirmed) and confirmed >= (state.mode == "training" and shot.serverTime or shot.at)
@@ -108,9 +103,7 @@ local function recover(value, cd, now)
     state.fired, state.shot = false, nil; phase("training_cooldown_finished")
     return
   end
-  -- A confirmed miss can rearm immediately, even while cooldown is active.
-  if state.mode ~= "training" and cd.miss == true and not acknowledged
-    and finite(cd.pressAt) and cd.pressAt >= shot.at - 0.001 and cd.pressAt <= now then
+  if state.mode ~= "training" and cd.miss == true and not acknowledged and finite(cd.pressAt) and cd.pressAt >= shot.at - 0.001 and cd.pressAt <= now then
     state.fired, state.shot = false, nil; phase("miss_rearmed")
     return
   end
