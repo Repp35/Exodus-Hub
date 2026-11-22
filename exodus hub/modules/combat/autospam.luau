@@ -365,8 +365,7 @@ local function fastReturnActivation(state, s, time)
   return nil
 end
 local function chooseActivation(state, s, time)
-  local native = nativeActivation(state, s, time)
-  local fastReturn = fastReturnActivation(state, s, time)
+  local native = nativeActivation(state, s, time); local fastReturn = fastReturnActivation(state, s, time)
   return native or fastReturn
 end
 local function evaluateCore(state, s, time, packet)
