@@ -23,7 +23,6 @@ local evaluate
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.6,
-    MIN_CLASH_DISTANCE = 11,
     WINDOW_FACTOR = 0.9,
   },
   TIMING = {
@@ -141,12 +140,18 @@ local function geometry(s, factor)
   if not g or not finite(g.effectiveWindow) or not finite(g.noWindowParryRadius) then return nil end
   local low, high = gameInfo.getBallSpeedLimits(); return deflectGeometry.withSpeedWindowBonus(g, speed, low, high, factor or 1), speed
 end
-local function opponentDistanceLimit(state, s)
+local function opponentDistanceLimit(state, s, partner)
   local speed = snapshotSpeed(s)
-  if not speed then return CONFIG.ACTIVATION.MIN_CLASH_DISTANCE end
-  local factor = utils.getConfigValue("AutoParryWindowFactor"); factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
-  local g = deflectGeometry.getAutoParryGeometry(speed, factor, frameLead(state), gameInfo.getAveragePing()); local radius = g and g.fullRadius
-  return finite(radius) and math.max(CONFIG.ACTIVATION.MIN_CLASH_DISTANCE, radius) or CONFIG.ACTIVATION.MIN_CLASH_DISTANCE
+  if not speed or not partner then return 0 end
+  local factor = utils.getConfigValue("AutoParryWindowFactor")
+  factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
+  local frame, ping = frameLead(state), gameInfo.getAveragePing()
+  local own = deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping)
+  local other = partner and deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping, partner)
+  local ownRadius = own and own.fullRadius
+  local otherRadius = other and other.fullRadius
+  if not finite(ownRadius) or ownRadius < 0 or not finite(otherRadius) or otherRadius < 0 then return 0 end
+  return ownRadius + otherRadius
 end
 local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end
@@ -182,7 +187,7 @@ end
 local function recipientRisk(state, s)
   local recipient, arrival = predictedRecipient(s)
   if recipient == localPlayer.UserId then return nil, recipient, arrival end
-  if recipient and not nearPartner(state, recipient, opponentDistanceLimit(state, s)) then return "predicted_far_recipient", recipient, arrival end
+  if recipient and not nearPartner(state, recipient, opponentDistanceLimit(state, s, recipient)) then return "predicted_far_recipient", recipient, arrival end
   return nil, recipient, arrival
 end
 local function observeTarget(state, s, time, event)
@@ -238,9 +243,9 @@ end
 local function departingExchange(state, s, partner)
   if not s or not vector(s.position) or not vector(s.velocity) or s.velocity.Magnitude < 1 then return false end
   if not vector(playerPosition(localPlayer.UserId)) or not vector(playerPosition(partner)) then return false end
-  local direction = s.velocity; local limit = opponentDistanceLimit(state, s)
+  local direction = s.velocity
   for _, player in ipairs(players:GetPlayers()) do
-    if player.UserId == localPlayer.UserId or player.UserId == partner or nearPartner(state, player.UserId, limit) then
+    if player.UserId == localPlayer.UserId or player.UserId == partner or nearPartner(state, player.UserId, opponentDistanceLimit(state, s, player.UserId)) then
       local position = playerPosition(player.UserId)
       if vector(position) and playerIsAlive(player.UserId) then
         local delta = position - s.position
@@ -276,7 +281,7 @@ local function autoHardStop(state, s)
   if utils.getWorkspace():GetAttribute("MatchStatus") ~= 6 then return "match_ended" end
   if gameInfo.getBallFrozen() == true then return "ball_paused" end
   if state.active and (not s or not s.ball or not s.ball.Parent or s.ball ~= state.ball or s.teleported or s.resetting) then return "ball_reset" end
-  if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s)) then return "opponent_out_of_range" end
+  if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s, state.partner)) then return "opponent_out_of_range" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
@@ -347,8 +352,12 @@ local function missLocked(state)
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then state.gates.native = "outside_spam_window"; return nil end
-  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s)); local partner = context and context.active and context.partnerId
-  if not partner or not nearPartner(state, partner, opponentDistanceLimit(state, s)) then state.gates.native = "no_clash_partner"; return nil end
+  local world = utils.getWorkspace()
+  local by, targetId = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
+  local expectedPartner = by == localPlayer.UserId and targetId or (targetId == localPlayer.UserId and by or nil)
+  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s, expectedPartner))
+  local partner = context and context.active and context.partnerId
+  if not partner or not nearPartner(state, partner, opponentDistanceLimit(state, s, partner)) then state.gates.native = "no_clash_partner"; return nil end
   local stamp = context.lastParryAt
   if not finite(stamp) and finite(context.age) then stamp = utils.getWorkspace():GetServerTimeNow() - context.age end
   if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
@@ -366,7 +375,7 @@ local function fastReturnActivation(state, s, time)
       state.returnEvidence = nil; state.gates.fastReturn = "return_consumed"
     elseif targetOf(s) ~= localPlayer.UserId then
       state.gates.fastReturn = "return_not_self"
-    elseif not nearPartner(state, evidence.partner, opponentDistanceLimit(state, s)) then
+    elseif not nearPartner(state, evidence.partner, opponentDistanceLimit(state, s, evidence.partner)) then
       state.gates.fastReturn = "partner_unavailable"
     elseif not insideSpamWindow(state, s, time, 0.6) then
       state.gates.fastReturn = "return_outside_window"

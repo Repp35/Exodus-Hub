@@ -1007,7 +1007,7 @@ function GameInfo.getClashStatus(maxDistance)
   local status = { active = false, source = "exodus", reason = "no_parry" }; local player = players.LocalPlayer
   local at = world:GetAttribute("LastParryAt")
   if not player or not finite(at) then return status end
-  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = finite(maxDistance) and math.max(11, maxDistance) or 11
+  status.lastParryAt, status.age = at, world:GetServerTimeNow() - at; status.maxDistance = finite(maxDistance) and math.max(0, maxDistance) or math.huge
   status.maxAge = 0.8; status.grace = 0.35
   local by, target = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
   if not finite(status.age) or status.age < 0 or status.age > status.maxAge then status.reason = "expired"; return status end

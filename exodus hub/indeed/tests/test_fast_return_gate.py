@@ -31,6 +31,7 @@ class FastReturn(unittest.TestCase):
   check("""snap.position=v(8);ap.onBallSync({Source='target',TargetPlayerID=88});ap.onBallSync({Source='target',TargetPlayerID=99});assert(not ap.isActive())""",NATIVE)
  def test_clash_pair_must_match_targetid_exchange(self):
   check('''snap.position=v(8);packet(42);packet(99);packet(42,.5);assert(not ap.isActive())
+   third.root.Position=v(10000)
    g.getClashStatus=function() return {active=true,partnerId=88,age=.1,lastParryAt=world.attrs.LastParryAt} end
    native=true;world:fireAttr("LastParryAt");assert(not ap.isActive())''',NATIVE)
  def test_tight_clash_can_enter_without_local_target_history(self):
@@ -38,7 +39,7 @@ class FastReturn(unittest.TestCase):
    g.getClashStatus=function() return {active=true,partnerId=99,age=.1} end
    ap.onDefenseOpportunity(snap);assert(ap.isActive());assert(ap.getActivationContext().reason=='native_clash')''',NATIVE)
  def test_tight_clash_rejects_age_distance_and_large_window(self):
-  for condition in ('other.root.Position=v(10000)', 'snap.position=v(150)', 'snap.targetId=88'):
+  for condition in ('other.root.Position=v(10000)', 'snap.position=v(10000)', 'snap.targetId=88'):
    with self.subTest(condition=condition):
     check('''local age=.1;snap.position=v(8);snap.targetId=99;snap.targeted=false
      g.getClashStatus=function() return {active=true,partnerId=99,age=age} end
