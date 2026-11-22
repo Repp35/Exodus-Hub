@@ -29,7 +29,7 @@ local function fierceReady()
   return type(ability.IsAvailable) ~= "function" or ability:IsAvailable(false)
 end
 local function eligible()
-  if not enabled() or not fierceReady() or (autoSpam and autoSpam.isActive()) then return nil end
+  if not enabled() or not fierceReady() then return nil end
   local now = os.clock(); local value = gameInfo.getDefenseSnapshot(now)
   local player = utils.getLocalPlayer(); local character = player and player.Character
   local root = character and character:FindFirstChild("HumanoidRootPart"); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -70,7 +70,7 @@ local function update()
     if owner ~= generation then return false end
     local current, currentEpisode = eligible()
     if not current or current.ball ~= value.ball or currentEpisode ~= episode then return false end
-    if not token then token = boundParry.beginFierce() end
+    if not token then token = boundParry.beginFierce(); autoSpam.stopSpam("fierce_rescue") end
     return true
   end)
   if owner ~= generation then return end
@@ -116,7 +116,7 @@ AutoFierce.__contract = {
     Cooldown = { "getDeflectRecoveryState", "observeDeflect" },
     Remote = { "fireFierce" },
     AutoParry = { "beginFierce", "cancelFierce" },
-    AutoSpam = { "isActive" },
+    AutoSpam = { "stopSpam" },
   },
   provides = { "setup", "teardown", "onBallSync" },
 }
