@@ -25,6 +25,7 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.6,
     WINDOW_FACTOR = 0.9,
+    REACTIVATION_COOLDOWN = 0.15,
   },
   TIMING = {
     SNAPSHOT_MAX_AGE = 0.5,
@@ -77,6 +78,7 @@ local function deactivate(state, reason, time)
   time = time or now(); state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
   state.partner, state.deathSerial = nil, nil; state.cooldownSince, state.cooldownInitialRemaining = nil, nil
+  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_COOLDOWN
   lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
   utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
@@ -352,7 +354,17 @@ local function evaluateCore(state, s, time, packet)
     return
   end
   local candidate = chooseActivation(state, s, time)
-  if candidate then activate(state, candidate, s, time) else state.lastGate = state.gates.fastReturn end
+  -- The independent activation gate still evaluates during the cooldown;
+  -- only the actual reactivation is delayed after the previous stop.
+  if candidate then
+    if time >= (state.reactivateAt or 0) then
+      activate(state, candidate, s, time)
+    else
+      state.lastGate = "reactivation_cooldown"
+    end
+  else
+    state.lastGate = state.gates.fastReturn
+  end
   observeStats(state, s, time, packet)
 end
 evaluate = function(state, s, time, packet)
