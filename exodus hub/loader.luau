@@ -267,6 +267,7 @@ local function request(url, headers)
   local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message, lastMeta
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
+
 -- registry
 local function register(name, module)
   Modules[name] = module; return module
@@ -291,9 +292,7 @@ local function cleanupCall(name, action)
   return ok and result ~= false, result
 end
 local function stopPreviousRuntime()
-  local clean = true
-  -- Stop any update channel left by a previously loaded version.
-  local stop = _G.ExodusUpdateStop
+  local clean = true; local stop = _G.ExodusUpdateStop
   if type(stop) == "function" then pcall(stop) end
   _G.ExodusUpdateStop = nil; _G.ExodusUpdateToken = nil
   _G.ExodusSourceCache = nil; _G.ExodusRequestedRevision = nil
@@ -361,8 +360,7 @@ local function resolveLatestRevision()
     ["Cache-Control"] = "no-cache, no-store",
   })
   if not body then return nil, requestError end
-  local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-  local sha = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
+  local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
   if not validRevision(sha) then return nil, "revisão atual da main inválida" end
   return sha
 end
@@ -599,8 +597,7 @@ end
 local reloadInFlight = false
 local function reloadLatest(onFailure)
   if reloadInFlight then return false, "reload already in progress" end
-  reloadInFlight = true
-  local session = _G.ExodusLoaderSessionToken
+  reloadInFlight = true; local session = _G.ExodusLoaderSessionToken
   task.spawn(function()
     local ok, detail = xpcall(function()
       local chunk, prepareError = prepareLoader()
@@ -618,11 +615,9 @@ local function reloadLatest(onFailure)
 end
 local startupPerformed = false
 local function startInternal()
-  local wasStarted = Exodus.Started == true
-  local version, revisionError = resolveLatestRevision()
+  local wasStarted = Exodus.Started == true; local version, revisionError = resolveLatestRevision()
   if not version then return false, "Loader", revisionError or "revisão atual indisponível" end
-  local urls = buildURLs(version)
-  local prepared, prepareModule, prepareError = loadModules(urls)
+  local urls = buildURLs(version); local prepared, prepareModule, prepareError = loadModules(urls)
   if not prepared then return false, prepareModule, prepareError end
   printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
