@@ -193,8 +193,8 @@ inicial e a indexação são graduais. A liberação de objetos antes ocultos é
 a 4 a cada 0,1 segundo e também por orçamento de tempo; colisões e consultas
 físicas permanecem.
 
-O AP avalia também `PreSimulation`, além do tick após física e dos eventos de
-sincronização. Qualquer fonte positiva de alvo local vence fontes negativas.
+O CombatLoop agenda AP e AutoSpam após a física e nos eventos de sincronização.
+`PreSimulation` só acrescenta uma avaliação quando vence um prazo estimado do AP. Qualquer fonte positiva de alvo local vence fontes negativas.
 O primeiro envio reserva o ciclo antes do remote; uma trava de requisição em
 voo impede envios concorrentes mesmo se um evento de alvo rearmar o ciclo
 durante a chamada. Alcance físico, cooldown e validade da bola continuam sendo
@@ -280,7 +280,7 @@ expostos pelo Roblox no dispositivo, sem inferência de protocolos de hardware.
 
 A bola e seus descendentes são excluídos dos cortes espaciais e da remoção de
 efeitos do otimizador. Ao trocar a bola, suas propriedades são restauradas
-imediatamente. A visão é avaliada em `PreRender`; objetos ocultos que entram na
+imediatamente. A seleção espacial é avaliada em intervalos no Heartbeat; objetos ocultos que entram na
 visão são restaurados na atualização da câmera, sem a antiga fila de 48 por
 passagem. A indexação e os cortes restantes continuam incrementais.
 
