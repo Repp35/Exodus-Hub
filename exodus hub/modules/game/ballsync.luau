@@ -10,6 +10,8 @@ function BallSync.create(deps)
   local Sync = {}; local getReplicator, invalidateSnapshotCache = deps.getReplicator, deps.invalidateSnapshotCache
   local CONFIG = { PACKET_AGE = deps.packetAge }; local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   local receivedSequence
+  local version, lastServerTime = 0, nil
+  local nativeEntry
   local function syncData(provider)
     if provider == nil then provider = getReplicator() end
     if packet and os.clock() - packetAt > CONFIG.PACKET_AGE then packet = nil end
@@ -36,6 +38,7 @@ function BallSync.create(deps)
     if value.Speed ~= nil and not validBallSpeed(value.Speed) then return false end
     if value.MaxSpeed ~= nil and not validBallSpeed(value.MaxSpeed) then return false end
     if value.RealPosition ~= nil and not finiteVector(value.RealPosition) then return false end
+    if value.ServerTime ~= nil and (not finite(value.ServerTime) or (lastServerTime and value.ServerTime < lastServerTime)) then return false end
     local sequence = value.Sequence
     if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
     if receivedSequence ~= nil then
@@ -45,7 +48,8 @@ function BallSync.create(deps)
     local provider = getReplicator(); local previous = provider and provider.hasState == true and provider.lastSeq
     if finite(previous) and (sequence - previous) % 65536 >= 32768 then return false end
     packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt
-    receivedSequence, lastSync = sequence, packet; invalidateSnapshotCache()
+    receivedSequence, lastSync = sequence, packet; lastServerTime = value.ServerTime or lastServerTime
+    version += 1; invalidateSnapshotCache()
     return true
   end
   local function decodeBallPacketFallback(value)
@@ -148,6 +152,7 @@ function BallSync.create(deps)
     if value.MaxSpeed ~= nil and not validBallSpeed(value.MaxSpeed) then return nil end
     if value.RealPosition ~= nil and not finiteVector(value.RealPosition) then return nil end
     if value.Sequence ~= nil and not finite(value.Sequence) then return nil end
+    if value.ServerTime ~= nil and (not finite(value.ServerTime) or (lastServerTime and value.ServerTime < lastServerTime)) then return nil end
     local sequence = value.Sequence or (provider and provider.hasState == true and provider.lastSeq)
     if finite(sequence) then
       if sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return nil end
@@ -162,8 +167,71 @@ function BallSync.create(deps)
     end
     lastSync, packet, syncReceivedAt = table.clone(value), nil, os.clock()
     if finite(sequence) then lastSync.Sequence = sequence end
+    lastServerTime = value.ServerTime or lastServerTime; version += 1
     invalidateSnapshotCache(); return lastSync
   end
+  local function detachNative()
+    local entry = nativeEntry; nativeEntry = nil
+    if not entry then return end
+    entry.active, entry.handler, entry.serverNow, entry.report = false, nil, nil, nil
+    if entry.provider.ApplySnapshot == entry.wrapper then entry.provider.ApplySnapshot = entry.original end
+  end
+  function Sync.bindNative(handler)
+    local provider = getReplicator()
+    if nativeEntry and nativeEntry.provider == provider then nativeEntry.handler = handler; return true end
+    detachNative()
+    if not provider or type(provider.ApplySnapshot) ~= "function" then return false end
+    local entry = { provider = provider, original = provider.ApplySnapshot, active = true, handler = handler, serverNow = deps.serverNow, report = deps.report }
+    local function freshNative(sample)
+      if type(sample) ~= "table" or not finite(sample.serverTime) then return false end
+      local now = entry.serverNow and entry.serverNow(); return finite(now) and now - sample.serverTime >= -0.02 and now - sample.serverTime <= 0.25
+    end
+    local function receive(sample, ...)
+      if
+        entry.active
+        and entry.handler
+        and freshNative(sample)
+        and finite(sample.serverTime)
+        and finiteVector(sample.position)
+        and validBallSpeed(sample.speed)
+        and (sample.direction == nil or finiteVector(sample.direction))
+      then
+        local packet = {
+          Sequence = sample.seq,
+          ServerTime = sample.serverTime,
+          RealPosition = sample.position,
+          ForcedDirection = sample.direction,
+          Speed = sample.speed,
+          TargetPlayerID = sample.targetId,
+          HighlightTargetPlayerID = sample.highlightId,
+          MaxSpeed = sample.maxSpeed,
+          Accel = sample.accel,
+          Teleported = sample.teleported,
+          Locked = sample.locked,
+          Grace = sample.grace,
+          OldGrace = sample.oldGrace,
+          PossessorId = sample.possessed and (sample.possessorId or 1) or 0,
+          CurveTime = sample.curveTime,
+          CurveTimeMax = sample.curveTimeMax,
+          CurveAxis = sample.curveAxis,
+          BouncesLeft = sample.bouncesLeft,
+          FlightTime = sample.flightTime,
+          NoSpeedFeel = sample.noSpeedFeel,
+        }
+
+        local ok, detail = pcall(entry.handler, packet)
+        if not ok and entry.report then entry.report(detail) end
+      end
+      return ...
+    end
+    entry.wrapper = function(self, sample, ...) return receive(sample, entry.original(self, sample, ...)) end
+    provider.ApplySnapshot = entry.wrapper; nativeEntry = entry
+    local history = provider.history; local latest = type(history) == "table" and history[#history]
+    if latest then receive(latest) end
+    return true
+  end
+  function Sync.destroy() detachNative() end
+  function Sync.getVersion() return version end
   Sync.getData = syncData; Sync.getSequence = syncSequence
   function Sync.getReceivedAt() return syncReceivedAt end
   return Sync

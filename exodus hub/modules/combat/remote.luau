@@ -142,9 +142,14 @@ local function dispatchParry(info, guard, context, native, checked)
   if not allowed(guard) then return false, "Deflect cancelado" end
   if not ability then return false, "Deflect não equipado ou indisponível" end
   if checked then
-    local before = info.getDeflectCallStamp(ability); local result = ability:Deflect()
+    local nativeBefore = ability.LastDeflectCallAt; local before = info.getDeflectCallStamp(ability)
+    local result = ability:Deflect()
     if result == false then return false, "Deflect recusado pelo cliente" end
     local after = info.getDeflectCallStamp(ability)
+    if type(nativeBefore) == "number" or type(ability.LastDeflectCallAt) == "number" then
+      if ability.LastDeflectCallAt == nativeBefore then return false, "Deflect recusado pelo cliente" end
+      return true
+    end
     if type(before) == "number" or type(after) == "number" then
       if after == before then return false, "Deflect recusado pelo cliente" end
     end

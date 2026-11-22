@@ -6,6 +6,8 @@ local utils
 local gameInfo
 local cooldownConnection
 local parriedConnection
+local nativeParriedConnection
+local nativeParriedSignal
 local trainingConnection
 local trainingRemote
 local cooldown
@@ -75,6 +77,16 @@ local function generatedRemote(id)
   local remotes = child(child(root, "Network"), "GeneratedNetworkRemotes") or child(root, "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id))
   return remote and remote:IsA("RemoteEvent") and remote or nil
 end
+local function confirmParry(native)
+  if not cooldown or not utils then return end
+  local now = os.clock()
+  if native and cooldown.lastNativeParriedAt and now - cooldown.lastNativeParriedAt < 0.008 then return end
+  if native then cooldown.lastNativeParriedAt = now end
+  cooldown.lastParriedAt = now; cooldown.confirmationVersion = (cooldown.confirmationVersion or 0) + 1
+  cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt = false, false, nil, now
+  if deflectAttempt then deflectAttempt.missed, deflectAttempt.confirmed = false, true end
+  notify()
+end
 function Cooldown.getTrainingMissCooldown()
   local storage = utils and utils.getReplicatedStorage(); local module = child(child(storage, "Training"), "TrainingShared")
   if module ~= trainingSharedModule then trainingSharedModule, trainingShared = module, nil end
@@ -108,8 +120,12 @@ local function bindTraining(now)
   trainingConnection = event.OnClientEvent:Connect(function(kind, value)
     if owner ~= epoch or trainingRemote ~= event or not utils then return end
     local player = utils.getLocalPlayer()
-    if kind == "Parry" and player and value == player.UserId then trainingLockoutUntil, trainingAttemptUntil = nil, nil
-    elseif kind == "Lockout" then local duration = finite(value) and value >= 0 and value or Cooldown.getTrainingMissCooldown(); trainingLockoutUntil = os.clock() + duration end
+    if kind == "BallSpawn" or (kind == "Parry" and player and value == player.UserId) then
+      trainingLockoutUntil, trainingAttemptUntil = nil, nil; notify()
+    elseif kind == "Lockout" then
+      local duration = finite(value) and value >= 0 and value or Cooldown.getTrainingMissCooldown(); trainingLockoutUntil = os.clock() + duration
+      notify()
+    end
   end)
   utils.trackGlobal(trainingConnection)
 end
@@ -141,6 +157,7 @@ function Cooldown.recordDeflectAttempt(pressedAt)
     pressedAt = pressedAt,
     missed = false,
     initialCooldown = finite(remaining) and remaining > 0 and remaining or nil,
+    acceptedAt = gameInfo.getLastAcceptedDeflectAt(),
   }
 
 end
@@ -176,14 +193,29 @@ function Cooldown.getDeflectCooldownState()
     end
   end
   if time >= nextParriedAt then
-    nextParriedAt = time + CONFIG.COOLDOWN_RETRY; local signals = Cooldown.getDeflectServerEvents()
-    local signal = signals and signals.parried
+    nextParriedAt = time + CONFIG.COOLDOWN_RETRY; local native = gameInfo.getParrySignal()
+    if nativeParriedSignal ~= native or (nativeParriedConnection and nativeParriedConnection.Connected == false) then
+      disconnect(nativeParriedConnection); nativeParriedConnection, nativeParriedSignal = nil, native
+    end
+    if native and not nativeParriedConnection then
+      local owner = epoch
+      nativeParriedConnection = native:Connect(function(kind, ownerId)
+        local player = utils and utils.getLocalPlayer()
+        if owner == epoch and nativeParriedSignal == native and kind == "parry" and player and ownerId == player.UserId then confirmParry(true) end
+      end)
+      utils.trackGlobal(nativeParriedConnection)
+    end
+    local signals = Cooldown.getDeflectServerEvents(); local signal = signals and signals.parried
     if parriedSignal ~= signal then disconnect(parriedConnection); parriedConnection, parriedSignal = nil, signal end
     if signal and not parriedConnection then
       local owner = epoch
       parriedConnection = signals.parried:Connect(function()
         if owner ~= epoch or parriedSignal ~= signal or not cooldown then return end
-        cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock(); notify()
+        if nativeParriedConnection and nativeParriedConnection.Connected ~= false then
+          cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt = false, false, nil, os.clock(); notify()
+        else
+          confirmParry(false)
+        end
       end)
       utils.trackGlobal(parriedConnection)
     end
@@ -207,10 +239,22 @@ function Cooldown.getDeflectCooldownState()
   cooldown.active = nil
   if cooldown.remaining ~= nil then cooldown.active = cooldown.remaining > 0 end
   cooldown.blocking = cooldown.active; cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
+  local acceptedAt = gameInfo.getLastAcceptedDeflectAt()
+  if
+    finite(acceptedAt)
+    and acceptedAt > 0
+    and acceptedAt <= time
+    and (not deflectAttempt or acceptedAt > math.max(deflectAttempt.pressedAt, deflectAttempt.nativePressAt or 0) + 0.000001)
+  then
+    Cooldown.recordDeflectAttempt(acceptedAt)
+  end
   local pendingAt = ability and ability.PendingPressAt; local pendingUntil = ability and ability.PendingPredictUntil
   if finite(pendingAt) and pendingAt > 0 and pendingAt <= time then
     if deflectAttempt and pendingAt >= deflectAttempt.pressedAt and pendingAt - deflectAttempt.pressedAt <= 0.01 then deflectAttempt.nativePressAt = pendingAt
     else Cooldown.recordDeflectAttempt(pendingAt) end
+  end
+  if deflectAttempt and finite(pendingAt) and finite(pendingUntil) and math.abs(pendingAt - deflectAttempt.pressedAt) <= 0.01 and pendingUntil >= pendingAt then
+    deflectAttempt.windowEndsAt = pendingUntil
   end
   if cooldown.blocking then
     if previousBlocking ~= true then
@@ -224,22 +268,26 @@ function Cooldown.getDeflectCooldownState()
     blockingSince = nil
   end
   previousBlocking = cooldown.blocking; cooldown.blockingSince, cooldown.episode = blockingSince, cooldownEpisode
-  local attempt = deflectAttempt; local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false
-  local localBlocked = localKnown and localRemaining > 0; local episodeAttempt = attempt
+  local attempt = deflectAttempt; local parried = attempt and (attempt.confirmed == true or (finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt)) or false
+  local windowEndsAt = attempt and attempt.windowEndsAt; local pendingOpen = finite(windowEndsAt) and time < windowEndsAt
+  local acceptedAttempt = attempt and finite(attempt.acceptedAt) and math.abs(attempt.acceptedAt - attempt.pressedAt) <= 0.01; local localBlocked = localKnown and localRemaining > 0
+  local episodeAttempt = attempt
     and finite(blockingSince)
     and finite(attempt.pressedAt)
     and attempt.pressedAt <= time
     and attempt.pressedAt >= blockingSince - 0.5
   local threshold = nil; local missActive = false
-  if localBlocked and episodeAttempt and not parried then
+  if localBlocked and episodeAttempt and acceptedAttempt and not parried and not pendingOpen and not cooldown.predictedReset then
     local duration = finite(attempt.initialCooldown) and attempt.initialCooldown or localRemaining; threshold = math.clamp(duration * 0.65, 0.08, 0.22)
     missActive = time - math.max(blockingSince, attempt.pressedAt) >= threshold
     if missActive then attempt.missed = true end
   end
   if parried and attempt then attempt.missed = false end
-  cooldown.pressAt = attempt and attempt.pressedAt or nil; cooldown.missDeadline = nil
-  cooldown.windowEndsAt = nil; cooldown.windowExpired = false
-  cooldown.missThreshold = threshold; cooldown.miss = not parried and (localBlocked and missActive or (not localBlocked and attempt and attempt.missed == true)) or false
+  cooldown.pressAt = attempt and attempt.pressedAt or nil; cooldown.missDeadline = pendingOpen and windowEndsAt or nil
+  cooldown.windowEndsAt, cooldown.windowExpired = windowEndsAt, finite(windowEndsAt) and time >= windowEndsAt; local ping = missActive and gameInfo.getAveragePing() or 0
+  cooldown.missConfirmed = missActive and finite(windowEndsAt) and time >= windowEndsAt + math.max(0, ping or 0) and not cooldown.predictedReset and not parried; cooldown.pending = pendingOpen
+  cooldown.acceptedAt = attempt and attempt.acceptedAt or nil; cooldown.missThreshold = threshold
+  cooldown.miss = not parried and (localBlocked and missActive or (not localBlocked and attempt and attempt.missed == true)) or false
   cooldown.outcome = parried and "parried" or (cooldown.miss and "miss" or "pending")
   if parried then cooldown.phase = "reverted"
   elseif localBlocked and missActive then cooldown.phase = "miss_cooldown"
@@ -258,7 +306,12 @@ function Cooldown.getDeflectRecoveryState(timeToImpact, responseLead)
     cooldown = current,
     ready = known and current.blocking == false,
     recoveryIn = blocked and current.localRemaining or 0,
-    needsFierce = blocked and current.miss == true,
+    needsFierce = blocked
+      and current.miss == true
+      and current.missConfirmed == true
+      and not current.pending
+      and not current.predictedReset
+      and current.outcome == "miss",
   }
 end
 
@@ -282,7 +335,8 @@ function Cooldown.teardown()
   for entry in pairs(observers) do
     entry.Connected = false
   end
-  table.clear(observers); disconnect(cooldownConnection)
+  table.clear(observers); disconnect(nativeParriedConnection)
+  nativeParriedConnection, nativeParriedSignal = nil, nil; disconnect(cooldownConnection)
   disconnect(parriedConnection); disconnect(trainingConnection)
   cooldownConnection, parriedConnection, trainingConnection, trainingRemote = nil, nil, nil, nil; cooldownSignal, parriedSignal = nil, nil
   cooldown, deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, nil, nil
@@ -294,7 +348,7 @@ Cooldown.__contract = {
   requires = { Utils = "utils", GameInfo = "gameinfo" },
   requiresMethods = {
     Utils = { "getRunService", "getReplicatedStorage", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
-    GameInfo = { "getDeflectAbility" },
+    GameInfo = { "getDeflectAbility", "getLastAcceptedDeflectAt", "getParrySignal", "getAveragePing" },
   },
   provides = {
     "step",

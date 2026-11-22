@@ -9,6 +9,7 @@ local registry
 local profiler
 local presenceTracker
 local evaluationDepth = 0
+local parryProjectionCache
 local players
 local world
 local ball = nil
@@ -47,10 +48,15 @@ local trainingZone
 local trainingRound = 0
 local trainingDespawned = false
 local trainingServerTime = nil
+local trainingPacketFloor = -math.huge
 local trainingObservers = {}
 local trainingParryAt
 local trainingDataModule
 local trainingData
+local ballFeelModule
+local ballFeel
+local trainingSharedModule
+local trainingShared
 local snapshotBuilder
 local dashStateCache = setmetatable({}, { __mode = "k" })
 
@@ -104,27 +110,40 @@ end
 local function storage() return utils and utils.getReplicatedStorage() end
 local function ts() return child(storage(), "Shared") or child(storage(), "TS") end
 local function sharedLayout() return child(storage(), "Shared") ~= nil end
+local function getTrainingSource()
+  local module = child(child(storage(), "Training"), "TrainingShared")
+  if module ~= trainingSharedModule then trainingSharedModule, trainingShared = module, nil end
+  if module and not trainingShared then
+    local ok, result = pcall(load, module, "TrainingShared")
+    if ok then trainingShared = result end
+  end
+  return trainingShared
+end
 local function inTrainingArea()
-  local player = players and players.LocalPlayer; local character = player and player.Character
-  local root = character and character:FindFirstChild("HumanoidRootPart")
-  if not root or not root.Parent then return false end
-  local area = trainingZone
-  if not area or not area.Parent then area = child(child(child(world, "Training"), "Areas"), "Zone"); trainingZone = area end
-  if not area or not area:IsA("BasePart") then return false end
-  local localPos = area.CFrame:PointToObjectSpace(root.Position); local half = area.Size / 2
-  if math.abs(localPos.X) > half.X or math.abs(localPos.Y) > half.Y or math.abs(localPos.Z) > half.Z then return false end
-  local module = child(child(ts(), "Core"), "GameData")
+  local player = players and players.LocalPlayer
+  if not registry then return false end
+  local _, _, _, root = registry.getParts(player and player.UserId)
+  if not root then return false end
+  local lives = player:GetAttribute("Lives"); local module = child(child(ts(), "Core"), "GameData")
   if module ~= trainingDataModule then trainingDataModule, trainingData = module, nil end
   if module and not trainingData then
     local ok, result = pcall(load, module, "GameData")
     if ok then trainingData = result.GameData end
   end
-  local lives = player:GetAttribute("Lives")
   if trainingData and type(trainingData.GetFallback) == "function" then
     local ok, result = pcall(trainingData.GetFallback, trainingData, player, "Lives", 0)
     if ok then lives = result end
   end
-  return not finite(lives) or lives <= 0
+  if finite(lives) and lives > 0 then return false end
+  local source = getTrainingSource()
+  if source and type(source.InZone) == "function" then
+    local ok, inside = pcall(source.InZone, root.Position)
+    if ok and type(inside) == "boolean" then return inside end
+  end
+  local area = trainingZone
+  if not area or not area.Parent then area = child(child(child(world, "Training"), "Areas"), "Zone"); trainingZone = area end
+  if not area or not area:IsA("BasePart") then return false end
+  local localPos, half = area.CFrame:PointToObjectSpace(root.Position), area.Size / 2; return math.abs(localPos.X) <= half.X and math.abs(localPos.Y) <= half.Y and math.abs(localPos.Z) <= half.Z
 end
 function GameInfo.isTrainingArea() return inTrainingArea() end
 function GameInfo.fireTrainingParry()
@@ -238,8 +257,8 @@ function GameInfo.observeTraining(callback)
   trainingObservers[#trainingObservers + 1] = entry; return entry
 end
 local function resetTrainingBall(despawned)
-  trainingRound += 1; trainingState, trainingDespawned, trainingParryAt, trainingServerTime = nil, despawned, nil, nil
-  invalidateSnapshotCache()
+  trainingPacketFloor = math.max(trainingPacketFloor, trainingServerTime or -math.huge); trainingRound += 1
+  trainingState, trainingDespawned, trainingParryAt, trainingServerTime = nil, despawned, nil, nil; invalidateSnapshotCache()
 end
 local function bindTrainingSync()
   local remotes = child(child(storage(), "Training"), "Remotes"); local event = child(remotes, "Event")
@@ -253,6 +272,7 @@ local function bindTrainingSync()
       if kind == "BallSpawn" then resetTrainingBall(false)
       elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true)
       elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then trainingParryAt = world:GetServerTimeNow(); invalidateSnapshotCache() end
+      notifyTraining()
     end)
     utils.trackGlobal(trainingEventConnection)
   end
@@ -266,8 +286,11 @@ local function bindTrainingSync()
     trainingRemote = training
     trainingConnection = training.OnClientEvent:Connect(function(position, velocity, serverTime, goal, target, speed)
       if not finiteVector(position) or not finiteVector(velocity) or not finite(serverTime) then return end
-      local receivedAt = os.clock()
-      if trainingDespawned or (trainingServerTime and serverTime <= trainingServerTime) then return end
+      local receivedAt = os.clock(); local age = world:GetServerTimeNow() - serverTime
+      if age < -0.02 or age > 0.6 or serverTime <= trainingPacketFloor or (trainingServerTime and serverTime <= trainingServerTime) then return end
+      if trainingDespawned then resetTrainingBall(false) end
+      if speed == nil then speed = velocity.Magnitude end
+      if not validBallSpeed(speed) then return end
       trainingServerTime = serverTime; trainingSequence = (trainingSequence + 1) % 65536
       trainingState = {
         position = position,
@@ -288,10 +311,11 @@ local function bindTrainingSync()
 end
 function GameInfo.bindBallSync(handler)
   if type(handler) ~= "function" then return false end
-  bindTrainingSync(); local candidate = findSyncRemote()
+  bindTrainingSync(); local nativeReady = ballSync.bindNative(handler)
+  local candidate = findSyncRemote()
   if not candidate then
     if syncRemote and not validSyncRemote(syncRemote) then disconnectSync() end
-    return syncConnection ~= nil and syncConnection.Connected == true
+    return nativeReady or (syncConnection ~= nil and syncConnection.Connected == true)
   end
   local replicated = storage(); local remotes = replicated and replicated:FindFirstChild("Remotes")
   local snapshotCandidate = remotes and remotes:FindFirstChild("BallSnapshot")
@@ -326,10 +350,11 @@ function GameInfo.startMaintenance(options)
 end
 function GameInfo.stopMaintenance()
   if presenceTracker then presenceTracker.stop(); presenceTracker = nil end
-  maintenance += 1; disconnectSync()
-  disconnect(trainingConnection); disconnect(trainingEventConnection)
-  trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil; trainingEventConnection, trainingEventRemote = nil, nil
-  resetTrainingBall(false)
+  maintenance += 1
+  if ballSync then ballSync.destroy() end
+  disconnectSync(); disconnect(trainingConnection)
+  disconnect(trainingEventConnection); trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
+  trainingEventConnection, trainingEventRemote = nil, nil; resetTrainingBall(false)
 end
 function GameInfo.teardown()
   GameInfo.stopMaintenance()
@@ -339,24 +364,33 @@ function GameInfo.teardown()
   end
   table.clear(trainingObservers); table.clear(dashStateCache)
   ball, ballData, snapshotBuilder, targetCache, trainingZone = nil, nil, nil, nil, nil; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil
-  trainingDataModule, trainingData, dashAnimation, ballSync, targeting, registry = nil, nil, nil, nil, nil, nil; evaluationDepth = 0
+  trainingDataModule, trainingData, dashAnimation, ballSync, targeting, registry = nil, nil, nil, nil, nil, nil; ballFeelModule, ballFeel, trainingSharedModule, trainingShared = nil, nil, nil, nil
+  evaluationDepth, parryProjectionCache = 0, nil
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   if type(deps.BallSync) ~= "table" or type(deps.BallSync.create) ~= "function" then return false, "dependência ausente: BallSync" end
   if type(deps.Targeting) ~= "table" or type(deps.Targeting.create) ~= "function" then return false, "dependência ausente: Targeting" end
-  GameInfo.stopMaintenance(); utils, registry = deps.Utils, deps.PlayerRegistry
-  evaluationDepth = 0; profiler = deps.Profiler
-  ballSync = deps.BallSync.create({ getReplicator = getReplicator, invalidateSnapshotCache = invalidateSnapshotCache, packetAge = CONFIG.PACKET_AGE })
+  GameInfo.stopMaintenance(); ballFeelModule, ballFeel, trainingSharedModule, trainingShared = nil, nil, nil, nil
+  utils, registry = deps.Utils, deps.PlayerRegistry; evaluationDepth, parryProjectionCache = 0, nil
+  profiler = deps.Profiler
+  ballSync = deps.BallSync.create({
+    getReplicator = getReplicator,
+    invalidateSnapshotCache = invalidateSnapshotCache,
+    packetAge = CONFIG.PACKET_AGE,
+    serverNow = function() return world and world:GetServerTimeNow() end,
+    report = function(detail) utils.recordError("BallSync.native", detail) end,
+  })
   targeting = deps.Targeting.create({ storage = storage }); targetCache, targetCacheAt, targetAttributeAt = nil, -math.huge, 0
   players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   if ballVisualConnection then disconnect(ballVisualConnection); ballVisualConnection = nil end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
-  trainingZone, snapshotBuilder = nil, nil; table.clear(dashStateCache)
-  minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
-  presenceTracker = deps.Presence.create(utils, registry); presenceTracker.start()
+  trainingZone, snapshotBuilder = nil, nil; trainingPacketFloor = -math.huge
+  table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
+  pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; presenceTracker = deps.Presence.create(utils, registry)
+  presenceTracker.start()
   snapshotBuilder = deps.Snapshots.create({
     utils = utils,
     world = world,
@@ -364,6 +398,7 @@ function GameInfo.setup(deps)
     config = CONFIG,
     getTrainingState = function() return trainingState end,
     getTrainingParryAt = function() return trainingParryAt end,
+    getTrainingSignals = targeting.training,
     inEvaluation = function() return evaluationDepth > 0 end,
     getBall = getBall,
     getReplicator = getReplicator,
@@ -373,6 +408,7 @@ function GameInfo.setup(deps)
     inTrainingArea = inTrainingArea,
     getBallFrozen = GameInfo.getBallFrozen,
     getReceivedAt = ballSync.getReceivedAt,
+    getVersion = ballSync.getVersion,
   })
   return true
 end
@@ -523,6 +559,33 @@ function GameInfo.getPlayerDistance(id)
   if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
   return (ownRoot.Position - otherRoot.Position).Magnitude
 end
+function GameInfo.getParrySignal()
+  local folder = child(child(ts(), "Gameplay"), "BallReplicator") or child(ts(), "BallReplicator"); local module = child(folder, "BallFeel")
+  if module ~= ballFeelModule then ballFeelModule, ballFeel = module, nil end
+  if module and not ballFeel then
+    local ok, result = pcall(load, module, "BallFeel")
+    if ok then ballFeel = result end
+  end
+  return ballFeel and ballFeel.Hit or nil
+end
+function GameInfo.getTrainingWindow(speed)
+  local trainingShared = getTrainingSource()
+  if trainingShared and type(trainingShared.GetBlockWindow) == "function" then
+    local ok, window = pcall(trainingShared.GetBlockWindow, speed); return ok and finite(window) and window > 0 and window or nil
+  end
+  local low, high = trainingShared and trainingShared.BaseSpeed or 16, trainingShared and trainingShared.MaxSpeed or 600
+  if not finite(low) or not finite(high) or high <= low then return nil end
+  return 0.85 - 0.65 * math.clamp((speed - low) / (high - low), 0, 1)
+end
+function GameInfo.isNativeClash()
+  local source = GameInfo.getDefenseSource(); local player = players.LocalPlayer
+  if not source or not player or type(source.IsInClash) ~= "function" then return false end
+  local ok, result = pcall(source.IsInClash, source, player); return ok and result == true
+end
+function GameInfo.getLastAcceptedDeflectAt()
+  local ability = GameInfo.getDeflectAbility(); local stamp = ability and ability.LastDeflectCallAt
+  return finite(stamp) and stamp >= 0 and stamp or nil
+end
 function GameInfo.getDeflectAbility() return getAbility(CONFIG.GAME_IDS.DEFLECT, "Deflect") end
 function GameInfo.getDeflectCallStamp(ability)
   ability = ability or GameInfo.getDeflectAbility()
@@ -648,6 +711,7 @@ function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "
 function GameInfo.getSyncData() return syncData() end
 syncSequence = function(current, provider) return ballSync.getSequence(current, provider) end
 function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
+function GameInfo.getSyncVersion() return ballSync and ballSync.getVersion() or 0 end
 function GameInfo.applyPacket(value) return ballSync.applyPacket(value) end
 function GameInfo.decodeBallPacket(value) return ballSync.decodeBallPacket(value) end
 resolveTarget = function(time, provider, sync, currentBall)
@@ -714,18 +778,40 @@ function GameInfo.getPlayers() return registry.getPlayers() end
 function GameInfo.getPlayerParts(id) return registry.getParts(id) end
 function GameInfo.getSnapshot(_, time) return snapshot(time) end
 function GameInfo.getSnapshotAt(time) return snapshot(time) end
-function GameInfo.getParrySnapshot(time)
+local function projectedSnapshot(value, position, velocity, speed, age, derived)
+  local predicted = table.clone(value); predicted.visualPosition, predicted.visualVelocity = value.position, value.velocity
+  predicted.position, predicted.velocity, predicted.speed = position, velocity, speed
+  predicted.predictedVelocity, predicted.predicted, predicted.predictionAge, predicted.predictionSource = derived, true, age, "replicator_simulation"
+  value.parrySnapshot, value.parrySampled = predicted, true; return predicted
+end
+function GameInfo.getParrySnapshot(time, localTarget, needVelocity, minimumServerTime)
   local value = snapshot(time)
-  if not value or value.mode == "training" or not value.targeted or value.ballCanMove == false or value.teleported or value.locked or value.targetUncertain then return value end
-  if value.parrySampled then return value.parrySnapshot or value end
-  value.parrySampled = true; local provider = getReplicator()
+  if value and localTarget == true and value.mode ~= "training" and (not value.targeted or value.targetUncertain) then
+    value = table.clone(value); value.targeted, value.targetUncertain, value.targetId = true, false, players.LocalPlayer.UserId
+    value.parrySampled, value.parrySnapshot = nil, nil
+  end
+  if
+    not value
+    or value.mode == "training"
+    or not value.targeted
+    or value.ballCanMove == false
+    or (value.teleported and localTarget ~= true)
+    or value.locked
+    or value.targetUncertain
+  then
+    return value
+  end
+  if finite(minimumServerTime) and finite(value.serverTime) and value.serverTime < minimumServerTime then return value end
+  if value.parrySampled and (needVelocity == false or not value.parrySnapshot or value.parrySnapshot.predictedVelocity ~= false) then return value.parrySnapshot or value end
+  local provider = getReplicator()
   if not provider or type(provider.SimulateFrom) ~= "function" or not world then return value end
   local history = provider.history; local latest = type(history) == "table" and history[#history]
   local sync = syncData(provider)
-  local sample
+  local sample, sampleKey
   if type(latest) == "table" and provider.lastSeq == value.syncSequence and latest.targetId == value.targetId then
-    sample = latest
+    sample, sampleKey = latest, latest
   elseif sync and finite(sync.ServerTime) and finiteVector(sync.RealPosition) and finiteVector(sync.ForcedDirection) then
+    sampleKey = sync
     sample = {
       position = sync.RealPosition,
       direction = sync.ForcedDirection,
@@ -752,17 +838,41 @@ function GameInfo.getParrySnapshot(time)
   if not finite(age) or age < -0.02 or age > 0.25 then return value end
   local target = playerRoot(value.targetId)
   if not target then return value end
+  local now, own = os.clock(), target.Position; local radius = players.LocalPlayer:GetAttribute("DeflectRange")
+  radius = finite(radius) and math.clamp(radius, 8.5, 16) or 8.5
+  if localTarget == true then
+    local delta = sample.position - own; local outer = radius + 1000 * (math.max(age, 0) + 0.5 * 0.85 + GameInfo.getAveragePing())
+    if delta:Dot(delta) > outer * outer then return nil end
+  end
+  local cache = parryProjectionCache
+  if
+    cache
+    and cache.provider == provider
+    and cache.ball == value.ball
+    and cache.sample == sampleKey
+    and cache.serverTime == sample.serverTime
+    and cache.sequence == value.syncSequence
+    and cache.own == own
+    and now >= cache.at
+    and now - cache.at <= 0.001
+    and (needVelocity == false or cache.derived)
+  then
+    return projectedSnapshot(value, cache.position, cache.velocity, sample.speed, cache.age, cache.derived)
+  end
   local dt = 1 / 240; local measured = profiler.begin("game.native_simulation")
-  profiler.count("game.native_simulations", 2)
-  local ok, position, nextPosition = pcall(
-    function() return provider:SimulateFrom(sample, math.max(age, 0), target.Position), provider:SimulateFrom(sample, math.max(age, 0) + dt, target.Position) end
-  )
-  profiler.finish("game.native_simulation", measured)
-  if not ok or not finiteVector(position) or not finiteVector(nextPosition) then return value end
-  local predicted = table.clone(value); predicted.visualPosition, predicted.visualVelocity = value.position, value.velocity
-  predicted.position, predicted.velocity = position, (nextPosition - position) / dt; predicted.speed = predicted.velocity.Magnitude
-  predicted.predicted, predicted.predictionAge, predicted.predictionSource = true, math.max(age, 0), "replicator_simulation"; value.parrySnapshot = predicted
-  return predicted
+  profiler.count("game.native_simulations"); local ok, position = pcall(provider.SimulateFrom, provider, sample, math.max(age, 0), target.Position)
+  if not ok or not finiteVector(position) then profiler.finish("game.native_simulation", measured); return value end
+  local velocity = value.velocity; local derived = false
+  local delta = position - own
+  if needVelocity ~= false or delta:Dot(delta) > radius * radius then
+    profiler.count("game.native_simulations"); local nextOk, nextPosition = pcall(provider.SimulateFrom, provider, sample, math.max(age, 0) + dt, target.Position)
+    if not nextOk or not finiteVector(nextPosition) then profiler.finish("game.native_simulation", measured); return value end
+    velocity, derived = (nextPosition - position) / dt, true
+  end
+  profiler.finish("game.native_simulation", measured); cache = cache or {}
+  cache.provider, cache.ball, cache.sample, cache.serverTime, cache.sequence = provider, value.ball, sampleKey, sample.serverTime, value.syncSequence
+  cache.own, cache.at, cache.position, cache.velocity, cache.age, cache.derived = own, now, position, velocity, math.max(age, 0), derived; parryProjectionCache = cache
+  return projectedSnapshot(value, position, velocity, sample.speed, math.max(age, 0), derived)
 end
 function GameInfo.isSnapshotValid(value)
   return type(value) == "table"
@@ -951,6 +1061,11 @@ GameInfo.__contract = {
     },
   },
   provides = {
+    "getParrySignal",
+    "getTrainingWindow",
+    "isNativeClash",
+    "getLastAcceptedDeflectAt",
+    "getSyncVersion",
     "teardown",
     "beginEvaluation",
     "endEvaluation",

@@ -55,7 +55,7 @@ function CombatLoop.setup(deps)
   local service = utils.getRunService(); scope.connect(service.PostSimulation or service.Heartbeat, CombatLoop.pulse)
   if service.PreSimulation then
     scope.connect(service.PreSimulation, function(dt)
-      if autoParry.isDeadlineDue() then CombatLoop.pulse(dt) end
+      if autoParry.isDeadlineDue() then CombatLoop.pulse() end
     end)
   end
   scope.add(gameInfo.observeTraining(CombatLoop.pulse)); scope.add(cooldown.observeDeflect(CombatLoop.pulse))

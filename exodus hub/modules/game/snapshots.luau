@@ -43,6 +43,7 @@ function Snapshots.create(deps)
         syncSequence = sample.sequence,
         trainingRound = sample.round,
         trainingParryAt = deps.getTrainingParryAt(),
+        targetSignals = deps.getTrainingSignals(model, sample.goal, players.LocalPlayer.UserId, sample.serverTime, sample.receivedAt, world:GetServerTimeNow()),
       }
 
       builder.cached, builder.cachedAt = result, time; return result
@@ -97,6 +98,8 @@ function Snapshots.create(deps)
       syncAt = syncReceivedAt,
       serverTime = sync and sync.ServerTime or nil,
       syncSequence = deps.syncSequence(sync, provider),
+      syncVersion = deps.getVersion(),
+      highlightTargetId = sync and sync.HighlightTargetPlayerID,
     }
 
     builder.cached, builder.cachedAt = result, time; return result

@@ -58,18 +58,20 @@ local function eligible()
   if not observedCooldown or observedCooldown.source ~= "local" or observedCooldown.blocking ~= true or observedCooldown.miss ~= true then return nil end
   local episode = observedCooldown.episode
   if type(episode) ~= "number" or episode <= lastEpisode then return nil end
-  return value, episode
+  local pressAt, accepted = observedCooldown.pressAt, gameInfo.getLastAcceptedDeflectAt()
+  if type(pressAt) ~= "number" or type(accepted) ~= "number" or math.abs(accepted - pressAt) > 0.01 then return nil end
+  return value, episode, pressAt, observedCooldown.confirmationVersion
 end
 local function update()
   if pending then return end
-  local value, episode = eligible()
+  local value, episode, pressAt, confirmation = eligible()
   if not value then return end
   local owner, token = generation, nil; local boundParry = autoParry
   pending = true
   local ok, sent = pcall(remote.fireFierce, function()
     if owner ~= generation then return false end
-    local current, currentEpisode = eligible()
-    if not current or current.ball ~= value.ball or currentEpisode ~= episode then return false end
+    local current, currentEpisode, currentPress, currentConfirmation = eligible()
+    if not current or current.ball ~= value.ball or currentEpisode ~= episode or currentPress ~= pressAt or currentConfirmation ~= confirmation then return false end
     if not token then token = boundParry.beginFierce(); autoSpam.stopSpam("fierce_rescue") end
     return true
   end)
@@ -111,7 +113,7 @@ AutoFierce.__contract = {
   },
   requiresMethods = {
     Utils = { "isActive", "getConfigValue", "getLocalPlayer", "recordError" },
-    GameInfo = { "getDefenseSnapshot", "getAveragePing", "areAbilitiesEnabled", "getFierceDeflectAbility" },
+    GameInfo = { "getDefenseSnapshot", "getAveragePing", "areAbilitiesEnabled", "getFierceDeflectAbility", "getLastAcceptedDeflectAt" },
     DeflectGeometry = { "getParryTiming" },
     Cooldown = { "getDeflectRecoveryState", "observeDeflect" },
     Remote = { "fireFierce" },
