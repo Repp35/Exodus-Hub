@@ -267,6 +267,19 @@ local function externalGate(state, s, time)
   end
   return recipientRisk(state, s)
 end
+-- Stop only for a confirmed target outside the complete deflect radius (range + full window + latency).
+local function distantTargetGate(state, s)
+  if not state.active or not s then return nil end
+  local target = userId(s.exchangeTargetId)
+  if not target and not s.targetUncertain then target = targetOf(s) end
+  if not target or target == localPlayer.UserId then return nil end
+  local targetPosition = playerPosition(target)
+  if not vector(targetPosition) then return nil end
+  local g = geometry(state, s, 1)
+  if not g or not finite(g.fullRadius) or g.fullRadius <= 0 then return nil end
+  if (targetPosition - state.root.Position).Magnitude > g.fullRadius then return "distant_target" end
+  return nil
+end
 local function autoHardStop(state, s)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
@@ -276,6 +289,8 @@ local function autoHardStop(state, s)
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
+  local distant = distantTargetGate(state, s)
+  if distant then return distant end
   if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s, state.partner)) then return "opponent_out_of_range" end
   local target = s and (userId(s.exchangeTargetId) or (not s.targetUncertain and targetOf(s)))
   if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then return "target_redirected_far" end
