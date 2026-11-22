@@ -264,7 +264,6 @@ function AutoParry.beginFierce()
   return { generation = state.generation, cycle = state.cycle, startedAt = clock() }
 end
 function AutoParry.cancelFierce(token) return token ~= nil and token.generation == state.generation end
--- Internal timing remains available for defense logic, but is not part of the module's public API.
 local function internalTiming(value, time, root, factor)
   if not gameInfo or not state.root then return nil end
   time = finite(time) and time or clock(); value = value or gameInfo.getDefenseSnapshot(time)
@@ -297,14 +296,11 @@ function AutoParry.getPressureDetector()
   }
 end
 function AutoParry.getDefenseState(value)
-  local result = AutoParry.getPressureDetector()
-  result.armed, result.fired, result.reason, result.lastRequestAt = not state.fired, state.fired == true, state.reason, state.lastFireAt
+  local result = AutoParry.getPressureDetector(); result.armed, result.fired, result.reason, result.lastRequestAt = not state.fired, state.fired == true, state.reason, state.lastFireAt
   local cd = cooldown and cooldownState(state.mode); result.blocking, result.lastParriedAt = cd and cd.blocking == true, cd and cd.lastParriedAt
   return result
 end
-function AutoParry.getPressure()
-  return { latestReturnTime = state.returnInterval, samples = state.lastClickAt and 1 or 0, cps = state.cps or 0 }
-end
+function AutoParry.getPressure() return { latestReturnTime = state.returnInterval, samples = state.lastClickAt and 1 or 0, cps = state.cps or 0 } end
 function AutoParry.getStatus()
   local t = internalTiming()
   return {
