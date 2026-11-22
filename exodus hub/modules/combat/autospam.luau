@@ -78,9 +78,9 @@ local function deactivate(state, reason, time)
   time = time or now(); state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
   state.partner, state.deathSerial = nil, nil; state.cooldownSince, state.cooldownInitialRemaining = nil, nil
-  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_COOLDOWN
-  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
-  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
+  state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_COOLDOWN; lastStopReason, lastStopAt = reason, time
+  utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
+  return true
 end
 local function sequenceOrder(state, incoming)
   if incoming == nil then return "none" end
@@ -354,14 +354,8 @@ local function evaluateCore(state, s, time, packet)
     return
   end
   local candidate = chooseActivation(state, s, time)
-  -- The independent activation gate still evaluates during the cooldown;
-  -- only the actual reactivation is delayed after the previous stop.
   if candidate then
-    if time >= (state.reactivateAt or 0) then
-      activate(state, candidate, s, time)
-    else
-      state.lastGate = "reactivation_cooldown"
-    end
+    if time >= (state.reactivateAt or 0) then activate(state, candidate, s, time) else state.lastGate = "reactivation_cooldown" end
   else
     state.lastGate = state.gates.fastReturn
   end
