@@ -25,13 +25,6 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.6,
     WINDOW_FACTOR = 0.9,
-    NATIVE_WINDOW_FACTOR = 0.95,
-    NATIVE_RECENT_PARRY = 0.5,
-    NATIVE_MAX_AGE = 1.0,
-    NATIVE_MAX_DISTANCE = 20,
-    NATIVE_BLOCK_MS = 650,
-    NATIVE_PREDICTION_OBSERVATION = 0.24,
-    NATIVE_MAX_CONTACT_LEAD = 0.45,
   },
   TIMING = {
     SNAPSHOT_MAX_AGE = 0.5,
@@ -151,7 +144,7 @@ end
 local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end
   if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
-  local windowFactor = factor or (state.active and state.reason == "native_clash" and CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR or CONFIG.ACTIVATION.WINDOW_FACTOR)
+  local windowFactor = factor or CONFIG.ACTIVATION.WINDOW_FACTOR
   local g = geometry(state, s, windowFactor)
   if not g or not finite(g.fullRadius) or g.fullRadius < 0 then return false end
   local delta = s.position - state.root.Position; return delta:Dot(delta) <= g.fullRadius * g.fullRadius
@@ -319,121 +312,9 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
-local function observeBlockStart(state, sensor, track, time, seeded)
-  if not track or not sensor or not sensor.player or sensor.player == localPlayer then return end
-  local animation = track.Animation; local name = animation and animation.Name or track.Name
-  local asset = animation and animation.AnimationId; local id = type(asset) == "string" and (asset:match("[?&]id=(%d+)") or asset:match("%d+")) or nil
-  local catalog = state.animationCatalog; local animationPhase = id and catalog and catalog[id]
-  if animationPhase ~= "start" and name ~= "BlockStart" then
-    if id and not animationPhase and time >= (state.nextCatalogAt or 0) then
-      state.animationCatalog = gameInfo.getDeflectAnimationCatalog(); state.nextCatalogAt = time + 0.5
-      animationPhase = state.animationCatalog[id]
-    end
-    if animationPhase ~= "start" then return end
-  end
-  if seeded and track.IsPlaying ~= true then return end
-  local playback, rate = track.TimePosition, track.Speed; local started = time
-  if finite(playback) and playback >= 0 and finite(rate) and rate > 0 then started = time - playback / rate end
-  if started > time or (time - started) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then return end
-  local prior = state.lastBlockAt[sensor.player.UserId]
-  if prior and prior.ball == state.ball and prior.at >= started then return end
-  state.lastBlockAt[sensor.player.UserId] = { at = started, ball = state.ball, track = track }
-  if not seeded and current == state and evaluate then evaluate(state, selectSnapshot(state, gameInfo.getSnapshotAt(time), time), time, false) end
-end
-local function predictNativeReturn(state, s, time, partner, block)
-  if not s or not vector(s.position) or not vector(s.velocity) or targetOf(s) ~= partner then return false end
-  local speed = snapshotSpeed(s)
-  if not speed or speed <= 0 then return false end
-  local aimed, score, margin, source = gameInfo.getDeflectTargetPrediction(partner)
-  if aimed ~= localPlayer.UserId then return false end
-  if
-    (source == "camera" and (not finite(score) or score < 0.75 or not finite(margin) or margin < 0.03))
-    or (source == "root" and (not finite(score) or score < 0.9 or not finite(margin) or margin < 0.15))
-  then
-    return false
-  end
-  local other, otherMotion = gameInfo.getPlayerMotion(partner); local own = state.root.Position
-  if not vector(other) or not vector(own) then return false end
-  otherMotion = vector(otherMotion) and otherMotion or Vector3.zero; local position, velocity = s.position, s.velocity
-  if vector(s.syncDirection) and s.syncDirection.Magnitude > 0.001 then
-    velocity = s.syncDirection.Unit * speed
-    if vector(s.realPosition) and finite(s.syncAt) and time >= s.syncAt and time - s.syncAt <= 0.15 then
-      local elapsed = s.grace and 0 or math.clamp(time - s.syncAt, 0, 0.1); position = s.realPosition + velocity * elapsed
-    end
-  end
-  local base = geometry(state, s, 0.3); local otherRadius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
-  local ownRadius = deflectGeometry.getPlayerRawRadius(localPlayer.UserId, speed, false); local factor = tonumber(utils.getConfigValue("AutoParryWindowFactor"))
-  factor = finite(factor) and math.clamp(factor, 0, 1) or 0.4; local opponentGeometry = deflectGeometry.getAutoParryGeometry(speed, factor, frameLead(state), 0, partner)
-  local ownGeometry = deflectGeometry.getAutoParryGeometry(speed, factor, frameLead(state), networkLatency() * 2, localPlayer.UserId)
-  if not base or not finite(otherRadius) or otherRadius <= 0 or not finite(ownRadius) or ownRadius <= 0 or not opponentGeometry or not ownGeometry then return false end
-  local delay = CONFIG.ACTIVATION.NATIVE_PREDICTION_OBSERVATION + networkLatency(); local gap = (other - own).Magnitude
-  local dangerRadius = otherRadius + speed * math.min(delay, base.effectiveWindow)
-  if gap > dangerRadius then return false end
-  local opponentTrigger = otherRadius + opponentGeometry.fullRadius - opponentGeometry.noWindowParryRadius
-  local contactLead = math.min(opponentGeometry.effectiveWindow, 0.08 + networkLatency(), 0.16)
-  local incoming = deflectGeometry.getDanger(position, velocity, other, speed, otherRadius, contactLead, otherMotion)
-  if
-    (position - other).Magnitude > opponentTrigger
-    or not incoming
-    or not incoming.ready
-    or not finite(incoming.entryTime)
-    or (position - other).Magnitude > 0.1 and (not finite(incoming.closingSpeed) or incoming.closingSpeed <= 0)
-  then
-    return false
-  end
-  local arrival = math.max(0, incoming.entryTime); local blockExpiry = block.at + CONFIG.ACTIVATION.NATIVE_BLOCK_MS / 1000
-  local contactExpiry = block.at + math.min(opponentGeometry.deflectWindow, CONFIG.ACTIVATION.NATIVE_MAX_CONTACT_LEAD + networkLatency())
-  if time + arrival > math.min(blockExpiry, contactExpiry) then return false end
-  local ownMotion = vector(state.root.AssemblyLinearVelocity) and state.root.AssemblyLinearVelocity or Vector3.zero; local futureOwn = own + ownMotion * arrival
-  local contact = position + velocity * arrival; local delta = futureOwn - contact
-  if delta.Magnitude <= 0.001 then return false end
-  local returnVelocity = delta.Unit * speed; local returnRisk = deflectGeometry.getDanger(contact, returnVelocity, futureOwn, speed, ownRadius, delay, ownMotion)
-  local physics = deflectGeometry.getDefensePhysics(); local killRadius = physics and finite(physics.killRadius) and physics.killRadius or 4
-  local lethalReturnTime = math.max(0, delta.Magnitude - killRadius) / speed
-  if not returnRisk or not returnRisk.ready or arrival + lethalReturnTime > delay then return false end
-  return true
-end
-local function nativeActivation(state, s, time)
-  if not s or not s.ball or s.ball ~= state.ball then state.gates.native = "snapshot_unavailable"; return nil end
-  local world = utils.getWorkspace(); local me = localPlayer.UserId
-  local by = userId(world:GetAttribute("LastParryBy")); local parryTarget = userId(world:GetAttribute("LastParryTarget"))
-  local context = gameInfo.getClashContext(true); local nativePartner = context and userId(context.partnerId) or nil
-  local exchange = state.exchange; local exchangePartner = exchange
-      and exchange.ball == s.ball
-      and finite(exchange.at)
-      and time >= exchange.at
-      and time - exchange.at <= CONFIG.ACTIVATION.NATIVE_MAX_AGE
-      and userId(exchange.partner)
-    or nil
-  local partner = nativePartner or exchangePartner
-  if not partner or partner == me then state.gates.native = "no_clash_pair"; return nil end
-  if nativePartner and exchangePartner and nativePartner ~= exchangePartner then state.gates.native = "pair_mismatch"; return nil end
-  if not nearPartner(state, partner, CONFIG.ACTIVATION.NATIVE_MAX_DISTANCE) then state.gates.native = "no_clash_partner"; return nil end
-  local target = targetOf(s)
-  if target and target ~= me and target ~= partner then state.gates.native = "third_target"; return nil end
-  local sensor = state.sensors and state.sensors[partner]
-  if sensor and sensor.animator and time >= (sensor.nextBlockScanAt or 0) then
-    sensor.nextBlockScanAt = time + 0.05
-    for _, track in ipairs(sensor.animator:GetPlayingAnimationTracks()) do
-      observeBlockStart(state, sensor, track, time, true)
-    end
-  end
-  local block = state.lastBlockAt and state.lastBlockAt[partner]
-  if not block or block.ball ~= s.ball or time < block.at or (time - block.at) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then state.gates.native = "block_animation_not_recent"; return nil end
-  if exchangePartner == partner and predictNativeReturn(state, s, time, partner, block) then state.gates.native = "ready"; return { partner = partner, reason = "native_clash" } end
-  if not context or nativePartner ~= partner then state.gates.native = "native_pair_unconfirmed"; return nil end
-  local age = context.age
-  if
-    not finite(age)
-    or age < 0
-    or (age > CONFIG.ACTIVATION.NATIVE_RECENT_PARRY and (age > CONFIG.ACTIVATION.NATIVE_MAX_AGE or world:GetAttribute("GameBallTarget") ~= parryTarget))
-  then
-    state.gates.native = "stale_native_parry"; return nil
-  end
-  local outbound = by == me and parryTarget == partner
-  if not outbound and not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then state.gates.native = "outside_spam_window"; return nil end
-  state.gates.native = "ready"; return { partner = partner, reason = "native_clash" }
-end
+
+
+
 local function fastReturnActivation(state, s, time)
   if not s then state.gates.fastReturn = "snapshot_unavailable"; return nil end
   local evidence = state.returnEvidence
@@ -457,8 +338,7 @@ local function fastReturnActivation(state, s, time)
   return nil
 end
 local function chooseActivation(state, s, time)
-  local native = nativeActivation(state, s, time); local fastReturn = fastReturnActivation(state, s, time)
-  return native or fastReturn
+  return fastReturnActivation(state, s, time)
 end
 local function evaluateCore(state, s, time, packet)
   if current ~= state then return end
@@ -478,7 +358,7 @@ local function evaluateCore(state, s, time, packet)
     return
   end
   local candidate = chooseActivation(state, s, time)
-  if candidate then activate(state, candidate, s, time) else state.lastGate = state.gates.native or state.gates.fastReturn end
+  if candidate then activate(state, candidate, s, time) else state.lastGate = state.gates.fastReturn end
   observeStats(state, s, time, packet)
 end
 evaluate = function(state, s, time, packet)
@@ -505,32 +385,17 @@ local function watchPlayer(state, player)
     sensor.lives = lives
   end
   local function watchCharacter(character)
-    disconnectPool(state, sensor.characterConnections); sensor.character, sensor.humanoid, sensor.animator, sensor.reported = character, nil, nil, false
-    state.lastBlockAt[player.UserId] = nil
-    local function watchAnimator(animator)
-      if current ~= state or player.Character ~= character or not animator:IsA("Animator") or sensor.animator == animator then return end
-      sensor.animator = animator
-      listen(state, animator.AnimationPlayed, function(track)
-        if current ~= state or player.Character ~= character or player == localPlayer then return end
-        observeBlockStart(state, sensor, track, now(), false)
-      end, sensor.characterConnections)
-      if player ~= localPlayer then
-        local time = now()
-        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-          observeBlockStart(state, sensor, track, time, true)
-        end
-      end
-    end
+    disconnectPool(state, sensor.characterConnections)
+    sensor.character, sensor.humanoid, sensor.reported = character, nil, false
     local function watchHumanoid(humanoid)
       if current ~= state or player.Character ~= character or not humanoid:IsA("Humanoid") or sensor.humanoid == humanoid then return end
-      sensor.humanoid = humanoid; listen(state, humanoid.Died, death, sensor.characterConnections)
-      local animator = humanoid:FindFirstChildOfClass("Animator")
-      if animator then watchAnimator(animator) end
-      listen(state, humanoid.ChildAdded, watchAnimator, sensor.characterConnections)
+      sensor.humanoid = humanoid
+      listen(state, humanoid.Died, death, sensor.characterConnections)
     end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then watchHumanoid(humanoid) end
-    listen(state, character.ChildAdded, watchHumanoid, sensor.characterConnections); updateLives()
+    listen(state, character.ChildAdded, watchHumanoid, sensor.characterConnections)
+    updateLives()
   end
   listen(state, player:GetAttributeChangedSignal("Lives"), updateLives, sensor.playerConnections); listen(state, player:GetAttributeChangedSignal("Playing"), updateLives, sensor.playerConnections)
   listen(state, player.CharacterAdded, watchCharacter, sensor.playerConnections)
@@ -560,8 +425,6 @@ function AutoSpam.bindCharacter(character)
     root = root,
     connections = {},
     sensors = {},
-    lastBlockAt = {},
-    animationCatalog = {},
     active = false,
     phase = "idle",
     reason = "waiting",
@@ -571,7 +434,7 @@ function AutoSpam.bindCharacter(character)
   }
 
   current = state; local initial = gameInfo.getSnapshotAt(now())
-  state.ball = initial and initial.ball; state.animationCatalog = gameInfo.getDeflectAnimationCatalog()
+  state.ball = initial and initial.ball
   for _, player in ipairs(gameInfo.getPlayers()) do
     watchPlayer(state, player)
   end
@@ -676,7 +539,7 @@ function AutoSpam.canSend()
   end
   local gate = lifecycleGate(state, s)
   if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
-  if state.reason ~= "native_clash" and not insideSpamWindow(state, s, time) then state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time; return false end
+  if not insideSpamWindow(state, s, time) then state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time; return false end
   return true
 end
 function AutoSpam.hasClashPrediction() return false end
@@ -705,7 +568,7 @@ function AutoSpam.getStatus()
     phase = state and state.phase or "detached",
     engineVersion = 6,
     reason = state and state.reason,
-    windowFactor = state and state.active and state.reason == "native_clash" and CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR or CONFIG.ACTIVATION.WINDOW_FACTOR,
+    windowFactor = CONFIG.ACTIVATION.WINDOW_FACTOR,
     gates = state and table.clone(state.gates) or {},
     targetId = state and state.target or -1,
     clashPartnerId = state and state.partner or -1,
@@ -739,8 +602,6 @@ AutoSpam.__contract = {
     Profiler = { "count" },
     DeflectGeometry = {
       "getAutoParryGeometry",
-      "getDanger",
-      "getDefensePhysics",
       "getPlayerRawRadius",
       "getDeflectGeometry",
       "withSpeedWindowBonus",
@@ -762,7 +623,6 @@ AutoSpam.__contract = {
     GameInfo = {
       "getPlayers",
       "getPlayerParts",
-      "getClashContext",
       "getSnapshotAt",
       "isSnapshotValid",
       "getPlayerMotion",
@@ -770,8 +630,6 @@ AutoSpam.__contract = {
       "getBallFrozen",
       "getAveragePing",
       "getBallSpeedLimits",
-      "getDeflectAnimationCatalog",
-      "getDeflectTargetPrediction",
     },
     Cooldown = { "getDeflectCooldownState" },
     ClashStats = { "getStatus", "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
