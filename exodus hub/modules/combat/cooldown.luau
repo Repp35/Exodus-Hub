@@ -136,15 +136,12 @@ function Cooldown.recordDeflectAttempt(pressedAt)
   local ability = gameInfo and gameInfo.getDeflectAbility()
   if ability ~= observedAbility then observedAbility, deflectAttempt, blockingSince, previousBlocking = ability, nil, nil, nil end
   if deflectAttempt and pressedAt <= deflectAttempt.pressedAt then return end
-  local remaining = ability and ability.Cooldown; local deadline = ability and ability.PendingPredictUntil
+  local remaining = ability and ability.Cooldown
   deflectAttempt = {
     pressedAt = pressedAt,
     missed = false,
-    hadCooldown = finite(remaining) and remaining > 0,
-    cooldownEndsAt = finite(remaining) and remaining > 0 and os.clock() + remaining or nil,
-    windowEndsAt = finite(deadline) and deadline or nil,
+    initialCooldown = finite(remaining) and remaining > 0 and remaining or nil,
   }
-
 end
 function Cooldown.getDeflectCooldownState()
   if not cooldown or not utils or not gameInfo then return nil end
@@ -214,9 +211,7 @@ function Cooldown.getDeflectCooldownState()
     if deflectAttempt and pendingAt >= deflectAttempt.pressedAt and pendingAt - deflectAttempt.pressedAt <= 0.01 then deflectAttempt.nativePressAt = pendingAt
     else Cooldown.recordDeflectAttempt(pendingAt) end
   end
-  if deflectAttempt and finite(pendingAt) and (pendingAt == deflectAttempt.pressedAt or pendingAt == deflectAttempt.nativePressAt) and finite(pendingUntil) then
-    deflectAttempt.windowEndsAt = math.max(deflectAttempt.windowEndsAt or pendingUntil, pendingUntil)
-  end
+
   if cooldown.blocking then
     if previousBlocking ~= true then
       blockingSince = time; cooldownEpisode = (cooldownEpisode or 0) + 1
