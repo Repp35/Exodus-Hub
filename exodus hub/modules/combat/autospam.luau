@@ -27,7 +27,6 @@ local CONFIG = {
     WINDOW_FACTOR = 0.9,
     REACTIVATION_COOLDOWN = 0.15,
     CLOSE_TARGET_DISTANCE = 5,
-    CLOSE_TARGET_EVENT_AGE = 0.3,
   },
   TIMING = {
     SNAPSHOT_MAX_AGE = 0.5,
@@ -219,8 +218,19 @@ local function observeTarget(state, s, time, event)
     state.foreignClash = nil
   end
   state.foreignHistory = previous and { from = previous, to = target, at = time, ball = s.ball } or nil; state.leg = state.leg + 1
-  local distance = vector(s.position) and vector(state.root.Position) and (s.position - state.root.Position).Magnitude or nil; state.target = target
-  state.receipt = { from = previous, target = target, at = time, leg = state.leg, ball = s.ball, distance = distance }
+  -- Take a single distance snapshot at the instant we become the target.
+  -- Never evaluate this gate using the ball's distance at a later frame.
+  local becameTarget = target == localPlayer.UserId
+    and previous ~= localPlayer.UserId and (previous ~= nil or event == true)
+  local ballPosition = event and vector(s.realPosition) and s.realPosition or s.position
+  local distance = becameTarget and vector(ballPosition) and vector(state.root.Position)
+    and (ballPosition - state.root.Position).Magnitude or nil
+  state.target = target
+  state.receipt = {
+    from = previous, target = target, at = time, leg = state.leg, ball = s.ball,
+    closeAtSwitch = becameTarget and finite(distance) and distance <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE or false,
+    distanceAtSwitch = distance,
+  }
   if state.lastSwitchAt and time >= state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.lastSwitchAt = time; local me = localPlayer.UserId
   if previous and (previous == me or target == me) then state.exchange = { partner = previous == me and target or previous, at = time, ball = s.ball } else state.exchange = nil end
@@ -339,25 +349,21 @@ local function fastReturnActivation(state, s, time)
   return nil
 end
 local function closeTargetActivation(state, s, time)
+  -- One snapshot at the target switch: <= 5 studs enables, > 5 disables.
+  -- Moving closer later never changes the result for that switch.
   local receipt = state.receipt
-  if
-    not s
-    or not receipt
-    or receipt.ball ~= s.ball
-    or receipt.leg ~= state.leg
-    or receipt.target ~= localPlayer.UserId
-    or not userId(receipt.from)
-    or receipt.from == localPlayer.UserId
-  then
+  if not s or not receipt or receipt.ball ~= s.ball or receipt.leg ~= state.leg
+    or receipt.target ~= localPlayer.UserId then
     state.gates.closeTarget = "no_target_switch"; return nil
   end
-  if time < receipt.at or time - receipt.at > CONFIG.ACTIVATION.CLOSE_TARGET_EVENT_AGE then state.gates.closeTarget = "switch_expired"; return nil end
-  if not finite(receipt.distance) or receipt.distance > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then state.gates.closeTarget = "switch_too_far"; return nil end
-  if targetOf(s) ~= localPlayer.UserId then state.gates.closeTarget = "target_changed"; return nil end
-  if not vector(s.position) or not vector(state.root.Position) or (s.position - state.root.Position).Magnitude > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
-    state.gates.closeTarget = "ball_left_close_range"; return nil
+  if not receipt.closeAtSwitch then
+    state.gates.closeTarget = "switch_outside_5_studs"; return nil
   end
-  state.gates.closeTarget = "ready"; return { partner = receipt.from, reason = "close_target" }
+  if targetOf(s) ~= localPlayer.UserId then
+    state.gates.closeTarget = "target_changed"; return nil
+  end
+  state.gates.closeTarget = "ready"
+  return { partner = receipt.from, reason = "close_target" }
 end
 local function chooseActivation(state, s, time)
   local closeTarget = closeTargetActivation(state, s, time); local fastReturn = fastReturnActivation(state, s, time)
@@ -563,12 +569,10 @@ function AutoSpam.canSend()
   end
   local gate = lifecycleGate(state, s)
   if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
-  local closeSend = state.reason == "close_target"
-    and s
+  -- For close_target, the activation distance was already decided at the
+  -- target-switch snapshot, so do not remeasure it during send.
+  local closeSend = state.reason == "close_target" and s
     and targetOf(s) == localPlayer.UserId
-    and vector(s.position)
-    and vector(state.root.Position)
-    and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
   if not closeSend and not insideSpamWindow(state, s, time) then state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time; return false end
   return true
 end
