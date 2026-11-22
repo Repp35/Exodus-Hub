@@ -301,7 +301,7 @@ end
 local function activate(state, candidate, s, time)
   state.active, state.phase, state.reason, state.partner = true, "clashing", candidate.reason, candidate.partner
   state.activatedAt, state.deathSerial, state.lastGate = time, matchDeathSerial, candidate.reason; state.returnEvidence = nil
-  state.cooldownSince, state.cooldownEpisode = nil, nil; lastActivationReason, lastActivationAt = candidate.reason, time
+  state.cooldownSince, state.cooldownInitialRemaining, state.cooldownEpisode = nil, nil, nil; lastActivationReason, lastActivationAt = candidate.reason, time
   clashStatsModule.begin(candidate.partner, time); utils.recordTransition("AutoSpam", "idle", "active", candidate.reason)
   utils.setAutoSpamActive(true)
 end
@@ -327,12 +327,27 @@ local function autoStop(state, s, time)
   local speed = snapshotSpeed(s) or 0; local low, high = gameInfo.getBallSpeedLimits()
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
-  state.cooldownLimit = limit; local cd = cooldownInfo.getDeflectCooldownState()
+  local cd = cooldownInfo.getDeflectCooldownState()
   state.cooldown = cd
-  if not cd or cd.active ~= true then
-    state.cooldownSince = nil
+  -- In game, only the local DeflectAbility.Cooldown controls this gate.
+  -- The source-less fallback supports older test adapters, not server state.
+  local localBlocked = cd and ((cd.source == "local" and finite(cd.localRemaining) and cd.localRemaining > 0)
+    or (cd.source == nil and cd.blocking == true))
+  if not localBlocked then
+    state.cooldownSince, state.cooldownInitialRemaining = nil, nil
+    state.cooldownLimit = limit
   else
-    local began = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time; state.cooldownSince = math.min(state.cooldownSince or began, began)
+    local began = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time
+    state.cooldownSince = math.min(state.cooldownSince or began, began)
+    if not state.cooldownInitialRemaining and finite(cd.localRemaining) and cd.localRemaining > 0 then
+      state.cooldownInitialRemaining = cd.localRemaining
+    end
+    -- Ensure a valid sustained local cooldown can outlast the threshold,
+    -- without stopping on brief cooldowns cancelled beforehand.
+    if finite(state.cooldownInitialRemaining) then
+      limit = math.min(limit, math.max(0.08, state.cooldownInitialRemaining * 0.8))
+    end
+    state.cooldownLimit = limit
     if time - state.cooldownSince >= limit then return "cooldown" end
   end
 end
@@ -345,7 +360,9 @@ local function observeStats(state, s, time, packet)
 end
 local function missLocked(state)
   local cd = cooldownInfo.getDeflectCooldownState()
-  if not cd or cd.blocking ~= true or cd.predictedReset == true then state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false end
+  if not cd or cd.blocking ~= true or (cd.source ~= nil and cd.source ~= "local") then
+    state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false
+  end
   if cd.miss == true then return true end
   if not state.cooldownStopAt then return false end
   if finite(cd.lastParriedAt) and cd.lastParriedAt > state.cooldownStopAt then state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false end
