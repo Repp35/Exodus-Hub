@@ -26,6 +26,8 @@ local CONFIG = {
     RETURN = 0.6,
     WINDOW_FACTOR = 0.9,
     REACTIVATION_COOLDOWN = 0.15,
+    CLOSE_TARGET_DISTANCE = 5,
+    CLOSE_TARGET_EVENT_AGE = 0.3,
   },
   TIMING = {
     SNAPSHOT_MAX_AGE = 0.5,
@@ -217,7 +219,10 @@ local function observeTarget(state, s, time, event)
     state.foreignClash = nil
   end
   state.foreignHistory = previous and { from = previous, to = target, at = time, ball = s.ball } or nil; state.leg = state.leg + 1
-  state.target = target; state.receipt = { target = target, at = time, leg = state.leg }
+  local distance = vector(s.position) and vector(state.root.Position)
+    and (s.position - state.root.Position).Magnitude or nil
+  state.target = target
+  state.receipt = { from = previous, target = target, at = time, leg = state.leg, ball = s.ball, distance = distance }
   if state.lastSwitchAt and time >= state.lastSwitchAt then state.intervalMs = (time - state.lastSwitchAt) * 1000 end
   state.lastSwitchAt = time; local me = localPlayer.UserId
   if previous and (previous == me or target == me) then state.exchange = { partner = previous == me and target or previous, at = time, ball = s.ball } else state.exchange = nil end
@@ -335,7 +340,39 @@ local function fastReturnActivation(state, s, time)
   end
   return nil
 end
-local function chooseActivation(state, s, time) return fastReturnActivation(state, s, time) end
+-- A true target switch to us within 5 studs, not just a ball passing nearby.
+-- Capturing the distance at the switch avoids activating later for a distant switch.
+local function closeTargetActivation(state, s, time)
+  local receipt = state.receipt
+  if not s or not receipt or receipt.ball ~= s.ball
+    or receipt.leg ~= state.leg or receipt.target ~= localPlayer.UserId
+    or not userId(receipt.from) or receipt.from == localPlayer.UserId then
+    state.gates.closeTarget = "no_target_switch"; return nil
+  end
+  if time < receipt.at or time - receipt.at > CONFIG.ACTIVATION.CLOSE_TARGET_EVENT_AGE then
+    state.gates.closeTarget = "switch_expired"; return nil
+  end
+  if not finite(receipt.distance) or receipt.distance > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
+    state.gates.closeTarget = "switch_too_far"; return nil
+  end
+  if targetOf(s) ~= localPlayer.UserId then
+    state.gates.closeTarget = "target_changed"; return nil
+  end
+  if not vector(s.position) or not vector(state.root.Position)
+    or (s.position - state.root.Position).Magnitude > CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE then
+    state.gates.closeTarget = "ball_left_close_range"; return nil
+  end
+  state.gates.closeTarget = "ready"
+  return { partner = receipt.from, reason = "close_target" }
+end
+
+local function chooseActivation(state, s, time)
+  -- Independently evaluate both activation gates; neither consults any
+  -- deactivation condition or the other gate's decision.
+  local closeTarget = closeTargetActivation(state, s, time)
+  local fastReturn = fastReturnActivation(state, s, time)
+  return closeTarget or fastReturn
+end
 local function evaluateCore(state, s, time, packet)
   if current ~= state then return end
   table.clear(state.gates)
@@ -357,7 +394,7 @@ local function evaluateCore(state, s, time, packet)
   if candidate then
     if time >= (state.reactivateAt or 0) then activate(state, candidate, s, time) else state.lastGate = "reactivation_cooldown" end
   else
-    state.lastGate = state.gates.fastReturn
+    state.lastGate = state.gates.closeTarget == "ready" and state.gates.closeTarget or state.gates.fastReturn
   end
   observeStats(state, s, time, packet)
 end
@@ -536,7 +573,15 @@ function AutoSpam.canSend()
   end
   local gate = lifecycleGate(state, s)
   if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
-  if not insideSpamWindow(state, s, time) then state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time; return false end
+  -- Close-target activation must actually be able to send at the requested
+  -- five-stud distance even if the adaptive spam radius is smaller.
+  local closeSend = state.reason == "close_target" and s and targetOf(s) == localPlayer.UserId
+    and vector(s.position) and vector(state.root.Position)
+    and (s.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.CLOSE_TARGET_DISTANCE
+  if not closeSend and not insideSpamWindow(state, s, time) then
+    state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time
+    return false
+  end
   return true
 end
 function AutoSpam.hasClashPrediction() return false end
