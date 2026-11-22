@@ -347,16 +347,14 @@ local function missLocked(state)
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then state.gates.native = "outside_spam_window"; return nil end
-  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s))
-  local partner = context and context.active and context.partnerId
+  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s)); local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, opponentDistanceLimit(state, s)) then state.gates.native = "no_clash_partner"; return nil end
   local stamp = context.lastParryAt
   if not finite(stamp) and finite(context.age) then stamp = utils.getWorkspace():GetServerTimeNow() - context.age end
   if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
   local target = targetOf(s)
   if target and target ~= localPlayer.UserId and target ~= partner then state.gates.native = "third_target"; return nil end
-  state.lastNativeParryAt = stamp
-  state.gates.native = "ready"
+  state.lastNativeParryAt = stamp; state.gates.native = "ready"
   return { partner = partner, reason = "native_clash" }
 end
 local function fastReturnActivation(state, s, time)
@@ -383,21 +381,16 @@ local function fastReturnActivation(state, s, time)
   return nil
 end
 local function chooseActivation(state, s, time)
-  local native = nativeActivation(state, s, time)
-  local fastReturn = fastReturnActivation(state, s, time)
+  local native = nativeActivation(state, s, time); local fastReturn = fastReturnActivation(state, s, time)
   local risk = externalGate(state, s, time)
   if risk then state.gates.common = risk; return nil end
   if missLocked(state) then state.gates.common = "miss_cooldown"; return nil end
   for _, candidate in ipairs({ native or false, fastReturn or false }) do
     if candidate then
-      local proposed = table.clone(state)
-      proposed.active, proposed.partner = true, candidate.partner
+      local proposed = table.clone(state); proposed.active, proposed.partner = true, candidate.partner
       local stop = autoStop(proposed, s, time)
       if not stop and departingExchange(proposed, s, candidate.partner) then stop = "ball_departed" end
-      if not stop then
-        state.directionBlocked, state.directionFrames = nil, 0
-        return candidate
-      end
+      if not stop then state.directionBlocked, state.directionFrames = nil, 0; return candidate end
       state.gates.common = stop
     end
   end
