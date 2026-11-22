@@ -143,12 +143,9 @@ end
 local function opponentDistanceLimit(state, s, partner)
   local speed = snapshotSpeed(s)
   if not speed or not partner then return 0 end
-  local factor = utils.getConfigValue("AutoParryWindowFactor")
-  factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
-  local frame, ping = frameLead(state), gameInfo.getAveragePing()
-  local own = deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping)
-  local other = partner and deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping, partner)
-  local ownRadius = own and own.fullRadius
+  local factor = utils.getConfigValue("AutoParryWindowFactor"); factor = finite(factor) and math.clamp(factor, 0, 1) or 0.3
+  local frame, ping = frameLead(state), gameInfo.getAveragePing(); local own = deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping)
+  local other = partner and deflectGeometry.getAutoParryGeometry(speed, factor, frame, ping, partner); local ownRadius = own and own.fullRadius
   local otherRadius = other and other.fullRadius
   if not finite(ownRadius) or ownRadius < 0 or not finite(otherRadius) or otherRadius < 0 then return 0 end
   return ownRadius + otherRadius
@@ -352,11 +349,9 @@ local function missLocked(state)
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then state.gates.native = "outside_spam_window"; return nil end
-  local world = utils.getWorkspace()
-  local by, targetId = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
+  local world = utils.getWorkspace(); local by, targetId = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
   local expectedPartner = by == localPlayer.UserId and targetId or (targetId == localPlayer.UserId and by or nil)
-  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s, expectedPartner))
-  local partner = context and context.active and context.partnerId
+  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s, expectedPartner)); local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, opponentDistanceLimit(state, s, partner)) then state.gates.native = "no_clash_partner"; return nil end
   local stamp = context.lastParryAt
   if not finite(stamp) and finite(context.age) then stamp = utils.getWorkspace():GetServerTimeNow() - context.age end
