@@ -317,6 +317,41 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
+-- Reuse the historical BlockStart observation from logic/autospam.
+-- This timestamps a click animation; it does not infer or detect a clash.
+local function observeBlockStart(state, sensor, track, time, seeded)
+  if not track then return end
+  local animation = track.Animation
+  local name = animation and animation.Name or track.Name
+  local asset = animation and animation.AnimationId
+  local id = type(asset) == "string" and (asset:match("[?&]id=(%d+)") or asset:match("%d+")) or nil
+  local catalog = state.animationCatalog
+  local phase = id and catalog and catalog[id]
+  if phase ~= "start" and name ~= "BlockStart" then
+    if id and not phase and time >= (state.nextCatalogAt or 0) then
+      state.animationCatalog = gameInfo.getDeflectAnimationCatalog()
+      state.nextCatalogAt = time + 0.5
+      phase = state.animationCatalog[id]
+    end
+    if phase ~= "start" then return end
+  end
+
+  local started = time
+  if seeded then
+    if track.IsPlaying ~= true then return end
+    local playback, rate = track.TimePosition, track.Speed
+    if not finite(playback) or playback < 0 or not finite(rate) or rate <= 0 then return end
+    started = time - playback / rate
+  end
+  if started > time or (time - started) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then return end
+  local prior = state.lastBlockAt[sensor.player.UserId]
+  if prior and prior.ball == state.ball and prior.at >= started then return end
+  state.lastBlockAt[sensor.player.UserId] = { at = started, ball = state.ball }
+  if not seeded and current == state and evaluate then
+    evaluate(state, selectSnapshot(state, gameInfo.getSnapshotAt(time), time), time, false)
+  end
+end
+
 local function nativeActivation(state, s, time)
   local world = utils.getWorkspace(); local by = userId(world:GetAttribute("LastParryBy"))
   local targetId = userId(world:GetAttribute("LastParryTarget")); local me = localPlayer.UserId
@@ -337,8 +372,20 @@ local function nativeActivation(state, s, time)
   if not nearPartner(state, expectedPartner, CONFIG.ACTIVATION.NATIVE_MAX_DISTANCE) then state.gates.native = "no_clash_partner"; return nil end
   local target = targetOf(s)
   if target and target ~= me and target ~= expectedPartner then state.gates.native = "third_target"; return nil end
-  local blockAt = state.lastBlockAt and state.lastBlockAt[by]
-  if not finite(blockAt) or time < blockAt or (time - blockAt) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then state.gates.native = "block_animation_not_recent"; return nil end
+  -- The opponent's BlockStart happens before their parry. Using [by]
+  -- watched our own parry instead and could activate too early.
+  local sensor = state.sensors and state.sensors[expectedPartner]
+  if sensor and sensor.animator and time >= (sensor.nextBlockScanAt or 0) then
+    sensor.nextBlockScanAt = time + 0.05
+    for _, track in ipairs(sensor.animator:GetPlayingAnimationTracks()) do
+      observeBlockStart(state, sensor, track, time, true)
+    end
+  end
+  local block = state.lastBlockAt and state.lastBlockAt[expectedPartner]
+  if not block or block.ball ~= s.ball or time < block.at
+    or (time - block.at) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then
+    state.gates.native = "block_animation_not_recent"; return nil
+  end
   state.gates.native = "ready"; return { partner = expectedPartner, reason = "native_clash" }
 end
 local function fastReturnActivation(state, s, time)
@@ -418,11 +465,15 @@ local function watchPlayer(state, player)
       if current ~= state or player.Character ~= character or not animator:IsA("Animator") or sensor.animator == animator then return end
       sensor.animator = animator
       listen(state, animator.AnimationPlayed, function(track)
-        if current ~= state or player.Character ~= character then return end
-        local name = track and track.Name
-        if name ~= "BlockStart" and name ~= "BlockLoop" then local asset = track and track.Animation; name = asset and asset.Name end
-        if name == "BlockStart" or name == "BlockLoop" then state.lastBlockAt[player.UserId] = now() end
+        if current ~= state or player.Character ~= character or player == localPlayer then return end
+        observeBlockStart(state, sensor, track, now(), false)
       end, sensor.characterConnections)
+      if player ~= localPlayer then
+        local time = now()
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+          observeBlockStart(state, sensor, track, time, true)
+        end
+      end
     end
     local function watchHumanoid(humanoid)
       if current ~= state or player.Character ~= character or not humanoid:IsA("Humanoid") or sensor.humanoid == humanoid then return end
@@ -464,6 +515,7 @@ function AutoSpam.bindCharacter(character)
     connections = {},
     sensors = {},
     lastBlockAt = {},
+    animationCatalog = {},
     active = false,
     phase = "idle",
     reason = "waiting",
@@ -474,6 +526,7 @@ function AutoSpam.bindCharacter(character)
 
   current = state; local initial = gameInfo.getSnapshotAt(now())
   state.ball = initial and initial.ball
+  state.animationCatalog = gameInfo.getDeflectAnimationCatalog()
   for _, player in ipairs(gameInfo.getPlayers()) do
     watchPlayer(state, player)
   end
@@ -671,6 +724,7 @@ AutoSpam.__contract = {
       "getBallFrozen",
       "getAveragePing",
       "getBallSpeedLimits",
+      "getDeflectAnimationCatalog",
     },
     Cooldown = { "getDeflectCooldownState" },
     ClashStats = { "getStatus", "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
