@@ -419,29 +419,17 @@ local function chooseCandidate(state, s, time)
 end
 local function chooseActivation(state, s, time)
   local risk = externalGate(state, s, time)
-  if risk then
-    state.directionBlocked = state.directionBlocked or { ball = s.ball, leg = state.leg }; state.gates.common = risk
-    return nil
-  end
+  if risk then state.gates.common = risk; return nil end
   local candidate = chooseCandidate(state, s, time)
   if not candidate then return nil end
-  local block = state.directionBlocked
-  if block and block.ball == s.ball then
-    local recipient = predictedRecipient(s); local delta = vector(s.position) and state.root.Position - s.position
-    local returning = vector(delta) and vector(s.velocity) and s.velocity:Dot(delta) > 0; local fresh = state.returnEvidence and state.returnEvidence.leg > (block.leg or state.stoppedLeg or 0)
-    local exchange = state.exchange; local localExchange = exchange
-      and exchange.ball == s.ball
-      and exchange.at > (state.lastDepartureAt or -math.huge)
-      and exchange.partner == candidate.partner
-      and targetOf(s) == localPlayer.UserId
-    local world = utils.getWorkspace(); local stamp = world:GetAttribute("LastParryAt")
-    local newParry = finite(stamp)
-      and stamp > (state.lastDepartureAt or math.huge)
-      and world:GetAttribute("LastParryBy") == candidate.partner
-      and world:GetAttribute("LastParryTarget") == localPlayer.UserId
-    if not returning or (recipient and recipient ~= localPlayer.UserId) or not (fresh or localExchange or newParry) then state.gates.common = "ball_departed_waiting_local_exchange"; return nil end
-  end
-  state.directionBlocked, state.directionFrames = nil, 0; return candidate
+  -- Check the same live exit rules against the proposed partner before activation.
+  local proposed = table.clone(state)
+  proposed.active, proposed.partner = true, candidate.partner
+  local stop = autoStop(proposed, s, time)
+  if not stop and departingExchange(proposed, s, candidate.partner) then stop = "ball_departed" end
+  if stop then state.gates.common = stop; return nil end
+  state.directionBlocked, state.directionFrames = nil, 0
+  return candidate
 end
 evaluate = function(state, s, time, packet)
   if current ~= state then return end
