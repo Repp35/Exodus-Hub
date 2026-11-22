@@ -29,7 +29,7 @@ class AutoSpamLifecycleV6(unittest.TestCase):
  def test_immediate_native_activation_dispatches_before_next_frame(self):
   self.case('native=true;snap.position=v(5);ap.onDefenseOpportunity(snap);assert(ap.isActive());assert(clicks==1)')
  def test_ordinary_approach_after_own_parry_does_not_start_spam(self):
-  self.case('native=true;world.attrs.LastParryBy=42;snap.position=v(5);ap.onDefenseOpportunity(snap);assert(not ap.isActive());assert(clicks==0)')
+  self.case('native=false;world.attrs.LastParryBy=42;snap.position=v(5);ap.onDefenseOpportunity(snap);assert(not ap.isActive());assert(clicks==0)')
  def test_packet_round_trip_does_not_require_clash_attributes(self):
   self.case('packet(42,0,5);packet(99,.01,5);packet(42,.02,5);assert(ap.isActive());assert(clicks==1)')
  def test_snapshot_observation_before_packet_does_not_lose_target_edges(self):
@@ -57,17 +57,17 @@ local count=0;for _,t in ipairs(transitions) do if t[3]=='active' then count=cou
   self.case('packet(42,0,500);packet(99,.01,500);packet(42,.02,150);heartbeat(.8);snap.position=v(5);heartbeat(.01);assert(not ap.isActive())')
  def test_151ms_return_is_not_rejected_by_fixed_150ms_cutoff(self):
   self.case('packet(42,0,5);packet(99,.01,5);packet(42,.151,5);assert(ap.isActive())')
- def test_same_parry_cannot_reactivate_after_geometry_exit(self):
+ def test_current_native_clash_can_reactivate_after_geometry_exit(self):
   self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap);assert(ap.isActive())
 snap.position=v(500);ap.onDefenseOpportunity(snap);assert(not ap.isActive())
-snap.position=v(5);heartbeat(.01);assert(not ap.isActive());assert(ap.getStatus().gates.native=='consumed_parry')''')
+snap.position=v(5);heartbeat(.01);assert(ap.isActive());assert(ap.getStatus().gates.native=='ready')''')
  def test_new_parry_rearms_immediately_without_fixed_pause(self):
   self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap);snap.position=v(500);ap.onDefenseOpportunity(snap)
 advance(.001);world.attrs.LastParryAt=tm;snap.syncAt=tm;snap.position=v(5);ap.onDefenseOpportunity(snap);assert(ap.isActive())''')
- def test_anticipation_without_local_target_survives_but_stale_reentry_does_not(self):
+ def test_native_anticipation_can_resume_without_local_target(self):
   self.case('''native=true;snap.targetId=99;snap.targeted=false;snap.position=v(10);snap.velocity=v(600)
 ap.onDefenseOpportunity(snap);assert(ap.isActive());snap.position=v(500);ap.onDefenseOpportunity(snap)
-snap.position=v(10);heartbeat(.01);assert(not ap.isActive())''')
+snap.position=v(10);heartbeat(.01);assert(ap.isActive())''')
  def test_outward_leg_toward_partner_does_not_stop_clash(self):
   self.case('''native=true;snap.position=v(5);ap.onDefenseOpportunity(snap)
 packet(99,.01,5);snap.velocity=v(600);assert(ap.canSend());assert(ap.isActive())''')

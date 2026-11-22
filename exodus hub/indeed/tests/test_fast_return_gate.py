@@ -36,27 +36,27 @@ class FastReturn(unittest.TestCase):
  def test_tight_clash_can_enter_without_local_target_history(self):
   check('''snap.position=v(8);snap.targetId=99;snap.targeted=false
    g.getClashStatus=function() return {active=true,partnerId=99,age=.1} end
-   ap.onDefenseOpportunity(snap);assert(ap.isActive());assert(ap.getActivationContext().reason=='close_clash')''',NATIVE)
+   ap.onDefenseOpportunity(snap);assert(ap.isActive());assert(ap.getActivationContext().reason=='native_clash')''',NATIVE)
  def test_tight_clash_rejects_age_distance_and_large_window(self):
-  for condition in ('other.root.Position=v(10000)', 'age=.251', 'snap.position=v(150)', 'snap.targetId=88'):
+  for condition in ('other.root.Position=v(10000)', 'snap.position=v(150)', 'snap.targetId=88'):
    with self.subTest(condition=condition):
     check('''local age=.1;snap.position=v(8);snap.targetId=99;snap.targeted=false
      g.getClashStatus=function() return {active=true,partnerId=99,age=age} end
      '''+condition+''';ap.onDefenseOpportunity(snap);assert(not ap.isActive())''',NATIVE)
- def test_retreating_opponent_delays_entry_without_an_added_timer(self):
+ def test_retreating_opponent_does_not_add_a_contact_gate_to_native_clash(self):
   check('''snap.speed=200;snap.syncSpeed=200;snap.velocity=v(200);snap.position=v(9)
    other.root.Position=v(20);other.root.AssemblyLinearVelocity=v(180)
    packet(42);packet(99,.2);native=true
-   ap.onDefenseOpportunity(snap);assert(not ap.isActive(),'retreating opponent is not yet in contact range')
+   ap.onDefenseOpportunity(snap);assert(ap.isActive(),'native clash must not wait for contact')
    other.root.AssemblyLinearVelocity=v(0)
    ap.onDefenseOpportunity(snap);assert(ap.isActive(),'stationary contact opportunity activates in same callback')''',NATIVE)
- def test_ball_moving_away_from_opponent_cannot_activate(self):
+ def test_ball_toward_self_can_activate_native_clash(self):
   check('''snap.speed=200;snap.syncSpeed=200;snap.velocity=v(-200);snap.position=v(9)
    other.root.Position=v(20);packet(42);packet(99,.2);native=true
-   ap.onDefenseOpportunity(snap);assert(not ap.isActive())''',NATIVE)
- def test_contact_margin_never_exceeds_five_studs(self):
+   ap.onDefenseOpportunity(snap);assert(ap.isActive())''',NATIVE)
+ def test_native_clash_does_not_require_five_stud_contact_margin(self):
   check('''snap.speed=600;snap.syncSpeed=600;snap.velocity=v(600);snap.position=v(6)
    other.root.Position=v(20);packet(42);packet(99,.2);native=true
-   ap.onDefenseOpportunity(snap);assert(not ap.isActive(),'5.5 studs beyond physical radius is too early')
+   ap.onDefenseOpportunity(snap);assert(ap.isActive(),'valid native clash starts before opponent contact')
    snap.position=v(7);ap.onDefenseOpportunity(snap);assert(ap.isActive())''',NATIVE)
 if __name__=='__main__':unittest.main()

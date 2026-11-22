@@ -337,26 +337,6 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
-local function opponentContactReady(state, s, partner)
-  local target = targetOf(s)
-  if target == localPlayer.UserId then return true end
-  if target and target ~= partner then return false end
-  if not vector(s.position) or not vector(s.velocity) then return false end
-  local speed = snapshotSpeed(s)
-  if not speed or speed < 16 then return false end
-  local position, motion = gameInfo.getPlayerMotion(partner)
-  if not vector(position) or not vector(motion) then return false end
-  local radius = deflectGeometry.getPlayerRawRadius(partner, speed, false)
-  if not finite(radius) or radius <= 0 then return false end
-  local delta = position - s.position; local distance = delta.Magnitude
-  if not finite(distance) then return false end
-  if distance <= radius then return true end
-  local closing = (s.velocity - motion):Dot(delta) / distance
-  if not finite(closing) or closing <= 0 then return false end
-  local lead = math.min(0.1, networkLatency() + frameLead(state)); local margin = math.min(5, closing * lead)
-  if distance - radius > margin then return false end
-  local danger = deflectGeometry.getDanger(s.position, s.velocity, position, speed, radius, lead, motion); return danger ~= nil and danger.ready == true
-end
 local function missLocked(state)
   local cd = cooldownInfo.getDeflectCooldownState()
   if not cd or cd.blocking ~= true or cd.predictedReset == true then state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false end
@@ -367,34 +347,19 @@ local function missLocked(state)
 end
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time) then state.gates.native = "outside_spam_window"; return nil end
-  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s)); local partner = context and context.active and context.partnerId
+  local context = gameInfo.getClashStatus(opponentDistanceLimit(state, s))
+  local partner = context and context.active and context.partnerId
   if not partner or not nearPartner(state, partner, opponentDistanceLimit(state, s)) then state.gates.native = "no_clash_partner"; return nil end
   local stamp = context.lastParryAt
   if not finite(stamp) and finite(context.age) then stamp = utils.getWorkspace():GetServerTimeNow() - context.age end
   if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
-  state.lastNativeParryAt = stamp
-  if state.stoppedParryAt and stamp <= state.stoppedParryAt then state.gates.native = "consumed_parry"; return nil end
-  if not opponentContactReady(state, s, partner) then state.gates.native = "opponent_not_at_contact"; return nil end
   local target = targetOf(s)
   if target and target ~= localPlayer.UserId and target ~= partner then state.gates.native = "third_target"; return nil end
-  local world = utils.getWorkspace()
-  if world:GetAttribute("LastParryBy") == localPlayer.UserId and target == localPlayer.UserId then state.gates.native = "waiting_return_evidence"; return nil end
-  local exchange = state.exchange; local paired = exchange and exchange.partner == partner and exchange.ball == s.ball and time >= exchange.at and time - exchange.at <= (context.maxAge or 0.8)
-  if not paired then
-    if
-      not finite(context.age)
-      or context.age < 0
-      or context.age > 0.25
-      or not nearPartner(state, partner, opponentDistanceLimit(state, s))
-      or not insideSpamWindow(state, s, time, 0.6)
-    then
-      state.gates.native = "waiting_pair_evidence"; return nil
-    end
-  end
-  state.gates.native = "ready"; return { partner = partner, reason = paired and "native_clash" or "close_clash" }
+  state.lastNativeParryAt = stamp
+  state.gates.native = "ready"
+  return { partner = partner, reason = "native_clash" }
 end
-local function chooseCandidate(state, s, time)
-  if missLocked(state) then state.gates.common = "miss_cooldown"; return nil end
+local function fastReturnActivation(state, s, time)
   local evidence = state.returnEvidence
   if evidence then
     if evidence.ball ~= s.ball or evidence.leg ~= state.leg or time < evidence.at or time - evidence.at > CONFIG.ACTIVATION.RETURN + networkLatency() then
@@ -415,18 +380,28 @@ local function chooseCandidate(state, s, time)
   else
     state.gates.fastReturn = "no_return_evidence"
   end
-  return nativeActivation(state, s, time)
+  return nil
 end
 local function chooseActivation(state, s, time)
+  local native = nativeActivation(state, s, time)
+  local fastReturn = fastReturnActivation(state, s, time)
   local risk = externalGate(state, s, time)
   if risk then state.gates.common = risk; return nil end
-  local candidate = chooseCandidate(state, s, time)
-  if not candidate then return nil end
-  local proposed = table.clone(state); proposed.active, proposed.partner = true, candidate.partner
-  local stop = autoStop(proposed, s, time)
-  if not stop and departingExchange(proposed, s, candidate.partner) then stop = "ball_departed" end
-  if stop then state.gates.common = stop; return nil end
-  state.directionBlocked, state.directionFrames = nil, 0; return candidate
+  if missLocked(state) then state.gates.common = "miss_cooldown"; return nil end
+  for _, candidate in ipairs({ native or false, fastReturn or false }) do
+    if candidate then
+      local proposed = table.clone(state)
+      proposed.active, proposed.partner = true, candidate.partner
+      local stop = autoStop(proposed, s, time)
+      if not stop and departingExchange(proposed, s, candidate.partner) then stop = "ball_departed" end
+      if not stop then
+        state.directionBlocked, state.directionFrames = nil, 0
+        return candidate
+      end
+      state.gates.common = stop
+    end
+  end
+  return nil
 end
 evaluate = function(state, s, time, packet)
   if current ~= state then return end
