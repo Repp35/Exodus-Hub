@@ -448,14 +448,21 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
         output.append(prefix + "}")
     return finish_source(output)
 
+def masked_source_lines(source: str) -> list[str]:
+    masked = mask_literals(source)
+    return "".join("\n" if original == "\n" else char for original, char in zip(source, masked)).splitlines()
+
 def expand_dense_named_tables(source: str, indent_type: str, indent_width: int) -> str:
     """Expand long, single-line named-field tables nested in an existing block."""
     indentation = "\t" if indent_type.lower() == "tabs" else " " * indent_width
     output: list[str] = []
-    for line in source.splitlines():
-        masked = mask_literals(line)
+    config_depth = 0
+    for line, masked in zip(source.splitlines(), masked_source_lines(source)):
+        in_config = config_depth > 0 or bool(re.match(r"^local\s+CONFIG\s*=\s*\{", masked))
+        if in_config:
+            config_depth += masked.count("{") - masked.count("}")
         match = re.fullmatch(r"([ \t]+)[A-Za-z_][A-Za-z_0-9]*\s*=\s*\{(.*)\}([,;]?)\s*", masked)
-        if not match or len(line.expandtabs(indent_width)) <= 80:
+        if not match or (not in_config and len(line.expandtabs(indent_width)) <= 80):
             output.append(line)
             continue
         start, end = match.span(2)
@@ -486,6 +493,28 @@ def expand_dense_named_tables(source: str, indent_type: str, indent_width: int) 
         output.extend(prefix + indentation + field + "," for field in fields)
         output.append(prefix + "}" + match.group(3))
     return finish_source(output)
+
+def expand_module_declarations(source: str) -> str:
+    """Give header locals their own line without changing Lua assignment semantics."""
+    output = []
+    header = True
+    masked_lines = masked_source_lines(source)
+    for line, masked in zip(source.splitlines(), masked_lines):
+        if re.match(r"^local function\b|^function\b", masked):
+            header = False
+        match = re.fullmatch(r"local\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)+)(?:\s*=\s*(.*))?", line) if header and re.match(r"^local\s", masked) else None
+        if match:
+            names = [name.strip() for name in match[1].split(",")]
+            values = [value.strip() for value in match[2].split(",")] if match[2] else []
+            if not values:
+                output.extend("local " + name for name in names)
+                continue
+            if len(values) == len(names) and all(LITERAL_TUNING_RE.fullmatch(value) for value in values):
+                output.extend("local " + name + " = " + value for name, value in zip(names, values))
+                continue
+        output.append(line)
+    return finish_source(output)
+
 
 def audit_module_config(source: str, source_path: Path) -> list[str]:
     """Check the local configuration structure; only warn about likely missed constants."""

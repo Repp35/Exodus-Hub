@@ -1,17 +1,46 @@
 -- [[ auto spam ]]
 
+-- module
 local AutoSpam = {}
 
-local utils, gameInfo, clashStatsModule, cooldownInfo, deflectGeometry
-local players, runService, localPlayer, current
-local generation, matchDeathSerial = 0, 0
-local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
+-- dependencies
+local utils
+local gameInfo
+local clashStatsModule
+local cooldownInfo
+local deflectGeometry
+
+-- services
+local players
+local runService
+local localPlayer
+
+-- state
+local current
+local generation = 0
+local matchDeathSerial = 0
+local lastActivationReason
+local lastActivationAt
+local lastStopReason
+local lastStopAt
+
+-- forward
 local evaluate
+
+-- configuration
 local CONFIG = {
-  ACTIVATION = { RETURN = 0.6, MIN_CLASH_DISTANCE = 11, WINDOW_FACTOR = 0.9 },
-  TIMING = { SNAPSHOT_MAX_AGE = 0.5, PACKET_CACHE_AGE = 0.2 },
+  ACTIVATION = {
+    RETURN = 0.6,
+    MIN_CLASH_DISTANCE = 11,
+    WINDOW_FACTOR = 0.9,
+  },
+  TIMING = {
+    SNAPSHOT_MAX_AGE = 0.5,
+    PACKET_CACHE_AGE = 0.2,
+  },
 }
 
+-- helpers
 local function finite(x) return type(x) == "number" and x == x and x > -math.huge and x < math.huge end
 local function vector(x) return typeof(x) == "Vector3" and finite(x.X) and finite(x.Y) and finite(x.Z) end
 local function userId(x) return finite(x) and x > 0 and x % 1 == 0 and x or nil end

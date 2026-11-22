@@ -20,6 +20,7 @@ from .rules import (
     add_table_spacing,
     expand_inline_config_tables,
     expand_dense_named_tables,
+    expand_module_declarations,
     add_final_return_spacing,
     add_title,
     require_sections,
@@ -346,6 +347,7 @@ def format_files(args: argparse.Namespace) -> int:
             formatted = remove_empty_lines(formatted)
             formatted = normalize_section_case(formatted, section_case_exceptions)
             formatted = add_section_spacing(formatted)
+            formatted = expand_module_declarations(formatted)
             formatted = add_table_spacing(formatted)
             formatted = add_final_return_spacing(formatted)
             formatted = apply_directives(formatted, args.directive)
@@ -367,7 +369,12 @@ def format_files(args: argparse.Namespace) -> int:
                     tab_width=tab_width,
                 )
             formatted = expand_inline_config_tables(formatted, configured_indent_type, tab_width)
-            formatted = expand_dense_named_tables(formatted, configured_indent_type, tab_width)
+            while True:
+                expanded = expand_dense_named_tables(formatted, configured_indent_type, tab_width)
+                if expanded == formatted:
+                    break
+                formatted = expanded
+            formatted = expand_module_declarations(formatted)
             formatted = add_table_spacing(formatted)
             return formatted
 

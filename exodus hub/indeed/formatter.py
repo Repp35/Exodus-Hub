@@ -20,6 +20,7 @@ from formatting import (
     add_table_spacing,
     expand_inline_config_tables,
     expand_dense_named_tables,
+    expand_module_declarations,
     audit_module_config,
     add_final_return_spacing,
     add_title,
