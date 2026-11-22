@@ -270,8 +270,9 @@ end
 local function distantTargetGate(state, s)
   if not state.active or not s then return nil end
   local target = userId(s.exchangeTargetId)
-  if not target and not s.targetUncertain then target = targetOf(s) end
-  if not target or target == localPlayer.UserId then return nil end
+  if not target and not s.targetUncertain then target = userId(s.targetId) end
+  -- The clash partner may move outside our radius without ending AutoSpam.
+  if not target or target == localPlayer.UserId or target == state.partner then return nil end
   local targetPosition = playerPosition(target)
   if not vector(targetPosition) then return nil end
   local g = geometry(state, s, 1)
@@ -284,19 +285,11 @@ local function autoHardStop(state, s)
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if utils.getWorkspace():GetAttribute("MatchStatus") ~= 6 then return "match_ended" end
   if gameInfo.getBallFrozen() == true then return "ball_paused" end
-  if state.active and (not s or not s.ball or not s.ball.Parent or s.ball ~= state.ball or s.teleported or s.resetting) then return "ball_reset" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
-  local distant = distantTargetGate(state, s)
-  if distant then return distant end
-  if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s, state.partner)) then return "opponent_out_of_range" end
-  local target = s and (userId(s.exchangeTargetId) or (not s.targetUncertain and targetOf(s)))
-  if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then return "target_redirected_far" end
-  if state.active then
-    local risk = externalGate(state, s, now())
-    if risk then return risk end
-  end
+  return distantTargetGate(state, s)
+
 end
 local function activate(state, candidate, s, time)
   state.active, state.phase, state.reason, state.partner = true, "clashing", candidate.reason, candidate.partner
@@ -308,22 +301,6 @@ end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
   if reason then return reason end
-  if not insideSpamWindow(state, s, time) then return "outside_spam_window" end
-  local otherPosition = playerPosition(state.partner)
-  if vector(otherPosition) and vector(s.velocity) then
-    local ownDelta, otherDelta = state.root.Position - s.position, otherPosition - s.position; local g = geometry(state, s, 1)
-    local radius = g and g.noWindowParryRadius
-    if finite(radius) and ownDelta.Magnitude > radius and otherDelta.Magnitude > radius and s.velocity:Dot(ownDelta) < 0 and s.velocity:Dot(otherDelta) < 0 then return "ball_left_exchange" end
-    if finite(radius) and ownDelta.Magnitude > radius then
-      local speed = snapshotSpeed(s); local otherRadius = speed and deflectGeometry.getPlayerRawRadius(state.partner, speed, false)
-      if finite(otherRadius) and otherDelta.Magnitude > otherRadius then
-        local _, otherVelocity = gameInfo.getPlayerMotion(state.partner)
-        local own = deflectGeometry.getDanger(s.position, s.velocity, state.root.Position, speed, radius, 0, state.root.AssemblyLinearVelocity)
-        local opponent = deflectGeometry.getDanger(s.position, s.velocity, otherPosition, speed, otherRadius, 0, otherVelocity)
-        if own and opponent and not finite(own.entryTime) and not finite(opponent.entryTime) then return "trajectory_misses_exchange" end
-      end
-    end
-  end
   local speed = snapshotSpeed(s) or 0; local low, high = gameInfo.getBallSpeedLimits()
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
@@ -438,7 +415,7 @@ local function evaluateCore(state, s, time, packet)
   local stop = autoHardStop(state, s)
   if stop then
     deactivate(state, stop, time); state.lastGate = stop
-    if stop ~= "target_redirected_far" then clearEvidence(state) end
+    clearEvidence(state)
     return
   end
   if s and s.ball ~= state.ball then state.ball, state.sequence, state.packetSnapshot, state.packetAt = s.ball, nil, nil, nil; clearEvidence(state, true) end
@@ -452,11 +429,14 @@ local function evaluateCore(state, s, time, packet)
   if state.active then
     stop = deactivationGate(state, s, time)
     if stop then deactivate(state, stop, time); return end
-    if gate == "ball_paused" or gate == "training" then
-      deactivate(state, gate, time); clearEvidence(state)
+    -- Invalid/paused lifecycle snapshots block dispatch without deactivating.
+    -- Only the explicit hard-stop gates above end the AutoSpam session.
+    if gate then
+      if gate == "ball_reset" or gate == "training" then clearEvidence(state) end
+      state.lastGate, state.gates.common = gate, gate
       return
     end
-    state.lastGate, state.gates.common = gate or "active", gate; observeStats(state, s, time, packet)
+    state.lastGate, state.gates.common = "active", nil; observeStats(state, s, time, packet)
     return
   end
   state.gates.common = gate
@@ -644,6 +624,11 @@ function AutoSpam.canSend()
   end
   local gate = lifecycleGate(state, s)
   if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
+  -- Retain the window as a send condition, not a deactivation condition.
+  if not insideSpamWindow(state, s, time) then
+    state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time
+    return false
+  end
   return true
 end
 function AutoSpam.hasClashPrediction() return false end
