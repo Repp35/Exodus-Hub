@@ -218,7 +218,10 @@ function Cooldown.getDeflectCooldownState()
     deflectAttempt.windowEndsAt = math.max(deflectAttempt.windowEndsAt or pendingUntil, pendingUntil)
   end
   if cooldown.blocking then
-    if previousBlocking ~= true then blockingSince = time; cooldownEpisode = (cooldownEpisode or 0) + 1 end
+    if previousBlocking ~= true then
+      blockingSince = time; cooldownEpisode = (cooldownEpisode or 0) + 1
+      if deflectAttempt then deflectAttempt.initialCooldown = localRemaining end
+    end
   elseif cooldown.blocking == false then
     if previousBlocking == true then cooldown.lastClearedAt = time end
     blockingSince = nil
@@ -226,29 +229,36 @@ function Cooldown.getDeflectCooldownState()
     blockingSince = nil
   end
   previousBlocking = cooldown.blocking; cooldown.blockingSince, cooldown.episode = blockingSince, cooldownEpisode
-  local attempt = deflectAttempt; local pendingOpen = finite(pendingUntil) and pendingUntil > time
+  -- A local cooldown is only a miss after it has *remained* active for a
+  -- meaningful portion of its observed duration. A short cooldown that is
+  -- cancelled before the threshold is never classified as a miss.
+  -- Prediction fields and remote cooldown events do not decide the outcome.
+  local attempt = deflectAttempt
   local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false
-  local missActive = cooldown.source ~= "unknown" and cooldown.blocking == true and not pendingOpen and not cooldown.predictedReset
-  if attempt and cooldown.blocking == true then
-    attempt.hadCooldown = true
-    if finite(cooldown.remaining) then attempt.cooldownEndsAt = time + cooldown.remaining end
+  local localBlocked = localKnown and localRemaining > 0
+  local episodeAttempt = attempt and finite(blockingSince) and finite(attempt.pressedAt)
+    and attempt.pressedAt <= time and attempt.pressedAt >= blockingSince - 0.5
+  local threshold = nil
+  local missActive = false
+  if localBlocked and episodeAttempt and not parried then
+    local duration = finite(attempt.initialCooldown) and attempt.initialCooldown or localRemaining
+    threshold = math.clamp(duration * 0.65, 0.08, 0.22)
+    missActive = time - math.max(blockingSince, attempt.pressedAt) >= threshold
+    if missActive then attempt.missed = true end
   end
-  local completedMiss = attempt
-    and attempt.hadCooldown
-    and cooldown.source ~= "unknown"
-    and not cooldown.predictedReset
-    and not pendingOpen
-    and ((finite(attempt.windowEndsAt) and time >= attempt.windowEndsAt) or (finite(attempt.cooldownEndsAt) and time >= attempt.cooldownEndsAt))
-  if attempt then
-    if parried then attempt.missed = false elseif missActive or completedMiss then attempt.missed = true end
-  end
-  cooldown.pressAt = attempt and attempt.pressedAt or nil; cooldown.missDeadline = pendingOpen and pendingUntil or nil
-  cooldown.windowEndsAt = attempt and attempt.windowEndsAt or nil; cooldown.windowExpired = finite(cooldown.windowEndsAt) and time >= cooldown.windowEndsAt
-  cooldown.miss = not parried and (missActive or (attempt and attempt.missed == true)) or false; cooldown.outcome = parried and "parried" or (cooldown.miss and "miss" or "pending")
+  if parried and attempt then attempt.missed = false end
+  cooldown.pressAt = attempt and attempt.pressedAt or nil
+  cooldown.missDeadline = nil
+  cooldown.windowEndsAt = nil
+  cooldown.windowExpired = false
+  cooldown.missThreshold = threshold
+  -- While local cooldown is active, only the current episode can be a miss.
+  -- After it clears, retain a previously observed miss so AutoParry can rearm.
+  cooldown.miss = not parried and (localBlocked and missActive or (not localBlocked and attempt and attempt.missed == true)) or false
+  cooldown.outcome = parried and "parried" or (cooldown.miss and "miss" or "pending")
   if parried then cooldown.phase = "reverted"
-  elseif cooldown.blocking == true and pendingOpen then cooldown.phase = "reversible"
-  elseif cooldown.blocking == true and missActive then cooldown.phase = "miss_cooldown"
-  elseif cooldown.predictedReset then cooldown.phase = "predicted_reset"
+  elseif localBlocked and missActive then cooldown.phase = "miss_cooldown"
+  elseif localBlocked then cooldown.phase = "cooldown_pending"
   elseif cooldown.miss then cooldown.phase = "miss_finished"
   elseif cooldown.blocking == false then cooldown.phase = "ready"
   else cooldown.phase = "unknown" end
@@ -258,15 +268,13 @@ end
 function Cooldown.getDeflectRecoveryState(timeToImpact, responseLead)
   local current = Cooldown.getDeflectCooldownState()
   if not current then return nil end
-  local known = current.source == "local" or current.source == "server"; local blocked = known and current.blocking == true and finite(current.remaining) and current.remaining > 0
-  local pending = finite(current.missDeadline) and math.max(0, current.missDeadline - os.clock()) or nil; local recovery = blocked and current.remaining or 0
-  if pending then recovery = math.min(recovery, pending) end
-  local imminent = finite(timeToImpact) and timeToImpact >= 0 and timeToImpact <= recovery + (finite(responseLead) and math.max(0, responseLead) or 0)
+  local known = current.source == "local"
+  local blocked = known and current.blocking == true and finite(current.localRemaining) and current.localRemaining > 0
   return {
     cooldown = current,
     ready = known and current.blocking == false,
-    recoveryIn = recovery,
-    needsFierce = blocked and not current.predictedReset and (current.miss == true or imminent),
+    recoveryIn = blocked and current.localRemaining or 0,
+    needsFierce = blocked and current.miss == true,
   }
 end
 
