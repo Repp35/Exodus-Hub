@@ -26,7 +26,10 @@ local CONFIG = {
     RETURN = 0.6,
     WINDOW_FACTOR = 0.9,
     NATIVE_WINDOW_FACTOR = 1.3,
-    NATIVE_MAX_AGE = 1.2,
+    NATIVE_RECENT_PARRY = 0.7,
+    NATIVE_MAX_AGE = 1.3,
+    NATIVE_MAX_DISTANCE = 25,
+    NATIVE_BLOCK_MS = 250,
   },
   TIMING = {
     SNAPSHOT_MAX_AGE = 0.5,
@@ -334,49 +337,56 @@ local function missLocked(state)
   return state.cooldownStopEpisode == nil or cd.episode == state.cooldownStopEpisode
 end
 local function nativeActivation(state, s, time)
-  if not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then state.gates.native = "outside_spam_window"; return nil end
-  local g = geometry(state, s, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR); local radius = g and g.fullRadius
-  if not finite(radius) or radius <= 0 then state.gates.native = "missing_native_geometry"; return nil end
-  local world = utils.getWorkspace(); local by, targetId = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
-  local expectedPartner = by == localPlayer.UserId and targetId or (targetId == localPlayer.UserId and by or nil); local context = gameInfo.getClashStatus(radius)
-  local partner = context and context.active and context.partnerId
-  if not partner and type(gameInfo.getClashContext) == "function" then
-    local hint = gameInfo.getClashContext(true); local hits = world:GetAttribute("ClashHits")
-    local targetNow = userId(world:GetAttribute("GameBallTarget"))
-    if
-      hint
-      and hint.partnerId == expectedPartner
-      and userId(expectedPartner)
-      and finite(hint.age)
-      and hint.age >= 0
-      and hint.age <= CONFIG.ACTIVATION.NATIVE_MAX_AGE
-      and finite(hits)
-      and hits >= 1
-      and (not targetNow or targetNow == localPlayer.UserId or targetNow == expectedPartner)
-    then
-      partner, context = expectedPartner, hint
-    end
+  -- The native game identifies a clash through LastParryBy/LastParryTarget,
+  -- the age of LastParryAt and the players' separation. We use the same
+  -- evidence with stricter limits; animation only unlocks activation.
+  if not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then
+    state.gates.native = "outside_spam_window"; return nil
   end
-  if not partner or not nearPartner(state, partner, radius) then state.gates.native = "no_clash_partner"; return nil end
-  local hits = world:GetAttribute("ClashHits"); local evidence = state.exchange
-  if
-    not finite(hits)
-    or hits < 1
-    or not evidence
-    or evidence.partner ~= partner
-    or evidence.ball ~= s.ball
-    or time < evidence.at
-    or time - evidence.at > CONFIG.ACTIVATION.NATIVE_MAX_AGE
-  then
-    state.gates.native = "clash_exchange_unconfirmed"; return nil
+  local g = geometry(state, s, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR)
+  local radius = g and g.fullRadius
+  if not finite(radius) or radius <= 0 then
+    state.gates.native = "missing_native_geometry"; return nil
   end
-  local stamp = context and context.lastParryAt
-  if not finite(stamp) and context and finite(context.age) then stamp = world:GetServerTimeNow() - context.age end
-  if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
+  local world = utils.getWorkspace()
+  local by = userId(world:GetAttribute("LastParryBy"))
+  local targetId = userId(world:GetAttribute("LastParryTarget"))
+  local me = localPlayer.UserId
+  local expectedPartner = by == me and targetId or (targetId == me and by or nil)
+  if not expectedPartner then state.gates.native = "no_clash_pair"; return nil end
+
+  -- getClashContext(true) follows GameBall.IsInClash's native pair/time rules
+  -- without the extra ClashHits and exchange-history requirements.
+  local context = gameInfo.getClashContext(true)
+  if not context or context.partnerId ~= expectedPartner then
+    state.gates.native = "no_clash_partner"; return nil
+  end
+  local age = context.age
+  if not finite(age) or age < 0 or
+    (age > CONFIG.ACTIVATION.NATIVE_RECENT_PARRY and
+      (age > CONFIG.ACTIVATION.NATIVE_MAX_AGE or world:GetAttribute("GameBallTarget") ~= targetId)) then
+    state.gates.native = "stale_native_parry"; return nil
+  end
+  if not nearPartner(state, expectedPartner, math.min(radius, CONFIG.ACTIVATION.NATIVE_MAX_DISTANCE)) then
+    state.gates.native = "no_clash_partner"; return nil
+  end
   local target = targetOf(s)
-  if target and target ~= localPlayer.UserId and target ~= partner then state.gates.native = "third_target"; return nil end
-  state.lastNativeParryAt = stamp; state.gates.native = "ready"
-  return { partner = partner, reason = "native_clash" }
+  if target and target ~= me and target ~= expectedPartner then
+    state.gates.native = "third_target"; return nil
+  end
+
+  -- BlockStart/BlockLoop is a recent-animation gate, not clash detection.
+  -- Require the player who performed the latest parry to have played Block
+  -- during the last N milliseconds.
+  local blockAt = state.lastBlockAt and state.lastBlockAt[by]
+  if not finite(blockAt) or time < blockAt
+    or (time - blockAt) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then
+    state.gates.native = "block_animation_not_recent"; return nil
+  end
+
+  state.lastNativeParryAt = context.lastParryAt
+  state.gates.native = "ready"
+  return { partner = expectedPartner, reason = "native_clash" }
 end
 local function fastReturnActivation(state, s, time)
   local evidence = state.returnEvidence
@@ -486,11 +496,37 @@ local function watchPlayer(state, player)
     sensor.lives = lives
   end
   local function watchCharacter(character)
-    disconnectPool(state, sensor.characterConnections); sensor.character, sensor.humanoid, sensor.reported = character, nil, false
-    local function watchHumanoid(humanoid)
-      if current ~= state or player.Character ~= character or not humanoid:IsA("Humanoid") or sensor.humanoid == humanoid then return end
-      sensor.humanoid = humanoid; listen(state, humanoid.Died, death, sensor.characterConnections)
+    disconnectPool(state, sensor.characterConnections)
+    sensor.character, sensor.humanoid, sensor.animator, sensor.reported = character, nil, nil, false
+    state.lastBlockAt[player.UserId] = nil
+
+    local function watchAnimator(animator)
+      if current ~= state or player.Character ~= character
+        or not animator:IsA("Animator") or sensor.animator == animator then return end
+      sensor.animator = animator
+      listen(state, animator.AnimationPlayed, function(track)
+        if current ~= state or player.Character ~= character then return end
+        local name = track and track.Name
+        if name ~= "BlockStart" and name ~= "BlockLoop" then
+          local asset = track and track.Animation
+          name = asset and asset.Name
+        end
+        if name == "BlockStart" or name == "BlockLoop" then
+          state.lastBlockAt[player.UserId] = now()
+        end
+      end, sensor.characterConnections)
     end
+
+    local function watchHumanoid(humanoid)
+      if current ~= state or player.Character ~= character
+        or not humanoid:IsA("Humanoid") or sensor.humanoid == humanoid then return end
+      sensor.humanoid = humanoid
+      listen(state, humanoid.Died, death, sensor.characterConnections)
+      local animator = humanoid:FindFirstChildOfClass("Animator")
+      if animator then watchAnimator(animator) end
+      listen(state, humanoid.ChildAdded, watchAnimator, sensor.characterConnections)
+    end
+
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then watchHumanoid(humanoid) end
     listen(state, character.ChildAdded, watchHumanoid, sensor.characterConnections); updateLives()
@@ -523,6 +559,7 @@ function AutoSpam.bindCharacter(character)
     root = root,
     connections = {},
     sensors = {},
+    lastBlockAt = {},
     active = false,
     phase = "idle",
     reason = "waiting",
@@ -722,7 +759,7 @@ AutoSpam.__contract = {
     GameInfo = {
       "getPlayers",
       "getPlayerParts",
-      "getClashStatus",
+      "getClashContext",
       "getSnapshotAt",
       "isSnapshotValid",
       "getPlayerMotion",
