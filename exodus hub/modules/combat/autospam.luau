@@ -195,7 +195,6 @@ local function calculateRecipientRisk(state, s)
   end
   local recipient, arrival = predictedRecipient(s)
   if recipient == localPlayer.UserId then return nil, recipient, arrival end
-  if recipient and not nearPartner(state, recipient, opponentDistanceLimit(state, s, recipient)) then return "predicted_far_recipient", recipient, arrival end
   return nil, recipient, arrival
 end
 local function recipientRisk(state, s)
