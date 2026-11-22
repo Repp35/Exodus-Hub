@@ -273,10 +273,10 @@ local function autoHardStop(state, s)
   if utils.getWorkspace():GetAttribute("MatchStatus") ~= 6 then return "match_ended" end
   if gameInfo.getBallFrozen() == true then return "ball_paused" end
   if state.active and (not s or not s.ball or not s.ball.Parent or s.ball ~= state.ball or s.teleported or s.resetting) then return "ball_reset" end
-  if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s, state.partner)) then return "opponent_out_of_range" end
   if not state.character.Parent or not state.root.Parent or not playerIsAlive(localPlayer.UserId) then return "player_died" end
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
+  if state.active and state.partner and not nearPartner(state, state.partner, opponentDistanceLimit(state, s, state.partner)) then return "opponent_out_of_range" end
   local target = s and (userId(s.exchangeTargetId) or (not s.targetUncertain and targetOf(s)))
   if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then return "target_redirected_far" end
   if state.active then
@@ -433,11 +433,9 @@ local function evaluateCore(state, s, time, packet)
   if gate == "ball_reset" then clearEvidence(state) end
   if s and gate ~= "ball_reset" and gate ~= "training" and gate ~= "ball_paused" then observeTarget(state, s, time, packet) end
   if state.active then
-    local risk = externalGate(state, s, time)
-    if risk then deactivate(state, risk, time); return end
     stop = deactivationGate(state, s, time)
     if stop then deactivate(state, stop, time); return end
-    if gate == "ball_paused" or gate == "training" or gate == "ball_not_moving" then
+    if gate == "ball_paused" or gate == "training" then
       deactivate(state, gate, time); clearEvidence(state)
       return
     end
