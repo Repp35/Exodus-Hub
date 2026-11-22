@@ -132,16 +132,16 @@ As três entradas principais não compartilham confirmação de trajetória:
 
 O watcher de `GameBallTarget` transmite o valor no callback, sem esperar o
 snapshot resolver divergências visuais/de rede. Eventos desse atributo não são
-rejeitados por compartilhar a sequência do pacote anterior. As ativações rodam
-nas fases de simulação/renderização disponíveis, além do Heartbeat.
+rejeitados por compartilhar a sequência do pacote anterior. O CombatLoop agenda as avaliações em PostSimulation e nos eventos; não existe
+um ciclo de combate em RenderStepped.
 
-O AP chama `AutoSpam.onDefenseOpportunity(snapshot)` antes de consumir a amostra
-e antes de despachar. Se uma entrada de spam está pronta, o scheduler envia
+O CombatLoop atualiza AutoSpam antes do AP; o AP não reavalia AutoSpam ao consumir
+a amostra ou despachar. Se uma entrada de spam está pronta, o scheduler envia
 imediatamente e contabiliza essa tentativa na taxa escolhida. Uma ativação recém-confirmada mantém autorização curta para seu
 primeiro envio durante uma lacuna do cache; essa autorização tem prazo fixo e
 não supera morte, congelamento, reset ou desativação. Trocas novas podem rearmar
 sem aguardar 20 ms. Evidência consumida impede repetir a mesma ativação parada.
 
-`test_spam_instant_activation.py` exercita as três entradas e o handoff com os
+`indeed/legacy_tests/test_spam_instant_activation.py` exercita as três entradas e o handoff com os
 módulos reais AP, AutoSpam e Spam, usando serviços/transporte simulados. Não mede
 latência real do servidor nem transforma distâncias de tela do vídeo em studs.

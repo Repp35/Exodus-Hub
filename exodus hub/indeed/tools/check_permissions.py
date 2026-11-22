@@ -49,7 +49,7 @@ def lists(source: str) -> dict[str, set[str]]:
     return {alias: names(body) for alias, body in re.findall(r'(\w+)\s*=\s*\{([^{}]*)\}', source)}
 
 
-SPEC = json.loads(re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/logic/aux/permissions.luau').read_text(), re.S)[1])
+SPEC = json.loads(re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/core/permissions.luau').read_text(), re.S)[1])
 MODULES = {}
 
 def family(name, path):

@@ -91,10 +91,14 @@ local CONFIG = {
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
   MODULES = {
+    { name = "lifetime", path = "modules/core/lifetime.luau" },
+    { name = "profiler", path = "modules/core/profiler.luau" },
+    { name = "playerregistry", path = "modules/game/players.luau" },
+    { name = "combatloop", path = "modules/core/combatloop.luau" },
     { name = "status", path = "modules/core/status.luau" },
     { name = "runtime", path = "modules/core/runtime.luau" },
-    { name = "permissions", path = "modules/logic/aux/permissions.luau" },
-    { name = "config", path = "modules/front/app/config.luau" },
+    { name = "permissions", path = "modules/core/permissions.luau" },
+    { name = "config", path = "modules/core/config.luau" },
     { name = "uiconfig", path = "modules/front/app/definitions.luau" },
     { name = "uitheme", path = "modules/front/library/theme.luau" },
     { name = "uiruntime", path = "modules/front/library/runtime.luau" },
@@ -108,36 +112,44 @@ local CONFIG = {
     { name = "uipages", path = "modules/front/library/pages.luau" },
     { name = "uinotifications", path = "modules/front/app/notification-policy.luau" },
     { name = "uiactions", path = "modules/front/app/actions.luau" },
-    { name = "utils", path = "modules/logic/aux/utils.luau" },
-    { name = "ballsync", path = "modules/logic/aux/ballsync.luau" },
-    { name = "targeting", path = "modules/logic/aux/targeting.luau" },
-    { name = "deflectgeometry", path = "modules/logic/aux/deflectgeometry.luau" },
-    { name = "gameinfo", path = "modules/logic/aux/gameinfo.luau" },
-    { name = "cooldown", path = "modules/logic/aux/cooldown.luau" },
-    { name = "clashstats", path = "modules/logic/aux/clashstats.luau" },
-    { name = "autodark", path = "modules/logic/extras/autodark.luau" },
-    { name = "movement", path = "modules/logic/aux/movement.luau" },
-    { name = "autojump", path = "modules/logic/extras/universal/autojump.luau" },
-    { name = "camera", path = "modules/logic/extras/universal/camera.luau" },
-    { name = "antilag", path = "modules/logic/extras/antilag.luau" },
-    { name = "infinitejump", path = "modules/logic/extras/universal/infinitejump.luau" },
-    { name = "noclip", path = "modules/logic/extras/universal/noclip.luau" },
-    { name = "fly", path = "modules/logic/extras/universal/fly.luau" },
-    { name = "invisicam", path = "modules/logic/extras/universal/invisicam.luau" },
-    { name = "infinitezoom", path = "modules/logic/extras/universal/infinitezoom.luau" },
-    { name = "speed", path = "modules/logic/extras/universal/speed.luau" },
-    { name = "gravity", path = "modules/logic/extras/universal/gravity.luau" },
-    { name = "remote", path = "modules/logic/aux/remote.luau" },
-    { name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
-    { name = "autoparry", path = "modules/logic/autoparry.luau" },
-    { name = "dash", path = "modules/logic/aux/dash.luau" },
-    { name = "autospam", path = "modules/logic/autospam.luau" },
-    { name = "autodash", path = "modules/logic/extras/autodash.luau" },
-    { name = "dynamicparry", path = "modules/logic/dynamicparry.luau" },
-    { name = "spam", path = "modules/logic/spam.luau" },
-    { name = "character", path = "modules/logic/aux/character.luau" },
-    { name = "dumper", path = "modules/logic/extras/universal/tools/dumper.luau" },
-    { name = "servers", path = "modules/logic/extras/universal/tools/servers.luau" },
+    { name = "state", path = "modules/core/state.luau" },
+    { name = "persistence", path = "modules/core/persistence.luau" },
+    { name = "diagnostics", path = "modules/core/diagnostics.luau" },
+    { name = "utils", path = "modules/core/utils.luau" },
+    { name = "ballsync", path = "modules/game/ballsync.luau" },
+    { name = "targeting", path = "modules/game/targeting.luau" },
+    { name = "deflectgeometry", path = "modules/combat/deflectgeometry.luau" },
+    { name = "presence", path = "modules/game/presence.luau" },
+    { name = "snapshots", path = "modules/game/snapshots.luau" },
+    { name = "gameinfo", path = "modules/game/gameinfo.luau" },
+    { name = "cooldown", path = "modules/combat/cooldown.luau" },
+    { name = "clashstats", path = "modules/combat/clashstats.luau" },
+    { name = "autodark", path = "modules/combat/autodark.luau" },
+    { name = "movement", path = "modules/combat/movement.luau" },
+    { name = "autojump", path = "modules/features/autojump.luau" },
+    { name = "camera", path = "modules/features/camera.luau" },
+    { name = "renderproperties", path = "modules/render/properties.luau" },
+    { name = "renderadapter", path = "modules/render/adapter.luau" },
+    { name = "renderspatial", path = "modules/render/spatial.luau" },
+    { name = "antilag", path = "modules/render/antilag.luau" },
+    { name = "infinitejump", path = "modules/features/infinitejump.luau" },
+    { name = "noclip", path = "modules/features/noclip.luau" },
+    { name = "fly", path = "modules/features/fly.luau" },
+    { name = "invisicam", path = "modules/features/invisicam.luau" },
+    { name = "infinitezoom", path = "modules/features/infinitezoom.luau" },
+    { name = "speed", path = "modules/features/speed.luau" },
+    { name = "gravity", path = "modules/features/gravity.luau" },
+    { name = "remote", path = "modules/combat/remote.luau" },
+    { name = "autofierce", path = "modules/combat/autofierce.luau" },
+    { name = "autoparry", path = "modules/combat/autoparry.luau" },
+    { name = "dash", path = "modules/combat/dash.luau" },
+    { name = "autospam", path = "modules/combat/autospam.luau" },
+    { name = "autodash", path = "modules/combat/autodash.luau" },
+    { name = "dynamicparry", path = "modules/combat/dynamicparry.luau" },
+    { name = "spam", path = "modules/combat/spam.luau" },
+    { name = "character", path = "modules/core/character.luau" },
+    { name = "dumper", path = "modules/tools/dumper.luau" },
+    { name = "servers", path = "modules/tools/servers.luau" },
     { name = "uicontext", path = "modules/front/controllers/context.luau" },
     { name = "uiwindow", path = "modules/front/controllers/window.luau" },
     { name = "uifloating", path = "modules/front/controllers/floating.luau" },
@@ -155,6 +167,8 @@ local PROJECT_PATH = CONFIG.PROJECT_PATH
 local BASE_URL = CONFIG.REPOSITORY_URL
 local HEAD_URL = CONFIG.HEAD_URL
 local HttpService = game:GetService("HttpService")
+local sourceBranch = _G.ExodusSourceBranch
+if type(sourceBranch) == "string" and sourceBranch ~= "" then HEAD_URL = "https://api.github.com/repos/Repp35/Exodus-v2/git/ref/heads/" .. HttpService:UrlEncode(sourceBranch) end
 local cacheSequence = 0
 local function cacheBuster()
   cacheSequence += 1; return ("%d-%d-%d"):format(os.time(), math.floor(os.clock() * 1000000), cacheSequence)
@@ -440,7 +454,7 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions, "modules/logic/aux/permissions.luau")
+  local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions, "modules/core/permissions.luau")
   loaded.permissions = register("permissions", permissions)
   for _, entry in ipairs(MODULE_MANIFEST) do
     local name = entry.name
@@ -628,9 +642,10 @@ local function startInternal()
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
-  utils.start(); utils.setLifecyclePhase("loading")
-  loaded.status.configure(loaded, utils.recordError); Exodus.Utils = utils
-  Exodus.State = utils.getStateSnapshot(); local configured, configModuleName, configError = configureModules(loaded, utils, urls)
+  utils.configure(loaded.permissions.resolve("utils", loaded)); utils.start()
+  utils.setLifecyclePhase("loading"); loaded.status.configure(loaded, utils.recordError)
+  Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
+  local configured, configModuleName, configError = configureModules(loaded, utils, urls)
   if not configured then return stopStartup(utils, configModuleName, configError) end
   Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot()
   utils.setLifecyclePhase("initializing"); local modulesReady, failedModule, modulesError = initializeModules(loaded)

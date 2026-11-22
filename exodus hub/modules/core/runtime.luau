@@ -33,12 +33,12 @@ function Runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
       end
     end
   end
-  local syncPriority = { autospam = 1, autoparry = 2 }
+  local syncPriority = { combatloop = 1 }
   table.sort(ballSyncSubscribers, function(a, b)
     local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
   end)
   local syncErrors = {}
-  local function notifyBallSync(decodedData)
+  local function dispatchBallSync(decodedData)
     if not utils.isActive() or type(decodedData) ~= "table" then return end
     for _, sub in ipairs(ballSyncSubscribers) do
       local ok, result, detail = pcall(sub.handler, decodedData)
@@ -49,6 +49,20 @@ function Runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
           if not reported then printRawError(sub.name, reportError) end
         end
       end
+    end
+  end
+  local pendingAttributeRefresh = false
+  local function notifyBallSync(data)
+    if type(data) ~= "table" then return end
+    if data.Source == "clash" or (data.Source == "target" and data.TargetPlayerID == nil) then
+      if pendingAttributeRefresh then return end
+      pendingAttributeRefresh = true
+      task.defer(function()
+        pendingAttributeRefresh = false
+        if utils.isActive() then dispatchBallSync({ Source = "clash" }) end
+      end)
+    else
+      dispatchBallSync(data)
     end
   end
   local pendingSyncRefresh = false
