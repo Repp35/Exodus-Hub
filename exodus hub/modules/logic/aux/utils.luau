@@ -245,6 +245,9 @@ local function migrateConfig(data)
     data.AutoParryFactor03Applied, migrated = true, true
   end
   if data.ClickMethod == "Game" then data.ClickMethod, migrated = "Deflect", true end
+  for _, key in ipairs({ "ClashMaxDistance", "AutoSpamClashPrediction", "AutoSpamPredictionMargin", "ClashGrace", "ClashMaxAge" }) do
+    if data[key] ~= nil then data[key], migrated = nil, true end
+  end
   local patch = {}
   for key, value in pairs(data) do
     if not isPersistentConfigKey(key) then
