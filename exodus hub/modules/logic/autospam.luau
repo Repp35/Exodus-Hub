@@ -73,7 +73,7 @@ local function clearEvidence(state, newBall)
   state.packetSnapshot, state.packetAt, state.receivedSequence = nil, nil, nil; state.leg = (state.leg or 0) + 1
   state.stoppedLeg = state.leg
   if newBall then
-    state.directionBlocked, state.directionFrames = nil, 0; state.cooldownStopAt, state.cooldownStopEpisode = nil, nil
+    state.cooldownStopAt, state.cooldownStopEpisode = nil, nil
     state.stoppedParryAt, state.lastNativeParryAt = nil, nil
   else
     local stamp = utils.getWorkspace():GetAttribute("LastParryAt")
@@ -83,7 +83,6 @@ end
 local function deactivate(state, reason, time)
   if not state.active then return false end
   time = time or now()
-  if state.directionBlocked then state.lastDepartureAt = time; state.directionBlocked.leg = state.leg end
   state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason; state.stoppedLeg = state.leg
   local stamp = utils.getWorkspace():GetAttribute("LastParryAt"); state.stoppedParryAt = finite(stamp) and math.max(stamp, state.lastNativeParryAt or -math.huge) or state.lastNativeParryAt
   state.returnEvidence = nil
@@ -241,34 +240,6 @@ local function observeTarget(state, s, time, event)
     h.partner, h.inboundAt = previous, time
   end
 end
-local function departingExchange(state, s, partner)
-  if not s or not vector(s.position) or not vector(s.velocity) or s.velocity.Magnitude < 1 then return false end
-  if not vector(playerPosition(localPlayer.UserId)) or not vector(playerPosition(partner)) then return false end
-  local speed = snapshotSpeed(s)
-  if not speed or speed <= 0 then return false end
-  for _, player in ipairs(players:GetPlayers()) do
-    if player.UserId == localPlayer.UserId or player.UserId == partner or nearPartner(state, player.UserId, opponentDistanceLimit(state, s, player.UserId)) then
-      local position, motion = gameInfo.getPlayerMotion(player.UserId); local radius = deflectGeometry.getPlayerRawRadius(player.UserId, speed, false)
-      if vector(position) and finite(radius) and radius > 0 and playerIsAlive(player.UserId) then
-        local relative = s.velocity - (vector(motion) and motion or Vector3.zero); local delta = position - s.position
-        local squaredSpeed = relative:Dot(relative); local projection = delta:Dot(relative)
-        if squaredSpeed > 1 and projection > 0 then
-          local time = projection / squaredSpeed; local closest = delta - relative * time
-          if time <= 1 and closest:Dot(closest) <= radius * radius then return false end
-        end
-      end
-    end
-  end
-  return true
-end
-local function directionFrame(state, s)
-  if state.active and state.partner then
-    if departingExchange(state, s, state.partner) then state.directionFrames = (state.directionFrames or 0) + 1 else state.directionFrames = 0 end
-    if state.directionFrames >= 3 then deactivate(state, "ball_departed", now()) end
-  else
-    state.directionFrames = 0
-  end
-end
 local function externalGate(state, s, time)
   local clash = state.foreignClash
   if
@@ -295,11 +266,11 @@ local function autoHardStop(state, s)
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   local target = s and (userId(s.exchangeTargetId) or (not s.targetUncertain and targetOf(s)))
   if state.active and state.partner and target and target ~= localPlayer.UserId and target ~= state.partner then
-    state.directionBlocked = { ball = s.ball, leg = state.leg }; return "target_redirected_far"
+    return "target_redirected_far"
   end
   if state.active then
     local risk = externalGate(state, s, now())
-    if risk then state.directionBlocked = { ball = s.ball, leg = state.leg }; return risk end
+    if risk then return risk end
   end
 end
 local function activate(state, candidate, s, time)
@@ -312,7 +283,6 @@ end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
   if reason then
-    if state.partner and departingExchange(state, s, state.partner) then state.directionBlocked = { ball = s.ball, partner = state.partner } end
     return reason
   end
   if not insideSpamWindow(state, s, time) then return "outside_spam_window" end
@@ -420,7 +390,7 @@ local function chooseActivation(state, s, time)
     if candidate then
       local proposed = table.clone(state); proposed.active, proposed.partner = true, candidate.partner
       local stop = autoStop(proposed, s, time)
-      if not stop then state.directionBlocked, state.directionFrames = nil, 0; return candidate end
+      if not stop then return candidate end
       state.gates.common = stop
     end
   end
@@ -440,7 +410,6 @@ evaluate = function(state, s, time, packet)
   end
   local stop = autoHardStop(state, s)
   if stop then
-    if state.active and state.partner and s and departingExchange(state, s, state.partner) then state.directionBlocked = { ball = s.ball, partner = state.partner } end
     deactivate(state, stop, time); state.lastGate = stop
     if stop ~= "target_redirected_far" then clearEvidence(state) end
     return
@@ -456,12 +425,11 @@ evaluate = function(state, s, time, packet)
   if state.active then
     local risk = externalGate(state, s, time)
     if risk then
-      state.directionBlocked = { ball = s.ball, leg = state.leg }; deactivate(state, risk, time)
+      deactivate(state, risk, time)
       return
     end
     stop = deactivationGate(state, s, time)
     if stop then
-      if state.partner and s and departingExchange(state, s, state.partner) then state.directionBlocked = { ball = s.ball, partner = state.partner } end
       deactivate(state, stop, time); return
     end
     if gate == "ball_paused" or gate == "training" or gate == "ball_not_moving" then
@@ -589,7 +557,7 @@ function AutoSpam.bindCharacter(character)
     if current ~= state then return end
     local time = now()
     if finite(dt) and dt > 0 then state.frameInterval = dt end
-    local snapshot = selectSnapshot(state, gameInfo.getSnapshotAt(time), time); directionFrame(state, snapshot)
+    local snapshot = selectSnapshot(state, gameInfo.getSnapshotAt(time), time)
     evaluate(state, snapshot, time, false)
   end)
   local fastSignals = {}
@@ -665,7 +633,6 @@ function AutoSpam.canSend()
   local time = now(); local s = selectSnapshot(state, gameInfo.getSnapshotAt(time), time)
   local stop = deactivationGate(state, s, time)
   if stop then
-    if state.partner and s and departingExchange(state, s, state.partner) then state.directionBlocked = { ball = s.ball, partner = state.partner } end
     deactivate(state, stop, time); state.lastSendBlockReason, state.lastSendBlockAt = stop, time
     return false
   end
