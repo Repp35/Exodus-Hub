@@ -364,20 +364,10 @@ local function fastReturnActivation(state, s, time)
   end
   return nil
 end
-local function experimentalIsInClashActivation(state, s)
-  local ok, gameBall = pcall(gameInfo.getDefenseSource)
-  if not ok or type(gameBall) ~= "table" or type(gameBall.IsInClash) ~= "function" then state.gates.isInClash = "native_unavailable"; return nil end
-  local checked, inClash = pcall(gameBall.IsInClash, gameBall, localPlayer)
-  if not checked or inClash ~= true then state.gates.isInClash = checked and "not_in_clash" or "native_error"; return nil end
-  local world = utils.getWorkspace(); local by = userId(world:GetAttribute("LastParryBy"))
-  local target = userId(world:GetAttribute("LastParryTarget")); local me = localPlayer.UserId
-  local partner = by == me and target or (target == me and by or nil)
-  if not partner or not nearPartner(state, partner, math.huge) then state.gates.isInClash = "partner_unavailable"; return nil end
-  state.gates.isInClash = "ready"; return { partner = partner, reason = "is_in_clash_experimental" }
-end
 local function chooseActivation(state, s, time)
-  local experimental = experimentalIsInClashActivation(state, s); local native = nativeActivation(state, s, time)
-  local fastReturn = fastReturnActivation(state, s, time); return experimental or native or fastReturn
+  local native = nativeActivation(state, s, time)
+  local fastReturn = fastReturnActivation(state, s, time)
+  return native or fastReturn
 end
 local function evaluateCore(state, s, time, packet)
   if current ~= state then return end
@@ -397,7 +387,7 @@ local function evaluateCore(state, s, time, packet)
     return
   end
   local candidate = chooseActivation(state, s, time)
-  if candidate then activate(state, candidate, s, time) else state.lastGate = state.gates.isInClash or state.gates.native or state.gates.fastReturn end
+  if candidate then activate(state, candidate, s, time) else state.lastGate = state.gates.native or state.gates.fastReturn end
   observeStats(state, s, time, packet)
 end
 evaluate = function(state, s, time, packet)
@@ -675,7 +665,6 @@ AutoSpam.__contract = {
     GameInfo = {
       "getPlayers",
       "getPlayerParts",
-      "getDefenseSource",
       "getClashContext",
       "getSnapshotAt",
       "isSnapshotValid",
