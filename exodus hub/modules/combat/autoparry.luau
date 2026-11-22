@@ -93,7 +93,8 @@ local function cooldownState(mode)
   if mode == "training" then return cooldown.getTrainingCooldownState() end
   return cooldown.getDeflectCooldownState()
 end
-local function ready(cd, mode) return cd ~= nil and cd.blocking == false and (mode == "training" or cd.source == "local" or cd.source == "server") end
+-- In matches the local DeflectAbility.Cooldown is authoritative for readiness.
+local function ready(cd, mode) return cd ~= nil and cd.blocking == false and (mode == "training" or cd.source == "local") end
 local function recover(value, cd, now)
   local shot = state.shot
   if not state.fired or not shot then return end
