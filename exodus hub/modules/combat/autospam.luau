@@ -271,7 +271,6 @@ local function distantTargetGate(state, s)
   if not state.active or not s then return nil end
   local target = userId(s.exchangeTargetId)
   if not target and not s.targetUncertain then target = userId(s.targetId) end
-  -- The clash partner may move outside our radius without ending AutoSpam.
   if not target or target == localPlayer.UserId or target == state.partner then return nil end
   local targetPosition = playerPosition(target)
   if not vector(targetPosition) then return nil end
@@ -289,7 +288,6 @@ local function autoHardStop(state, s)
   if state.deathSerial and state.deathSerial ~= matchDeathSerial then return "match_player_died" end
   if state.partner and not playerIsAlive(state.partner) then return "opponent_left_or_died" end
   return distantTargetGate(state, s)
-
 end
 local function activate(state, candidate, s, time)
   state.active, state.phase, state.reason, state.partner = true, "clashing", candidate.reason, candidate.partner
@@ -415,8 +413,7 @@ local function evaluateCore(state, s, time, packet)
   local stop = autoHardStop(state, s)
   if stop then
     deactivate(state, stop, time); state.lastGate = stop
-    clearEvidence(state)
-    return
+    clearEvidence(state); return
   end
   if s and s.ball ~= state.ball then state.ball, state.sequence, state.packetSnapshot, state.packetAt = s.ball, nil, nil, nil; clearEvidence(state, true) end
   local order = sequenceOrder(state, s and s.syncSequence)
@@ -429,12 +426,9 @@ local function evaluateCore(state, s, time, packet)
   if state.active then
     stop = deactivationGate(state, s, time)
     if stop then deactivate(state, stop, time); return end
-    -- Invalid/paused lifecycle snapshots block dispatch without deactivating.
-    -- Only the explicit hard-stop gates above end the AutoSpam session.
     if gate then
       if gate == "ball_reset" or gate == "training" then clearEvidence(state) end
-      state.lastGate, state.gates.common = gate, gate
-      return
+      state.lastGate, state.gates.common = gate, gate; return
     end
     state.lastGate, state.gates.common = "active", nil; observeStats(state, s, time, packet)
     return
@@ -624,11 +618,7 @@ function AutoSpam.canSend()
   end
   local gate = lifecycleGate(state, s)
   if gate then state.lastSendBlockReason, state.lastSendBlockAt = gate, time; return false end
-  -- Retain the window as a send condition, not a deactivation condition.
-  if not insideSpamWindow(state, s, time) then
-    state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time
-    return false
-  end
+  if not insideSpamWindow(state, s, time) then state.lastSendBlockReason, state.lastSendBlockAt = "outside_spam_window", time; return false end
   return true
 end
 function AutoSpam.hasClashPrediction() return false end
