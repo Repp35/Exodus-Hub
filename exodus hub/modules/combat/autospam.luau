@@ -156,8 +156,7 @@ end
 local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end
   if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
-  local windowFactor = factor or (state.active and state.reason == "native_clash"
-    and CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR or CONFIG.ACTIVATION.WINDOW_FACTOR)
+  local windowFactor = factor or (state.active and state.reason == "native_clash" and CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR or CONFIG.ACTIVATION.WINDOW_FACTOR)
   local g = geometry(state, s, windowFactor)
   if not g or not finite(g.fullRadius) or g.fullRadius < 0 then return false end
   local delta = s.position - state.root.Position; return delta:Dot(delta) <= g.fullRadius * g.fullRadius
@@ -335,50 +334,35 @@ local function missLocked(state)
   return state.cooldownStopEpisode == nil or cd.episode == state.cooldownStopEpisode
 end
 local function nativeActivation(state, s, time)
-  -- Native clash uses its own generous full deflect window, not the AP factor.
-  if not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then
-    state.gates.native = "outside_spam_window"; return nil
-  end
-  local g = geometry(state, s, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR)
-  local radius = g and g.fullRadius
+  if not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then state.gates.native = "outside_spam_window"; return nil end
+  local g = geometry(state, s, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR); local radius = g and g.fullRadius
   if not finite(radius) or radius <= 0 then state.gates.native = "missing_native_geometry"; return nil end
-
-  local world = utils.getWorkspace()
-  local by, targetId = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
-  local expectedPartner = by == localPlayer.UserId and targetId
-    or (targetId == localPlayer.UserId and by or nil)
-  local context = gameInfo.getClashStatus(radius)
+  local world = utils.getWorkspace(); local by, targetId = world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
+  local expectedPartner = by == localPlayer.UserId and targetId or (targetId == localPlayer.UserId and by or nil); local context = gameInfo.getClashStatus(radius)
   local partner = context and context.active and context.partnerId
-
-  -- A recent native exchange may be newer than the strict clash-status
-  -- recognition window. Accept it with at least one recorded clash hit.
   if not partner and type(gameInfo.getClashContext) == "function" then
-    local hint = gameInfo.getClashContext(true)
-    local hits = world:GetAttribute("ClashHits")
+    local hint = gameInfo.getClashContext(true); local hits = world:GetAttribute("ClashHits")
     local targetNow = userId(world:GetAttribute("GameBallTarget"))
-    if hint and hint.partnerId == expectedPartner and userId(expectedPartner)
-      and finite(hint.age) and hint.age >= 0 and hint.age <= CONFIG.ACTIVATION.NATIVE_MAX_AGE
-      and finite(hits) and hits >= 1
-      and (not targetNow or targetNow == localPlayer.UserId or targetNow == expectedPartner) then
+    if
+      hint
+      and hint.partnerId == expectedPartner
+      and userId(expectedPartner)
+      and finite(hint.age)
+      and hint.age >= 0
+      and hint.age <= CONFIG.ACTIVATION.NATIVE_MAX_AGE
+      and finite(hits)
+      and hits >= 1
+      and (not targetNow or targetNow == localPlayer.UserId or targetNow == expectedPartner)
+    then
       partner, context = expectedPartner, hint
     end
   end
-
-  if not partner or not nearPartner(state, partner, radius) then
-    state.gates.native = "no_clash_partner"; return nil
-  end
+  if not partner or not nearPartner(state, partner, radius) then state.gates.native = "no_clash_partner"; return nil end
   local stamp = context and context.lastParryAt
-  if not finite(stamp) and context and finite(context.age) then
-    stamp = world:GetServerTimeNow() - context.age
-  end
+  if not finite(stamp) and context and finite(context.age) then stamp = world:GetServerTimeNow() - context.age end
   if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
-
   local target = targetOf(s)
-  if target and target ~= localPlayer.UserId and target ~= partner then
-    state.gates.native = "third_target"; return nil
-  end
-  -- A single confirmed native exchange is enough: no recipient prediction,
-  -- extra trajectory test, or second-hit requirement.
+  if target and target ~= localPlayer.UserId and target ~= partner then state.gates.native = "third_target"; return nil end
   state.lastNativeParryAt = stamp; state.gates.native = "ready"
   return { partner = partner, reason = "native_clash" }
 end
@@ -670,8 +654,7 @@ function AutoSpam.getStatus()
     phase = state and state.phase or "detached",
     engineVersion = 6,
     reason = state and state.reason,
-    windowFactor = state and state.active and state.reason == "native_clash"
-      and CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR or CONFIG.ACTIVATION.WINDOW_FACTOR,
+    windowFactor = state and state.active and state.reason == "native_clash" and CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR or CONFIG.ACTIVATION.WINDOW_FACTOR,
     gates = state and table.clone(state.gates) or {},
     targetId = state and state.target or -1,
     clashPartnerId = state and state.partner or -1,
