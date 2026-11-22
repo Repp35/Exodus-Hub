@@ -358,14 +358,17 @@ local function nativeActivation(state, s, time)
     end
   end
   if not partner or not nearPartner(state, partner, radius) then state.gates.native = "no_clash_partner"; return nil end
-  -- Require both native hit evidence and a witnessed me -> partner -> me
-  -- exchange on the same ball before starting Native Clash.
-  local hits = world:GetAttribute("ClashHits")
-  local evidence = state.returnEvidence
-  if not finite(hits) or hits < 2
-    or not evidence or evidence.partner ~= partner or evidence.ball ~= s.ball
-    or evidence.leg ~= state.leg or time < evidence.at
-    or time - evidence.at > CONFIG.ACTIVATION.NATIVE_MAX_AGE then
+  local hits = world:GetAttribute("ClashHits"); local evidence = state.returnEvidence
+  if
+    not finite(hits)
+    or hits < 2
+    or not evidence
+    or evidence.partner ~= partner
+    or evidence.ball ~= s.ball
+    or evidence.leg ~= state.leg
+    or time < evidence.at
+    or time - evidence.at > CONFIG.ACTIVATION.NATIVE_MAX_AGE
+  then
     state.gates.native = "clash_exchange_unconfirmed"; return nil
   end
   local stamp = context and context.lastParryAt
