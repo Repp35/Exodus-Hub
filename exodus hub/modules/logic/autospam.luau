@@ -422,14 +422,11 @@ local function chooseActivation(state, s, time)
   if risk then state.gates.common = risk; return nil end
   local candidate = chooseCandidate(state, s, time)
   if not candidate then return nil end
-  -- Check the same live exit rules against the proposed partner before activation.
-  local proposed = table.clone(state)
-  proposed.active, proposed.partner = true, candidate.partner
+  local proposed = table.clone(state); proposed.active, proposed.partner = true, candidate.partner
   local stop = autoStop(proposed, s, time)
   if not stop and departingExchange(proposed, s, candidate.partner) then stop = "ball_departed" end
   if stop then state.gates.common = stop; return nil end
-  state.directionBlocked, state.directionFrames = nil, 0
-  return candidate
+  state.directionBlocked, state.directionFrames = nil, 0; return candidate
 end
 evaluate = function(state, s, time, packet)
   if current ~= state then return end
