@@ -355,6 +355,16 @@ local function nativeActivation(state, s, time)
   if not finite(stamp) then state.gates.native = "missing_parry_evidence"; return nil end
   local target = targetOf(s)
   if target and target ~= localPlayer.UserId and target ~= partner then state.gates.native = "third_target"; return nil end
+  local hits = world:GetAttribute("ClashHits")
+  if finite(hits) and hits < 2 then
+    local predicted = predictedRecipient(s)
+    local distance = playerPosition(partner)
+    local delta = vector(distance) and vector(s.position) and distance - s.position
+    if by ~= localPlayer.UserId or targetId ~= partner or target ~= partner
+      or predicted ~= partner or not vector(delta) or not vector(s.velocity) or s.velocity:Dot(delta) <= 0 then
+      state.gates.native = "first_parry_not_confirmed"; return nil
+    end
+  end
   state.lastNativeParryAt = stamp; state.gates.native = "ready"
   return { partner = partner, reason = "native_clash" }
 end

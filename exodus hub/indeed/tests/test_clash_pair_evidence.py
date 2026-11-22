@@ -15,7 +15,11 @@ g.getClashStatus=GameInfo.getClashStatus
 snap.position=v(5);other.root.Position=v(5);third.root.Position=v(7)
 world.attrs.LastParryAt=nil;ap.onDefenseOpportunity(snap);assert(not ap.isActive())
 world.attrs.LastParryAt=tm;world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99
-for _,hits in ipairs({0,1}) do world.attrs.ClashHits=hits;ap.onDefenseOpportunity(snap);assert(not ap.isActive());assert(GameInfo.getClashStatus(10).reason=='no_pair_exchange') end
+for _,hits in ipairs({0}) do world.attrs.ClashHits=hits;ap.onDefenseOpportunity(snap);assert(not ap.isActive());assert(GameInfo.getClashStatus(10).reason=='no_pair_exchange') end
+world.attrs.ClashHits=1;snap.targetId=99;snap.position=v(2);snap.velocity=v(-600);world.attrs.GameBallTarget=99
+ap.onDefenseOpportunity(snap);assert(not ap.isActive(),'one parry without confirmed direction must not activate')
+snap.velocity=v(600);advance(.01);snap.syncAt=tm;world.attrs.LastParryAt=tm
+ap.onDefenseOpportunity(snap);assert(ap.isActive(),'first confirmed outward parry should activate');ap.stopSpam('test');snap.position=v(5);snap.velocity=v(-600)
 world.attrs.ClashHits=2;world.attrs.LastParryBy=99;world.attrs.LastParryTarget=88
 ap.onDefenseOpportunity(snap);assert(not ap.isActive());assert(GameInfo.getClashStatus(10).reason=='not_in_pair')
 world.attrs.LastParryBy=42;world.attrs.LastParryTarget=99;world.attrs.GameBallTarget=88

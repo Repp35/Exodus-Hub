@@ -1015,7 +1015,7 @@ function GameInfo.getClashStatus(maxDistance)
   if by == player.UserId then partnerId = target elseif target == player.UserId then partnerId = by else status.reason = "not_in_pair"; return status end
   if not finite(partnerId) or partnerId <= 0 or partnerId % 1 ~= 0 or partnerId == player.UserId then status.reason = "not_in_pair"; return status end
   status.partnerId = partnerId; local hits = world:GetAttribute("ClashHits")
-  if not finite(hits) or hits < 2 then status.reason = "no_pair_exchange"; return status end
+  if not finite(hits) or hits < 1 then status.reason = "no_pair_exchange"; return status end
   local currentTarget = world:GetAttribute("GameBallTarget")
   if finite(currentTarget) and currentTarget ~= player.UserId and currentTarget ~= partnerId then status.reason = "third_target"; return status end
   local partner = players:GetPlayerByUserId(partnerId); local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
