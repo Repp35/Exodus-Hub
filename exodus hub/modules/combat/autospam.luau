@@ -385,40 +385,21 @@ local function fastReturnActivation(state, s, time)
   end
   return nil
 end
--- Experimental fast path: use the game's real IsInClash method.
--- Do not replace it with Exodus's inferred clash status or Block animation.
 local function experimentalIsInClashActivation(state, s)
   local ok, gameBall = pcall(gameInfo.getDefenseSource)
-  if not ok or type(gameBall) ~= "table" or type(gameBall.IsInClash) ~= "function" then
-    state.gates.isInClash = "native_unavailable"; return nil
-  end
+  if not ok or type(gameBall) ~= "table" or type(gameBall.IsInClash) ~= "function" then state.gates.isInClash = "native_unavailable"; return nil end
   local checked, inClash = pcall(gameBall.IsInClash, gameBall, localPlayer)
-  if not checked or inClash ~= true then
-    state.gates.isInClash = checked and "not_in_clash" or "native_error"; return nil
-  end
-
-  -- IsInClash reports a boolean, so recover the other player from the same
-  -- native pair attributes instead of inventing an opponent.
-  local world = utils.getWorkspace()
-  local by = userId(world:GetAttribute("LastParryBy"))
-  local target = userId(world:GetAttribute("LastParryTarget"))
-  local me = localPlayer.UserId
+  if not checked or inClash ~= true then state.gates.isInClash = checked and "not_in_clash" or "native_error"; return nil end
+  local world = utils.getWorkspace(); local by = userId(world:GetAttribute("LastParryBy"))
+  local target = userId(world:GetAttribute("LastParryTarget")); local me = localPlayer.UserId
   local partner = by == me and target or (target == me and by or nil)
-  if not partner or not nearPartner(state, partner, math.huge) then
-    state.gates.isInClash = "partner_unavailable"; return nil
-  end
-
-  state.gates.isInClash = "ready"
-  return { partner = partner, reason = "is_in_clash_experimental" }
+  if not partner or not nearPartner(state, partner, math.huge) then state.gates.isInClash = "partner_unavailable"; return nil end
+  state.gates.isInClash = "ready"; return { partner = partner, reason = "is_in_clash_experimental" }
 end
-
 local function chooseActivation(state, s, time)
-  local experimental = experimentalIsInClashActivation(state, s)
-  local native = not experimental and nativeActivation(state, s, time) or nil
+  local experimental = experimentalIsInClashActivation(state, s); local native = not experimental and nativeActivation(state, s, time) or nil
   local fastReturn = not experimental and fastReturnActivation(state, s, time) or nil
   if not experimental and not native and not fastReturn then return nil end
-  -- Native IsInClash is authoritative for the experimental route; keep the
-  -- existing external risk check for inferred activation routes only.
   if not experimental then
     local risk = externalGate(state, s, time)
     if risk then state.gates.common = risk; return nil end
