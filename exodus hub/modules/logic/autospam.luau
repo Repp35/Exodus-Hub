@@ -179,8 +179,11 @@ local function predictedRecipient(s)
 end
 local function recipientRisk(state, s)
   local authoritativeTarget = s and userId(s.exchangeTargetId)
-  if authoritativeTarget and authoritativeTarget ~= localPlayer.UserId
-    and not nearPartner(state, authoritativeTarget, opponentDistanceLimit(state, s, authoritativeTarget)) then
+  if
+    authoritativeTarget
+    and authoritativeTarget ~= localPlayer.UserId
+    and not nearPartner(state, authoritativeTarget, opponentDistanceLimit(state, s, authoritativeTarget))
+  then
     return "confirmed_far_target", authoritativeTarget
   end
   local recipient, arrival = predictedRecipient(s)
