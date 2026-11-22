@@ -264,24 +264,11 @@ function AutoParry.beginFierce()
   return { generation = state.generation, cycle = state.cycle, startedAt = clock() }
 end
 function AutoParry.cancelFierce(token) return token ~= nil and token.generation == state.generation end
-function AutoParry.getTiming(value, time, root, factor)
+-- Internal timing remains available for defense logic, but is not part of the module's public API.
+local function internalTiming(value, time, root, factor)
   if not gameInfo or not state.root then return nil end
   time = finite(time) and time or clock(); value = value or gameInfo.getDefenseSnapshot(time)
   return value and timing(value, time, factor, root) or nil
-end
-function AutoParry.getRadius(mode, factor, speedOverride)
-  local t = AutoParry.getTiming(nil, nil, nil, factor)
-  if not t then return nil end
-  if finite(speedOverride) and speedOverride ~= t.speed then
-    local current = gameInfo.getDefenseSnapshot(clock())
-    if not current then return nil end
-    local value = table.clone(current); value.speed, value.syncSpeed = speedOverride, speedOverride
-    t = AutoParry.getTiming(value, nil, nil, factor)
-    if not t then return nil end
-  end
-  t.mode, t.value = mode or "geometry", mode == "tti" and t.tti or t.fullRadius
-  if mode == "speed_distance" then t.value = { speed = t.speed, distance = t.distance } end
-  return t
 end
 function AutoParry.getTargetStatus()
   return {
@@ -310,25 +297,23 @@ function AutoParry.getPressureDetector()
   }
 end
 function AutoParry.getDefenseState(value)
-  local result = AutoParry.getPressureDetector(); local t = AutoParry.getTiming(value)
+  local result = AutoParry.getPressureDetector()
   result.armed, result.fired, result.reason, result.lastRequestAt = not state.fired, state.fired == true, state.reason, state.lastFireAt
-  result.triggerDistance, result.distance, result.closingSpeed = t and t.triggerDistance, t and t.distance, t and t.closingSpeed
-  result.timeToKill, result.windowFactor = t and t.timeToKill, t and t.windowFactor
   local cd = cooldown and cooldownState(state.mode); result.blocking, result.lastParriedAt = cd and cd.blocking == true, cd and cd.lastParriedAt
   return result
 end
 function AutoParry.getPressure()
-  return { latestReturnTime = state.returnInterval, currentFactor = state.factor, samples = state.lastClickAt and 1 or 0, cps = state.cps or 0 }
+  return { latestReturnTime = state.returnInterval, samples = state.lastClickAt and 1 or 0, cps = state.cps or 0 }
 end
 function AutoParry.getStatus()
-  local t = AutoParry.getRadius("geometry")
+  local t = internalTiming()
   return {
     available = t ~= nil,
     schema = utils and utils.apiVersion(),
     api = {
       name = "AutoParry",
       version = 15,
-      endpoints = { "getRadius", "getTiming", "getStatus", "getTargetStatus" },
+      endpoints = { "getStatus", "getTargetStatus" },
     },
     lifecycle = {
       phase = state.phase,
@@ -337,9 +322,6 @@ function AutoParry.getStatus()
       alive = state.bound and state.humanoid.Health > 0,
       generation = state.generation,
     },
-    radius = t,
-    resilience = t and t.resilience,
-    timing = t,
     target = AutoParry.getTargetStatus(),
     mode = state.mode,
     ping = {
@@ -349,7 +331,6 @@ function AutoParry.getStatus()
     },
     cps = state.cps or 0,
     maxObservedCps = state.maxCps or 0,
-    windowFactor = t and t.windowFactor,
     pressure = AutoParry.getPressure(),
     cycle = {
       fired = state.fired == true,
@@ -358,7 +339,6 @@ function AutoParry.getStatus()
     },
     training = {
       active = state.mode == "training",
-      triggerDistance = state.mode == "training" and t and t.triggerDistance,
     },
     timestamp = clock(),
   }
@@ -409,8 +389,6 @@ AutoParry.__contract = {
     "tryRedirectReturn",
     "beginFierce",
     "cancelFierce",
-    "getTiming",
-    "getRadius",
     "getTargetStatus",
     "getPressureDetector",
     "getDefenseState",
