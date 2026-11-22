@@ -144,8 +144,7 @@ end
 local function insideSpamWindow(state, s, time, factor)
   if not s or not vector(s.position) or not vector(state.root.Position) then return false end
   if s.syncAt ~= nil and (not finite(s.syncAt) or time < s.syncAt or time - s.syncAt > CONFIG.TIMING.SNAPSHOT_MAX_AGE) then return false end
-  local windowFactor = factor or CONFIG.ACTIVATION.WINDOW_FACTOR
-  local g = geometry(state, s, windowFactor)
+  local windowFactor = factor or CONFIG.ACTIVATION.WINDOW_FACTOR; local g = geometry(state, s, windowFactor)
   if not g or not finite(g.fullRadius) or g.fullRadius < 0 then return false end
   local delta = s.position - state.root.Position; return delta:Dot(delta) <= g.fullRadius * g.fullRadius
 end
@@ -312,9 +311,6 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
-
-
-
 local function fastReturnActivation(state, s, time)
   if not s then state.gates.fastReturn = "snapshot_unavailable"; return nil end
   local evidence = state.returnEvidence
@@ -337,9 +333,7 @@ local function fastReturnActivation(state, s, time)
   end
   return nil
 end
-local function chooseActivation(state, s, time)
-  return fastReturnActivation(state, s, time)
-end
+local function chooseActivation(state, s, time) return fastReturnActivation(state, s, time) end
 local function evaluateCore(state, s, time, packet)
   if current ~= state then return end
   table.clear(state.gates)
@@ -385,17 +379,14 @@ local function watchPlayer(state, player)
     sensor.lives = lives
   end
   local function watchCharacter(character)
-    disconnectPool(state, sensor.characterConnections)
-    sensor.character, sensor.humanoid, sensor.reported = character, nil, false
+    disconnectPool(state, sensor.characterConnections); sensor.character, sensor.humanoid, sensor.reported = character, nil, false
     local function watchHumanoid(humanoid)
       if current ~= state or player.Character ~= character or not humanoid:IsA("Humanoid") or sensor.humanoid == humanoid then return end
-      sensor.humanoid = humanoid
-      listen(state, humanoid.Died, death, sensor.characterConnections)
+      sensor.humanoid = humanoid; listen(state, humanoid.Died, death, sensor.characterConnections)
     end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then watchHumanoid(humanoid) end
-    listen(state, character.ChildAdded, watchHumanoid, sensor.characterConnections)
-    updateLives()
+    listen(state, character.ChildAdded, watchHumanoid, sensor.characterConnections); updateLives()
   end
   listen(state, player:GetAttributeChangedSignal("Lives"), updateLives, sensor.playerConnections); listen(state, player:GetAttributeChangedSignal("Playing"), updateLives, sensor.playerConnections)
   listen(state, player.CharacterAdded, watchCharacter, sensor.playerConnections)
