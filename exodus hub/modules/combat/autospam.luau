@@ -327,26 +327,14 @@ local function autoStop(state, s, time)
   local speed = snapshotSpeed(s) or 0; local low, high = gameInfo.getBallSpeedLimits()
   local progress = finite(low) and finite(high) and high > low and math.clamp((speed - low) / (high - low), 0, 1) or 0; local other = playerPosition(state.partner)
   local near = other and (other - state.root.Position).Magnitude <= 10 + 6 * progress; local limit = 0.225 - 0.125 * progress + networkLatency() + (near and 0.12 or 0)
-  local cd = cooldownInfo.getDeflectCooldownState()
-  state.cooldown = cd
-  -- In game, only the local DeflectAbility.Cooldown controls this gate.
-  -- The source-less fallback supports older test adapters, not server state.
-  local localBlocked = cd and ((cd.source == "local" and finite(cd.localRemaining) and cd.localRemaining > 0)
-    or (cd.source == nil and cd.blocking == true))
+  local cd = cooldownInfo.getDeflectCooldownState(); state.cooldown = cd
+  local localBlocked = cd and ((cd.source == "local" and finite(cd.localRemaining) and cd.localRemaining > 0) or (cd.source == nil and cd.blocking == true))
   if not localBlocked then
-    state.cooldownSince, state.cooldownInitialRemaining = nil, nil
-    state.cooldownLimit = limit
+    state.cooldownSince, state.cooldownInitialRemaining = nil, nil; state.cooldownLimit = limit
   else
-    local began = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time
-    state.cooldownSince = math.min(state.cooldownSince or began, began)
-    if not state.cooldownInitialRemaining and finite(cd.localRemaining) and cd.localRemaining > 0 then
-      state.cooldownInitialRemaining = cd.localRemaining
-    end
-    -- Ensure a valid sustained local cooldown can outlast the threshold,
-    -- without stopping on brief cooldowns cancelled beforehand.
-    if finite(state.cooldownInitialRemaining) then
-      limit = math.min(limit, math.max(0.08, state.cooldownInitialRemaining * 0.8))
-    end
+    local began = finite(cd.blockingSince) and cd.blockingSince <= time and cd.blockingSince or time; state.cooldownSince = math.min(state.cooldownSince or began, began)
+    if not state.cooldownInitialRemaining and finite(cd.localRemaining) and cd.localRemaining > 0 then state.cooldownInitialRemaining = cd.localRemaining end
+    if finite(state.cooldownInitialRemaining) then limit = math.min(limit, math.max(0.08, state.cooldownInitialRemaining * 0.8)) end
     state.cooldownLimit = limit
     if time - state.cooldownSince >= limit then return "cooldown" end
   end
@@ -360,9 +348,7 @@ local function observeStats(state, s, time, packet)
 end
 local function missLocked(state)
   local cd = cooldownInfo.getDeflectCooldownState()
-  if not cd or cd.blocking ~= true or (cd.source ~= nil and cd.source ~= "local") then
-    state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false
-  end
+  if not cd or cd.blocking ~= true or (cd.source ~= nil and cd.source ~= "local") then state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false end
   if cd.miss == true then return true end
   if not state.cooldownStopAt then return false end
   if finite(cd.lastParriedAt) and cd.lastParriedAt > state.cooldownStopAt then state.cooldownStopAt, state.cooldownStopEpisode = nil, nil; return false end

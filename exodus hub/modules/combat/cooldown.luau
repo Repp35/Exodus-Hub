@@ -229,32 +229,22 @@ function Cooldown.getDeflectCooldownState()
     blockingSince = nil
   end
   previousBlocking = cooldown.blocking; cooldown.blockingSince, cooldown.episode = blockingSince, cooldownEpisode
-  -- A local cooldown is only a miss after it has *remained* active for a
-  -- meaningful portion of its observed duration. A short cooldown that is
-  -- cancelled before the threshold is never classified as a miss.
-  -- Prediction fields and remote cooldown events do not decide the outcome.
-  local attempt = deflectAttempt
-  local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false
-  local localBlocked = localKnown and localRemaining > 0
-  local episodeAttempt = attempt and finite(blockingSince) and finite(attempt.pressedAt)
-    and attempt.pressedAt <= time and attempt.pressedAt >= blockingSince - 0.5
-  local threshold = nil
-  local missActive = false
+  local attempt = deflectAttempt; local parried = attempt and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt or false
+  local localBlocked = localKnown and localRemaining > 0; local episodeAttempt = attempt
+    and finite(blockingSince)
+    and finite(attempt.pressedAt)
+    and attempt.pressedAt <= time
+    and attempt.pressedAt >= blockingSince - 0.5
+  local threshold = nil; local missActive = false
   if localBlocked and episodeAttempt and not parried then
-    local duration = finite(attempt.initialCooldown) and attempt.initialCooldown or localRemaining
-    threshold = math.clamp(duration * 0.65, 0.08, 0.22)
+    local duration = finite(attempt.initialCooldown) and attempt.initialCooldown or localRemaining; threshold = math.clamp(duration * 0.65, 0.08, 0.22)
     missActive = time - math.max(blockingSince, attempt.pressedAt) >= threshold
     if missActive then attempt.missed = true end
   end
   if parried and attempt then attempt.missed = false end
-  cooldown.pressAt = attempt and attempt.pressedAt or nil
-  cooldown.missDeadline = nil
-  cooldown.windowEndsAt = nil
-  cooldown.windowExpired = false
-  cooldown.missThreshold = threshold
-  -- While local cooldown is active, only the current episode can be a miss.
-  -- After it clears, retain a previously observed miss so AutoParry can rearm.
-  cooldown.miss = not parried and (localBlocked and missActive or (not localBlocked and attempt and attempt.missed == true)) or false
+  cooldown.pressAt = attempt and attempt.pressedAt or nil; cooldown.missDeadline = nil
+  cooldown.windowEndsAt = nil; cooldown.windowExpired = false
+  cooldown.missThreshold = threshold; cooldown.miss = not parried and (localBlocked and missActive or (not localBlocked and attempt and attempt.missed == true)) or false
   cooldown.outcome = parried and "parried" or (cooldown.miss and "miss" or "pending")
   if parried then cooldown.phase = "reverted"
   elseif localBlocked and missActive then cooldown.phase = "miss_cooldown"
@@ -268,8 +258,7 @@ end
 function Cooldown.getDeflectRecoveryState(timeToImpact, responseLead)
   local current = Cooldown.getDeflectCooldownState()
   if not current then return nil end
-  local known = current.source == "local"
-  local blocked = known and current.blocking == true and finite(current.localRemaining) and current.localRemaining > 0
+  local known = current.source == "local"; local blocked = known and current.blocking == true and finite(current.localRemaining) and current.localRemaining > 0
   return {
     cooldown = current,
     ready = known and current.blocking == false,
