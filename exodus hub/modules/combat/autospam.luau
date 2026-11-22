@@ -74,22 +74,16 @@ local function disconnectPool(state, pool)
   table.clear(pool)
 end
 local function clearEvidence(state)
-  state.target, state.outbound, state.returnEvidence, state.receipt, state.exchange = nil, nil, nil, nil, nil
-  state.confirmedReturns, state.exchangeHistory, state.lastPairExchangeAt = nil, nil, nil
-  state.packetSnapshot, state.packetAt, state.receivedSequence = nil, nil, nil
-  state.leg = (state.leg or 0) + 1
+  state.target, state.outbound, state.returnEvidence, state.receipt, state.exchange = nil, nil, nil, nil, nil; state.confirmedReturns, state.exchangeHistory, state.lastPairExchangeAt = nil, nil, nil
+  state.packetSnapshot, state.packetAt, state.receivedSequence = nil, nil, nil; state.leg = (state.leg or 0) + 1
 end
 local function deactivate(state, reason, time)
   if not state.active then return false end
-  time = time or now()
-  state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason
+  time = time or now(); state.active, state.phase, state.reason, state.lastGate = false, "idle", reason, reason
   if reason == "opponent_left_or_died" then clashStatsModule.freeze(state.partner, state) end
-  state.partner, state.deathSerial = nil, nil
-  state.cooldownSince, state.cooldownInitialRemaining = nil, nil
-  lastStopReason, lastStopAt = reason, time
-  utils.setAutoSpamActive(false)
-  utils.recordTransition("AutoSpam", "active", "idle", reason)
-  return true
+  state.partner, state.deathSerial = nil, nil; state.cooldownSince, state.cooldownInitialRemaining = nil, nil
+  lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
+  utils.recordTransition("AutoSpam", "active", "idle", reason); return true
 end
 local function sequenceOrder(state, incoming)
   if incoming == nil then return "none" end
@@ -293,10 +287,9 @@ local function autoHardStop(state, s)
 end
 local function activate(state, candidate, s, time)
   state.active, state.phase, state.reason, state.partner = true, "clashing", candidate.reason, candidate.partner
-  state.activatedAt, state.deathSerial, state.lastGate = time, matchDeathSerial, candidate.reason
-  state.cooldownSince, state.cooldownInitialRemaining, state.cooldownEpisode = nil, nil, nil; lastActivationReason, lastActivationAt = candidate.reason, time
-  clashStatsModule.begin(candidate.partner, time); utils.recordTransition("AutoSpam", "idle", "active", candidate.reason)
-  utils.setAutoSpamActive(true)
+  state.activatedAt, state.deathSerial, state.lastGate = time, matchDeathSerial, candidate.reason; state.cooldownSince, state.cooldownInitialRemaining, state.cooldownEpisode = nil, nil, nil
+  lastActivationReason, lastActivationAt = candidate.reason, time; clashStatsModule.begin(candidate.partner, time)
+  utils.recordTransition("AutoSpam", "idle", "active", candidate.reason); utils.setAutoSpamActive(true)
 end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
@@ -324,7 +317,6 @@ local function observeStats(state, s, time, packet)
   if stats and stats.frozen and not state.active then clashStatsModule.waitForNextClash() end
   clashStatsModule.observe(state, s, time, packet == true)
 end
-
 local function nativeActivation(state, s, time)
   if not insideSpamWindow(state, s, time, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR) then state.gates.native = "outside_spam_window"; return nil end
   local g = geometry(state, s, CONFIG.ACTIVATION.NATIVE_WINDOW_FACTOR); local radius = g and g.fullRadius
@@ -348,8 +340,7 @@ local function nativeActivation(state, s, time)
   if target and target ~= me and target ~= expectedPartner then state.gates.native = "third_target"; return nil end
   local blockAt = state.lastBlockAt and state.lastBlockAt[by]
   if not finite(blockAt) or time < blockAt or (time - blockAt) * 1000 > CONFIG.ACTIVATION.NATIVE_BLOCK_MS then state.gates.native = "block_animation_not_recent"; return nil end
-  state.gates.native = "ready"
-  return { partner = expectedPartner, reason = "native_clash" }
+  state.gates.native = "ready"; return { partner = expectedPartner, reason = "native_clash" }
 end
 local function fastReturnActivation(state, s, time)
   if not s then state.gates.fastReturn = "snapshot_unavailable"; return nil end
@@ -385,54 +376,28 @@ local function experimentalIsInClashActivation(state, s)
   state.gates.isInClash = "ready"; return { partner = partner, reason = "is_in_clash_experimental" }
 end
 local function chooseActivation(state, s, time)
-  -- Every activation gate evaluates on its own evidence. None reads or calls
-  -- deactivation rules, previous stop reasons, or another activation gate.
-  local experimental = experimentalIsInClashActivation(state, s)
-  local native = nativeActivation(state, s, time)
-  local fastReturn = fastReturnActivation(state, s, time)
-  -- Priority only resolves multiple positive candidates; it vetoes none.
-  return experimental or native or fastReturn
+  local experimental = experimentalIsInClashActivation(state, s); local native = nativeActivation(state, s, time)
+  local fastReturn = fastReturnActivation(state, s, time); return experimental or native or fastReturn
 end
 local function evaluateCore(state, s, time, packet)
   if current ~= state then return end
   table.clear(state.gates)
-
-  -- Snapshot/history maintenance is shared data, never an activation veto.
-  if s and s.ball ~= state.ball then
-    state.ball, state.sequence, state.packetSnapshot, state.packetAt = s.ball, nil, nil, nil
-    clearEvidence(state)
-  end
+  if s and s.ball ~= state.ball then state.ball, state.sequence, state.packetSnapshot, state.packetAt = s.ball, nil, nil, nil; clearEvidence(state) end
   local order = sequenceOrder(state, s and s.syncSequence)
   if order == "old" or order == "invalid" then return end
   if order == "new" then state.sequence = s.syncSequence end
   if packet and s then state.packetSnapshot, state.packetAt = table.clone(s), time end
   if s then observeTarget(state, s, time, packet) end
-
   if state.active then
-    -- The deactivation pipeline runs only for an active session.
-    -- It never influences which future activation condition is eligible.
     local stop = deactivationGate(state, s, time)
     if stop then deactivate(state, stop, time); return end
-
-    -- A lifecycle/snapshot issue can pause sending, not stop the session.
     local gate = lifecycleGate(state, s)
-    if gate then
-      state.lastGate, state.gates.common = gate, gate
-      return
-    end
-    state.lastGate, state.gates.common = "active", nil
-    observeStats(state, s, time, packet)
+    if gate then state.lastGate, state.gates.common = gate, gate; return end
+    state.lastGate, state.gates.common = "active", nil; observeStats(state, s, time, packet)
     return
   end
-
-  -- Activation is evaluated even when a deactivation condition would be true.
-  -- No deactivation gate or cooldown-based stop veto is consulted here.
   local candidate = chooseActivation(state, s, time)
-  if candidate then
-    activate(state, candidate, s, time)
-  else
-    state.lastGate = state.gates.isInClash or state.gates.native or state.gates.fastReturn
-  end
+  if candidate then activate(state, candidate, s, time) else state.lastGate = state.gates.isInClash or state.gates.native or state.gates.fastReturn end
   observeStats(state, s, time, packet)
 end
 evaluate = function(state, s, time, packet)
