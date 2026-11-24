@@ -28,7 +28,7 @@ loaded.combatloop.pulse(1 / 60)
 assert(bridge.mode ~= "universal")
 assert(keys.AutoParry and keys.AntiLagRemoveSwordSounds and ids.assists)
 assert(loaded.autojump and loaded.camera)
-assert(#loaded.uipages.forGame(loaded.uiconfig.getPages(loaded.hubapi.getUIConfig()), true) == 8)
+assert(#loaded.uipages.forGame(loaded.uiconfig.getPages(loaded.hubapi.getUIConfig()), true) == 9)
 ''')
 
     def test_internal_operation_categories(self):

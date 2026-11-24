@@ -117,7 +117,7 @@ local __part_uinotificationview = (function()
         local card = layer:FindFirstChild("Notification_" .. key)
         if card then
           safeCancel(state.tweens[key])
-          local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46)
+          local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 54)
           state.tweens[key] = twPlay(card, animated and "control" or 0, { Position = target, GroupTransparency = 0 })
         end
       end
@@ -204,8 +204,10 @@ local __part_uinotificationview = (function()
           Position = UDim2.fromOffset(10, 0),
           BackgroundTransparency = 1,
           TextColor3 = Color3.new(1, 1, 1),
-          TextSize = 13,
-          Font = Enum.Font.GothamBold,
+          TextSize = 11,
+          TextWrapped = true,
+          TextTruncate = Enum.TextTruncate.AtEnd,
+          Font = Enum.Font.GothamMedium,
           TextXAlignment = Enum.TextXAlignment.Center,
           TextYAlignment = Enum.TextYAlignment.Center,
           ZIndex = 101,
@@ -223,6 +225,9 @@ local __part_uinotificationview = (function()
         label.TextColor3 = Color3.new(1, 1, 1)
         label.RichText = false
         label.Text = tostring(message)
+        local width = math.max(100, math.min(320, context.viewport().X - 24))
+        card.Size = UDim2.fromOffset(width, 46)
+        card.ClipsDescendants = true
       end
       if duration == nil and safeKey ~= "dumper" then
         duration = 2.5
@@ -273,8 +278,10 @@ local __part_uinotificationview = (function()
           Position = UDim2.new(0, 8, 0, 0),
           BackgroundTransparency = 1,
           TextColor3 = Color3.new(1, 1, 1),
-          TextSize = 13,
-          Font = Enum.Font.GothamBold,
+          TextSize = 11,
+          TextWrapped = true,
+          TextTruncate = Enum.TextTruncate.AtEnd,
+          Font = Enum.Font.GothamMedium,
           TextXAlignment = Enum.TextXAlignment.Center,
           ZIndex = 201,
           Parent = context.refs.toastCard,
@@ -287,6 +294,8 @@ local __part_uinotificationview = (function()
       end
       if context.refs.toastLabel then
         context.refs.toastLabel.Text = tostring(message)
+        context.refs.toastCard.Size = UDim2.fromOffset(math.max(100, math.min(320, context.viewport().X - 24)), 46)
+        context.refs.toastCard.ClipsDescendants = true
       end
       context.refs.toastCard.Position = UDim2.new(0.5, 0, 1, 18)
       context.refs.toastCard.GroupTransparency = 1

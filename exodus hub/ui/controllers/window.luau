@@ -238,11 +238,11 @@ function Controller.create(context)
     LayoutOrder = 1,
     AutomaticSize = Enum.AutomaticSize.X,
     BackgroundTransparency = 1,
-    Text = ("%s | v%s"):format(Utils.name():gsub("Hub$", '<font color="#A855F7">Hub</font>'), Utils.version()),
+    Text = '<font color="#BBB8C2">Exodus</font> <font color="#9A80B2">Hub</font>' .. (context.hub.version and (" | v" .. context.hub.version) or ""),
     RichText = true,
     TextColor3 = C.text,
     TextSize = CONFIG.TITLE_TEXT_SIZE,
-    Font = Enum.Font.Sarpanch,
+    Font = Enum.Font.GothamBlack,
     TextXAlignment = Enum.TextXAlignment.Center,
     ZIndex = 7,
     Parent = titleGroup,
@@ -275,6 +275,7 @@ function Controller.create(context)
     Parent = context.refs.titleBar,
   })
   corner(context.refs.minimizeButton, 8)
+  stroke(context.refs.minimizeButton, C.border, 1)
   context.kit.icon(context.refs.minimizeButton, "minimize")
   trackConn(context.refs.minimizeButton.MouseEnter:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0 }) end))
   trackConn(context.refs.minimizeButton.MouseLeave:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0.3 }) end))
@@ -297,12 +298,29 @@ function Controller.create(context)
     Parent = context.refs.titleBar,
   })
   corner(settingsButton, 8)
+  stroke(settingsButton, C.border, 1)
   context.kit.icon(settingsButton, "settings")
+  local infoButton = inst("TextButton", {
+    Name = "HubInformationButton",
+    Size = UDim2.fromOffset(30, 30),
+    Position = UDim2.new(1, -PAD - 102, 0.5, -15),
+    BackgroundColor3 = C.btnDark,
+    BackgroundTransparency = 0.3,
+    Text = "i",
+    Font = Enum.Font.GothamBold,
+    TextColor3 = C.text,
+    TextSize = 16,
+    ZIndex = 9,
+    Parent = context.refs.titleBar,
+  })
+  corner(infoButton, 8)
+  stroke(infoButton, C.border, 1)
+  trackConn(infoButton.Activated:Connect(function() context.pages.toggle("information") end))
   local assistsButton = inst("TextButton", {
     Name = "HubAssistsButton",
     Visible = context.combatUI ~= false,
     Size = UDim2.fromOffset(30, 30),
-    Position = UDim2.new(1, -PAD - 102, 0.5, -15),
+    Position = UDim2.new(1, -PAD - 138, 0.5, -15),
     BackgroundColor3 = C.btnDark,
     BackgroundTransparency = 0.3,
     Text = "",
@@ -310,6 +328,7 @@ function Controller.create(context)
     Parent = context.refs.titleBar,
   })
   corner(assistsButton, 8)
+  stroke(assistsButton, C.border, 1)
   context.kit.icon(assistsButton, "assists")
   trackConn(assistsButton.Activated:Connect(function() context.pages.toggle("assists") end))
   context.refs.killBtn = inst("TextButton", {
@@ -325,6 +344,7 @@ function Controller.create(context)
     Parent = context.refs.configPanel,
   })
   corner(context.refs.killBtn, 6)
+  stroke(context.refs.killBtn, C.border, 1)
   trackConn(context.refs.killBtn.Activated:Connect(function() context.lifecycle.animateClose("close") end))
   context.refs.reloadButton = makeBtn("Reload", 0, 0, 124, 26, context.refs.configPanel, C.btnBlue)
   context.refs.reloadButton.Name = "ReloadHub"

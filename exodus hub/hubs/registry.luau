@@ -7,6 +7,8 @@ export type ModuleEntry = { name: string, path: string, hash: string? }
 export type HubProfile = {
   id: string,
   title: string,
+  version: string?,
+  developers: { string }?,
   author: string?,
   notification: string?,
   placeIds: { number }?,
@@ -34,7 +36,7 @@ function Registry.select(profiles: { HubProfile }, placeId: number, universeId: 
     id = "universal",
     title = "Universal",
     author = "deltapolinha_2915",
-    notification = "Exodus Hub · Universal carregado. Este jogo ainda não tem integração própria.",
+    notification = "Universal carregado.",
   }
 end
 function Registry.merge(common: { ModuleEntry }, profile: { ModuleEntry }?): { ModuleEntry }

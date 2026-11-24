@@ -64,6 +64,7 @@ local __part_uicontrols = (function()
         track.Position = UDim2.new(1, -62, 0, 8)
       end
       kit.corner(track, Theme.RADIUS.pill)
+      kit.stroke(track)
       local thumb = inst("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = C.text, ZIndex = 9 }, track)
       kit.corner(thumb, Theme.RADIUS.pill)
       local value = false
@@ -137,6 +138,17 @@ local __part_uidisplay = (function()
       end
       local label = text(handle.Root, definition.title or definition.text, { Size = UDim2.fromScale(1, 1), TextSize = TEXT.caption, TextColor3 = C.accent })
       function handle.setText(value) label.Text = tostring(value) end
+      return handle
+    end
+    function components.readout(parent, definition)
+      local handle = control(parent, definition, 54)
+      text(handle.Root, definition.title, { Position = UDim2.fromOffset(12, 5), Size = UDim2.new(1, -24, 0, 16), TextSize = 10, TextColor3 = C.subtext })
+      local value = text(
+        handle.Root,
+        "Carregando…",
+        { Position = UDim2.fromOffset(12, 23), Size = UDim2.new(1, -24, 0, 26), TextSize = 12, TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd }
+      )
+      function handle.setValue(nextValue) value.Text = tostring(nextValue or "Indisponível") end
       return handle
     end
     function components.progressBar(parent, definition)
@@ -257,6 +269,7 @@ local __part_uiselection = (function()
         ZIndex = 11,
       }, handle.Root)
       kit.corner(input)
+      kit.stroke(input)
       local function paint()
         local mode = read("SpamRateMode", "CPF")
         updateMode(mode)

@@ -88,7 +88,7 @@ function Pages.create(kit, parent, definitions, context)
   local width = T.PANEL_W - T.PAD * 2
   local height = T.PANEL_H - T.TITLE_H - 60
   local origin = UDim2.fromOffset(T.PAD, T.TITLE_H + T.PAD)
-  local registry, normal, rows, bindings = {}, {}, {}, {}
+  local registry, normal, rows, bindings, readouts = {}, {}, {}, {}, {}
   local active, returnId, generation = nil, nil, 0
   local tweens, transitioning = {}, false
   local alive = true
@@ -105,11 +105,8 @@ function Pages.create(kit, parent, definitions, context)
     )
   end
   local function stack(parent, name, row)
-    local root = inst(
-      row and "CanvasGroup" or "Frame",
-      { Name = name, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 6 },
-      parent
-    )
+    local root =
+      inst("Frame", { Name = name, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 6 }, parent)
     list(root, row and T.CARD_GAP or math.max(0, T.CARD_GAP - bleed * 2))
     if row then
       inst("UIPadding", { PaddingTop = UDim.new(0, bleed), PaddingBottom = UDim.new(0, bleed) }, root)
@@ -185,6 +182,9 @@ function Pages.create(kit, parent, definitions, context)
             local entry = { Root = row, handle = handle, definition = source, parentKey = source.parentKey }
             rows[#rows + 1] = entry
             page.rows[#page.rows + 1] = entry
+            if source.info then
+              readouts[source.info] = handle
+            end
             if source.key then
               keyed[source.key] = entry
               bindings[source.key] = handle
@@ -203,8 +203,7 @@ function Pages.create(kit, parent, definitions, context)
       local owner = keyed[entry.parentKey]
       assert(owner, "Visible child requires a visible parent: " .. entry.parentKey)
       if not owner.children then
-        owner.children = inst("CanvasGroup", {
-          GroupTransparency = 1,
+        owner.children = inst("Frame", {
           Name = "Children",
           Size = UDim2.new(1, -12, 0, 0),
           BackgroundTransparency = 1,
@@ -374,14 +373,14 @@ function Pages.create(kit, parent, definitions, context)
     if immediate then
       owner.children.Size = UDim2.new(1, -12, 0, height)
       owner.children.Visible = expanded
-      owner.children.GroupTransparency = expanded and 0 or 1
+      motion.fade(owner.children, 0, expanded and 0 or 1)
       owner.childContent.Position = UDim2.fromOffset(0, 0)
       return
     end
     if expanded then
       if not owner.children.Visible then
         owner.childContent.Position = UDim2.fromOffset(0, -14)
-        owner.children.GroupTransparency = 1
+        motion.fade(owner.children, 0, 1)
       end
       owner.children.Visible = true
     end
@@ -394,7 +393,8 @@ function Pages.create(kit, parent, definitions, context)
       owner.children.Visible = expanded
       owner.disclosureTween, owner.disclosureSlide = nil, nil
     end
-    owner.disclosureTween = motion.play(owner.children, "control", { Size = UDim2.new(1, -12, 0, height), GroupTransparency = expanded and 0 or 1 }, finish)
+    motion.fade(owner.children, "control", expanded and 0 or 1)
+    owner.disclosureTween = motion.play(owner.children, "control", { Size = UDim2.new(1, -12, 0, height) }, finish)
     if not owner.disclosureTween then
       finish()
     else
@@ -420,7 +420,7 @@ function Pages.create(kit, parent, definitions, context)
         if visible then
           entry.Root.Visible = true
         end
-        motion.play(entry.Root, "control", { GroupTransparency = visible and 0 or 1 }, function()
+        motion.fade(entry.Root, "control", visible and 0 or 1, function()
           if alive and revision == entry.visibilityRevision then
             entry.Root.Visible = visible
           end
@@ -437,6 +437,7 @@ function Pages.create(kit, parent, definitions, context)
   end
   function controller.get(id) return registry[id] end
   function controller.getControl(key) return bindings[key] end
+  function controller.getReadout(key) return readouts[key] end
   function controller.snapshot()
     local snapshot = { page = active, returnId = returnId, scroll = {} }
     for id, page in pairs(registry) do

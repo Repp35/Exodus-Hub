@@ -119,6 +119,7 @@ for name in pairs(loaded) do visit(name) end
 order[#order + 1] = "character"
 loaded.ui.setup = function(deps) assert(type(deps.Controls.onReload) == "function"); return true end
 local ok, runtime = loaded.bootstrap.start(loaded, order, {}, profile, {
+  entryURL = function() return "https://raw.githubusercontent.com/Repp35/Exodus-Hub/main/exodus%20hub/loader.luau" end,
   reload = function() return true end, latest = function() return "revision" end,
   prepare = function() return function() end end, report = function(_, message) error(message) end,
 })

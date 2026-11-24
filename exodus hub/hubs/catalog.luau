@@ -10,7 +10,7 @@ return {
     author = "deltapolinha_2915",
     placeIds = { 12979690461 },
     universeIds = { 4538598064 },
-    notification = "Exodus Hub · Phantom Ball carregado.",
+    notification = "Phantom Ball carregado.",
     checkPermissions = true,
     permissions = true,
     permissionPolicy = {
@@ -60,6 +60,8 @@ return {
       },
     },
     dataFolder = "Exodus Hub",
+    version = "3.3.0",
+    developers = { "deltapolinha_2915" },
     modules = {
       { name = "autodark", path = "hubs/phantom-ball/combat/auto_dark.luau", hash = "a7f016ffd1e29127967c77184933a20bb855f6f0b72a65013f88148e7cb2a2a4" },
       { name = "autodash", path = "hubs/phantom-ball/combat/auto_dash.luau", hash = "4da66199ac6fd777c0571e77ca1c5287e9e4f1d1d8110365193e4605162316c4" },
@@ -98,7 +100,7 @@ return {
       { name = "targeting", path = "hubs/phantom-ball/game/targeting.luau", hash = "2901a56c8ff24f7531df12a307fbcf3e9088b7b072faf3a6d7c3eadd7016b14d" },
       { name = "telemetry", path = "hubs/phantom-ball/game/telemetry.luau", hash = "d07c2ff8a0066a749198b673ede601f9e9031554cca402222526bae54779f4d0" },
       { name = "gameruntime", path = "hubs/phantom-ball/game_runtime.luau", hash = "de6166ccd8475b924f28649dc1e26054cbf84cd3d4af0167359484ff996b7162" },
-      { name = "gameui", path = "hubs/phantom-ball/game_ui.luau", hash = "ecb08f928b28bf440aff8ddab2b1d833c9ddea8deba5b300f4b20589029c885c" },
+      { name = "gameui", path = "hubs/phantom-ball/game_ui.luau", hash = "6680e550787da1822471b4ae5bba0530efd0e5c7ac4269b28a3fb3047ada8f64" },
       {
         name = "clashstats",
         path = "hubs/phantom-ball/prediction/clash_stats.luau",

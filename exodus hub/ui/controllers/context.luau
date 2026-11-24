@@ -275,6 +275,7 @@ function Context.create(deps, deviceDesktop)
       Parent = parent,
     })
     corner(b, 8)
+    stroke(b, C.border, 1)
     return b
   end
   context.inst = inst

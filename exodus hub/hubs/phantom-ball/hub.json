@@ -8,7 +8,7 @@
   "universeIds": [
     4538598064
   ],
-  "notification": "Exodus Hub · Phantom Ball carregado.",
+  "notification": "Phantom Ball carregado.",
   "checkPermissions": true,
   "permissions": true,
   "permissionPolicy": {
@@ -117,5 +117,9 @@
       "tools": "tooling.execute"
     }
   },
-  "dataFolder": "Exodus Hub"
+  "dataFolder": "Exodus Hub",
+  "version": "3.3.0",
+  "developers": [
+    "deltapolinha_2915"
+  ]
 }

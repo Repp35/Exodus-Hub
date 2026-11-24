@@ -125,6 +125,7 @@ function ExodusUI.setup(deps, preview)
     abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
     onNavigate = context.window.updateNavigation,
   })
+  deps.Details.create(context)
   context.floating.refreshAbilities()
   context.updateResponsiveScale()
   deps.Input.create(context)
@@ -179,6 +180,8 @@ ExodusUI.__contract = {
     Input = "uiinput",
     Assists = "uiassists",
     Lifecycle = "uilifecycle",
+    Information = "information",
+    Details = "uidetails",
   },
   requiresMethods = {
     GameContext = { "getProfile" },
@@ -223,6 +226,8 @@ ExodusUI.__contract = {
     Input = { "create" },
     Assists = { "create" },
     Lifecycle = { "create" },
+    Information = { "snapshot" },
+    Details = { "create" },
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },

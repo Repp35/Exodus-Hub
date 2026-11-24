@@ -25,7 +25,12 @@ function Persistence.create(deps)
     end
     return true, CONFIG.FOLDER
   end
-  local function isPersistentConfigKey(key) return type(key) == "string" and key:sub(1, #CONFIG.SESSION_ONLY_PREFIX) ~= CONFIG.SESSION_ONLY_PREFIX end
+  local function isPersistentConfigKey(key)
+    if key == "AutoExecuteOnJoin" or key == "AutoExecuteAllGames" then
+      return false
+    end
+    return type(key) == "string" and key:sub(1, #CONFIG.SESSION_ONLY_PREFIX) ~= CONFIG.SESSION_ONLY_PREFIX
+  end
   local function serializeConfig(config)
     local data = {}
     for key, value in pairs(config) do

@@ -150,6 +150,31 @@ assert(lighting.GlobalShadows and emitter.Enabled and not controller:GetStatus()
 for _, part in ipairs(parts) do assert(part.CastShadow) end
 ''', {})
 
+    def test_information_page_is_readonly_and_versions_are_independent(self):
+        binary = os.environ.get('LUAU_BIN') or shutil.which('luau')
+        if not binary: self.skipTest('Luau required')
+        spec = importlib.util.spec_from_file_location('runtime_information', ROOT / 'indeed/checks/runtime_api.py')
+        helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+        helper.smoke(binary, hub_id='phantom-ball', assertions='''
+assert(loaded.utils.version() == "2.0.0")
+assert(loaded.gamecontext.getProfile().version == "3.3.0")
+local page
+for _, value in ipairs(pages) do if value.id == "information" then page = value end end
+assert(page and page.utility)
+local count = 0
+for _, section in ipairs(page.sections) do
+  for _, item in ipairs(section.components) do
+    assert(item.kind == "readout" and item.info and not item.key and not item.action)
+    count += 1
+  end
+end
+assert(count >= 20)
+assert(keys.AutoExecuteOnJoin and keys.AutoExecuteAllGames and keys.AutoExecute)
+local snapshot = loaded.permissions.resolve("ui", loaded).Information.snapshot()
+assert(snapshot.country == "Indisponível" and snapshot.city == "Indisponível")
+assert(not pcall(function() snapshot.hubVersion = "wrong" end))
+''')
+
     def test_bootstrap_initializes_and_stops_both_profiles(self):
         binary = os.environ.get('LUAU_BIN') or shutil.which('luau')
         if not binary:

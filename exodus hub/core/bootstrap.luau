@@ -95,6 +95,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
   local ok, err = loaded.ui.setup(dependencies)
   assert(ok == true, tostring(err))
   loaded.updates.start(transport)
+  loaded.autoexecute.start(transport)
   return true, runtime
 end
 Bootstrap.__contract = { provides = { "setup", "start" }, requires = {} }

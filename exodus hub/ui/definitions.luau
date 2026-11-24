@@ -9,6 +9,64 @@ local UIConfig = {}
 local CONFIG = {
   PAGES = {
     {
+      id = "information",
+      title = "Informações",
+      columns = 1,
+      width = 360,
+      utility = true,
+      sections = {
+        {
+          title = "Sessão",
+          components = {
+            { kind = "readout", title = "FPS", info = "fps" },
+            { kind = "readout", title = "Ping", info = "ping" },
+            { kind = "readout", title = "Tempo no hub", info = "uptime" },
+            { kind = "readout", title = "Executor", info = "executor" },
+            { kind = "readout", title = "Auto Execute", info = "autoexecute" },
+            { kind = "readout", title = "Roblox", info = "clientVersion" },
+          },
+        },
+        {
+          title = "Jogador",
+          components = {
+            { kind = "readout", title = "Usuário", info = "username" },
+            { kind = "readout", title = "Nome de exibição", info = "displayName" },
+            { kind = "readout", title = "User ID", info = "userId" },
+          },
+        },
+        {
+          title = "Jogo",
+          components = {
+            { kind = "readout", title = "Nome", info = "game" },
+            { kind = "readout", title = "Criador", info = "creator" },
+            { kind = "readout", title = "Grupo", info = "group" },
+            { kind = "readout", title = "Place ID", info = "placeId" },
+            { kind = "readout", title = "Universe ID", info = "universeId" },
+            { kind = "readout", title = "Versão do place", info = "placeVersion" },
+          },
+        },
+        {
+          title = "Servidor",
+          components = {
+            { kind = "readout", title = "Jogadores", info = "population" },
+            { kind = "readout", title = "Região", info = "region" },
+            { kind = "readout", title = "País", info = "country" },
+            { kind = "readout", title = "Cidade", info = "city" },
+            { kind = "readout", title = "Job ID", info = "serverId" },
+          },
+        },
+        {
+          title = "Exodus",
+          components = {
+            { kind = "readout", title = "Versão do hub", info = "hubVersion" },
+            { kind = "readout", title = "Versão da integração", info = "gameVersion" },
+            { kind = "readout", title = "Desenvolvedores do hub", info = "hubDevelopers" },
+            { kind = "readout", title = "Desenvolvedores da integração", info = "gameDevelopers" },
+          },
+        },
+      },
+    },
+    {
       id = "antilag",
       title = "Anti Lag",
       columns = 1,
@@ -21,7 +79,7 @@ local CONFIG = {
             {
               kind = "slider",
               title = "Distância de renderização",
-              description = "Define o raio em studs ao redor do personagem.",
+              description = "Limita a renderização em studs.",
               key = "AntiLagRenderDistance",
               parentKey = "AntiLagEnabled",
               min = 300,
@@ -46,7 +104,7 @@ local CONFIG = {
             {
               kind = "click",
               title = "Dumper",
-              description = "Salva scripts e informações acessíveis do jogo.",
+              description = "Salva scripts acessíveis. Depende do executor.",
               action = "dumper",
             },
           },
@@ -60,23 +118,23 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Infinite Zoom",
-              description = "Remove o limite de distância da câmera.",
+              description = "Libera o zoom da câmera.",
               key = "UniversalInfiniteZoom",
               feature = "InfiniteZoom",
             },
             {
               kind = "toggle",
               title = "Infinite Jump",
-              description = "Permite pular no ar.",
+              description = "Pula no ar.",
               key = "UniversalInfiniteJump",
               shortcutKey = "InfiniteJumpKeybind",
               feature = "InfiniteJump",
             },
-            { kind = "toggle", title = "Fly", description = "Permite voar livremente.", key = "UniversalFly", shortcutKey = "FlyKeybind", feature = "Fly" },
+            { kind = "toggle", title = "Fly", description = "Permite voar.", key = "UniversalFly", shortcutKey = "FlyKeybind", feature = "Fly" },
             {
               kind = "scroll",
               title = "Fly Speed",
-              description = "Multiplicador de voo; 1x equivale a 50 studs/s.",
+              description = "1x = 50 studs/s.",
               key = "UniversalFlySpeed",
               feature = "Fly",
               parentKey = "UniversalFly",
@@ -88,7 +146,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Speed",
-              description = "Ativa a velocidade personalizada.",
+              description = "Usa a velocidade definida abaixo.",
               key = "UniversalSpeedEnabled",
               desktopExpanded = true,
               shortcutKey = "SpeedKeybind",
@@ -97,7 +155,7 @@ local CONFIG = {
             {
               kind = "scroll",
               title = "Speed",
-              description = "Ajusta a velocidade do personagem.",
+              description = "Define a velocidade.",
               key = "UniversalSpeed",
               feature = "Speed",
               parentKey = "UniversalSpeedEnabled",
@@ -109,7 +167,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Gravity",
-              description = "Ativa a gravidade personalizada.",
+              description = "Usa a gravidade definida abaixo.",
               key = "UniversalGravityEnabled",
               shortcutKey = "GravityKeybind",
               feature = "Gravity",
@@ -117,7 +175,7 @@ local CONFIG = {
             {
               kind = "scroll",
               title = "Gravity",
-              description = "Ajusta a gravidade do personagem.",
+              description = "Define a gravidade.",
               key = "UniversalGravity",
               feature = "Gravity",
               parentKey = "UniversalGravityEnabled",
@@ -129,7 +187,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Invisicam",
-              description = "Remove o personagem da visão da câmera.",
+              description = "Evita que o personagem cubra a câmera.",
               key = "UniversalInvisicam",
               shortcutKey = "InvisicamKeybind",
               feature = "Invisicam",
@@ -137,7 +195,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Noclip",
-              description = "Permite atravessar objetos.",
+              description = "Atravessa objetos.",
               key = "UniversalNoclip",
               shortcutKey = "NoclipKeybind",
               feature = "Noclip",
@@ -155,12 +213,20 @@ local CONFIG = {
       sections = {
         {
           components = {
-            { kind = "toggle", title = "Auto Execute", key = "AutoExecute", description = "Atualiza quando o jogo estiver em um estado seguro." },
+            { kind = "toggle", title = "Auto Execute", key = "AutoExecuteOnJoin", description = "Executa ao entrar. Depende do executor." },
+            {
+              kind = "toggle",
+              title = "Todos os jogos",
+              key = "AutoExecuteAllGames",
+              parentKey = "AutoExecuteOnJoin",
+              description = "Off: só neste jogo. On: todos.",
+            },
+            { kind = "toggle", title = "Atualizar automaticamente", key = "AutoExecute", description = "Instala novas versões em um estado seguro." },
             { kind = "toggle", title = "System Notifications", key = "DesktopNotifications", desktopOnly = true },
             {
               kind = "toggle",
               title = "Shortcut Notifications",
-              description = "Avisa ao alternar funções por atalho. Manual Spam e Up Dash ficam silenciosos.",
+              description = "Avisa ao usar atalhos.",
               key = "DesktopShortcutNotifications",
               parentKey = "DesktopNotifications",
               desktopOnly = true,
@@ -169,13 +235,13 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Modo PC",
-              description = "Pré-visualiza a interface de PC. Desative para voltar ao modo automático.",
+              description = "Usa a interface de PC.",
               key = "ForcePCUI",
               desktopExpanded = true,
             },
-            { kind = "button", title = "Resetar personagem", description = "Reinicia seu personagem na partida.", action = "resetCharacter" },
-            { kind = "button", title = "Rejoin", description = "Reconecta ao servidor atual.", action = "rejoin" },
-            { kind = "button", title = "Server Hop", description = "Busca vagas com ping informado de até 100 ms; prioriza o menor.", action = "serverHop" },
+            { kind = "button", title = "Resetar personagem", description = "Reinicia o personagem.", action = "resetCharacter" },
+            { kind = "button", title = "Rejoin", description = "Volta ao mesmo servidor.", action = "rejoin" },
+            { kind = "button", title = "Server Hop", description = "Busca outro servidor com ping até 100 ms.", action = "serverHop" },
             { kind = "button", title = "Reset settings", action = "resetSettings" },
           },
         },

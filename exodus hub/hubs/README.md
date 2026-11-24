@@ -36,9 +36,9 @@ adaptador consumido pela base. Todos os campos são opcionais:
 - `getJumpButton`: controle nativo adicional de pulo, quando necessário.
 - Métodos de habilidades e adaptação visual usados pela integração.
 
-O Auto Execute consulta a revisão a cada 120 segundos, prepara os arquivos e
+A atualização automática consulta a revisão a cada 120 segundos, prepara os arquivos e
 aguarda 0,4 segundo contínuo sem bloqueios antes de substituir a sessão. Uma
-falha na regra bloqueia a atualização. Desativar Auto Execute cancela uma troca
+falha na regra bloqueia a atualização. Desativar a atualização automática cancela uma troca
 pendente. O botão de atualização e uma nova execução do loadstring forçam a troca.
 
 As regras de Mini UI complementam a escolha do usuário sem salvar alterações:
@@ -52,3 +52,7 @@ Depois de adicionar arquivos, gere os catálogos com os comandos de
 
 Testes ficam em `indeed/tests/`; diagnósticos, em `indeed/diagnostics/`.
 Use o Phantom Ball como referência para uma integração completa.
+
+A versão da integração fica em `hub.json`, no campo `version`. `developers` lista
+seus responsáveis. A versão da base fica separada em `core/session.luau`.
+A execução ao entrar é independente da atualização; veja [Auto Execute](../../docs/auto-execute.md).

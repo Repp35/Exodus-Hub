@@ -203,6 +203,46 @@ function Runtime.motion(scope, reducedMotion)
     tween:Play()
     return tween
   end
+  local faded = setmetatable({}, { __mode = "k" })
+  function motion.fade(root, preset, alpha, onComplete)
+    local objects = root:GetDescendants()
+    table.insert(objects, 1, root)
+    local rootTween
+    for _, object in ipairs(objects) do
+      local fields = {}
+      if object:IsA("GuiObject") then
+        fields[#fields + 1] = "BackgroundTransparency"
+      end
+      if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+        fields[#fields + 1] = "TextTransparency"
+      end
+      if object:IsA("ImageLabel") or object:IsA("ImageButton") then
+        fields[#fields + 1] = "ImageTransparency"
+      end
+      if object:IsA("UIStroke") then
+        fields[#fields + 1] = "Transparency"
+      end
+      if object:IsA("ScrollingFrame") then
+        fields[#fields + 1] = "ScrollBarImageTransparency"
+      end
+      local saved = faded[object] or {}
+      faded[object] = saved
+      local goals = {}
+      for _, field in ipairs(fields) do
+        if saved[field] == nil then
+          saved[field] = object[field]
+        end
+        goals[field] = saved[field] + (1 - saved[field]) * alpha
+      end
+      if next(goals) then
+        local tween = motion.play(object, preset, goals, object == root and onComplete or nil)
+        if object == root then
+          rootTween = tween
+        end
+      end
+    end
+    return rootTween
+  end
   function motion.group(object, preset, goals, onComplete)
     if paused or not scope.alive or not object or not object.Parent then
       return nil

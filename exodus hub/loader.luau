@@ -41,7 +41,7 @@ local CONFIG = {
     HUB_LOADED_DURATION = 5,
     DISPLAY_ORDER = 2147483647,
     WIDTH = 320,
-    HEIGHT = 38,
+    HEIGHT = 46,
     BOTTOM_OFFSET = 24,
     BACKGROUND_TRANSPARENCY = 0.12,
     CRITICAL_COLOR = { 153, 27, 27 },
@@ -49,8 +49,8 @@ local CONFIG = {
     TEXT_COLOR = { 255, 255, 255 },
     CORNER_RADIUS = 10,
     TEXT_PADDING = 10,
-    TEXT_SIZE = 13,
-    TEXT_FONT = "GothamBold",
+    TEXT_SIZE = 11,
+    TEXT_FONT = "GothamMedium",
     CARD_ZINDEX = 100,
     TEXT_ZINDEX = 101,
   },
@@ -120,6 +120,8 @@ local function fallbackNotification(message, key, kind, duration)
     label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR))
     label.TextSize = CONFIG.NOTIFICATIONS.TEXT_SIZE
     label.Font = Enum.Font[CONFIG.NOTIFICATIONS.TEXT_FONT]
+    label.TextWrapped = true
+    label.TextTruncate = Enum.TextTruncate.AtEnd
     label.TextXAlignment = Enum.TextXAlignment.Center
     label.Parent = card
   end
@@ -806,6 +808,9 @@ local function startInternal()
   end
   activeLoaded = loaded
   local uiReady, runtime = loaded.bootstrap.start(loaded, MODULE_ORDER, urls, selectedHub, {
+    entryURL = function()
+      return BASE_URL .. (CONFIG.BRANCH or (repositoryMetadata and repositoryMetadata.default_branch) or "main") .. "/" .. PROJECT_PATH .. CONFIG.ENTRY_POINT
+    end,
     reload = reloadLatest,
     latest = resolveLatestRevision,
     prepare = function(revision) return loadModule("reload loader", CONFIG.ENTRY_POINT, BASE_URL .. revision .. "/" .. PROJECT_PATH .. CONFIG.ENTRY_POINT) end,

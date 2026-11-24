@@ -406,6 +406,9 @@ function UIKit.create(options)
     end
     local root = inst("TextButton", props, parent)
     kit.corner(root)
+    if props.BackgroundTransparency ~= 1 then
+      kit.stroke(root)
+    end
     return root
   end
   local function hitbox(handle, callback, height)
@@ -433,6 +436,9 @@ function UIKit.create(options)
       if options.notify then
         options.notify("Unable to update " .. tostring(definition.title or definition.key), true)
       end
+      return false
+    end
+    if definition.key and options.read and options.read(definition.key) ~= value then
       return false
     end
     local result
