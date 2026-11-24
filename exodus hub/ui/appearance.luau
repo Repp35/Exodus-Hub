@@ -7,23 +7,23 @@ function Appearance.setup() return true end
 function Appearance.borderColor(background, light)
   local hue, saturation, value = background:ToHSV()
   if saturation < 0.1 then
-    hue, saturation = 0.72, 0.58
+    hue, saturation = 0.69, 0.50
   end
-  saturation = math.clamp(saturation + 0.08, 0.58, 0.86)
-  local brightness = value > 0.72 and value * 0.68 or math.clamp(value + 0.38, 0.56, 0.72)
+  saturation = math.clamp(saturation, 0.45, 0.80)
+  local brightness = value > 0.72 and value * 0.70 or math.clamp(value + 0.14, 0.25, 0.55)
   return Color3.fromHSV(hue, saturation, brightness)
 end
 function Appearance.interactionColor(background, pressed)
   local hue, saturation, value = Appearance.borderColor(background):ToHSV()
-  return Color3.fromHSV(hue, saturation, math.min(0.88, value + (pressed and 0.19 or 0.12)))
+  return Color3.fromHSV(hue, saturation, math.min(0.72, value + (pressed and 0.09 or 0.05)))
 end
 function Appearance.borderGradient(background, strength)
   local hue, saturation = background:ToHSV()
   local color = strength and strength > 0 and Appearance.interactionColor(background, strength > 1) or Appearance.borderColor(background)
   local _, tint, value = color:ToHSV()
-  local purple = saturation < 0.1 or (hue >= 0.55 and hue <= 0.82)
-  local first = purple and 0.70 or ((hue - 0.015) % 1)
-  local last = purple and 0.90 or ((hue + 0.015) % 1)
+  if saturation < 0.1 then hue = 0.69 end
+  local first = (hue - 0.025) % 1
+  local last = (hue + 0.025) % 1
   return ColorSequence.new(Color3.fromHSV(first, tint, value), Color3.fromHSV(last, tint, value))
 end
 local function instance(class, properties, parent)
