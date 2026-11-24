@@ -289,7 +289,7 @@ function Controller.create(context)
     Parent = context.refs.screenGui,
   })
   corner(context.refs.clashBall, 999)
-  stroke(context.refs.clashBall, Color3.new(0, 0, 0), 2)
+  stroke(context.refs.clashBall, nil, 2)
   UIState.clashBallOn = config.AutoSpam or false
   context.refs.clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
   context.refs.clashBall.TextSize = UIState.clashBallOn and 18 or 16
@@ -311,7 +311,7 @@ function Controller.create(context)
     Parent = context.refs.screenGui,
   })
   corner(context.refs.parryBall, 999)
-  stroke(context.refs.parryBall, Color3.new(0, 0, 0), 2)
+  stroke(context.refs.parryBall, nil, 2)
   paintParryBall(config.AutoParry == true)
   local isParryDragging = makeDraggable(context.refs.parryBall, context.refs.parryBall, function()
     setConfigValue("ParryBallX", context.refs.parryBall.Position.X.Offset)
@@ -350,7 +350,7 @@ function Controller.create(context)
     Parent = context.refs.screenGui,
   })
   corner(context.refs.darkBall, 999)
-  stroke(context.refs.darkBall, Color3.new(0, 0, 0), 2)
+  stroke(context.refs.darkBall, nil, 2)
   paintDarkBall(config.AutoDark == true)
   local isDarkDragging = makeDraggable(context.refs.darkBall, context.refs.darkBall, function()
     setConfigValue("DarkBallX", context.refs.darkBall.Position.X.Offset)
@@ -379,7 +379,7 @@ function Controller.create(context)
       Parent = context.refs.screenGui,
     })
     corner(ball, 999)
-    stroke(ball, Color3.new(0, 0, 0), 2)
+    stroke(ball, nil, 2)
     local dragging = makeDraggable(ball, ball, function()
       setConfigValue(xKey, ball.Position.X.Offset)
       setConfigValue(yKey, ball.Position.Y.Offset)
@@ -438,7 +438,7 @@ function Controller.create(context)
     }),
     18
   )
-  stroke(context.refs.miniGui, C.accent, 1.5)
+  stroke(context.refs.miniGui, nil, 1.5)
   local miniTitleBar = inst("Frame", {
     Size = UDim2.new(1, 0, 0.22, 0),
     BackgroundColor3 = Color3.fromRGB(20, 20, 46),

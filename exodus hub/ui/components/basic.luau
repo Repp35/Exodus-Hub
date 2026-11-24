@@ -141,14 +141,39 @@ local __part_uidisplay = (function()
       return handle
     end
     function components.readout(parent, definition)
-      local handle = control(parent, definition, 54)
-      text(handle.Root, definition.title, { Position = UDim2.fromOffset(12, 5), Size = UDim2.new(1, -24, 0, 16), TextSize = 10, TextColor3 = C.subtext })
-      local value = text(
-        handle.Root,
-        "Carregando…",
-        { Position = UDim2.fromOffset(12, 23), Size = UDim2.new(1, -24, 0, 26), TextSize = 12, TextWrapped = true, TextTruncate = Enum.TextTruncate.AtEnd }
-      )
-      function handle.setValue(nextValue) value.Text = tostring(nextValue or "Indisponível") end
+      local handle = control(parent, definition, 40)
+      local value = text(handle.Root, "", {
+        Name = "Value",
+        Position = UDim2.fromOffset(12, 10),
+        Size = UDim2.new(1, -24, 0, 20),
+        TextSize = TEXT.body,
+        TextWrapped = true,
+        TextTruncate = Enum.TextTruncate.None,
+        TextYAlignment = Enum.TextYAlignment.Top,
+      })
+      local function resize()
+        local scale, ancestor = 1, handle.Root
+        while ancestor do
+          local transform = ancestor:FindFirstChildOfClass("UIScale")
+          if transform then
+            scale *= transform.Scale
+          end
+          ancestor = ancestor.Parent
+        end
+        local width = math.max(40, handle.Root.AbsoluteSize.X / math.max(0.01, scale) - 24)
+        local bounds = game:GetService("TextService"):GetTextSize(value.Text, value.TextSize, value.Font, Vector2.new(width, 100000))
+        local height = math.max(20, math.ceil(bounds.Y))
+        value.Size = UDim2.new(1, -24, 0, height)
+        handle.Root.Size = UDim2.new(1, -8, 0, height + 20)
+      end
+      function handle.setValue(nextValue)
+        local content = tostring(nextValue or "")
+        if value.Text ~= content then
+          value.Text = content
+          resize()
+        end
+      end
+      handle.scope.connect(handle.Root:GetPropertyChangedSignal("AbsoluteSize"), resize)
       return handle
     end
     function components.progressBar(parent, definition)

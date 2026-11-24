@@ -32,17 +32,13 @@ local CONFIG = {
     hold = Color3.fromRGB(236, 72, 153),
     inputBg = Color3.fromRGB(16, 16, 38),
   },
-  GRADIENT = {
-    Color3.fromRGB(178, 215, 255),
-    Color3.fromRGB(227, 198, 255),
-    Color3.fromRGB(178, 215, 255),
-  },
   PARTICLE_COLORS = {
     Color3.fromRGB(85, 90, 140),
     Color3.fromRGB(110, 95, 150),
     Color3.fromRGB(150, 95, 130),
     Color3.fromRGB(95, 130, 165),
   },
+  ICON = nil, -- Image URI; nil uses the title initial.
   BTN_SIZE = 56,
   CLASH_SIZE = 64,
   MINI_W = 112,
@@ -56,7 +52,6 @@ local CONFIG = {
   CARD_H = 48,
   RATE_CARD_H = 64,
   DRAG_THRESHOLD_SQ = 100,
-  TITLE_SIDE_MARGIN = 90,
   TITLE_SPACING = 7,
   TITLE_TEXT_SIZE = 16,
   AUTHOR_TEXT_SIZE = 14,

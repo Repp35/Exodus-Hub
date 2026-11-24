@@ -1,17 +1,18 @@
--- [[ session information ]]
+-- [[ read-only session information ]]
 --!optimize 2
 -- @modules information
 
 local Information = {}
-local utils, profile, autoexecute
-local scope
-local values = {}
-local function available(value)
-  if value == nil or tostring(value) == "" then
-    return "Indisponível"
+local utils, profile, location, scope
+local values, errors = {}, {}
+local function text(value)
+  if value == nil then
+    return nil
   end
-  return tostring(value)
+  local content = tostring(value)
+  return content:match("%S") and content or nil
 end
+local function finite(value) return type(value) == "number" and value == value and value >= 0 and value < math.huge end
 function Information.teardown()
   if scope then
     scope.destroy()
@@ -21,96 +22,180 @@ function Information.teardown()
 end
 function Information.setup(deps)
   Information.teardown()
-  utils, profile, autoexecute = deps.Utils, deps.GameContext.getProfile(), deps.AutoExecute
+  utils, profile, location = deps.Utils, deps.GameContext.getProfile(), deps.Location
   scope = deps.Lifetime.scope()
-  local owner = scope
-  local player = utils.getLocalPlayer()
-  values = {
-    username = player.Name,
-    displayName = player.DisplayName,
-    userId = player.UserId,
-    game = profile.title,
-    placeId = game.PlaceId,
-    universeId = game.GameId,
-    serverId = game.JobId,
-    placeVersion = game.PlaceVersion,
-    hubVersion = utils.version(),
-    gameVersion = profile.version or "Sem integração",
-    hubDevelopers = "deltapolinha_2915",
-    gameDevelopers = table.concat(profile.developers or { profile.author or "Indisponível" }, ", "),
-    creator = "Carregando…",
-    group = "Carregando…",
-    executor = "Indisponível",
-    clientVersion = "Indisponível",
-  }
+  local owner, player = scope, utils.getLocalPlayer()
+  values, errors = { username = player.Name, hubVersion = utils.version(), gameVersion = profile.version }, {}
+  local developers, seen = {}, {}
+  local function developer(name)
+    name = text(name)
+    if name and not seen[string.lower(name)] then
+      seen[string.lower(name)] = true
+      developers[#developers + 1] = name
+    end
+  end
+  developer(utils.author())
+  for _, name in ipairs(profile.developers or {}) do
+    developer(name)
+  end
+  values.developers = developers
   local environment = type(getgenv) == "function" and getgenv() or _G
   local identify = environment.identifyexecutor or environment.getexecutorname
   if type(identify) == "function" then
     local ok, name, build = pcall(identify)
-    if ok then
-      values.executor = available(name) .. (build and (" · " .. tostring(build)) or "")
+    if ok and text(name) then
+      values.executor = name .. (text(build) and (" " .. tostring(build)) or "")
     end
+  end
+  if not values.executor then
+    errors.executor = "Executor: identificação bloqueada."
   end
   local ok, client = pcall(function() return version() end)
   if ok then
-    values.clientVersion = client
+    values.clientVersion = text(client)
+  end
+  if not values.clientVersion then
+    errors.clientVersion = "Roblox: não foi possível obter a versão."
   end
   task.spawn(function()
-    local ok, info = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId, Enum.InfoType.Asset) end)
     if not owner.alive then
       return
     end
-    values.creator, values.group = "Indisponível", "Sem grupo"
-    if ok and type(info) == "table" then
-      values.game = info.Name or values.game
-      local creator = info.Creator or {}
-      values.creator = creator.Name or "Indisponível"
-      if creator.CreatorType == "Group" or creator.CreatorType == Enum.CreatorType.Group then
-        values.group = creator.Name or tostring(creator.CreatorTargetId or creator.Id)
-        local groupOk, group = pcall(function() return game:GetService("GroupService"):GetGroupInfoAsync(creator.CreatorTargetId or creator.Id) end)
-        if owner.alive and groupOk and type(group) == "table" and group.Owner then
-          values.creator = group.Owner.Name
-        end
+    local ok, info = pcall(function()
+      local marketplace = game:GetService("MarketplaceService")
+      return marketplace:GetProductInfoAsync(game.PlaceId, Enum.InfoType.Asset)
+    end)
+    if not ok then
+      ok, info = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId, Enum.InfoType.Asset) end)
+    end
+    if not owner.alive then
+      return
+    end
+    if not ok or type(info) ~= "table" then
+      ok, info = pcall(function()
+        local body = game:HttpGet("https://games.roblox.com/v1/games?universeIds=" .. tostring(game.GameId))
+        local data = game:GetService("HttpService"):JSONDecode(body).data[1]
+        assert(type(data) == "table", "Game metadata missing")
+        return { Name = data.name, Creator = { Name = data.creator.name, CreatorType = data.creator.type, CreatorTargetId = data.creator.id } }
+      end)
+      if not owner.alive then
+        return
       end
+    end
+    local creator = ok and type(info) == "table" and info.Creator or {}
+    local id = creator.CreatorTargetId or creator.Id or game.CreatorId
+    if ok and type(info) == "table" then
+      values.game, values.creator = text(info.Name), text(creator.Name)
+    end
+    local groupOwned = creator.CreatorType == "Group" or creator.CreatorType == Enum.CreatorType.Group or game.CreatorType == Enum.CreatorType.Group
+    if groupOwned then
+      values.group = values.creator
+      local groupOk, group = pcall(function() return game:GetService("GroupService"):GetGroupInfoAsync(id) end)
+      if not owner.alive then
+        return
+      end
+      if groupOk and type(group) == "table" then
+        values.group = text(group.Name) or values.group
+        values.creator = group.Owner and text(group.Owner.Name) or nil
+      else
+        values.creator = nil
+        errors.creator = "Criador: falha ao consultar o grupo."
+      end
+    elseif not values.creator and id and id > 0 then
+      local found, name = pcall(function() return utils.getPlayers():GetNameFromUserIdAsync(id) end)
+      if not owner.alive then
+        return
+      end
+      if found then
+        values.creator = text(name)
+      end
+    end
+    if values.game and values.creator then
+      errors.game = nil
+    else
+      errors.game = "Jogo: não foi possível obter todos os dados."
+    end
+  end)
+  task.delay(8, function()
+    if owner.alive and (not values.game or not values.creator) then
+      errors.game = "Jogo: a consulta não respondeu."
     end
   end)
   local elapsed, frames = 0, 0
-  scope.connect(utils.getRunService().Heartbeat, function(dt)
+  local run = utils.getRunService()
+  scope.connect(run.RenderStepped or run.Heartbeat, function(dt)
     elapsed += dt
     frames += 1
     if elapsed < 0.5 then
       return
     end
-    values.fps = string.format("%.0f FPS", frames / elapsed)
+    values.fps = string.format("%.0f", frames / elapsed)
     elapsed, frames = 0, 0
-    local ok, ping = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
-    values.ping = ok and type(ping) == "number" and string.format("%.0f ms", ping) or "Indisponível"
+    local pingOk, ping = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
+    if not pingOk or not finite(ping) then
+      pingOk, ping = pcall(function() return player:GetNetworkPing() * 1000 end)
+    end
+    if pingOk and finite(ping) then
+      values.ping, errors.ping = string.format("%.0f ms", ping), nil
+    else
+      values.ping, errors.ping = nil, "Ping: não foi possível medir."
+    end
   end)
   return true
 end
 function Information.snapshot()
-  local result = {}
-  for key, value in pairs(values) do
-    result[key] = available(value)
+  local result, issues = {}, table.clone(errors)
+  local server, locationError = location.snapshot()
+  if locationError then
+    issues.location = locationError
   end
-  result.autoexecute = autoexecute.getStatus().mode
-  local players, world = utils.getPlayers(), utils.getWorkspace()
-  result.population = string.format("%d / %s", #players:GetPlayers(), tostring(players.MaxPlayers or "—"))
-  result.country = available(world:GetAttribute("ServerCountry"))
-  result.city = available(world:GetAttribute("ServerCity"))
-  result.region = available(world:GetAttribute("ServerRegion"))
-  result.uptime = string.format("%.0f min", math.max(0, os.clock() - utils.getLifecycle().startedAt) / 60)
-  return result
+  local function section(key, fields, failures)
+    local lines = {}
+    for _, field in ipairs(fields) do
+      if text(field[2]) then
+        lines[#lines + 1] = field[1] .. ": " .. tostring(field[2])
+      end
+    end
+    for _, failure in ipairs(failures or {}) do
+      if issues[failure] then
+        lines[#lines + 1] = issues[failure]
+      end
+    end
+    if #lines > 0 then
+      result[key] = table.concat(lines, "\n")
+    end
+  end
+  section(
+    "session",
+    { { "Usuário", values.username }, { "Executor", values.executor }, { "FPS", values.fps }, { "Ping", values.ping } },
+    { "executor", "ping" }
+  )
+  section("game", { { "Nome", values.game }, { "Criador", values.creator }, { "Grupo", values.group } }, { "game", "creator" })
+  local players = utils.getPlayers()
+  section("server", {
+    { "País", server.country },
+    { "Cidade", server.city },
+    { "Jogadores", tostring(#players:GetPlayers()) .. (finite(players.MaxPlayers) and (" / " .. tostring(players.MaxPlayers)) or "") },
+  }, { "location" })
+  section("versions", { { "Hub", values.hubVersion }, { "Script do jogo", values.gameVersion }, { "Roblox", values.clientVersion } }, { "clientVersion" })
+  if #values.developers > 0 then
+    local names = {}
+    for _, name in ipairs(values.developers) do
+      names[#names + 1] = "Nome: " .. name
+    end
+    result.developers = table.concat(names, "\n")
+  end
+  return result, issues
 end
 Information.__contract = {
   access = { methods = { snapshot = "internal.read" } },
   provides = { "setup", "teardown", "snapshot" },
-  requires = { Utils = "utils", GameContext = "gamecontext", Lifetime = "lifetime", AutoExecute = "autoexecute" },
+  requires = { Utils = "utils", GameContext = "gamecontext", Lifetime = "lifetime", Location = "serverlocation" },
   requiresMethods = {
-    Utils = { "getLocalPlayer", "getRunService", "getPlayers", "getWorkspace", "getLifecycle", "version" },
+    Utils = { "getLocalPlayer", "getRunService", "getPlayers", "version", "author" },
     GameContext = { "getProfile" },
     Lifetime = { "scope" },
-    AutoExecute = { "getStatus" },
+    Location = { "snapshot" },
   },
 }
 return Information

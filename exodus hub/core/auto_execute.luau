@@ -141,10 +141,10 @@ function AutoExecute.setup(deps)
       if filesAvailable() then
         pcall(function() environment.writefile(PATH, game:GetService("HttpService"):JSONEncode(previous)) end)
       end
-      syncing = true
-      utils.setConfig({ AutoExecuteOnJoin = previous.allGames or previous.games[gameKey()] == true, AutoExecuteAllGames = previous.allGames })
-      syncing = false
     end
+    syncing = true
+    utils.setConfig({ AutoExecuteOnJoin = settings.allGames or settings.games[gameKey()] == true, AutoExecuteAllGames = settings.allGames })
+    syncing = false
   end)
   return true
 end

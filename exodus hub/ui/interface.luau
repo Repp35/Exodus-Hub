@@ -5,6 +5,7 @@
 -- module
 local ExodusUI = {}
 local active
+local configuredIcon, iconOverride
 
 -- configuration
 
@@ -70,6 +71,11 @@ function ExodusUI.setup(deps, preview)
   context.notifications.layer()
   context.floating = deps.Floating.create(context)
   context.window = deps.Window.create(context)
+  if iconOverride then
+    context.window.setIcon(configuredIcon)
+  else
+    context.window.setIcon(deps.Theme.tokens.ICON)
+  end
   deps.Telemetry.create(context)
   context.lifecycle = deps.Lifecycle.create(context)
   local function cleanup()
@@ -122,6 +128,10 @@ function ExodusUI.setup(deps, preview)
     read = deps.Utils.getConfigValue,
     resolve = context.actions.resolve,
     onComponent = context.actions.attach,
+    onError = function(name, reason, title)
+      deps.Utils.recordError("UI." .. tostring(name), reason)
+      context.notifications.toast("Falha ao carregar " .. tostring(title) .. ".", true)
+    end,
     abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
     onNavigate = context.window.updateNavigation,
   })
@@ -159,6 +169,21 @@ function ExodusUI.notify(...)
   end
 end
 
+function ExodusUI.setIcon(image)
+  assert(image == nil or type(image) == "string" or type(image) == "number", "Icon must be an asset id or image URI")
+  if type(image) == "number" or (type(image) == "string" and image:match("^%d+$")) then
+    image = "rbxassetid://" .. tostring(image)
+  end
+  if image == "" then
+    image = nil
+  end
+  configuredIcon, iconOverride = image, true
+  if active and active.scope.alive then
+    active.window.setIcon(image)
+  end
+  return true
+end
+
 -- contract
 ExodusUI.__contract = {
   requires = {
@@ -172,8 +197,10 @@ ExodusUI.__contract = {
     NotificationPolicy = "uinotifications",
     Runtime = "uiruntime",
     Theme = "uitheme",
+    Appearance = "uiappearance",
     Context = "uicontext",
     Window = "uiwindow",
+    Header = "uiheader",
     Floating = "uifloating",
     Notifications = "uinotificationview",
     Telemetry = "uitelemetry",
@@ -212,6 +239,7 @@ ExodusUI.__contract = {
       "areAbilitiesEnabled",
       "observeAbilityMode",
     },
+    Appearance = { "notification", "updateNotification" },
     UIConfig = { "getPages" },
     UIKit = { "create" },
     UIPages = { "create", "forGame" },
@@ -220,6 +248,7 @@ ExodusUI.__contract = {
     Runtime = { "scope", "motion", "isVisible", "mountLayer" },
     Context = { "create" },
     Window = { "create" },
+    Header = { "create" },
     Floating = { "create" },
     Notifications = { "create" },
     Telemetry = { "create" },
@@ -231,7 +260,7 @@ ExodusUI.__contract = {
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },
-  provides = { "setup", "notify" },
+  provides = { "setup", "notify", "setIcon" },
 }
 
 return ExodusUI

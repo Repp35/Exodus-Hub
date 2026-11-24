@@ -89,6 +89,7 @@ function Pages.create(kit, parent, definitions, context)
   local height = T.PANEL_H - T.TITLE_H - 60
   local origin = UDim2.fromOffset(T.PAD, T.TITLE_H + T.PAD)
   local registry, normal, rows, bindings, readouts = {}, {}, {}, {}, {}
+  local readoutRows, sections = {}, {}
   local active, returnId, generation = nil, nil, 0
   local tweens, transitioning = {}, false
   local alive = true
@@ -107,7 +108,7 @@ function Pages.create(kit, parent, definitions, context)
   local function stack(parent, name, row)
     local root =
       inst("Frame", { Name = name, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 6 }, parent)
-    list(root, row and T.CARD_GAP or math.max(0, T.CARD_GAP - bleed * 2))
+    list(root, row and math.max(0, T.CARD_GAP - bleed) or math.max(0, T.CARD_GAP - bleed * 2))
     if row then
       inst("UIPadding", { PaddingTop = UDim.new(0, bleed), PaddingBottom = UDim.new(0, bleed) }, root)
     end
@@ -157,13 +158,14 @@ function Pages.create(kit, parent, definitions, context)
         { PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 6), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, T.CARD_GAP) },
         scroll
       )
-      list(scroll)
+      list(scroll, math.max(0, T.CARD_GAP - bleed * 2))
       page.columns[column] = scroll
     end
     local keyed, pending = {}, {}
     for sectionIndex, section in ipairs(definition.sections) do
       if included(section) then
         local sectionRoot = stack(page.columns[section.column or 1], "Section" .. sectionIndex)
+        sections[sectionRoot] = {}
         sectionRoot.LayoutOrder = sectionIndex
         if section.title then
           local label = kit.Components.label(sectionRoot, { text = section.title })
@@ -172,18 +174,45 @@ function Pages.create(kit, parent, definitions, context)
         for index, source in ipairs(section.components or {}) do
           if included(source) then
             local options = table.clone(source)
-            if context.resolve then
-              options = context.resolve(options) or options
-            end
             local row = stack(sectionRoot, "Row_" .. tostring(source.key or source.action or index), true)
             row.LayoutOrder = index
-            local handle = kit.Components[options.kind](row, options)
+            local ok, handle = pcall(function()
+              if context.resolve then
+                options = context.resolve(options) or options
+              end
+              if options.kind ~= "readout" and options.kind ~= "divider" and options.kind ~= "progressBar" then
+                local caption = options.title or options.text
+                assert(type(caption) == "string" and caption:match("%S"), "Component text is missing")
+              end
+              local control = kit.Components[options.kind](row, options)
+              assert(control and control.Root and control.Root.Parent == row, "Component did not mount")
+              if options.kind ~= "readout" and (options.title or options.text) then
+                local title = control.Root:FindFirstChild("Title")
+                assert(not title or title.Text ~= "", "Component title is empty")
+              end
+              return control
+            end)
+            if not ok then
+              local reason = handle
+              for _, child in ipairs(row:GetChildren()) do
+                if child:IsA("GuiObject") then
+                  child:Destroy()
+                end
+              end
+              handle = kit.Components.readout(row, { kind = "readout" })
+              handle.setValue("Erro: " .. tostring(source.title or source.key or source.kind) .. " não carregou.")
+              if context.onError then
+                context.onError(source.key or source.info or source.kind, reason, source.title or source.text or "componente")
+              end
+            end
             handle.Root.LayoutOrder = 0
             local entry = { Root = row, handle = handle, definition = source, parentKey = source.parentKey }
+            sections[sectionRoot][#sections[sectionRoot] + 1] = entry
             rows[#rows + 1] = entry
             page.rows[#page.rows + 1] = entry
             if source.info then
               readouts[source.info] = handle
+              readoutRows[source.info] = entry
             end
             if source.key then
               keyed[source.key] = entry
@@ -192,7 +221,7 @@ function Pages.create(kit, parent, definitions, context)
             if source.parentKey then
               pending[#pending + 1] = entry
             end
-            if context.onComponent then
+            if ok and context.onComponent then
               context.onComponent(source, handle)
             end
           end
@@ -332,30 +361,35 @@ function Pages.create(kit, parent, definitions, context)
       controller.select(id)
     end
   end
-  refreshDisclosure = function(key, owner, immediate)
-    local expanded = context.read and context.read(key) == true or false
+  local function disclosureHeight(owner)
     local layout = owner.childContent:FindFirstChildOfClass("UIListLayout")
     local height, count = 0, 0
-    if expanded then
-      for _, entry in ipairs(rows) do
-        if entry.Root.Parent == owner.childContent and entry.Root.Visible then
-          local rowHeight = entry.handle.Root.Visible and entry.handle.Root.Size.Y.Offset or 0
-          if entry.children and entry.children.Visible and entry.children.Size.Y.Offset > 0 then
-            if rowHeight > 0 then
-              rowHeight += T.CARD_GAP
-            end
-            rowHeight += entry.children.Size.Y.Offset
-          end
+    for _, entry in ipairs(rows) do
+      if entry.Root.Parent == owner.childContent and entry.Root.Visible then
+        local rowHeight = entry.handle.Root.Visible and entry.handle.Root.Size.Y.Offset or 0
+        local nested = entry.children and context.read(entry.definition.key) == true and disclosureHeight(entry) or 0
+        if nested > 0 then
           if rowHeight > 0 then
-            if count > 0 then
-              height += layout.Padding.Offset
-            end
-            height += rowHeight + bleed * 2
-            count += 1
+            rowHeight += T.CARD_GAP - bleed
           end
+          rowHeight += nested
+        end
+        if rowHeight > 0 then
+          if count > 0 then
+            height += layout.Padding.Offset
+          end
+          height += rowHeight + bleed * (nested > 0 and 1 or 2)
+          count += 1
         end
       end
     end
+    return height
+  end
+  refreshDisclosure = function(key, owner, immediate)
+    local expanded = context.read and context.read(key) == true or false
+    local height = expanded and disclosureHeight(owner) or 0
+    local padding = owner.Root:FindFirstChildOfClass("UIPadding")
+    padding.PaddingBottom = UDim.new(0, expanded and 0 or bleed)
     if not immediate and owner.expanded == expanded and owner.targetHeight == height then
       return
     end
@@ -391,6 +425,9 @@ function Pages.create(kit, parent, definitions, context)
       end
       owner.children.Size = UDim2.new(1, -12, 0, height)
       owner.children.Visible = expanded
+      if expanded then
+        motion.fade(owner.children, 0, 0)
+      end
       owner.disclosureTween, owner.disclosureSlide = nil, nil
     end
     motion.fade(owner.children, "control", expanded and 0 or 1)
@@ -409,7 +446,7 @@ function Pages.create(kit, parent, definitions, context)
   function controller.refresh()
     for _, entry in ipairs(rows) do
       local definition = entry.definition
-      local visible = not definition.abilityOnly or not context.abilitiesEnabled or context.abilitiesEnabled()
+      local visible = entry.available ~= false and (not definition.abilityOnly or not context.abilitiesEnabled or context.abilitiesEnabled())
       if definition.visibleWhen and context.read then
         visible = visible and context.read(definition.visibleWhen) == true
       end
@@ -427,6 +464,13 @@ function Pages.create(kit, parent, definitions, context)
         end)
       end
     end
+    for root, entries in pairs(sections) do
+      local visible = false
+      for _, entry in ipairs(entries) do
+        visible = visible or entry.shown
+      end
+      root.Visible = visible
+    end
     for _, page in pairs(registry) do
       for key, owner in pairs(page.keyed) do
         if owner.children then
@@ -438,6 +482,13 @@ function Pages.create(kit, parent, definitions, context)
   function controller.get(id) return registry[id] end
   function controller.getControl(key) return bindings[key] end
   function controller.getReadout(key) return readouts[key] end
+  function controller.setReadout(key, value)
+    local entry = assert(readoutRows[key], "Missing information component: " .. tostring(key))
+    entry.available = type(value) == "string" and value:match("%S") ~= nil
+    if entry.available then
+      entry.handle.setValue(value)
+    end
+  end
   function controller.snapshot()
     local snapshot = { page = active, returnId = returnId, scroll = {} }
     for id, page in pairs(registry) do

@@ -36,6 +36,8 @@ jobs:
         run: python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
       - name: Test runtime, APIs and permissions
         run: python3 'exodus hub/indeed/tools/run_tests.py' --hub all --require-tools
+      - name: Verify shared notification surface
+        run: python3 'exodus hub/indeed/tools/build_notification_surface.py' --check
       - name: Verify icons
         run: python3 'exodus hub/indeed/tools/build_ui_icons.py' --check
       - name: Check formatting

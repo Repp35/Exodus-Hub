@@ -15,55 +15,11 @@ local CONFIG = {
       width = 360,
       utility = true,
       sections = {
-        {
-          title = "Sessão",
-          components = {
-            { kind = "readout", title = "FPS", info = "fps" },
-            { kind = "readout", title = "Ping", info = "ping" },
-            { kind = "readout", title = "Tempo no hub", info = "uptime" },
-            { kind = "readout", title = "Executor", info = "executor" },
-            { kind = "readout", title = "Auto Execute", info = "autoexecute" },
-            { kind = "readout", title = "Roblox", info = "clientVersion" },
-          },
-        },
-        {
-          title = "Jogador",
-          components = {
-            { kind = "readout", title = "Usuário", info = "username" },
-            { kind = "readout", title = "Nome de exibição", info = "displayName" },
-            { kind = "readout", title = "User ID", info = "userId" },
-          },
-        },
-        {
-          title = "Jogo",
-          components = {
-            { kind = "readout", title = "Nome", info = "game" },
-            { kind = "readout", title = "Criador", info = "creator" },
-            { kind = "readout", title = "Grupo", info = "group" },
-            { kind = "readout", title = "Place ID", info = "placeId" },
-            { kind = "readout", title = "Universe ID", info = "universeId" },
-            { kind = "readout", title = "Versão do place", info = "placeVersion" },
-          },
-        },
-        {
-          title = "Servidor",
-          components = {
-            { kind = "readout", title = "Jogadores", info = "population" },
-            { kind = "readout", title = "Região", info = "region" },
-            { kind = "readout", title = "País", info = "country" },
-            { kind = "readout", title = "Cidade", info = "city" },
-            { kind = "readout", title = "Job ID", info = "serverId" },
-          },
-        },
-        {
-          title = "Exodus",
-          components = {
-            { kind = "readout", title = "Versão do hub", info = "hubVersion" },
-            { kind = "readout", title = "Versão da integração", info = "gameVersion" },
-            { kind = "readout", title = "Desenvolvedores do hub", info = "hubDevelopers" },
-            { kind = "readout", title = "Desenvolvedores da integração", info = "gameDevelopers" },
-          },
-        },
+        { title = "Sessão", components = { { kind = "readout", info = "session" } } },
+        { title = "Jogo", components = { { kind = "readout", info = "game" } } },
+        { title = "Servidor", components = { { kind = "readout", info = "server" } } },
+        { title = "Versões", components = { { kind = "readout", info = "versions" } } },
+        { title = "Desenvolvedores", components = { { kind = "readout", info = "developers" } } },
       },
     },
     {
@@ -213,7 +169,7 @@ local CONFIG = {
       sections = {
         {
           components = {
-            { kind = "toggle", title = "Auto Execute", key = "AutoExecuteOnJoin", description = "Executa ao entrar. Depende do executor." },
+            { kind = "toggle", title = "Auto Execute", key = "AutoExecuteOnJoin", description = "Executa ao entrar. Não funciona em todos os executores." },
             {
               kind = "toggle",
               title = "Todos os jogos",
@@ -221,7 +177,7 @@ local CONFIG = {
               parentKey = "AutoExecuteOnJoin",
               description = "Off: só neste jogo. On: todos.",
             },
-            { kind = "toggle", title = "Atualizar automaticamente", key = "AutoExecute", description = "Instala novas versões em um estado seguro." },
+            { kind = "toggle", title = "Atualizar automaticamente", key = "AutoExecute", description = "Atualiza quando o jogo permite." },
             { kind = "toggle", title = "System Notifications", key = "DesktopNotifications", desktopOnly = true },
             {
               kind = "toggle",

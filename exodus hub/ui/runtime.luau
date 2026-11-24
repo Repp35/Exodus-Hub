@@ -15,6 +15,10 @@ local UIS = game:GetService("UserInputService")
 
 -- configuration
 local CONFIG = { DEFAULT_MOTION = "control" }
+-- A descendant may be animated by more than one controller. Keep its original
+-- appearance outside individual motion scopes so a hidden state never becomes
+-- the baseline for its next entrance.
+local faded = setmetatable({}, { __mode = "k" })
 
 -- setup
 function Runtime.setup(deps)
@@ -203,7 +207,6 @@ function Runtime.motion(scope, reducedMotion)
     tween:Play()
     return tween
   end
-  local faded = setmetatable({}, { __mode = "k" })
   function motion.fade(root, preset, alpha, onComplete)
     local objects = root:GetDescendants()
     table.insert(objects, 1, root)

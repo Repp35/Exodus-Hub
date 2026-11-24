@@ -16,13 +16,6 @@ function Controller.create(context)
   })
   context.scope.add(context.deps.Runtime.mountLayer(gui, context.playerGui, context.theme.SCREEN_LAYERS.information))
   context.refs.informationGui = gui
-  context.refs.toastLayer = inst("Frame", {
-    Name = "ExodusToastLayer",
-    Size = UDim2.fromScale(1, 1),
-    BackgroundTransparency = 1,
-    ZIndex = 199,
-    Parent = gui,
-  })
   local textService = game:GetService("TextService")
   local entries = {}
   for _, definition in ipairs(context.deps.Hub.getReadouts()) do

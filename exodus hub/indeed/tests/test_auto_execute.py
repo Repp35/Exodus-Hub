@@ -58,6 +58,11 @@ assert(#queued == 1)
 local function saved() return documents[files['Exodus Hub/auto_execute.json']] end
 assert(saved().games['u:123'] and not saved().allGames)
 utils.setConfig({AutoExecuteAllGames = true}); assert(saved().allGames)
+utils.setConfig({AutoExecuteOnJoin = false})
+assert(not config.AutoExecuteAllGames, 'Disabling the parent must reset its child scope')
+utils.setConfig({AutoExecuteOnJoin = true})
+assert(not saved().allGames and saved().games['u:123'], 'Re-enabling must use the visible child state')
+utils.setConfig({AutoExecuteAllGames = true})
 utils.setConfig({AutoExecuteAllGames = false}); assert(not saved().allGames and saved().games['u:123'])
 AutoExecute.teardown(); game.GameId = 999
 AutoExecute.setup({Utils = utils}); AutoExecute.start(transport)

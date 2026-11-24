@@ -12,6 +12,7 @@ local ControlComponents
 local Inputs
 local Selection
 local Dropdown
+local Appearance
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
@@ -19,7 +20,7 @@ local RunService = game:GetService("RunService")
 
 -- setup
 function UIKit.setup(deps)
-  Theme, Runtime, Icons = deps.Theme.tokens, deps.Runtime, deps.Icons
+  Theme, Runtime, Icons, Appearance = deps.Theme.tokens, deps.Runtime, deps.Icons, deps.Appearance
   Display, ControlComponents, Inputs, Selection, Dropdown = deps.Display, deps.ControlComponents, deps.Inputs, deps.Selection, deps.Dropdown
   return true
 end
@@ -102,7 +103,7 @@ function UIKit.create(options)
   end
   local inst = kit.instance
   function kit.corner(root, radius) return inst("UICorner", { CornerRadius = UDim.new(0, radius or Theme.RADIUS.control) }, root) end
-  function kit.stroke(root, color, thickness)
+  function kit.stroke(root, color, thickness, light)
     local surface = root
     if root:IsA("CanvasGroup") then
       local inset = thickness or 1
@@ -117,18 +118,17 @@ function UIKit.create(options)
       local radius = root:FindFirstChildOfClass("UICorner")
       kit.corner(surface, radius and math.max(0, radius.CornerRadius.Offset - inset) or Theme.RADIUS.control)
     end
-    local line = inst("UIStroke", { Color = color or C.border, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, surface)
-    if color == nil or color == C.border or color == C.accent then
-      local gradient = inst("UIGradient", {
-        Color = ColorSequence.new({
-          ColorSequenceKeypoint.new(0, Theme.GRADIENT[1]),
-          ColorSequenceKeypoint.new(0.5, Theme.GRADIENT[2]),
-          ColorSequenceKeypoint.new(1, Theme.GRADIENT[3]),
-        }),
-      }, line)
-      if options.onOutline then
-        options.onOutline(gradient)
-      end
+    local automatic = color == nil or color == C.border
+    local function outlineColor() return Appearance.borderColor(root.BackgroundColor3, light) end
+    local line =
+      inst("UIStroke", { Color = automatic and outlineColor() or color, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, surface)
+    if automatic then
+      local connection = root:GetPropertyChangedSignal("BackgroundColor3"):Connect(function() line.Color = outlineColor() end)
+      local cleanup
+      cleanup = root.Destroying:Connect(function()
+        connection:Disconnect()
+        cleanup:Disconnect()
+      end)
     end
     return line
   end
@@ -332,14 +332,12 @@ function UIKit.create(options)
       if not handle.enabled or kit.suspended then
         return
       end
-      childMotion.play(border, "control", { Color = C.accent })
       childMotion.play(root, "control", { BackgroundColor3 = C.cardHover })
     end)
     childScope.connect(root.MouseLeave, function()
       if definition.kind == "label" or definition.kind == "divider" then
         return
       end
-      childMotion.play(border, "control", { Color = C.border })
       childMotion.play(root, "control", { BackgroundColor3 = C.card })
     end)
     function handle.setEnabled(enabled)
@@ -553,6 +551,7 @@ UIKit.__contract = {
   provides = { "setup", "create" },
   requires = {
     Theme = "uitheme",
+    Appearance = "uiappearance",
     Runtime = "uiruntime",
     Icons = "uiicons",
     Display = "uidisplay",
@@ -563,6 +562,7 @@ UIKit.__contract = {
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
+    Appearance = { "borderColor" },
     Runtime = { "scope", "motion", "isVisible", "bindDrag", "mountLayer" },
     Icons = { "create" },
     Display = { "install" },

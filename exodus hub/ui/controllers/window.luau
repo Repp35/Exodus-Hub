@@ -154,7 +154,7 @@ function Controller.create(context)
     Parent = context.refs.screenGui,
   })
   corner(context.refs.floatingButton, 999)
-  context.refs.floatingButtonStroke = stroke(context.refs.floatingButton, C.accent, 2)
+  context.refs.floatingButtonStroke = context.kit.stroke(context.refs.floatingButton, nil, 2, true)
   context.refs.floatingButtonStroke.Transparency = 1
   task.defer(function()
     if not context.refs.floatingButton or not context.refs.floatingButton.Parent then
@@ -187,7 +187,7 @@ function Controller.create(context)
     Parent = context.refs.screenGui,
   })
   corner(context.refs.configPanel, 16)
-  stroke(context.refs.configPanel, C.accent, 1.5)
+  stroke(context.refs.configPanel, nil, 1.5)
   context.refs.particleLayer = inst("Frame", {
     Name = "ParticleLayer",
     Size = UDim2.new(1, 0, 1, 0),
@@ -213,54 +213,12 @@ function Controller.create(context)
     Parent = context.refs.configPanel,
   })
   corner(context.refs.titleBar, 16)
+  local header = context.deps.Header.create(context, context.refs.titleBar)
   makeDraggable(
-    context.refs.titleBar,
+    header.title,
     context.refs.configPanel,
     function() Utils.setConfig({ PanelX = context.refs.configPanel.Position.X.Offset, PanelY = context.refs.configPanel.Position.Y.Offset }) end
   )
-  local titleGroup = inst("Frame", {
-    Size = UDim2.new(1, -CONFIG.TITLE_SIDE_MARGIN * 2, 1, 0),
-    Position = UDim2.new(0, CONFIG.TITLE_SIDE_MARGIN, 0, 0),
-    BackgroundTransparency = 1,
-    ZIndex = 7,
-    Parent = context.refs.titleBar,
-  })
-  inst("UIListLayout", {
-    FillDirection = Enum.FillDirection.Horizontal,
-    SortOrder = Enum.SortOrder.LayoutOrder,
-    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-    VerticalAlignment = Enum.VerticalAlignment.Center,
-    Padding = UDim.new(0, CONFIG.TITLE_SPACING),
-    Parent = titleGroup,
-  })
-  inst("TextLabel", {
-    Size = UDim2.new(0, 0, 1, 0),
-    LayoutOrder = 1,
-    AutomaticSize = Enum.AutomaticSize.X,
-    BackgroundTransparency = 1,
-    Text = '<font color="#BBB8C2">Exodus</font> <font color="#9A80B2">Hub</font>' .. (context.hub.version and (" | v" .. context.hub.version) or ""),
-    RichText = true,
-    TextColor3 = C.text,
-    TextSize = CONFIG.TITLE_TEXT_SIZE,
-    Font = Enum.Font.GothamBlack,
-    TextXAlignment = Enum.TextXAlignment.Center,
-    ZIndex = 7,
-    Parent = titleGroup,
-  })
-  inst("TextLabel", {
-    Size = UDim2.new(0, 0, 1, 0),
-    LayoutOrder = 2,
-    AutomaticSize = Enum.AutomaticSize.X,
-    BackgroundTransparency = 1,
-    Text = "— " .. Utils.author(),
-    TextColor3 = C.text,
-    TextTransparency = CONFIG.AUTHOR_TRANSPARENCY,
-    TextSize = CONFIG.AUTHOR_TEXT_SIZE,
-    Font = Enum.Font.Gotham,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 7,
-    Parent = titleGroup,
-  })
   context.refs.minimizeButton = inst("TextButton", {
     Name = "MinimizePanel",
     Size = UDim2.new(0, 30, 0, 30),
@@ -272,10 +230,11 @@ function Controller.create(context)
     TextSize = 14,
     Font = Enum.Font.GothamBold,
     ZIndex = 7,
-    Parent = context.refs.titleBar,
+    Parent = header.buttons,
   })
+  context.refs.minimizeButton.LayoutOrder = 4
   corner(context.refs.minimizeButton, 8)
-  stroke(context.refs.minimizeButton, C.border, 1)
+  stroke(context.refs.minimizeButton, nil, 1)
   context.kit.icon(context.refs.minimizeButton, "minimize")
   trackConn(context.refs.minimizeButton.MouseEnter:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0 }) end))
   trackConn(context.refs.minimizeButton.MouseLeave:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0.3 }) end))
@@ -295,10 +254,11 @@ function Controller.create(context)
     TextSize = 18,
     Font = Enum.Font.GothamBold,
     ZIndex = 9,
-    Parent = context.refs.titleBar,
+    Parent = header.buttons,
   })
+  settingsButton.LayoutOrder = 3
   corner(settingsButton, 8)
-  stroke(settingsButton, C.border, 1)
+  stroke(settingsButton, nil, 1)
   context.kit.icon(settingsButton, "settings")
   local infoButton = inst("TextButton", {
     Name = "HubInformationButton",
@@ -311,10 +271,11 @@ function Controller.create(context)
     TextColor3 = C.text,
     TextSize = 16,
     ZIndex = 9,
-    Parent = context.refs.titleBar,
+    Parent = header.buttons,
   })
+  infoButton.LayoutOrder = 2
   corner(infoButton, 8)
-  stroke(infoButton, C.border, 1)
+  stroke(infoButton, nil, 1)
   trackConn(infoButton.Activated:Connect(function() context.pages.toggle("information") end))
   local assistsButton = inst("TextButton", {
     Name = "HubAssistsButton",
@@ -325,10 +286,11 @@ function Controller.create(context)
     BackgroundTransparency = 0.3,
     Text = "",
     ZIndex = 9,
-    Parent = context.refs.titleBar,
+    Parent = header.buttons,
   })
+  assistsButton.LayoutOrder = 1
   corner(assistsButton, 8)
-  stroke(assistsButton, C.border, 1)
+  stroke(assistsButton, nil, 1)
   context.kit.icon(assistsButton, "assists")
   trackConn(assistsButton.Activated:Connect(function() context.pages.toggle("assists") end))
   context.refs.killBtn = inst("TextButton", {
@@ -344,7 +306,7 @@ function Controller.create(context)
     Parent = context.refs.configPanel,
   })
   corner(context.refs.killBtn, 6)
-  stroke(context.refs.killBtn, C.border, 1)
+  stroke(context.refs.killBtn, nil, 1)
   trackConn(context.refs.killBtn.Activated:Connect(function() context.lifecycle.animateClose("close") end))
   context.refs.reloadButton = makeBtn("Reload", 0, 0, 124, 26, context.refs.configPanel, C.btnBlue)
   context.refs.reloadButton.Name = "ReloadHub"
@@ -407,7 +369,83 @@ function Controller.create(context)
   trackConn(settingsButton.Activated:Connect(function() context.pages.toggle("config") end))
   trackConn(previous.Activated:Connect(function() context.pages.step(-1) end))
   trackConn(nextPage.Activated:Connect(function() context.pages.step(1) end))
-  return { toggle = togglePanel, updateNavigation = updateNavigation }
+  local iconGeneration = 0
+  local floatingIcon = inst("ImageLabel", {
+    Name = "HubIcon",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromScale(0.68, 0.68),
+    BackgroundTransparency = 1,
+    ImageColor3 = Color3.new(1, 1, 1),
+    ScaleType = Enum.ScaleType.Fit,
+    Visible = false,
+    ZIndex = 11,
+  }, context.refs.floatingButton)
+  trackConn(
+    context.refs.floatingButton
+      :GetPropertyChangedSignal("TextTransparency")
+      :Connect(function() floatingIcon.ImageTransparency = context.refs.floatingButton.TextTransparency end)
+  )
+  local function setIcon(image)
+    iconGeneration += 1
+    local generation = iconGeneration
+    local function apply(value)
+      floatingIcon.Image, floatingIcon.Visible = value or "", value ~= nil
+      floatingIcon.ImageTransparency = context.refs.floatingButton.TextTransparency
+      context.refs.floatingButton.Text = value and "" or "E"
+      header.setIcon(value)
+    end
+    apply(nil)
+    if not image then
+      return
+    end
+    floatingIcon.Image, header.icon.Image = image, image
+    local failed, ready = false, false
+    local function success()
+      if ready or failed or generation ~= iconGeneration or not context.scope.alive then
+        return
+      end
+      ready = true
+      apply(image)
+      floatingIcon.ImageTransparency, header.icon.ImageTransparency = 1, 1
+      twPlay(floatingIcon, "control", { ImageTransparency = context.refs.floatingButton.TextTransparency })
+      twPlay(header.icon, "control", { ImageTransparency = 0 })
+    end
+    local function failure()
+      if failed or generation ~= iconGeneration or not context.scope.alive then
+        return
+      end
+      failed = true
+      apply(nil)
+      Utils.recordError("UI.Icon", "Image failed to load: " .. image)
+      context.notifications.toast("Ícone: não foi possível carregar a imagem.", true)
+    end
+    task.spawn(function()
+      if generation ~= iconGeneration or not context.scope.alive then
+        return
+      end
+      local ok = pcall(function()
+        game:GetService("ContentProvider"):PreloadAsync({ floatingIcon, header.icon }, function(_, status)
+          if status == Enum.AssetFetchStatus.Success then
+            success()
+          else
+            failure()
+          end
+        end)
+      end)
+      if not ok then
+        failure()
+      elseif floatingIcon.IsLoaded then
+        success()
+      end
+    end)
+    task.delay(8, function()
+      if context.scope.alive and generation == iconGeneration and not ready then
+        failure()
+      end
+    end)
+  end
+  return { toggle = togglePanel, updateNavigation = updateNavigation, setIcon = setIcon }
 end
 
 -- contract

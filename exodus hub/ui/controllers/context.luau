@@ -18,7 +18,6 @@ function Context.create(deps, deviceDesktop)
   local UIS, RunService, Players = game:GetService("UserInputService"), game:GetService("RunService"), game:GetService("Players")
   local TweenService = game:GetService("TweenService")
   local Utils = deps.Utils
-  local outlineGradients = setmetatable({}, { __mode = "k" })
   local UIState = {
     connections = {},
     panelOpen = false,
@@ -32,13 +31,11 @@ function Context.create(deps, deviceDesktop)
     miniGeneration = 0,
     desktop = false,
     closing = false,
-    toastGeneration = 0,
-    toastTween = nil,
     keyCapture = false,
     manualHoldInput = nil,
   }
 
-  local context = { deps = deps, theme = CONFIG, state = UIState, refs = {}, outlines = outlineGradients }
+  local context = { deps = deps, theme = CONFIG, state = UIState, refs = {} }
   context.services = { UIS = UIS, RunService = RunService, Players = Players }
   context.scope = deps.Runtime.scope()
   context.motion = deps.Runtime.motion(context.scope)
@@ -240,27 +237,6 @@ function Context.create(deps, deviceDesktop)
     end))
     return function() return state == "Dragging" or wasDragged end
   end
-  local function animateOutlines()
-    local elapsed = 0
-    trackConn(RunService.Heartbeat:Connect(function(dt)
-      elapsed += dt
-      if elapsed < 0.05 then
-        return
-      end
-      elapsed %= 0.05
-      if UIState.closing then
-        return
-      end
-      local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
-      for gradient in pairs(outlineGradients) do
-        if not gradient.Parent then
-          outlineGradients[gradient] = nil
-        elseif deps.Runtime.isVisible(gradient) then
-          gradient.Offset = offset
-        end
-      end
-    end))
-  end
   local function makeBtn(text, x, y, w, h, parent, bg)
     local b = inst("TextButton", {
       Size = UDim2.new(0, w, 0, h),
@@ -275,7 +251,7 @@ function Context.create(deps, deviceDesktop)
       Parent = parent,
     })
     corner(b, 8)
-    stroke(b, C.border, 1)
+    stroke(b, nil, 1)
     return b
   end
   context.inst = inst
@@ -310,9 +286,7 @@ function Context.create(deps, deviceDesktop)
     notify = function(...) return context.notifications.toast(...) end,
     validateShortcut = function(key, binding) return context.actions.validateShortcut(key, binding) end,
     onCapture = function(active) UIState.keyCapture = active end,
-    onOutline = function(gradient) outlineGradients[gradient] = true end,
   })
-  animateOutlines()
   context.refs.responsiveScale = inst("UIScale", { Scale = 1, Parent = context.refs.screenGui })
   local function updateResponsiveScale()
     local size = viewport()
@@ -362,7 +336,6 @@ function Context.create(deps, deviceDesktop)
       context.kit.destroy()
     end
     context.scope.destroy()
-    table.clear(outlineGradients)
     if context.refs.screenGui then
       context.refs.screenGui:Destroy()
     end

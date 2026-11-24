@@ -163,16 +163,20 @@ for _, value in ipairs(pages) do if value.id == "information" then page = value 
 assert(page and page.utility)
 local count = 0
 for _, section in ipairs(page.sections) do
+  assert(#section.components == 1)
   for _, item in ipairs(section.components) do
     assert(item.kind == "readout" and item.info and not item.key and not item.action)
     count += 1
   end
 end
-assert(count >= 20)
+assert(count == 5)
+assert(loaded.ui.setIcon(123) and loaded.ui.setIcon(nil))
 assert(keys.AutoExecuteOnJoin and keys.AutoExecuteAllGames and keys.AutoExecute)
 local snapshot = loaded.permissions.resolve("ui", loaded).Information.snapshot()
-assert(snapshot.country == "Indisponível" and snapshot.city == "Indisponível")
-assert(not pcall(function() snapshot.hubVersion = "wrong" end))
+assert(snapshot.session:find("Usuário:") and snapshot.versions:find("Hub: 2.0.0"))
+assert(snapshot.versions:find("Script do jogo: 3.3.0"))
+assert(not snapshot.placeId and not snapshot.userId and not snapshot.uptime)
+assert(not pcall(function() snapshot.versions = "wrong" end))
 ''')
 
     def test_bootstrap_initializes_and_stops_both_profiles(self):

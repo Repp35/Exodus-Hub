@@ -40,19 +40,6 @@ local CONFIG = {
     NAVIGATION_DURATION = 5,
     HUB_LOADED_DURATION = 5,
     DISPLAY_ORDER = 2147483647,
-    WIDTH = 320,
-    HEIGHT = 46,
-    BOTTOM_OFFSET = 24,
-    BACKGROUND_TRANSPARENCY = 0.12,
-    CRITICAL_COLOR = { 153, 27, 27 },
-    INFO_COLOR = { 45, 55, 130 },
-    TEXT_COLOR = { 255, 255, 255 },
-    CORNER_RADIUS = 10,
-    TEXT_PADDING = 10,
-    TEXT_SIZE = 11,
-    TEXT_FONT = "GothamMedium",
-    CARD_ZINDEX = 100,
-    TEXT_ZINDEX = 101,
   },
 }
 
@@ -71,9 +58,133 @@ local function printStartup(message)
     print(message)
   end
 end
+-- BEGIN GENERATED NOTIFICATION SURFACE
+local Appearance = (function()
+  -- [[ shared surface appearance ]]
+  --!optimize 2
+
+  local Appearance = {}
+  function Appearance.setup() return true end
+  function Appearance.borderColor(background, light)
+    local hue, saturation, value = background:ToHSV()
+    local brightness = light and math.min(1, value + 0.32) or (value > 0.35 and value * 0.65 or math.min(1, value + 0.12))
+    return Color3.fromHSV(hue, saturation, brightness)
+  end
+  local function instance(class, properties, parent)
+    local object = Instance.new(class)
+    for key, value in pairs(properties) do
+      object[key] = value
+    end
+    object.Parent = parent
+    return object
+  end
+  local function palette(kind)
+    if kind == "critical" then
+      return Color3.fromRGB(153, 27, 27)
+    end
+    if kind == "success" then
+      return Color3.fromRGB(20, 92, 58)
+    end
+    if kind == "warning" then
+      return Color3.fromRGB(100, 67, 18)
+    end
+    return Color3.fromRGB(45, 55, 130)
+  end
+  function Appearance.notification(parent, name)
+    local card = instance("CanvasGroup", {
+      Name = name,
+      AnchorPoint = Vector2.new(0.5, 1),
+      Position = UDim2.new(0.5, 0, 1, 18),
+      Size = UDim2.fromOffset(80, 26),
+      BackgroundTransparency = 0.12,
+      BorderSizePixel = 0,
+      GroupTransparency = 1,
+      ClipsDescendants = true,
+      ZIndex = 100,
+    }, parent)
+    instance("UICorner", { CornerRadius = UDim.new(0, 10) }, card)
+    local outline = instance("Frame", {
+      Name = "Outline",
+      Size = UDim2.new(1, -2, 1, -2),
+      Position = UDim2.fromOffset(1, 1),
+      BackgroundTransparency = 1,
+      BorderSizePixel = 0,
+      ZIndex = 102,
+    }, card)
+    instance("UICorner", { CornerRadius = UDim.new(0, 9) }, outline)
+    instance("UIStroke", { Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, outline)
+    local content = instance("ScrollingFrame", {
+      Name = "Content",
+      Size = UDim2.new(1, -20, 1, -12),
+      Position = UDim2.fromOffset(10, 6),
+      BackgroundTransparency = 1,
+      BorderSizePixel = 0,
+      CanvasSize = UDim2.new(),
+      ScrollBarThickness = 0,
+      ScrollingDirection = Enum.ScrollingDirection.Y,
+      Active = true,
+      ClipsDescendants = true,
+      ZIndex = 101,
+    }, card)
+    instance("TextLabel", {
+      Name = "Message",
+      BackgroundTransparency = 1,
+      BorderSizePixel = 0,
+      Size = UDim2.new(1, 0, 1, 0),
+      Text = "",
+      TextColor3 = Color3.new(1, 1, 1),
+      TextSize = 11,
+      Font = Enum.Font.GothamMedium,
+      TextWrapped = true,
+      TextTruncate = Enum.TextTruncate.None,
+      TextXAlignment = Enum.TextXAlignment.Center,
+      TextYAlignment = Enum.TextYAlignment.Center,
+      RichText = false,
+      ZIndex = 101,
+    }, content)
+    return card
+  end
+  function Appearance.updateNotification(card, message, kind, viewport)
+    local content = card:FindFirstChild("Content")
+    -- Replace cards created by older loaders rather than retain an incompatible layout.
+    assert(content and content:IsA("ScrollingFrame"), "Unsupported notification surface")
+    local label = content:FindFirstChild("Message")
+    local maxWidth = math.max(24, math.min(280, viewport.X - 24))
+    local padding = math.min(10, math.max(2, (maxWidth - 4) / 4))
+    local measure = game:GetService("TextService")
+    local value = tostring(message)
+    local function bounds(width) return measure:GetTextSize(value, 11, Enum.Font.GothamMedium, Vector2.new(math.max(1, width), 100000)) end
+    local size = bounds(maxWidth - padding * 2)
+    local width = math.min(maxWidth, math.max(math.min(80, maxWidth), math.ceil(size.X) + padding * 2 + 2))
+    size = bounds(width - padding * 2)
+    local maxHeight = math.max(26, viewport.Y - 48)
+    local height = math.min(maxHeight, math.max(26, math.ceil(size.Y) + 14))
+    local overflow = size.Y + 12 > height
+    if overflow then
+      size = bounds(width - padding * 2 - 4)
+    end
+    card.Size = UDim2.fromOffset(width, height)
+    card.BackgroundColor3 = palette(kind)
+    card.BackgroundTransparency = 0.12
+    local outline = card:FindFirstChild("Outline")
+    outline:FindFirstChildOfClass("UIStroke").Color = Appearance.borderColor(card.BackgroundColor3)
+    content.Position = UDim2.fromOffset(padding, 6)
+    content.Size = UDim2.new(1, -padding * 2, 1, -12)
+    content.ScrollingEnabled, content.ScrollBarThickness = overflow, overflow and 2 or 0
+    content.ScrollBarImageColor3 = Color3.new(1, 1, 1)
+    content.CanvasSize = UDim2.fromOffset(0, math.ceil(size.Y) + 2)
+    content.CanvasPosition = Vector2.new(0, 0)
+    label.Text = value
+    label.Size = UDim2.new(1, overflow and -4 or 0, 0, math.max(height - 12, math.ceil(size.Y) + 2))
+    return card
+  end
+  Appearance.__contract = { provides = { "setup", "borderColor", "notification", "updateNotification" }, requires = {} }
+  return Appearance
+
+end)()
+-- END GENERATED NOTIFICATION SURFACE
 local function fallbackNotification(message, key, kind, duration)
-  local players = game:GetService("Players")
-  local player = players.LocalPlayer
+  local player = game:GetService("Players").LocalPlayer
   local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
   if not playerGui then
     return
@@ -81,64 +192,44 @@ local function fallbackNotification(message, key, kind, duration)
   local gui = playerGui:FindFirstChild("ExodusPersistentNotifications")
   if not gui then
     gui = Instance.new("ScreenGui")
-    gui.Name = "ExodusPersistentNotifications"
-    gui.DisplayOrder = CONFIG.NOTIFICATIONS.DISPLAY_ORDER
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-    gui.Parent = playerGui
+    gui.Name, gui.DisplayOrder = "ExodusPersistentNotifications", CONFIG.NOTIFICATIONS.DISPLAY_ORDER
+    gui.ResetOnSpawn, gui.IgnoreGuiInset = false, true
+    gui.ZIndexBehavior, gui.Parent = Enum.ZIndexBehavior.Global, playerGui
   end
   local layer = gui:FindFirstChild("NotificationLayer")
   if not layer then
     layer = Instance.new("Frame")
-    layer.Name = "NotificationLayer"
-    layer.Size = UDim2.fromScale(1, 1)
-    layer.BackgroundTransparency = 1
-    layer.Parent = gui
+    layer.Name, layer.Size, layer.BackgroundTransparency, layer.Parent = "NotificationLayer", UDim2.fromScale(1, 1), 1, gui
   end
   local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_")
   local card = layer:FindFirstChild("Notification_" .. safeKey)
+  if card and not card:FindFirstChild("Content") then
+    card:Destroy()
+    card = nil
+  end
   if not card then
-    card = Instance.new("CanvasGroup")
-    card.Name = "Notification_" .. safeKey
+    card = Appearance.notification(layer, "Notification_" .. safeKey)
     card:SetAttribute("ExodusNotificationKey", safeKey)
-    card.AnchorPoint = Vector2.new(0.5, 1)
-    card.Position = UDim2.new(0.5, 0, 1, -CONFIG.NOTIFICATIONS.BOTTOM_OFFSET)
-    card.Size = UDim2.fromOffset(CONFIG.NOTIFICATIONS.WIDTH, CONFIG.NOTIFICATIONS.HEIGHT)
-    card.BackgroundColor3 = Color3.fromRGB(table.unpack(kind == "critical" and CONFIG.NOTIFICATIONS.CRITICAL_COLOR or CONFIG.NOTIFICATIONS.INFO_COLOR))
-    card.BackgroundTransparency = CONFIG.NOTIFICATIONS.BACKGROUND_TRANSPARENCY
-    card.ZIndex = CONFIG.NOTIFICATIONS.CARD_ZINDEX
-    card.Parent = layer
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, CONFIG.NOTIFICATIONS.CORNER_RADIUS)
-    corner.Parent = card
-    local label = Instance.new("TextLabel")
-    label.Name = "Message"
-    label.Size = UDim2.new(1, -2 * CONFIG.NOTIFICATIONS.TEXT_PADDING, 1, 0)
-    label.Position = UDim2.fromOffset(CONFIG.NOTIFICATIONS.TEXT_PADDING, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR))
-    label.TextSize = CONFIG.NOTIFICATIONS.TEXT_SIZE
-    label.Font = Enum.Font[CONFIG.NOTIFICATIONS.TEXT_FONT]
-    label.TextWrapped = true
-    label.TextTruncate = Enum.TextTruncate.AtEnd
-    label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Parent = card
   end
-  local label = card:FindFirstChild("Message")
-  if label then
-    label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR))
-    label.RichText = false
-    label.TextStrokeTransparency = 1
-    label.ZIndex = CONFIG.NOTIFICATIONS.TEXT_ZINDEX
-    label.Text = tostring(message)
-  end
+  local camera = workspace.CurrentCamera
+  Appearance.updateNotification(card, message, kind, camera and camera.ViewportSize or Vector2.new(1920, 1080))
   if duration == nil and key ~= "dumper" then
     duration = CONFIG.NOTIFICATIONS.DEFAULT_DURATION
   end
-  card.GroupTransparency = 1
-  card.Visible = true
-  game:GetService("TweenService"):Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { GroupTransparency = 0 }):Play()
+  card.GroupTransparency, card.Visible = 1, true
+  local offset = 24
+  for _, item in ipairs(layer:GetChildren()) do
+    if item:IsA("CanvasGroup") and item:GetAttribute("ExodusNotificationKey") then
+      game
+        :GetService("TweenService")
+        :Create(item, TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {
+          GroupTransparency = 0,
+          Position = UDim2.new(0.5, 0, 1, -offset),
+        })
+        :Play()
+      offset += item.Size.Y.Offset + 8
+    end
+  end
   local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
   card:SetAttribute("ExodusNotificationGeneration", generation)
   if duration and duration > 0 then
