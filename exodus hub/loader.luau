@@ -19,7 +19,6 @@ local CONFIG = {
   MAX_PENDING_REQUESTS = 24,
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
-  -- Repository endpoints and request policy
   REPOSITORY_API = "https://api.github.com/repositories/",
   RAW_BASE_URL = "https://raw.githubusercontent.com/",
   HEAD_REF_PATH = "/git/ref/heads/",
@@ -31,11 +30,14 @@ local CONFIG = {
   },
   RAW_CACHE_HEADERS = { ["Cache-Control"] = "no-cache, no-store" },
   RETRYABLE_HTTP_STATUS = { [408] = true, [425] = true, [429] = true },
-
-  -- Module discovery and lifecycle
   REGISTRY_PATH = "hubs/registry.luau",
   CATALOG_PATH = "hubs/catalog.luau",
-  DEFAULT_HUB = { id = "universal", title = "Universal", author = "deltapolinha_2915", notification = "Exodus Hub · Universal carregado." },
+  DEFAULT_HUB = {
+    id = "universal",
+    title = "Universal",
+    author = "deltapolinha_2915",
+    notification = "Exodus Hub · Universal carregado.",
+  },
   CLEANUP_IGNORE_FAILURE = { invisicam = true },
   CLASH_CONTEXT_MAX_AGE = 0.8,
   CLASH_CLEAR_DELAY = 0.4,
@@ -68,8 +70,6 @@ local CONFIG = {
     "cooldown",
     "remote",
   },
-
-  -- Fallback notifications (seconds and visual defaults)
   NOTIFICATIONS = {
     DEFAULT_DURATION = 2.5,
     STARTUP_WARNING_DURATION = 2.5,
@@ -90,8 +90,6 @@ local CONFIG = {
     CARD_ZINDEX = 100,
     TEXT_ZINDEX = 101,
   },
-
-  -- Base module manifest
   MODULES = {
     { name = "gamecontext", path = "core/game_integration.luau" },
     { name = "hubapi", path = "core/game_integration.luau" },
@@ -178,15 +176,15 @@ local function fallbackNotification(message, key, kind, duration)
     card = Instance.new("CanvasGroup"); card.Name = "Notification_" .. safeKey
     card:SetAttribute("ExodusNotificationKey", safeKey); card.AnchorPoint = Vector2.new(0.5, 1)
     card.Position = UDim2.new(0.5, 0, 1, -CONFIG.NOTIFICATIONS.BOTTOM_OFFSET); card.Size = UDim2.fromOffset(CONFIG.NOTIFICATIONS.WIDTH, CONFIG.NOTIFICATIONS.HEIGHT)
-    card.BackgroundColor3 = Color3.fromRGB(table.unpack(kind == "critical" and CONFIG.NOTIFICATIONS.CRITICAL_COLOR or CONFIG.NOTIFICATIONS.INFO_COLOR)); card.BackgroundTransparency = CONFIG.NOTIFICATIONS.BACKGROUND_TRANSPARENCY
-    card.ZIndex = CONFIG.NOTIFICATIONS.CARD_ZINDEX; card.Parent = layer
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, CONFIG.NOTIFICATIONS.CORNER_RADIUS)
-    corner.Parent = card; local label = Instance.new("TextLabel")
-    label.Name = "Message"; label.Size = UDim2.new(1, -2 * CONFIG.NOTIFICATIONS.TEXT_PADDING, 1, 0)
-    label.Position = UDim2.fromOffset(CONFIG.NOTIFICATIONS.TEXT_PADDING, 0); label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR)); label.TextSize = CONFIG.NOTIFICATIONS.TEXT_SIZE
-    label.Font = Enum.Font[CONFIG.NOTIFICATIONS.TEXT_FONT]; label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Parent = card
+    card.BackgroundColor3 = Color3.fromRGB(table.unpack(kind == "critical" and CONFIG.NOTIFICATIONS.CRITICAL_COLOR or CONFIG.NOTIFICATIONS.INFO_COLOR))
+    card.BackgroundTransparency = CONFIG.NOTIFICATIONS.BACKGROUND_TRANSPARENCY; card.ZIndex = CONFIG.NOTIFICATIONS.CARD_ZINDEX
+    card.Parent = layer; local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, CONFIG.NOTIFICATIONS.CORNER_RADIUS); corner.Parent = card
+    local label = Instance.new("TextLabel"); label.Name = "Message"
+    label.Size = UDim2.new(1, -2 * CONFIG.NOTIFICATIONS.TEXT_PADDING, 1, 0); label.Position = UDim2.fromOffset(CONFIG.NOTIFICATIONS.TEXT_PADDING, 0)
+    label.BackgroundTransparency = 1; label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR))
+    label.TextSize = CONFIG.NOTIFICATIONS.TEXT_SIZE; label.Font = Enum.Font[CONFIG.NOTIFICATIONS.TEXT_FONT]
+    label.TextXAlignment = Enum.TextXAlignment.Center; label.Parent = card
   end
   local label = card:FindFirstChild("Message")
   if label then
@@ -227,8 +225,6 @@ local function notifyCritical(moduleName)
 end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
-
-
 local PROJECT_PATH = CONFIG.PROJECT_PATH
 local BASE_URL
 local HttpService = game:GetService("HttpService")
@@ -401,9 +397,7 @@ local function execute(name, chunk)
   return module
 end
 local function resolveLatestRevision()
-  local repositoryURL = CONFIG.REPOSITORY_API .. tostring(CONFIG.REPOSITORY_ID)
-  local headers = CONFIG.API_HEADERS
-
+  local repositoryURL = CONFIG.REPOSITORY_API .. tostring(CONFIG.REPOSITORY_ID); local headers = CONFIG.API_HEADERS
   local metadata, metadataError = request(repositoryURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
   if not metadata then return nil, metadataError end
   local decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
@@ -797,7 +791,13 @@ local function startInternal()
     end,
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
-  Exodus.Hub = table.clone(selectedHub); notifyPersistent(selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."), "hub_loaded", "info", CONFIG.NOTIFICATIONS.HUB_LOADED_DURATION)
+  Exodus.Hub = table.clone(selectedHub)
+  notifyPersistent(
+    selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."),
+    "hub_loaded",
+    "info",
+    CONFIG.NOTIFICATIONS.HUB_LOADED_DURATION
+  )
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
