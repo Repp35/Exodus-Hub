@@ -85,8 +85,8 @@ local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 local CONFIG = {
   USER_ID = 222319587,
   REPOSITORY_ID = 1334849119,
-  BRANCH = false, -- false: use the current default branch
-  REVISION = false, -- false: resolve the latest commit
+  BRANCH = false,
+  REVISION = false,
   ENTRY_POINT = "loader.luau",
   MAX_ATTEMPTS = 3,
   RETRY_DELAYS = { 0.25, 0.75, 1.5 },
@@ -239,14 +239,7 @@ local function requestOnce(url, headers)
   if not statusCode or statusCode < 200 or statusCode >= 300 then
     local remaining = tonumber(headerValue(responseHeaders, "x-ratelimit-remaining")); local details = string.lower(tostring(responseBody or ""))
     local limited = statusCode == 429
-      or (
-        statusCode == 403
-        and (
-          remaining == 0
-          or headerValue(responseHeaders, "retry-after") ~= nil
-          or details:find("rate limit", 1, true) ~= nil
-        )
-      )
+      or (statusCode == 403 and (remaining == 0 or headerValue(responseHeaders, "retry-after") ~= nil or details:find("rate limit", 1, true) ~= nil))
     return nil,
       "HTTP " .. tostring(statusCode or "sem status"),
       limited and { rateLimited = true, retryAfter = retryAfter(responseHeaders), statusCode = statusCode } or {
@@ -367,23 +360,21 @@ local function resolveLatestRevision()
     ["User-Agent"] = "Exodus-Hub-Loader",
     ["Cache-Control"] = "no-cache, no-store",
   }
+
   local metadata, metadataError = request(repositoryURL .. "?exodus_cache=" .. cacheBuster(), headers)
   if not metadata then return nil, metadataError end
   local decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
   if not decoded or type(repo) ~= "table" or type(repo.full_name) ~= "string" or not repo.full_name:match("^[%w_.%-]+/[%w_.%-]+$") then return nil, "Invalid repository metadata" end
   if tonumber(repo.id) ~= CONFIG.REPOSITORY_ID or type(repo.owner) ~= "table" or tonumber(repo.owner.id) ~= CONFIG.USER_ID then return nil, "Repository or owner ID mismatch" end
-  local revision = CONFIG.REVISION
-  local branch = CONFIG.BRANCH or repo.default_branch
+  local revision = CONFIG.REVISION; local branch = CONFIG.BRANCH or repo.default_branch
   if revision then
     if not validRevision(revision) then return nil, "Invalid configured revision" end
   else
     if type(branch) ~= "string" or branch == "" then return nil, "Invalid repository branch" end
     local encodedBranch = branch:gsub("[^/]+", function(segment) return HttpService:UrlEncode(segment) end)
-    local headURL = repositoryURL .. "/git/ref/heads/" .. encodedBranch
-    local body, requestError = request(headURL .. "?exodus_cache=" .. cacheBuster(), headers)
+    local headURL = repositoryURL .. "/git/ref/heads/" .. encodedBranch; local body, requestError = request(headURL .. "?exodus_cache=" .. cacheBuster(), headers)
     if not body then return nil, requestError end
-    local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-    revision = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
+    local ok, document = pcall(HttpService.JSONDecode, HttpService, body); revision = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
     if not validRevision(revision) then return nil, "Invalid branch revision: " .. branch end
   end
   BASE_URL = "https://raw.githubusercontent.com/" .. repo.full_name .. "/"
@@ -411,8 +402,7 @@ local function loadModule(name, relativePath, url)
   local pending = { pending = true }; downloadCache[url] = pending
   local ok, chunk, detail = pcall(function()
     local downloadURL = CONFIG.BYPASS_IMMUTABLE_CACHE and (url .. "?exodus_cache=" .. cacheBuster()) or url
-    local headers = CONFIG.BYPASS_IMMUTABLE_CACHE and { ["Cache-Control"] = "no-cache, no-store" } or nil
-    local source, fetchError = request(downloadURL, headers)
+    local headers = CONFIG.BYPASS_IMMUTABLE_CACHE and { ["Cache-Control"] = "no-cache, no-store" } or nil; local source, fetchError = request(downloadURL, headers)
     if not source then return nil, fetchError end
     return compile(relativePath, source)
   end)
@@ -527,8 +517,7 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  activeLoaded = loaded
-  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
+  activeLoaded = loaded; local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
   if results.permissions then permissions.configure(selectedHub.permissionPolicy); permissions.validate("permissions", permissions, "core/permissions.luau") end
   loaded.permissions = register("permissions", permissions)
   for _, entry in ipairs(MODULE_MANIFEST) do
@@ -716,8 +705,7 @@ local function startInternal()
   printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
   _G.ExodusShutdownReason = nil; startupPerformed = true
-  clearRegistry()
-  local loaded, moduleName, loadError = loadModules(urls, prepared)
+  clearRegistry(); local loaded, moduleName, loadError = loadModules(urls, prepared)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; loaded.gamecontext.configure(selectedHub)
   loaded.hubapi.configure(loaded); local utils = loaded.utils
