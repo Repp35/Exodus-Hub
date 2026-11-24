@@ -46,7 +46,7 @@ function Components.install(context)
       ZIndex = 11,
     })
     local arrow = kit.icon(trigger, "chevron", { Position = UDim2.new(1, -16, 0.5, 0), Size = UDim2.fromOffset(14, 14) })
-    local value, openScope, menu, menuMotion
+    local value, openScope, menu, menuMotion, menuScale
     local selecting, closing, optionViews = false, false, {}
     local close
     local function finishClose(owner)
@@ -56,7 +56,7 @@ function Components.install(context)
       if popup.close == close then
         popup.close = nil
       end
-      openScope, menu, menuMotion = nil, nil, nil
+      openScope, menu, menuMotion, menuScale = nil, nil, nil, nil
       selecting, closing, optionViews = false, false, {}
       owner.destroy()
     end
@@ -66,12 +66,18 @@ function Components.install(context)
       end
       handle.motion.play(arrow, "feedback", { Rotation = 0 })
       local owner = openScope
-      if animated == true then
+      if animated ~= false then
         if closing then
           return
         end
         closing = true
+        menuMotion.play(menuScale, "feedback", { Scale = 0.96 })
         menuMotion.group(menu, "feedback", { GroupTransparency = 1 }, function() finishClose(owner) end)
+        task.delay(0.5, function()
+          if openScope == owner and closing then
+            finishClose(owner)
+          end
+        end)
       else
         if popup.close == close then
           popup.close = nil
@@ -82,7 +88,7 @@ function Components.install(context)
     kit.feedback(
       handle.scope,
       trigger,
-      function(active) handle.motion.play(handle.Border, "feedback", { Color = active and C.accent or C.border }) end,
+      function(active, pressed) handle.motion.play(trigger, "feedback", { BackgroundColor3 = active and kit.interactionColor(C.inputBg, pressed) or C.inputBg }) end,
       function() return handle.enabled end
     )
     function handle.setValue(nextValue)
@@ -118,6 +124,7 @@ function Components.install(context)
       menu = inst("CanvasGroup", { BackgroundColor3 = C.card, GroupTransparency = 1, ZIndex = 1 }, portal)
       kit.corner(menu)
       kit.stroke(menu)
+      menuScale = inst("UIScale", { Scale = 0.96 }, menu)
       local list = inst("ScrollingFrame", {
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
@@ -134,6 +141,9 @@ function Components.install(context)
       local lastGeometry
       local items = {}
       local function position()
+        if closing then
+          return
+        end
         if not trigger.Parent or not Runtime.isVisible(trigger) then
           close()
           return
@@ -236,9 +246,10 @@ function Components.install(context)
             activeItem, resetActive = nil, nil
           end
           local selectedNow = selecting and choiceValue(choice) == value
-          menuMotion.play(border, "feedback", { Transparency = (active or selectedNow) and 0 or 1, Color = active and C.accent or C.border })
+          menuMotion.play(border, "feedback", { Transparency = (active or selectedNow) and 0 or 1 })
           menuMotion.play(item, "feedback", {
             BackgroundTransparency = (selectedNow or active) and 0.1 or 1,
+            BackgroundColor3 = active and kit.interactionColor(C.card, pressed) or C.card,
             TextColor3 = (active or selectedNow) and C.text or C.subtext,
           })
         end, function() return not selecting and not closing end)
@@ -264,7 +275,8 @@ function Components.install(context)
       if not openScope then
         return
       end
-      menuMotion.group(menu, "feedback", { GroupTransparency = 0 })
+      menuMotion.group(menu, "control", { GroupTransparency = 0 })
+      menuMotion.play(menuScale, "control", { Scale = 1 })
       handle.motion.play(arrow, "feedback", { Rotation = 180 })
       openScope.connect(RunService.Heartbeat, position)
       openScope.connect(UIS.InputBegan, function(input)
@@ -284,7 +296,7 @@ function Components.install(context)
         end
       end)
     end
-    handle.scope.add(close)
+    handle.scope.add(function() close(false) end)
     handle.scope.connect(trigger.Activated, function()
       if openScope then
         close()

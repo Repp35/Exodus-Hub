@@ -61,9 +61,9 @@ function Components.install(context)
     function handle.getValue() return value end
     function handle.setText(nextText) input.Text = tostring(nextText) end
     function handle.getText() return input.Text end
-    handle.scope.connect(input.Focused, function() handle.motion.play(border, "feedback", { Color = C.accent }) end)
+    handle.scope.connect(input.Focused, function() handle.motion.play(input, "feedback", { BackgroundColor3 = kit.interactionColor(C.inputBg, true) }) end)
     handle.scope.connect(input.FocusLost, function(enterPressed)
-      handle.motion.play(border, "feedback", { Color = C.border })
+      handle.motion.play(input, "feedback", { BackgroundColor3 = C.inputBg })
       local nextValue = input.Text
       if definition.parse then
         nextValue = definition.parse(input.Text)

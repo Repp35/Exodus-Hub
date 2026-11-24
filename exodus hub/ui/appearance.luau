@@ -4,10 +4,29 @@
 
 local Appearance = {}
 function Appearance.setup() return true end
+local function luminance(color)
+  local function channel(value) return value <= 0.04045 and value / 12.92 or ((value + 0.055) / 1.055) ^ 2.4 end
+  return 0.2126 * channel(color.R) + 0.7152 * channel(color.G) + 0.0722 * channel(color.B)
+end
 function Appearance.borderColor(background, light)
-  local hue, saturation, value = background:ToHSV()
-  local brightness = value + (1 - value) * 0.16
-  return Color3.fromHSV(hue, saturation, brightness)
+  local base = luminance(background)
+  local target = base < 0.179 and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
+  local low, high = 0, 1
+  for _ = 1, 12 do
+    local alpha = (low + high) / 2
+    local candidate = luminance(background:Lerp(target, alpha))
+    local contrast = (math.max(base, candidate) + 0.05) / (math.min(base, candidate) + 0.05)
+    if contrast >= 3 then
+      high = alpha
+    else
+      low = alpha
+    end
+  end
+  return background:Lerp(target, high)
+end
+function Appearance.interactionColor(background, pressed)
+  local target = luminance(background) > 0.85 and Color3.new(0, 0, 0) or Color3.new(1, 1, 1)
+  return background:Lerp(target, pressed and 0.34 or 0.22)
 end
 local function instance(class, properties, parent)
   local object = Instance.new(class)
@@ -117,5 +136,5 @@ function Appearance.updateNotification(card, message, kind, viewport)
   label.Size = UDim2.new(1, overflow and -4 or 0, 0, math.max(height - 12, math.ceil(size.Y) + 2))
   return card
 end
-Appearance.__contract = { provides = { "setup", "borderColor", "notification", "updateNotification" }, requires = {} }
+Appearance.__contract = { provides = { "setup", "borderColor", "interactionColor", "notification", "updateNotification" }, requires = {} }
 return Appearance

@@ -62,6 +62,7 @@ function UIKit.create(options)
   local C, FONT, TEXT = Theme.COLORS, Theme.FONT, Theme.TEXT
   local bindings, components, drags, observers = {}, {}, {}, {}
   local feedback = {}
+  local controlOwners = setmetatable({}, { __mode = "k" })
   local popup, capture, capturedInput = {}, nil, nil
   local kit = { icon = Icons.create, Theme = Theme, Components = components, scope = scope, motion = motion, suspended = false }
   function kit.isDesktop() return desktop end
@@ -99,9 +100,22 @@ function UIKit.create(options)
       object[key] = value
     end
     object.Parent = parent
+    if object:IsA("GuiButton") or object:IsA("TextBox") then
+      local ancestor = parent
+      while ancestor do
+        local owner = controlOwners[ancestor]
+        if owner then
+          owner.attachFeedback(object)
+          break
+        end
+        ancestor = ancestor.Parent
+      end
+    end
     return object
   end
   local inst = kit.instance
+  function kit.interactionColor(background, pressed) return Appearance.interactionColor(background, pressed) end
+  function kit.borderColor(background) return Appearance.borderColor(background) end
   function kit.corner(root, radius) return inst("UICorner", { CornerRadius = UDim.new(0, radius or Theme.RADIUS.control) }, root) end
   function kit.stroke(root, color, thickness, light)
     local surface = root
@@ -122,7 +136,7 @@ function UIKit.create(options)
     local function outlineColor() return Appearance.borderColor(root.BackgroundColor3, light) end
     local line =
       inst("UIStroke", { Color = automatic and outlineColor() or color, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, surface)
-    line.Transparency = 0.15
+    line.Transparency = 0
     if automatic then
       local connection = root:GetPropertyChangedSignal("BackgroundColor3"):Connect(function() line.Color = outlineColor() end)
       local cleanup
@@ -326,21 +340,23 @@ function UIKit.create(options)
     scope.add(handle, function() handle.destroy() end)
     childScope.add(function() scope.forget(handle) end)
     childScope.connect(root.Destroying, childScope.destroy)
-    childScope.connect(root.MouseEnter, function()
-      if definition.kind == "label" or definition.kind == "divider" then
-        return
-      end
-      if not handle.enabled or kit.suspended then
-        return
-      end
-      childMotion.play(root, "control", { BackgroundColor3 = C.cardHover })
-    end)
-    childScope.connect(root.MouseLeave, function()
-      if definition.kind == "label" or definition.kind == "divider" then
-        return
-      end
-      childMotion.play(root, "control", { BackgroundColor3 = C.card })
-    end)
+    local activeTargets = {}
+    function handle.attachFeedback(target)
+      kit.feedback(childScope, target, function(active, pressed)
+        if definition.kind == "label" or definition.kind == "divider" then
+          return
+        end
+        activeTargets[target] = active and (pressed and 2 or 1) or nil
+        local strength = 0
+        for _, value in pairs(activeTargets) do
+          strength = math.max(strength, value)
+        end
+        childMotion.play(root, "feedback", { BackgroundColor3 = strength > 0 and kit.interactionColor(C.card, strength == 2) or C.card })
+      end, function() return handle.enabled end)
+    end
+    controlOwners[root] = handle
+    handle.attachFeedback(root)
+    childScope.add(function() controlOwners[root] = nil end)
     function handle.setEnabled(enabled)
       handle.enabled = enabled == true
       root.Active = handle.enabled
@@ -563,7 +579,7 @@ UIKit.__contract = {
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
-    Appearance = { "borderColor" },
+    Appearance = { "borderColor", "interactionColor" },
     Runtime = { "scope", "motion", "isVisible", "bindDrag", "mountLayer" },
     Icons = { "create" },
     Display = { "install" },
