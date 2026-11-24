@@ -1,4 +1,5 @@
 -- [[ movement: dash actions ]]
+--!optimize 2
 
 -- module
 local Movement = {}

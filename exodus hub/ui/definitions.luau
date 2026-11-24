@@ -1,4 +1,5 @@
 -- [[ uiconfig ]]
+--!optimize 2
 -- @modules uiconfig
 
 -- module

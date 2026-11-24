@@ -1,4 +1,5 @@
 -- [[ noclip ]]
+--!optimize 2
 -- @modules noclip
 
 local Noclip = {}

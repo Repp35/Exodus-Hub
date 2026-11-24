@@ -1,4 +1,5 @@
 -- [[ automatic floating visibility ]]
+--!optimize 2
 -- @modules uiassists
 local Assists = {}
 function Assists.setup() return true end

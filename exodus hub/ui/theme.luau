@@ -1,4 +1,5 @@
 -- [[ uitheme ]]
+--!optimize 2
 -- @modules uitheme
 
 -- module

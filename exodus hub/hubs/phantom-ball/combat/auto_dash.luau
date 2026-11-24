@@ -1,4 +1,5 @@
 -- [[ auto dash ]]
+--!optimize 2
 
 -- module
 local AutoDash = {}

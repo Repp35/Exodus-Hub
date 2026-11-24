@@ -1,4 +1,5 @@
 -- [[ dropdown ]]
+--!optimize 2
 -- @modules uidropdown
 
 -- module

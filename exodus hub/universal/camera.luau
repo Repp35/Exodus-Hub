@@ -1,4 +1,5 @@
 -- [[ camera ]]
+--!optimize 2
 -- @modules camera, invisicam, infinitezoom
 
 -- code

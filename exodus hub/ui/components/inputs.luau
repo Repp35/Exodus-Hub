@@ -1,4 +1,5 @@
 -- [[ inputs ]]
+--!optimize 2
 -- @modules uiinputs
 
 -- module

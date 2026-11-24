@@ -1,4 +1,5 @@
 -- [[ floating ]]
+--!optimize 2
 -- @modules uifloating
 
 -- module

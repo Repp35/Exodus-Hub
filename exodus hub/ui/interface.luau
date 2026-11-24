@@ -1,4 +1,5 @@
 -- [[ ui ]]
+--!optimize 2
 -- @modules ui
 
 -- module

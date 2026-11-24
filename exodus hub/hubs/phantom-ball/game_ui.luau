@@ -1,4 +1,5 @@
 -- [[ gameui ]]
+--!optimize 2
 
 -- code
 local GameUI = {}

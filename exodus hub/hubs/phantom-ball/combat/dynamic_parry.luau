@@ -1,4 +1,5 @@
 -- [[ dynamic parry ]]
+--!optimize 2
 
 -- code
 local Dynamic = {}

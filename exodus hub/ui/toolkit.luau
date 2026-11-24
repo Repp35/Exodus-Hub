@@ -1,4 +1,5 @@
 -- [[ uikit ]]
+--!optimize 2
 -- @modules uikit
 
 -- module

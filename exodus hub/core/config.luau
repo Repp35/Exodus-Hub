@@ -1,4 +1,5 @@
 -- [[ config ]]
+--!optimize 2
 -- @modules config
 
 -- module

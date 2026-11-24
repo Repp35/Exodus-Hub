@@ -1,4 +1,5 @@
 -- [[ native visual and audio adaptation ]]
+--!optimize 2
 
 -- code
 local Adapter = {}

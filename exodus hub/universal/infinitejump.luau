@@ -1,4 +1,5 @@
 -- [[ infinitejump ]]
+--!optimize 2
 -- @modules infinitejump
 
 local InfiniteJump = {}

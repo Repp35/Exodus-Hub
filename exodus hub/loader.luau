@@ -1,4 +1,5 @@
 -- [[ loader ]]
+--!optimize 2
 
 -- configuration
 local CONFIG = {

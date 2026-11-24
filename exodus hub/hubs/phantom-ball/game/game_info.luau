@@ -1,4 +1,5 @@
 -- [[ gameinfo ]]
+--!optimize 2
 
 -- module
 local GameInfo = {}

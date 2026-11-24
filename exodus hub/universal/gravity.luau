@@ -1,4 +1,5 @@
 -- [[ gravity ]]
+--!optimize 2
 -- @modules gravity
 
 local Gravity = {}

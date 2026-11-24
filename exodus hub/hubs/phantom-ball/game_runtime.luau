@@ -1,4 +1,5 @@
 -- [[ runtime ]]
+--!optimize 2
 
 -- code
 local Runtime = {}

@@ -45,7 +45,7 @@ As regras de Mini UI complementam a escolha do usuário sem salvar alterações:
 a UI aparece quando a regra ou a opção manual está ativa e faz a transição de
 saída quando ambas deixam de estar ativas. Elas não ativam a função do botão.
 
-Módulos compartilhados declaram suas chaves na segunda linha, por exemplo
+Módulos compartilhados declaram suas chaves após o título e as diretivas, por exemplo
 `-- @modules exemplo`. Bundles listam todas as chaves separadas por vírgulas.
 Depois de adicionar arquivos, gere os catálogos com os comandos de
 [desenvolvimento](../../docs/development.md). Não edite os catálogos à mão.

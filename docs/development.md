@@ -37,3 +37,12 @@ A política opcional de permissões fica no `hub.json`. `__contract.access`
 classifica operações; `config.own` limita escritas às chaves do próprio módulo.
 Resultados de leitura e APIs são imutáveis. Essa política organiza o acesso
 interno; não isola scripts do ambiente Roblox ou do executor.
+
+## Diretivas Luau
+
+Os arquivos de execução usam `--!optimize 2`. `--!native` fica nos cálculos de
+geometria e seleção espacial. Essas solicitações dependem do suporte do compilador
+e do executor; não substituem a medição de desempenho no cliente.
+
+O registro tipado e os catálogos gerados usam `--!strict`, com análise completa no
+CI. Os módulos que recebem APIs dinâmicas mantêm a análise padrão.

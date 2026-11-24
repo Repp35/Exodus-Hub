@@ -1,4 +1,6 @@
 -- [[ spatial visual selection ]]
+--!optimize 2
+--!native
 -- @modules renderspatial
 
 -- code

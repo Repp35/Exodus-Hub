@@ -1,4 +1,5 @@
 -- [[ antilag ]]
+--!optimize 2
 -- @modules renderadapter, antilag
 
 -- code

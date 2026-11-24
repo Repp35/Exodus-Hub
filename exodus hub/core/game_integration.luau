@@ -1,4 +1,5 @@
 -- [[ game_integration ]]
+--!optimize 2
 -- @modules gamecontext, hubapi, runtime
 
 -- code

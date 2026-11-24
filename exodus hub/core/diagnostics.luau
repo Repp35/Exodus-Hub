@@ -1,4 +1,5 @@
 -- [[ diagnostics ]]
+--!optimize 2
 -- @modules profiler, status, diagnostics
 
 -- code

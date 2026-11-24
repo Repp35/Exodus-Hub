@@ -1,4 +1,5 @@
 -- [[ autofierce ]]
+--!optimize 2
 
 -- code
 local AutoFierce = {}

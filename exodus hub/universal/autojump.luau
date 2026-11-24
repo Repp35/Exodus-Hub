@@ -1,4 +1,5 @@
 -- [[ auto jump ]]
+--!optimize 2
 -- @modules autojump
 
 -- module

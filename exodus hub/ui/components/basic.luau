@@ -1,4 +1,5 @@
 -- [[ basic ]]
+--!optimize 2
 -- @modules uidisplay, uicontrols, uiselection
 
 -- code

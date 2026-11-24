@@ -1,4 +1,5 @@
 -- [[ targeting ]]
+--!optimize 2
 
 -- code
 local Targeting = {}

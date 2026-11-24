@@ -1,4 +1,5 @@
 -- [[ combat loop ]]
+--!optimize 2
 
 -- code
 local CombatLoop = {}

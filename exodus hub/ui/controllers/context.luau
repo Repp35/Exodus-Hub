@@ -1,4 +1,5 @@
 -- [[ context ]]
+--!optimize 2
 -- @modules uicontext
 
 -- module

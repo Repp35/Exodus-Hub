@@ -1,4 +1,5 @@
 -- [[ character ]]
+--!optimize 2
 -- @modules character
 
 -- module

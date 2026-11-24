@@ -1,4 +1,5 @@
 -- [[ interface lifecycle ]]
+--!optimize 2
 -- @modules uilifecycle
 
 local Controller = {}

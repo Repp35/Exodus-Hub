@@ -1,4 +1,5 @@
 -- [[ automatic updates ]]
+--!optimize 2
 -- @modules updates
 
 local Updates = {}

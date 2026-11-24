@@ -1,4 +1,5 @@
 -- [[ Phantom Ball readouts ]]
+--!optimize 2
 
 local Telemetry = {}
 function Telemetry.setup() return true end

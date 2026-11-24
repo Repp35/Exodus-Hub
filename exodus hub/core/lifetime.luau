@@ -1,4 +1,5 @@
 -- [[ resource lifetime ]]
+--!optimize 2
 -- @modules lifetime
 
 -- code

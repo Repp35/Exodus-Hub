@@ -1,4 +1,5 @@
 -- [[ fly ]]
+--!optimize 2
 -- @modules fly
 
 local Fly = {}

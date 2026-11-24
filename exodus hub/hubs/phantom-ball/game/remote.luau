@@ -1,4 +1,5 @@
 -- [[ remote ]]
+--!optimize 2
 
 -- module
 local Remote = {}

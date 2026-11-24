@@ -1,4 +1,5 @@
 -- [[ uipages ]]
+--!optimize 2
 -- @modules uipages
 
 -- module

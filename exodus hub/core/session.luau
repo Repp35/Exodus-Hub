@@ -1,4 +1,5 @@
 -- [[ session ]]
+--!optimize 2
 -- @modules state, utils
 
 -- code

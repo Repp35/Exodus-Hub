@@ -1,4 +1,5 @@
 -- [[ dumper ]]
+--!optimize 2
 -- @modules dumper
 
 -- module

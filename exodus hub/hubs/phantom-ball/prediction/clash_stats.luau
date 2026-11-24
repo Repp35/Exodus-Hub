@@ -1,4 +1,5 @@
 -- [[ clash stats ]]
+--!optimize 2
 
 -- module
 local ClashStats = {}

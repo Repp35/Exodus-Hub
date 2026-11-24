@@ -1,4 +1,5 @@
 -- [[ event-maintained player references ]]
+--!optimize 2
 
 -- code
 local Registry = {}

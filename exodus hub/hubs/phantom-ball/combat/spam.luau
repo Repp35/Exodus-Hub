@@ -1,4 +1,5 @@
 -- [[ spam ]]
+--!optimize 2
 
 local Spam = {}
 

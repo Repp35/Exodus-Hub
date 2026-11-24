@@ -1,4 +1,5 @@
 -- [[ speed ]]
+--!optimize 2
 -- @modules speed
 
 local Speed = {}

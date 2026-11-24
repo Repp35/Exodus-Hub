@@ -1,4 +1,5 @@
 -- [[ auto spam ]]
+--!optimize 2
 
 -- module
 local AutoSpam = {}

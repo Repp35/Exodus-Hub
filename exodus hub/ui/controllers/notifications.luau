@@ -1,4 +1,5 @@
 -- [[ notifications ]]
+--!optimize 2
 -- @modules uinotifications, uinotificationview
 
 -- code

@@ -1,4 +1,5 @@
 -- [[ cooldown ]]
+--!optimize 2
 
 -- module
 local Cooldown = {}

@@ -1,4 +1,5 @@
 -- [[ ballsync ]]
+--!optimize 2
 
 -- code
 local BallSync = {}

@@ -1,4 +1,5 @@
 -- [[ Phantom Ball inventory actions ]]
+--!optimize 2
 local Actions = {}
 function Actions.setup() return true end
 function Actions.create(loaded, context)

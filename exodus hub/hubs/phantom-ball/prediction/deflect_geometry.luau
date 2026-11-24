@@ -1,4 +1,6 @@
 -- [[ deflectgeometry ]]
+--!optimize 2
+--!native
 
 -- code
 local Geometry = {}

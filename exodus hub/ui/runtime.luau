@@ -1,4 +1,5 @@
 -- [[ uiruntime ]]
+--!optimize 2
 -- @modules uiruntime
 
 -- module

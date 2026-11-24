@@ -28,6 +28,17 @@ class RuntimeAPI(unittest.TestCase):
             with self.subTest(path=str(path.relative_to(ROOT))):
                 result = subprocess.run([binary, '--null', str(path)], capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if re.search(r'^--!native\s*$', path.read_text(), re.MULTILINE):
+                    native = subprocess.run([binary, '--codegennull', str(path)], capture_output=True, text=True, timeout=30)
+                    self.assertEqual(native.returncode, 0, native.stdout + native.stderr)
+
+    def test_strict_modules_pass_full_analysis(self):
+        binary = self.binary('LUAU_ANALYZE_BIN', 'luau-analyze')
+        paths = [path for path in ROOT.rglob('*.luau')
+                 if 'indeed' not in path.relative_to(ROOT).parts
+                 and re.search(r'^--!strict\s*$', path.read_text(), re.MULTILINE)]
+        result = subprocess.run([binary, *map(str, paths)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_no_undeclared_globals(self):
         import json

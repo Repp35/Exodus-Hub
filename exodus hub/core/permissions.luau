@@ -1,4 +1,5 @@
 -- [[ internal permissions: generic action categories ]]
+--!optimize 2
 -- @modules permissions
 
 local Permissions = {}

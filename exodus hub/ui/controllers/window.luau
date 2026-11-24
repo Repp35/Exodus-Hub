@@ -1,4 +1,5 @@
 -- [[ window ]]
+--!optimize 2
 -- @modules uiwindow
 
 -- module

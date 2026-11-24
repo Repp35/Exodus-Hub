@@ -1,4 +1,5 @@
 -- [[ session bootstrap ]]
+--!optimize 2
 -- @modules bootstrap
 
 local Bootstrap = {}
