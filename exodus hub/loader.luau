@@ -83,8 +83,18 @@ local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 
 -- configuration
 local CONFIG = {
+  USER_ID = 222319587,
   REPOSITORY_ID = 1334849119,
-  HEAD_URL = "https://api.github.com/repositories/1334849119/git/ref/heads/main",
+  BRANCH = false, -- false: use the current default branch
+  REVISION = false, -- false: resolve the latest commit
+  ENTRY_POINT = "loader.luau",
+  MAX_ATTEMPTS = 3,
+  RETRY_DELAYS = { 0.25, 0.75, 1.5 },
+  RATE_LIMIT_DEFAULT_DELAY = 5,
+  PLAYER_TIMEOUT = 10,
+  CACHE_WAIT_TIMEOUT = 60,
+  BYPASS_IMMUTABLE_CACHE = false,
+  DEBUG = false,
   DOWNLOAD_WORKERS = 12,
   REQUEST_TIMEOUT = 8,
   MAX_PENDING_REQUESTS = 24,
@@ -147,7 +157,6 @@ local CONFIG = {
 
 local PROJECT_PATH = CONFIG.PROJECT_PATH
 local BASE_URL
-local HEAD_URL = CONFIG.HEAD_URL
 local HttpService = game:GetService("HttpService")
 local cacheSequence = 0
 local function cacheBuster()
@@ -189,7 +198,7 @@ local function isRetryableHttp(message)
   return statusCode == nil or statusCode == 408 or statusCode == 425 or statusCode == 429 or (statusCode and statusCode >= 500 and statusCode <= 599)
 end
 local function waitBeforeRetry(attempt)
-  if type(task) == "table" and type(task.wait) == "function" then local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays]) end
+  if type(task) == "table" and type(task.wait) == "function" then local delays = CONFIG.RETRY_DELAYS; task.wait(delays[attempt] or delays[#delays] or 0) end
 end
 local function headerValue(headers, expected)
   for key, value in pairs(type(headers) == "table" and headers or {}) do
@@ -200,9 +209,10 @@ end
 local function retryAfter(headers)
   local delay = tonumber(headerValue(headers, "retry-after"))
   if delay and delay >= 0 then return delay end
-  local reset = tonumber(headerValue(headers, "x-ratelimit-reset")); return reset and math.max(0, reset - os.time()) or 5
+  local reset = tonumber(headerValue(headers, "x-ratelimit-reset")); return reset and math.max(0, reset - os.time()) or CONFIG.RATE_LIMIT_DEFAULT_DELAY
 end
 local requestState = type(_G.ExodusRequestState) == "table" and _G.ExodusRequestState or { pending = 0 }
+if type(requestState.pending) ~= "number" or requestState.pending < 0 then requestState.pending = 0 end
 _G.ExodusRequestState = requestState
 local function requestOnce(url, headers)
   if not requestFunction then return nil, "Nenhum serviço HTTP disponível" end
@@ -234,7 +244,6 @@ local function requestOnce(url, headers)
         and (
           remaining == 0
           or headerValue(responseHeaders, "retry-after") ~= nil
-          or headerValue(responseHeaders, "x-ratelimit-reset") ~= nil
           or details:find("rate limit", 1, true) ~= nil
         )
       )
@@ -251,13 +260,13 @@ local function request(url, headers)
   if type(url) ~= "string" or url == "" then return nil, "URL inválida" end
   if not requestFunction then return nil, "Nenhum serviço HTTP disponível" end
   local lastError, lastMeta
-  for attempt = 1, 3 do
+  for attempt = 1, CONFIG.MAX_ATTEMPTS do
     local body, err, meta = requestOnce(url, headers)
     if body then return body end
     lastError, lastMeta = err, meta
-    if meta and meta.rateLimited then return nil, lastError, lastMeta end
+    if meta and meta.rateLimited then return nil, ("%s (rate limit; retry in %ds)"):format(lastError, math.ceil(meta.retryAfter or CONFIG.RATE_LIMIT_DEFAULT_DELAY)), lastMeta end
     if not isRetryableHttp(lastError) then break end
-    if attempt < 3 then waitBeforeRetry(attempt) end
+    if attempt < CONFIG.MAX_ATTEMPTS then waitBeforeRetry(attempt) end
   end
   local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message, lastMeta
 end
@@ -352,20 +361,34 @@ local function execute(name, chunk)
   return module
 end
 local function resolveLatestRevision()
-  local metadata, metadataError = request("https://api.github.com/repositories/" .. CONFIG.REPOSITORY_ID)
-  if not metadata then return nil, metadataError end
-  local decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
-  if not decoded or type(repo) ~= "table" or type(repo.full_name) ~= "string" then return nil, "Invalid repository metadata" end
-  BASE_URL = "https://raw.githubusercontent.com/" .. repo.full_name .. "/"
-  local body, requestError = request(HEAD_URL .. "?exodus_cache=" .. cacheBuster(), {
+  local repositoryURL = "https://api.github.com/repositories/" .. tostring(CONFIG.REPOSITORY_ID)
+  local headers = {
     ["Accept"] = "application/vnd.github+json",
     ["User-Agent"] = "Exodus-Hub-Loader",
     ["Cache-Control"] = "no-cache, no-store",
-  })
-  if not body then return nil, requestError end
-  local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
-  if not validRevision(sha) then return nil, "revisão atual da main inválida" end
-  return sha
+  }
+  local metadata, metadataError = request(repositoryURL .. "?exodus_cache=" .. cacheBuster(), headers)
+  if not metadata then return nil, metadataError end
+  local decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
+  if not decoded or type(repo) ~= "table" or type(repo.full_name) ~= "string" or not repo.full_name:match("^[%w_.%-]+/[%w_.%-]+$") then return nil, "Invalid repository metadata" end
+  if tonumber(repo.id) ~= CONFIG.REPOSITORY_ID or type(repo.owner) ~= "table" or tonumber(repo.owner.id) ~= CONFIG.USER_ID then return nil, "Repository or owner ID mismatch" end
+  local revision = CONFIG.REVISION
+  local branch = CONFIG.BRANCH or repo.default_branch
+  if revision then
+    if not validRevision(revision) then return nil, "Invalid configured revision" end
+  else
+    if type(branch) ~= "string" or branch == "" then return nil, "Invalid repository branch" end
+    local encodedBranch = branch:gsub("[^/]+", function(segment) return HttpService:UrlEncode(segment) end)
+    local headURL = repositoryURL .. "/git/ref/heads/" .. encodedBranch
+    local body, requestError = request(headURL .. "?exodus_cache=" .. cacheBuster(), headers)
+    if not body then return nil, requestError end
+    local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
+    revision = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
+    if not validRevision(revision) then return nil, "Invalid branch revision: " .. branch end
+  end
+  BASE_URL = "https://raw.githubusercontent.com/" .. repo.full_name .. "/"
+  if CONFIG.DEBUG then printStartup(("[Exodus] Repository %s, revision %s"):format(repo.full_name, revision)) end
+  return revision
 end
 local function buildURLs(revision)
   local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local urls = {}
@@ -378,18 +401,24 @@ local downloadCache = {}
 local function loadModule(name, relativePath, url)
   local previous = downloadCache[url]
   if previous then
+    local deadline = os.clock() + CONFIG.CACHE_WAIT_TIMEOUT
     while previous.pending do
+      if os.clock() >= deadline then return nil, "Tempo limite ao esperar download: " .. relativePath end
       task.wait()
     end
     return previous.chunk, previous.error
   end
   local pending = { pending = true }; downloadCache[url] = pending
-  local source, fetchError = request(url .. "?exodus_cache=" .. cacheBuster(), { ["Cache-Control"] = "no-cache, no-store" })
-  if not source then
-    pending.pending, pending.error = false, fetchError
-    return nil, fetchError
-  end
-  local chunk, detail = compile(relativePath, source); pending.chunk, pending.error, pending.pending = chunk, detail, false
+  local ok, chunk, detail = pcall(function()
+    local downloadURL = CONFIG.BYPASS_IMMUTABLE_CACHE and (url .. "?exodus_cache=" .. cacheBuster()) or url
+    local headers = CONFIG.BYPASS_IMMUTABLE_CACHE and { ["Cache-Control"] = "no-cache, no-store" } or nil
+    local source, fetchError = request(downloadURL, headers)
+    if not source then return nil, fetchError end
+    return compile(relativePath, source)
+  end)
+  if not ok then detail, chunk = tostring(chunk), nil end
+  pending.chunk, pending.error, pending.pending = chunk, detail, false
+  if not chunk and downloadCache[url] == pending then downloadCache[url] = nil end
   return chunk, detail
 end
 local function selectHub(revision)
@@ -460,6 +489,7 @@ local function basicLinker()
   end
   return linker
 end
+local activeLoaded
 local function loadModules(urls, prepared)
   local loaded, results = {}, prepared or {}
   if not prepared then
@@ -497,6 +527,7 @@ local function loadModules(urls, prepared)
     end
     return results
   end
+  activeLoaded = loaded
   local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
   if results.permissions then permissions.configure(selectedHub.permissionPolicy); permissions.validate("permissions", permissions, "core/permissions.luau") end
   loaded.permissions = register("permissions", permissions)
@@ -593,7 +624,6 @@ local function configureModules(loaded, utils, urls)
 end
 
 -- startup
-local activeLoaded
 local function waitForLocalPlayer(timeout)
   local players = game:GetService("Players")
   if players.LocalPlayer then return true end
@@ -652,7 +682,7 @@ end
 local function prepareLoader()
   local revision, revisionError = resolveLatestRevision()
   if not revision then return nil, revisionError end
-  return loadModule("reload loader", "loader.luau", BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
+  return loadModule("reload loader", CONFIG.ENTRY_POINT, BASE_URL .. revision .. "/" .. PROJECT_PATH .. CONFIG.ENTRY_POINT)
 end
 local reloadInFlight = false
 local function reloadLatest(onFailure)
@@ -681,11 +711,12 @@ local function startInternal()
   if not selected then return false, "Loader", selectionError end
   local urls = buildURLs(version); local prepared, prepareModule, prepareError = loadModules(urls)
   if not prepared then return false, prepareModule, prepareError end
+  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
+  if not playerReady then return false, "Loader", playerError end
   printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
   _G.ExodusShutdownReason = nil; startupPerformed = true
-  clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
-  if not playerReady then return false, "Loader", playerError end
+  clearRegistry()
   local loaded, moduleName, loadError = loadModules(urls, prepared)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; loaded.gamecontext.configure(selectedHub)
