@@ -351,6 +351,10 @@ local function createOptimizer(services, initialConfig)
   controller:SetEnabled(options.StartEnabled); return controller
 end
 Properties.create = createOptimizer
-Properties.__contract = { requires = {}, provides = { "setup", "create" } }
+Properties.__contract = {
+  access = { default = "render.write" },
+  requires = {},
+  provides = { "setup", "create" },
+}
 
 return Properties

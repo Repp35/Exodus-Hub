@@ -275,6 +275,7 @@ function Dynamic.getStatus()
   return { active = active, held = held ~= nil, protectedUntil = protectedUntil, attached = binding ~= nil, lastStopReason = lastStopReason }
 end
 Dynamic.__contract = {
+  access = { methods = { canSend = "combat.runtime" } },
   requires = {
     Utils = "utils",
     GameInfo = "gameinfo",

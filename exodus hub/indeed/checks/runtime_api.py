@@ -15,13 +15,11 @@ def smoke(binary, universal=True, hub_id=None, assertions=""):
     universal = hub_id is None or hub_id == "universal"
     entries = manifest(universal, hub_id or "universal")
     code = (Path(__file__).with_name('engine_api.luau')).read_text()
-    policy_text = re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'core/permissions.luau').read_text(), re.S)[1]
     def literal(value):
         if isinstance(value, dict):
             return '{' + ','.join('[' + json.dumps(k) + ']=' + literal(v) for k, v in value.items()) + '}'
         if isinstance(value, list): return '{' + ','.join(map(literal, value)) + '}'
         return json.dumps(value, ensure_ascii=False)
-    code += '\nservices.HttpService = { JSONDecode = function(_, text) assert(text == [=[' + policy_text + ']=]); return ' + literal(json.loads(policy_text)) + ' end }\n'
     profile = {"id": hub_id or "universal"}
     if not universal:
         profile.update(json.loads((ROOT / 'hubs' / hub_id / 'hub.json').read_text()))
@@ -36,6 +34,8 @@ def smoke(binary, universal=True, hub_id=None, assertions=""):
         start = loader.index('local function basicLinker()')
         end = loader.index('local function loadModules(', start)
         code += '\n' + loader[start:end] + '\nloaded.permissions = basicLinker()\nloaded.permissions.__contract = { requires = {}, provides = { "validate", "resolve" } }\n'
+    if not universal:
+        code += '\nloaded.permissions.configure(profile.permissionPolicy)\n'
     for name, path in entries:
         code += f'loaded.permissions.validate("{name}", loaded["{name}"], "{path}")\n'
     paths = dict(entries)

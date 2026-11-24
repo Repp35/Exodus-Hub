@@ -370,6 +370,7 @@ function Geometry.getWindow(speed, options)
 end
 function Geometry.getKillRadius(value) return type(value) == "table" and finite(value.killRadius) and value.killRadius or 4 end
 Geometry.__contract = {
+  access = { default = "internal.read" },
   requires = { GameInfo = "gameinfo", Utils = "utils" },
   requiresMethods = {
     GameInfo = {

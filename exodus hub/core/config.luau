@@ -127,6 +127,10 @@ end
 
 -- contract
 Config.__contract = {
+  access = {
+    default = "internal.read",
+    methods = { register = "infrastructure.write" },
+  },
   provides = { "register", "defaults", "validate", "validatePatch", "normalizePatch", "getRegistry" },
   requires = {},
 }

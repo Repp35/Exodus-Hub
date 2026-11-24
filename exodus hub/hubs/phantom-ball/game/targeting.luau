@@ -224,6 +224,10 @@ function Targeting.createParryTracker()
   end
   tracker.reset(); return tracker
 end
-Targeting.__contract = { provides = { "setup", "create", "createParryTracker" }, requires = {} }
+Targeting.__contract = {
+  access = { default = "internal.read" },
+  provides = { "setup", "create", "createParryTracker" },
+  requires = {},
+}
 
 return Targeting

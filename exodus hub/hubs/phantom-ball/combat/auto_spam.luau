@@ -610,6 +610,7 @@ end
 
 -- contract
 AutoSpam.__contract = {
+  access = { methods = { canSend = "combat.runtime", canSendManual = "combat.runtime", stopSpam = "combat.runtime" } },
   requires = {
     Profiler = "profiler",
     DeflectGeometry = "deflectgeometry",

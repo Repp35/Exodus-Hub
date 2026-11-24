@@ -331,6 +331,10 @@ local function createSpatialController(services, getOption, PROFILE)
   connections[#connections + 1] = player:GetAttributeChangedSignal("Lives"):Connect(updateLobby); return controller
 end
 Spatial.create = createSpatialController
-Spatial.__contract = { requires = {}, provides = { "setup", "create" } }
+Spatial.__contract = {
+  access = { default = "render.write" },
+  requires = {},
+  provides = { "setup", "create" },
+}
 
 return Spatial

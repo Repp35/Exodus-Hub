@@ -52,6 +52,17 @@ local __part_hubapi = (function()
     return nil
   end
   HubAPI.__contract = {
+    access = {
+      default = "internal.read",
+      methods = {
+        configure = "infrastructure.write",
+        resetState = "combat.runtime",
+        createCrateNetwork = "game.inventory",
+        spinCrate = "game.inventory",
+        applyVisualPolicy = "render.write",
+        createVisualAdapter = "render.write",
+      },
+    },
     provides = {
       "setup",
       "configure",

@@ -318,6 +318,30 @@ local __part_utils = (function()
   function Utils.author() return CONFIG.AUTHOR end
   _G.ExodusStop = Utils.stop
   Utils.__contract = {
+    access = {
+      default = "infrastructure.write",
+      methods = {
+        now = "internal.read",
+        apiVersion = "internal.read",
+        name = "internal.read",
+        author = "internal.read",
+        version = "internal.read",
+        setConfig = "config.write",
+        resetConfig = "config.write",
+        loadConfig = "config.write",
+        setManualSpamActive = "manual.input.write",
+        setAutoSpamActive = "combat.runtime",
+        setDynamicSpamActive = "combat.runtime",
+        stopAllSpam = "input.stop",
+        stop = "hub.control",
+        start = "hub.control",
+        ensureDataFolder = "tooling.execute",
+        disconnectCharacterConnections = "lifecycle.write",
+        recordError = "diagnostics.write",
+        recordTransition = "diagnostics.write",
+      },
+      scoped = { "setConfig" },
+    },
     requires = {
       GameContext = "gamecontext",
       State = "state",

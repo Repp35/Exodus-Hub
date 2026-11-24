@@ -27,3 +27,24 @@ O campo `checkPermissions` do jogo controla sua auditoria de desenvolvimento;
 
 O CI executa as verificações mínimas. Renderização e comportamento real devem
 ser conferidos no cliente Roblox e no executor utilizado.
+
+## Permissões internas
+
+`core/permissions.luau` é apenas o motor. O `permissionPolicy` do `hub.json`
+define tipos, autorizações e atribuição dos módulos a esses tipos. Módulos novos
+nas pastas já cobertas herdam o tipo; o motor não precisa ser editado.
+As autorizações descrevem ações, como leitura interna, execução de combate,
+escrita de configuração e alteração de UI. Não são listas de APIs por consumidor.
+
+As APIs declaram exceções semânticas em `__contract.access`: `default` informa
+a categoria de operação padrão; `methods` classifica operações que diferem dela;
+`scoped` marca operações limitadas às configurações pertencentes ao consumidor.
+Métodos de consulta usam a categoria genérica `internal.read` por padrão.
+Todo módulo com essa categoria pode ler as APIs que importar.
+
+Dados públicos e resultados de leitura em tabelas são cópias de leitura.
+As dependências são vistas imutáveis; métodos sem permissão não são expostos.
+O escopo `config.own` usa as chaves do `__config.schema` do próprio módulo,
+sem nomes ou prefixos fixos no motor. Acesso ao Roblox/remotes não é restringido.
+A regra protege a comunicação pelas APIs internas; não é isolamento de scripts
+maliciosos com acesso ao ambiente global do executor.

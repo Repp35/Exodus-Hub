@@ -214,6 +214,10 @@ end
 
 -- contract
 ClashStats.__contract = {
+  access = {
+    default = "combat.runtime",
+    methods = { observe = "combat.runtime" },
+  },
   requires = {
     Utils = "utils",
     GameInfo = "gameinfo",

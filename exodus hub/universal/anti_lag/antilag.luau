@@ -11,6 +11,7 @@ local __part_renderadapter = (function()
   function Adapter.create(...) return hub.createVisualAdapter(...) end
   function Adapter.apply(...) return hub.applyVisualPolicy(...) end
   Adapter.__contract = {
+    access = { default = "render.write" },
     provides = { "setup", "create", "apply", "isAvailable" },
     requires = { Hub = "hubapi" },
     requiresMethods = { Hub = { "createVisualAdapter", "applyVisualPolicy", "isNativeVisualAvailable" } },

@@ -270,6 +270,7 @@ end
 
 -- contract
 Spam.__contract = {
+  access = { methods = { resetState = "combat.runtime" } },
   requires = {
     Remote = "remote",
     Utils = "utils",

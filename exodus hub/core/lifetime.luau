@@ -57,6 +57,10 @@ function Lifetime.connections(utils)
   end
   return pool
 end
-Lifetime.__contract = { requires = {}, provides = { "setup", "scope", "connections" } }
+Lifetime.__contract = {
+  access = { default = "lifetime.manage" },
+  requires = {},
+  provides = { "setup", "scope", "connections" },
+}
 
 return Lifetime

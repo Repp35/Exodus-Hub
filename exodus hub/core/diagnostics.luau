@@ -39,7 +39,15 @@ local __part_status = (function()
   end
   function Status.get(name) return active and active.get(name) or nil end
   function Status.collect(selected) return active and active.collect(selected) or {} end
-  Status.__contract = { provides = { "setup", "create", "configure", "get", "collect" }, requires = {} }; return Status
+  Status.__contract = {
+    access = {
+      default = "internal.read",
+      methods = { configure = "infrastructure.write" },
+    },
+    provides = { "setup", "create", "configure", "get", "collect" },
+    requires = {},
+  }
+  return Status
 end)()
 local __part_diagnostics = (function()
   local Diagnostics = {}
@@ -164,7 +172,19 @@ local __part_profiler = (function()
   function Profiler.teardown()
     enabled = false; table.clear(samples)
   end
-  Profiler.__contract = { requires = {}, provides = { "setup", "teardown", "setEnabled", "isEnabled", "begin", "finish", "count", "getStatus" } }; return Profiler
+  Profiler.__contract = {
+    access = {
+      default = "diagnostics.write",
+      methods = {
+        getStatus = "internal.read",
+        isEnabled = "internal.read",
+        setEnabled = "infrastructure.write",
+      },
+    },
+    requires = {},
+    provides = { "setup", "teardown", "setEnabled", "isEnabled", "begin", "finish", "count", "getStatus" },
+  }
+  return Profiler
 end)()
 
 return { __bundle = { status = __part_status, diagnostics = __part_diagnostics, profiler = __part_profiler } }

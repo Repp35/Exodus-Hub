@@ -694,6 +694,7 @@ function Dumper.teardown() return Dumper.stop() end
 
 -- contract
 Dumper.__contract = {
+  access = { default = "tooling.execute" },
   requires = {},
   provides = { "setup", "start", "stop", "isRunning", "getStatus", "teardown" },
 }

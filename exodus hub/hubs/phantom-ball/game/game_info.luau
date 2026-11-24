@@ -1032,6 +1032,15 @@ end
 
 -- contract
 GameInfo.__contract = {
+  access = {
+    references = { "getDeflectAbility", "getDashAbility", "getFierceDeflectAbility", "getDarkSealAbility", "getDefenseSource" },
+    default = "game.write",
+    methods = {
+      fireTrainingParry = "combat.execute",
+      createCrateNetwork = "game.inventory",
+      spinCrate = "game.inventory",
+    },
+  },
   requires = {
     Profiler = "profiler",
     Utils = "utils",

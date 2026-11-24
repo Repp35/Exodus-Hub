@@ -123,6 +123,7 @@ end
 
 -- contract
 Servers.__contract = {
+  access = { default = "tooling.execute" },
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getLocalPlayer", "isActive", "trackGlobal", "untrackGlobal", "recordError" } },
   provides = { "setup", "teardown", "rejoin", "hop" },

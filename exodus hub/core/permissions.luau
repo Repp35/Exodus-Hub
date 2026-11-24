@@ -1,322 +1,29 @@
--- [[ permissions ]]
+-- [[ internal permissions: generic action categories ]]
 
--- module
 local Permissions = {}
-
--- configuration
-local CONFIG = {
-  RESERVED = {
-    __contract = true,
-    __config = true,
-  },
-}
-
-local POLICY_JSON = [=[
-{
-  "rules": [
-    {
-      "names": [
-        "runtime",
-        "uiconfig"
-      ],
-      "family": "infrastructure"
-    },
-    {
-      "prefix": "modules/front/library/",
-      "family": "view"
-    },
-    {
-      "prefix": "modules/front/",
-      "family": "presentation"
-    },
-    {
-      "names": [
-        "character"
-      ],
-      "family": "lifecycle"
-    },
-    {
-      "prefix": "modules/core/",
-      "family": "infrastructure"
-    },
-    {
-      "prefix": "modules/game/",
-      "family": "game"
-    },
-    {
-      "prefix": "modules/render/",
-      "family": "render"
-    },
-    {
-      "prefix": "modules/tools/",
-      "family": "tools"
-    },
-    {
-      "prefix": "modules/features/",
-      "family": "universal"
-    },
-    {
-      "prefix": "modules/combat/",
-      "family": "combat"
-    }
-  ],
-  "base": [
-    "internal.read",
-    "lifetime.manage",
-    "diagnostics.write"
-  ],
-  "families": {
-    "infrastructure": [
-      "*"
-    ],
-    "presentation": [
-      "ui.write",
-      "config.write",
-      "manual.input.write",
-      "input.stop",
-      "tooling.execute",
-      "game.inventory",
-      "hub.control"
-    ],
-    "combat": [
-      "combat.execute",
-      "combat.runtime"
-    ],
-    "game": [
-      "game.write"
-    ],
-    "lifecycle": [
-      "lifecycle.write",
-      "combat.runtime",
-      "input.stop"
-    ],
-    "universal": [
-      "world.write",
-      "config.own"
-    ],
-    "render": [
-      "render.write",
-      "config.own"
-    ],
-    "view": [
-      "ui.write"
-    ],
-    "tools": [
-      "tooling.execute"
-    ]
-  },
-  "domains": {
-    "infrastructure": "infrastructure.write",
-    "presentation": "ui.write",
-    "combat": "combat.execute",
-    "game": "game.write",
-    "lifecycle": "lifecycle.write",
-    "universal": "world.write",
-    "render": "render.write",
-    "view": "ui.write",
-    "tools": "tooling.execute"
-  },
-  "ownConfigPrefixes": {
-    "universal": "Universal",
-    "render": "AntiLag"
-  },
-  "lifecycleMethods": [
-    "setup",
-    "teardown",
-    "bindCharacter",
-    "detachCharacter"
-  ],
-  "readPrefixes": [
-    "get",
-    "is",
-    "has",
-    "are",
-    "uses",
-    "normalize",
-    "validate",
-    "decode",
-    "format",
-    "should"
-  ],
-  "subscribePrefixes": [
-    "observe",
-    "track",
-    "untrack"
-  ],
-  "providers": {
-    "utils": {
-      "default": "infrastructure.write",
-      "methods": {
-        "now": "internal.read",
-        "apiVersion": "internal.read",
-        "name": "internal.read",
-        "author": "internal.read",
-        "version": "internal.read",
-        "setConfig": "config.write",
-        "resetConfig": "config.write",
-        "loadConfig": "config.write",
-        "setManualSpamActive": "manual.input.write",
-        "setAutoSpamActive": "combat.runtime",
-        "setDynamicSpamActive": "combat.runtime",
-        "stopAllSpam": "input.stop",
-        "stop": "hub.control",
-        "start": "hub.control",
-        "ensureDataFolder": "tooling.execute",
-        "disconnectCharacterConnections": "lifecycle.write",
-        "recordError": "diagnostics.write",
-        "recordTransition": "diagnostics.write"
-      }
-    },
-    "gameinfo": {
-      "default": "game.write",
-      "methods": {
-        "fireTrainingParry": "combat.execute",
-        "createCrateNetwork": "game.inventory",
-        "spinCrate": "game.inventory"
-      }
-    },
-    "renderproperties": {
-      "default": "render.write"
-    },
-    "renderadapter": {
-      "default": "render.write"
-    },
-    "renderspatial": {
-      "default": "render.write"
-    },
-    "lifetime": {
-      "default": "lifetime.manage"
-    },
-    "profiler": {
-      "default": "diagnostics.write",
-      "methods": {
-        "getStatus": "internal.read",
-        "isEnabled": "internal.read",
-        "setEnabled": "infrastructure.write"
-      }
-    },
-    "deflectgeometry": {
-      "default": "internal.read"
-    },
-    "targeting": {
-      "default": "internal.read"
-    },
-    "config": {
-      "default": "internal.read",
-      "methods": {
-        "register": "infrastructure.write"
-      }
-    },
-    "status": {
-      "default": "internal.read",
-      "methods": {
-        "configure": "infrastructure.write"
-      }
-    },
-    "autospam": {
-      "methods": {
-        "canSend": "combat.runtime",
-        "canSendManual": "combat.runtime",
-        "stopSpam": "combat.runtime"
-      }
-    },
-    "dynamicparry": {
-      "methods": {
-        "canSend": "combat.runtime"
-      }
-    },
-    "clashstats": {
-      "default": "combat.runtime",
-      "methods": {
-        "observe": "combat.runtime"
-      }
-    },
-    "dumper": {
-      "default": "tooling.execute"
-    },
-    "servers": {
-      "default": "tooling.execute"
-    },
-    "permissions": {
-      "default": "infrastructure.write",
-      "methods": {
-        "validate": "infrastructure.write",
-        "policy": "internal.read"
-      }
-    },
-    "spam": {
-      "methods": {
-        "resetState": "combat.runtime"
-      }
-    },
-    "hubapi": {
-      "default": "internal.read",
-      "methods": {
-        "configure": "infrastructure.write",
-        "resetState": "combat.runtime",
-        "createCrateNetwork": "game.inventory",
-        "spinCrate": "game.inventory",
-        "applyVisualPolicy": "render.write",
-        "createVisualAdapter": "render.write"
-      }
-    }
-  }
-}
-]=]
-local POLICY = game:GetService("HttpService"):JSONDecode(POLICY_JSON)
+local CONFIG = { RESERVED = { __contract = true, __config = true } }
+local readonly
+local POLICY = { base = {}, types = {}, rules = {}, modules = {}, defaults = {} }
 local function contains(items, value)
   for _, item in ipairs(items or {}) do
     if item == value then return true end
   end
   return false
 end
+local function configure(policy)
+  assert(type(policy) == "table" and type(policy.types) == "table", "Missing internal permission policy")
+  POLICY =
+    readonly({ base = policy.base or {}, types = policy.types, rules = policy.rules or {}, modules = policy.modules or {}, defaults = policy.defaults or {} })
+  return true
+end
 local function familyFor(name, path)
-  if path then
-    if path:sub(1, 5) == "core/" then
-      path = "modules/" .. path
-    elseif path:sub(1, 3) == "ui/" then
-      local view = {
-        uikit = true,
-        uitheme = true,
-        uiruntime = true,
-        uiicons = true,
-        uipages = true,
-        uidisplay = true,
-        uicontrols = true,
-        uiinputs = true,
-        uiselection = true,
-        uidropdown = true,
-      }
-
-      path = (view[name] and "modules/front/library/" or "modules/front/") .. path:sub(4)
-    elseif path:sub(1, 10) == "universal/" then
-      path = (name == "dumper" or name == "servers") and "modules/tools/" .. name
-        or (path:find("/anti_lag/", 1, true) and "modules/render/" .. name or "modules/features/" .. name)
-    elseif path:match("^hubs/[%w%-]+/") then
-      local part = path:match("^hubs/[%w%-]+/([^/]+)/")
-      if part == "prediction" then
-        path = "modules/combat/" .. name
-      elseif part == "game" then
-        path = (
-          name == "nativevisuals" and "modules/render/"
-          or (name == "remote" or name == "movement" or name == "cooldown") and "modules/combat/"
-          or "modules/game/"
-        ) .. name
-      elseif part == "combat" then
-        path = "modules/combat/" .. name
-      else
-        path = "modules/core/" .. name
-      end
+  local kind = POLICY.modules[name]
+  if not kind then
+    for _, rule in ipairs(POLICY.rules) do
+      if path and type(rule.prefix) == "string" and path:sub(1, #rule.prefix) == rule.prefix then kind = rule.type; break end
     end
   end
-  if path and path:match("^hubs/[%w%-]+/") then
-    path = path:gsub("^hubs/[%w%-]+/", "")
-    if path:sub(1, 8) ~= "modules/" then path = "modules/" .. path end
-  end
-  for _, rule in ipairs(POLICY.rules) do
-    if (rule.prefix and path and path:sub(1, #rule.prefix) == rule.prefix) or contains(rule.names, name) then return rule.family end
-  end
-  error("Permissions: módulo sem família: " .. tostring(name), 3)
+  assert(kind and POLICY.types[kind], "Module has no authorized type: " .. name); return kind
 end
 local function hasFunctions(value, seen)
   if type(value) == "function" then return true end
@@ -330,25 +37,24 @@ local function hasFunctions(value, seen)
   return false
 end
 local function capability(provider, method, data)
-  if data then return provider.commandData[method] and POLICY.domains[provider.family] or "internal.read" end
-  if contains(POLICY.lifecycleMethods, method) then return "lifecycle.write" end
-  local definition = POLICY.providers[provider.name] or {}
-  if definition.methods and definition.methods[method] then return definition.methods[method] end
-  for _, prefix in ipairs(POLICY.readPrefixes) do
+  if data then return provider.commandData[method] and (provider.access.default or POLICY.defaults[provider.family] or "internal.write") or "internal.read" end
+  if provider.access.methods and provider.access.methods[method] then return provider.access.methods[method] end
+  if method == "setup" or method == "teardown" or method == "bindCharacter" or method == "detachCharacter" then return "lifecycle.write" end
+  for _, prefix in ipairs({ "get", "is", "has", "are", "uses", "normalize", "validate", "decode", "format", "should" }) do
     if method:sub(1, #prefix) == prefix then return "internal.read" end
   end
-  for _, prefix in ipairs(POLICY.subscribePrefixes) do
+  for _, prefix in ipairs({ "observe", "track", "untrack" }) do
     if method:sub(1, #prefix) == prefix then return "lifetime.manage" end
   end
-  return definition.default or POLICY.domains[provider.family]
+  return provider.access.default or POLICY.defaults[provider.family] or "internal.write"
 end
 local function allowed(entry, permission)
-  local grants = POLICY.families[entry.family]; return contains(grants, "*") or contains(grants, permission) or contains(POLICY.base, permission)
+  local grants = POLICY.types[entry.family]; return contains(grants, "*") or contains(grants, permission) or contains(POLICY.base, permission)
 end
 local function canConsume(entry, provider, method, data)
   local permission = capability(provider, method, data)
   if allowed(entry, permission) then return true, permission end
-  if provider.name == "utils" and method == "setConfig" and allowed(entry, "config.own") then return true, "config.own" end
+  if not data and contains(provider.access.scoped, method) and allowed(entry, "config.own") then return true, "config.own" end
   return false, permission
 end
 
@@ -434,10 +140,12 @@ local function validate(name, module, path)
     commandData = commandData,
     uses = uses,
     version = contract.version,
+    access = readonly(contract.access or {}),
+    owned = readonly(module.__config and module.__config.schema or {}),
   }
   return true
 end
-local function readonly(value, visited)
+readonly = function(value, visited)
   if type(value) ~= "table" then return value end
   visited = visited or {}
   if visited[value] then return visited[value] end
@@ -473,14 +181,21 @@ local function wrap(consumer, source, provider)
       if permission == "config.own" then
         members[method] = function(patch)
           if type(patch) ~= "table" then error("Config patch inválido", 2) end
-          local prefix = POLICY.ownConfigPrefixes[entry.family]
           for key in pairs(patch) do
-            if type(key) ~= "string" or not prefix or key:sub(1, #prefix) ~= prefix then deny(consumer, "config.write fora da família " .. entry.family) end
+            if not entry.owned[key] then deny(consumer, "config.write outside owned settings: " .. tostring(key)) end
           end
           return callback(patch)
         end
       else
-        members[method] = callback
+        members[method] = function(...)
+          local result = table.pack(callback(...))
+          if permission == "internal.read" and not contains(exposed.access.references, method) then
+            for i = 1, result.n do
+              if type(result[i]) == "table" then result[i] = readonly(result[i]) end
+            end
+          end
+          return table.unpack(result, 1, result.n)
+        end
       end
     end
   end
@@ -498,8 +213,9 @@ local function wrap(consumer, source, provider)
       error("API interna ausente: " .. source .. "." .. tostring(field), 2)
     end,
     __newindex = function(_, field) deny(consumer, "api.write." .. source .. "." .. tostring(field)) end,
-    __metatable = "locked",
   })
+  local metatable = getmetatable(view); table.freeze(view)
+  metatable.__metatable = "locked"; table.freeze(metatable)
   return view
 end
 
@@ -524,7 +240,7 @@ local function policy(name)
   local entry = registry[name]
   if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
   local result = { family = entry.family, capabilities = table.clone(POLICY.base), provides = {}, dependencies = {} }
-  for _, permission in ipairs(POLICY.families[entry.family]) do
+  for _, permission in ipairs(POLICY.types[entry.family]) do
     result.capabilities[#result.capabilities + 1] = permission
   end
   table.sort(result.capabilities)
@@ -539,6 +255,7 @@ local function policy(name)
 end
 
 -- public-api
+Permissions.configure = configure
 Permissions.validate = validate
 Permissions.wrap = wrap
 Permissions.resolve = resolve
@@ -546,7 +263,7 @@ Permissions.policy = policy
 
 -- contract
 Permissions.__contract = {
-  provides = { "validate", "wrap", "resolve", "policy" },
+  provides = { "configure", "validate", "wrap", "resolve", "policy" },
   requires = {},
 }
 

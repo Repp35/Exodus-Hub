@@ -498,7 +498,7 @@ local function loadModules(urls, prepared)
     return results
   end
   local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
-  if results.permissions then permissions.validate("permissions", permissions, "core/permissions.luau") end
+  if results.permissions then permissions.configure(selectedHub.permissionPolicy); permissions.validate("permissions", permissions, "core/permissions.luau") end
   loaded.permissions = register("permissions", permissions)
   for _, entry in ipairs(MODULE_MANIFEST) do
     local name = entry.name
