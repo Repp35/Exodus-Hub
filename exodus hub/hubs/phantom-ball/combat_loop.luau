@@ -1,4 +1,4 @@
--- [[ combat scheduling; rules remain in their respective modules ]]
+-- [[ combat loop ]]
 
 -- code
 local CombatLoop = {}
