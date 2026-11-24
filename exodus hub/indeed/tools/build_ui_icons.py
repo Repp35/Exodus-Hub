@@ -5,6 +5,8 @@ import argparse
 import base64
 import hashlib
 import re
+import struct
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,12 +14,33 @@ MODULE = ROOT / 'ui/icons.luau'
 NAMES = ('settings', 'chevron', 'minimize', 'assists')
 
 
+def validate_png(image: bytes, name: str) -> None:
+    if not image.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ValueError(f'{name}: expected a PNG image')
+    offset = 8
+    ended = False
+    while offset + 12 <= len(image):
+        length = struct.unpack_from('>I', image, offset)[0]
+        end = offset + 12 + length
+        if end > len(image):
+            raise ValueError(f'{name}: truncated PNG chunk')
+        chunk = image[offset + 4:end - 4]
+        checksum = struct.unpack_from('>I', image, end - 4)[0]
+        if zlib.crc32(chunk) & 0xffffffff != checksum:
+            raise ValueError(f'{name}: corrupt PNG chunk')
+        offset = end
+        if chunk[:4] == b'IEND':
+            ended = True
+            break
+    if not ended or offset != len(image):
+        raise ValueError(f'{name}: incomplete PNG image')
+
+
 def generated(source: str) -> str:
     fingerprint = hashlib.sha256()
     for name in NAMES:
         image = (ROOT / 'ui/assets' / f'{name}.png').read_bytes()
-        if not image.startswith(b'\x89PNG\r\n\x1a\n'):
-            raise ValueError(f'{name}: expected a PNG image')
+        validate_png(image, name)
         fingerprint.update(name.encode() + b'\0' + image)
         encoded = base64.b64encode(image).decode()
         pattern = rf'(\b{name}\s*=\s*\{{\s*png\s*=\s*")[^"]*(")'

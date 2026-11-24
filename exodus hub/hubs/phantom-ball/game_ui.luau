@@ -4,11 +4,12 @@
 local GameUI = {}
 GameUI.definition = {
   combatUI = true,
+  abilityKeys = { AutoDark = "dark", DarkBallVisible = "dark", AutoFierce = "fierce", AutoClashUpDash = "dash", UpDashBallVisible = "dash" },
   pageOrder = { "main", "settings", "utilities", "antilag", "automatic", "indeed", "assists", "config" },
   pages = {
     {
       id = "main",
-      phantomOnly = true,
+      integrationOnly = true,
       title = "Main",
       columns = 2,
       sections = {
@@ -124,7 +125,7 @@ GameUI.definition = {
     },
     {
       id = "settings",
-      phantomOnly = true,
+      integrationOnly = true,
       title = "Settings",
       columns = 2,
       sections = {
@@ -142,7 +143,7 @@ GameUI.definition = {
     },
     {
       id = "utilities",
-      phantomOnly = true,
+      integrationOnly = true,
       title = "Utilities",
       columns = 2,
       sections = {
@@ -158,7 +159,7 @@ GameUI.definition = {
     },
     {
       id = "automatic",
-      phantomOnly = true,
+      integrationOnly = true,
       title = "Automatic",
       columns = 2,
       sections = {
@@ -203,7 +204,7 @@ GameUI.definition = {
     },
     {
       id = "assists",
-      phantomOnly = true,
+      integrationOnly = true,
       title = "Assistências",
       columns = 1,
       width = 360,
@@ -344,7 +345,9 @@ for _, page in ipairs(GameUI.definition.pages) do
       local key = component.shortcutKey
       if key then
         GameUI.__config.schema[key] = "keyCode"
-        if GameUI.__config.defaults[key] == nil then GameUI.__config.defaults[key] = Enum.KeyCode.Unknown end
+        if GameUI.__config.defaults[key] == nil then
+          GameUI.__config.defaults[key] = Enum.KeyCode.Unknown
+        end
       end
     end
   end

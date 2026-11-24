@@ -1,50 +1,39 @@
 # Desenvolvimento
 
-Código compartilhado fica em `core/`, `ui/` e `universal/`.
-Código de um jogo fica diretamente em `hubs/<jogo>/`, separado por responsabilidade.
-Arquivos de testes e diagnósticos ficam no `indeed/` correspondente e nunca são
-incluídos no catálogo de execução.
+Use Python 3.12, Luau 0.748 e o StyLua incluído no repositório.
+`LUAU_BIN`, `LUAU_COMPILE_BIN`, `LUAU_ANALYZE_BIN` e `STYLUA_BIN` permitem
+usar executáveis próprios. Sem essas variáveis, as ferramentas procuram no PATH.
 
-Execute na raiz do repositório:
+Após alterar o código, execute na raiz:
 
 ```sh
-python3 'exodus hub/indeed/tools/build_hub_catalog.py'
 python3 'exodus hub/indeed/formatter.py' --in-place 'exodus hub'
-python3 'exodus hub/indeed/tools/run_tests.py' --hub all
+python3 'exodus hub/indeed/tools/build_hub_catalog.py'
+python3 'exodus hub/indeed/formatter.py' --in-place 'exodus hub/core/catalog.luau' 'exodus hub/hubs/catalog.luau'
+python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
+python3 'exodus hub/indeed/tools/run_tests.py' --hub all --require-tools
 python3 'exodus hub/indeed/tools/build_ui_icons.py' --check
 python3 'exodus hub/indeed/formatter.py' --check 'exodus hub'
 ```
 
-Os executáveis Luau 0.748 podem ser fornecidos por `LUAU_BIN`,
-`LUAU_COMPILE_BIN` e `LUAU_ANALYZE_BIN`, ou pelo PATH.
-As verificações cobrem apenas sintaxe, APIs, dependências e permissões.
-Não há suíte de comportamento de combate, interface ou dumper.
-O carregamento universal também é verificado sem a política de permissões.
+Formate os módulos antes de gerar os catálogos: seus hashes correspondem ao
+conteúdo final dos arquivos. O CI só valida; não modifica arquivos nem cria commits.
+Não há publicação de site nem ofuscação.
 
-Use `--hub universal` ou `--hub phantom-ball` para executar apenas uma suíte.
-O campo `checkPermissions` do jogo controla sua auditoria de desenvolvimento;
-`permissions` controla o uso da política durante a execução do hub.
+`--hub universal` e `--hub phantom-ball` selecionam suítes individuais. Os testes
+usam Luau real com serviços simulados. Cobrem contratos, permissões, inicialização,
+limpeza, atualizações, cache e aplicação/restauração de propriedades. Renderização,
+latência e integração com os módulos nativos ainda precisam ser verificadas no
+cliente Roblox e no executor usado.
 
-O CI executa as verificações mínimas. Renderização e comportamento real devem
-ser conferidos no cliente Roblox e no executor utilizado.
+## Contratos e recursos
 
-## Permissões internas
+Declare dependências em `__contract.requires` e APIs necessárias em
+`requiresMethods`/`requiresData`. Exporte funções em `provides`. Use `teardown`
+para desfazer alterações, inclusive as feitas antes de uma falha no `setup`.
+`lifetime.scope()` libera recursos na ordem inversa, uma única vez.
 
-`core/permissions.luau` é apenas o motor. O `permissionPolicy` do `hub.json`
-define tipos, autorizações e atribuição dos módulos a esses tipos. Módulos novos
-nas pastas já cobertas herdam o tipo; o motor não precisa ser editado.
-As autorizações descrevem ações, como leitura interna, execução de combate,
-escrita de configuração e alteração de UI. Não são listas de APIs por consumidor.
-
-As APIs declaram exceções semânticas em `__contract.access`: `default` informa
-a categoria de operação padrão; `methods` classifica operações que diferem dela;
-`scoped` marca operações limitadas às configurações pertencentes ao consumidor.
-Métodos de consulta usam a categoria genérica `internal.read` por padrão.
-Todo módulo com essa categoria pode ler as APIs que importar.
-
-Dados públicos e resultados de leitura em tabelas são cópias de leitura.
-As dependências são vistas imutáveis; métodos sem permissão não são expostos.
-O escopo `config.own` usa as chaves do `__config.schema` do próprio módulo,
-sem nomes ou prefixos fixos no motor. Acesso ao Roblox/remotes não é restringido.
-A regra protege a comunicação pelas APIs internas; não é isolamento de scripts
-maliciosos com acesso ao ambiente global do executor.
+A política opcional de permissões fica no `hub.json`. `__contract.access`
+classifica operações; `config.own` limita escritas às chaves do próprio módulo.
+Resultados de leitura e APIs são imutáveis. Essa política organiza o acesso
+interno; não isola scripts do ambiente Roblox ou do executor.

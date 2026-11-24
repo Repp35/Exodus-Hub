@@ -67,6 +67,18 @@ assert(own.setOption({ OwnOption = true }))
 assert(not pcall(own.setOption, { OtherOption = false }), "Other feature settings writable")
 ''')
 
+    def test_game_has_no_undeclared_globals(self):
+        binary = os.environ.get('LUAU_ANALYZE_BIN') or shutil.which('luau-analyze')
+        if not binary: self.skipTest('Luau analyzer required')
+        import re
+        allowed = set(json.loads((ROOT / 'indeed/checks/roblox-globals.json').read_text()))
+        result = subprocess.run([binary, *map(str, HUB.rglob('*.luau'))], capture_output=True, text=True, timeout=30)
+        errors = []
+        for line in (result.stdout + result.stderr).splitlines():
+            match = re.search(r"Unknown global '([^']+)'", line)
+            if match and match[1] not in allowed: errors.append(line)
+        self.assertEqual(errors, [], '\n'.join(errors))
+
     def test_game_source_compiles(self):
         binary = os.environ.get('LUAU_COMPILE_BIN') or shutil.which('luau-compile')
         if not binary: self.skipTest('Luau compiler required')

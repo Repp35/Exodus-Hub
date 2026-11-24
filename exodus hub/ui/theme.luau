@@ -1,4 +1,5 @@
 -- [[ uitheme ]]
+-- @modules uitheme
 
 -- module
 local Theme = {}
@@ -77,17 +78,17 @@ CONFIG.MOTION = {
     direction = Enum.EasingDirection.Out,
   },
   control = {
-    duration = 0.22,
+    duration = 0.32,
     style = Enum.EasingStyle.Cubic,
     direction = Enum.EasingDirection.Out,
   },
   page = {
-    duration = 0.28,
+    duration = 0.42,
     style = Enum.EasingStyle.Cubic,
     direction = Enum.EasingDirection.Out,
   },
   panel = {
-    duration = 0.28,
+    duration = 0.52,
     style = Enum.EasingStyle.Cubic,
     direction = Enum.EasingDirection.Out,
   },
@@ -101,7 +102,7 @@ CONFIG.SELECTOR_COLORS = {
   Hold = CONFIG.COLORS.hold,
 }
 CONFIG.DROPDOWN = { gap = 5, margin = 6, rowHeight = 32, rowGap = 3, padding = 4, selectionDelay = 0.18 }
-CONFIG.PAGE_OFFSET = 18
+CONFIG.PAGE_OFFSET = 70
 CONFIG.SCROLLBAR = 3
 CONFIG.LAYERS = { panel = 30 }
 CONFIG.CHILD_VERTICAL_PADDING = 6

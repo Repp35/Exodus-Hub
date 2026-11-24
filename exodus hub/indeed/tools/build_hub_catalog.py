@@ -3,13 +3,28 @@ from pathlib import Path
 import argparse
 import json
 import re
+import hashlib
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_AUTHOR = 'deltapolinha_2915'
 
+def shared(root=ROOT):
+    entries, seen = [], set()
+    for folder in ('core', 'ui', 'universal'):
+        for path in sorted((root / folder).rglob('*.luau')):
+            if path.name == 'catalog.luau': continue
+            source = path.read_text()
+            marker = re.search(r'^-- @modules ([\w, ]+)$', source, re.M)
+            if not marker: raise ValueError(f'{path}: @modules declaration required')
+            for name in marker[1].replace(' ', '').split(','):
+                if not name or name in seen: raise ValueError(f'{path}: duplicate module {name}')
+                seen.add(name)
+                entries.append({'name': name, 'path': path.relative_to(root).as_posix(), 'hash': hashlib.sha256(path.read_bytes()).hexdigest()})
+    return entries
+
 def discover(root=ROOT):
     profiles, ids, places, universes = [], set(), set(), set()
-    reserved = set(re.findall(r'\{\s*name\s*=\s*"(\w+)"', (ROOT / 'loader.luau').read_text()))
+    reserved = {entry["name"] for entry in shared(root)}
     for info in sorted((root / 'hubs').glob('*/hub.json')):
         profile = json.loads(info.read_text())
         ident = profile.get('id', info.parent.name)
@@ -37,7 +52,7 @@ def discover(root=ROOT):
             if '__contract' not in path.read_text():
                 raise ValueError(f'{path}: module contract required')
             seen.add(name)
-            modules.append({'name': name, 'path': path.relative_to(root).as_posix()})
+            modules.append({'name': name, 'path': path.relative_to(root).as_posix(), 'hash': hashlib.sha256(path.read_bytes()).hexdigest()})
         profiles.append({**profile, 'id': ident, 'author': profile.get('author', DEFAULT_AUTHOR),
                          'notification': profile.get('notification', f"Exodus Hub · {profile['title']} carregado."), 'modules': modules})
     return profiles
@@ -60,14 +75,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
-    path = ROOT / 'hubs/catalog.luau'
-    expected = render(discover())
-    # Compare data through the deterministic generator; formatting may be applied separately.
-    if args.check:
-        if not path.exists() or tokens(path.read_text()) != tokens(expected):
-            raise SystemExit('Hub catalog is stale. Run build_hub_catalog.py.')
-    else:
-        path.write_text(expected)
+    outputs = {ROOT / 'hubs/catalog.luau': render(discover()), ROOT / 'core/catalog.luau': render(shared())}
+    for path, expected in outputs.items():
+        if args.check:
+            if not path.exists() or tokens(path.read_text()) != tokens(expected):
+                raise SystemExit(f'{path.name} is stale. Run build_hub_catalog.py.')
+        else:
+            path.write_text(expected)
     print('Hub catalog OK')
 
 if __name__ == '__main__': main()

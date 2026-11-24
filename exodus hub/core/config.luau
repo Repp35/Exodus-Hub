@@ -1,4 +1,5 @@
 -- [[ config ]]
+-- @modules config
 
 -- module
 local Config = {}
@@ -54,8 +55,11 @@ local validators = {
 
 local function validateValue(key, kind, value)
   local validator = validators[kind]
-  if validator and validator(value) then return true end
-  local message = validationErrors[kind] or "valor inválido: %s"; return false, message:find("%s", 1, true) and message:format(key) or message
+  if validator and validator(value) then
+    return true
+  end
+  local message = validationErrors[kind] or "valor inválido: %s"
+  return false, message:find("%s", 1, true) and message:format(key) or message
 end
 local function copy(source)
   local result = {}
@@ -67,19 +71,27 @@ end
 
 -- registration
 function Config.register(name, definition)
-  if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then return false end
-  local schema = type(definition.schema) == "table" and definition.schema or {}; local defaults = type(definition.defaults) == "table" and definition.defaults or {}
+  if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then
+    return false
+  end
+  local schema = type(definition.schema) == "table" and definition.schema or {}
+  local defaults = type(definition.defaults) == "table" and definition.defaults or {}
   for key, kind in pairs(schema) do
-    if type(key) ~= "string" or not validators[kind] or Keys[key] then return false end
+    if type(key) ~= "string" or not validators[kind] or Keys[key] then
+      return false
+    end
   end
   for key, value in pairs(defaults) do
     local kind = schema[key]
-    if not kind or not validateValue(key, kind, value) then return false end
+    if not kind or not validateValue(key, kind, value) then
+      return false
+    end
   end
   for key, kind in pairs(schema) do
     Keys[key] = kind
   end
-  Registry[name] = { schema = copy(schema), defaults = copy(defaults) }; return true
+  Registry[name] = { schema = copy(schema), defaults = copy(defaults) }
+  return true
 end
 
 -- defaults
@@ -95,24 +107,36 @@ end
 
 -- validation-api
 function Config.validatePatch(patch)
-  if type(patch) ~= "table" then return false, "configuração não é uma tabela" end
+  if type(patch) ~= "table" then
+    return false, "configuração não é uma tabela"
+  end
   for key, value in pairs(patch) do
     local kind = Keys[key]
-    if not kind then return false, "chave de configuração desconhecida: " .. tostring(key) end
+    if not kind then
+      return false, "chave de configuração desconhecida: " .. tostring(key)
+    end
     local ok, reason = validateValue(key, kind, value)
-    if not ok then return false, reason end
+    if not ok then
+      return false, reason
+    end
   end
   return true
 end
 function Config.normalizePatch(patch)
   local ok, reason = Config.validatePatch(patch)
-  if not ok then return nil, reason end
+  if not ok then
+    return nil, reason
+  end
   return copy(patch)
 end
 function Config.validate(config)
-  if type(config) ~= "table" then return false, "configuração não é uma tabela" end
+  if type(config) ~= "table" then
+    return false, "configuração não é uma tabela"
+  end
   local ok, reason = Config.validatePatch(config)
-  if not ok then return false, reason end
+  if not ok then
+    return false, reason
+  end
   return true
 end
 

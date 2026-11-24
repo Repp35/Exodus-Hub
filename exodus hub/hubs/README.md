@@ -1,6 +1,6 @@
 # Adicionar um jogo
 
-Crie uma pasta com `hub.json`:
+Crie `hubs/<jogo>/hub.json` com IDs reais:
 
 ```json
 {
@@ -11,28 +11,44 @@ Crie uma pasta com `hub.json`:
 }
 ```
 
-Use IDs reais; um dos grupos basta. O nome da pasta identifica a integração.
-Autor e mensagem são opcionais. O autor padrão é `deltapolinha_2915`.
+Um dos grupos de IDs basta. A pasta identifica a integração. `author`,
+`notification` e `dataFolder` são opcionais. O armazenamento padrão fica em
+`Exodus Hub/hubs/<jogo>`; use `dataFolder` apenas para preservar um local existente.
 
-Coloque arquivos `.luau` diretamente na pasta e em subpastas descritivas, como
-`combat/`, `prediction/` e `game/`. Não crie uma pasta genérica `modules/`.
-O nome do arquivo sem sublinhados é sua chave: `auto_parry.luau` registra
-`autoparry`. Não repita chaves nem copie módulos universais ou da UI.
-O workflow atualiza o catálogo; não existe lista manual de arquivos de jogo.
+Arquivos `.luau` fora de `indeed/` entram no catálogo automaticamente. A chave é o
+nome do arquivo sem sublinhados: `auto_parry.luau` vira `autoparry`. Chaves devem
+ser únicas e não podem substituir módulos compartilhados.
 
-Cada módulo declara `__contract`, métodos públicos, dependências e um `setup`
-que retorna `true`. Use `teardown` para limpar conexões e recursos.
-A ordem de inicialização é resolvida pelas dependências.
+Cada módulo declara `__contract`, dependências, `setup` e, se possuir recursos,
+`teardown`. Um `setup` bem-sucedido retorna `true`. Recursos ligados ao personagem
+usam `bindCharacter` e `detachCharacter`, com `bindCharacter = true` no contrato.
 
-`game_ui.luau` exporta a configuração declarativa das páginas e opções existentes.
-Todos os componentes, mini UIs e controles de spam pertencem à UI compartilhada.
-Nenhum jogo injeta componentes. Veja o exemplo do Phantom Ball.
+`game_runtime.luau` exporta `bind` e `createAPI(loaded)`. Este último retorna o
+adaptador consumido pela base. Todos os campos são opcionais:
 
-`permissions: true` habilita a política de permissões durante a execução.
-É opcional por integração. Os contratos e APIs necessários ao carregamento
-continuam sendo verificados em qualquer caso.
+- `getUIConfig`: definição de páginas, opções e capacidades.
+- `controls`: callbacks das ações da interface.
+- `createActions(context)`: ações e estados adicionais; recebe o escopo da UI.
+- `readouts`: indicadores com `id`, `key`, `anchor`, `position` e função `read`.
+- `updateBlockers`: funções que retornam `true` enquanto uma atualização deve esperar.
+- `miniVisibility`: mapa de chave de configuração para regra de visibilidade.
+- `migrateConfig(data)`: migração dos arquivos antigos da integração.
+- `getJumpButton`: controle nativo adicional de pulo, quando necessário.
+- Métodos de habilidades e adaptação visual usados pela integração.
 
-Testes mínimos ficam em `indeed/tests/` e diagnósticos em `indeed/diagnostics/`.
-O gerador exclui toda a pasta `indeed/` da distribuição.
+O Auto Execute consulta a revisão a cada 120 segundos, prepara os arquivos e
+aguarda 0,4 segundo contínuo sem bloqueios antes de substituir a sessão. Uma
+falha na regra bloqueia a atualização. Desativar Auto Execute cancela uma troca
+pendente. O botão de atualização e uma nova execução do loadstring forçam a troca.
 
-[Mapa da estrutura](../../docs/structure.md) · [Verificações](../../docs/development.md)
+As regras de Mini UI complementam a escolha do usuário sem salvar alterações:
+a UI aparece quando a regra ou a opção manual está ativa e faz a transição de
+saída quando ambas deixam de estar ativas. Elas não ativam a função do botão.
+
+Módulos compartilhados declaram suas chaves na segunda linha, por exemplo
+`-- @modules exemplo`. Bundles listam todas as chaves separadas por vírgulas.
+Depois de adicionar arquivos, gere os catálogos com os comandos de
+[desenvolvimento](../../docs/development.md). Não edite os catálogos à mão.
+
+Testes ficam em `indeed/tests/`; diagnósticos, em `indeed/diagnostics/`.
+Use o Phantom Ball como referência para uma integração completa.

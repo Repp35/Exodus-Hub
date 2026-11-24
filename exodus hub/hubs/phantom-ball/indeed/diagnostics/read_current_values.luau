@@ -46,26 +46,40 @@ local output = {}
 local function safe(label, fn)
   local ok, value = pcall(fn)
   if ok then
-    local line = ("[CurrentValues] %-28s %s"):format(label, tostring(value)); output[#output + 1] = line
-    print(line); return value
+    local line = ("[CurrentValues] %-28s %s"):format(label, tostring(value))
+    output[#output + 1] = line
+    print(line)
+    return value
   end
-  local line = ("[CurrentValues] %-28s <indisponível: %s>"):format(label, tostring(value)); output[#output + 1] = line
-  warn(line); return nil
+  local line = ("[CurrentValues] %-28s <indisponível: %s>"):format(label, tostring(value))
+  output[#output + 1] = line
+  warn(line)
+  return nil
 end
 
 -- module-access
 local function requirePath(...)
-  local current = ReplicatedStorage; local parts = { ... }
+  local current = ReplicatedStorage
+  local parts = { ... }
   for _, name in ipairs(parts) do
     current = current:FindFirstChild(name)
-    if not current then return nil end
+    if not current then
+      return nil
+    end
   end
-  if not current:IsA("ModuleScript") then return nil end
-  local ok, result = pcall(require, current); return ok and result or nil
+  if not current:IsA("ModuleScript") then
+    return nil
+  end
+  local ok, result = pcall(require, current)
+  return ok and result or nil
 end
 local function getNested(module, key)
-  if type(module) ~= "table" then return nil end
-  if type(module[key]) == "table" then return module[key] end
+  if type(module) ~= "table" then
+    return nil
+  end
+  if type(module[key]) == "table" then
+    return module[key]
+  end
   return module
 end
 
@@ -103,7 +117,9 @@ local ability
 if getAbility and type(getAbility.Invoke) == "function" then
   ability = safe("DeflectAbility", function()
     local ok, result = pcall(getAbility.Invoke, getAbility, "Deflect")
-    if ok and result then return result end
+    if ok and result then
+      return result
+    end
     return getAbility:Invoke("Block")
   end)
 end
@@ -120,7 +136,9 @@ if bindableManager and type(bindableManager.GetFunction) == "function" then
     local fn = safe("Bindable." .. name, function() return bindableManager:GetFunction(name) end)
     if fn and type(fn.Invoke) == "function" then
       safe("Invoke." .. name, function()
-        if name == "IsPlayerNoob" then return fn:Invoke(LocalPlayer) end
+        if name == "IsPlayerNoob" then
+          return fn:Invoke(LocalPlayer)
+        end
         return fn:Invoke()
       end)
     end
@@ -133,7 +151,11 @@ output[#output + 1] = "[CurrentValues] ===== fim da leitura ====="
 local fileName = CONFIG.OUTPUT_FILE
 if type(writefile) == "function" then
   local ok, errorMessage = pcall(writefile, fileName, table.concat(output, "\n") .. "\n")
-  if ok then print("[CurrentValues] TXT salvo em " .. fileName) else warn("[CurrentValues] Não foi possível salvar o TXT: " .. tostring(errorMessage)) end
+  if ok then
+    print("[CurrentValues] TXT salvo em " .. fileName)
+  else
+    warn("[CurrentValues] Não foi possível salvar o TXT: " .. tostring(errorMessage))
+  end
 else
   warn("[CurrentValues] writefile indisponível; o resultado ficou apenas no console")
 end

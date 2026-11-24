@@ -1,4 +1,5 @@
 -- [[ uiconfig ]]
+-- @modules uiconfig
 
 -- module
 local UIConfig = {}
@@ -153,6 +154,7 @@ local CONFIG = {
       sections = {
         {
           components = {
+            { kind = "toggle", title = "Auto Execute", key = "AutoExecute", description = "Atualiza quando o jogo estiver em um estado seguro." },
             { kind = "toggle", title = "System Notifications", key = "DesktopNotifications", desktopOnly = true },
             {
               kind = "toggle",
@@ -214,37 +216,50 @@ for _, page in ipairs(CONFIG.PAGES) do
       local key = definition.shortcutKey
       if key then
         CONFIG.SETTINGS.schema[key] = "keyCode"
-        if CONFIG.SETTINGS.defaults[key] == nil then CONFIG.SETTINGS.defaults[key] = Enum.KeyCode.Unknown end
+        if CONFIG.SETTINGS.defaults[key] == nil then
+          CONFIG.SETTINGS.defaults[key] = Enum.KeyCode.Unknown
+        end
       end
     end
   end
 end
 function UIConfig.getPages(definition)
-  definition = definition or {}; local pages, byId = {}, {}
+  definition = definition or {}
+  local pages, byId = {}, {}
   for _, source in ipairs(CONFIG.PAGES) do
-    local page = table.clone(source); page.sections = {}
+    local page = table.clone(source)
+    page.sections = {}
     for _, originalSection in ipairs(source.sections) do
-      local section = table.clone(originalSection); section.components = table.clone(originalSection.components or {})
+      local section = table.clone(originalSection)
+      section.components = table.clone(originalSection.components or {})
       page.sections[#page.sections + 1] = section
     end
-    byId[page.id] = page; pages[#pages + 1] = page
+    byId[page.id] = page
+    pages[#pages + 1] = page
   end
   for _, page in ipairs(definition.pages or {}) do
-    assert(not byId[page.id], "Duplicate game page: " .. tostring(page.id)); byId[page.id] = page
+    assert(not byId[page.id], "Duplicate game page: " .. tostring(page.id))
+    byId[page.id] = page
     pages[#pages + 1] = page
   end
   for _, addition in ipairs(definition.additions or {}) do
-    local page = assert(byId[addition.page], "Unknown UI page"); local section = assert(page.sections[addition.section or 1], "Unknown UI section")
+    local page = assert(byId[addition.page], "Unknown UI page")
+    local section = assert(page.sections[addition.section or 1], "Unknown UI section")
     for _, component in ipairs(addition.components or {}) do
       section.components[#section.components + 1] = component
     end
   end
   local ordered, seen = {}, {}
   for _, id in ipairs(definition.pageOrder or {}) do
-    if byId[id] and not seen[id] then ordered[#ordered + 1] = byId[id]; seen[id] = true end
+    if byId[id] and not seen[id] then
+      ordered[#ordered + 1] = byId[id]
+      seen[id] = true
+    end
   end
   for _, page in ipairs(pages) do
-    if not seen[page.id] then ordered[#ordered + 1] = page end
+    if not seen[page.id] then
+      ordered[#ordered + 1] = page
+    end
   end
   return ordered
 end

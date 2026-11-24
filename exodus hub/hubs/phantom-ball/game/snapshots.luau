@@ -6,10 +6,12 @@ function Snapshots.setup() return true end
 function Snapshots.create(deps)
   local builder = { cachedAt = -math.huge }
   local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
-  local finite = deps.utils.isFiniteNumber; local CONFIG = deps.config
+  local finite = deps.utils.isFiniteNumber
+  local CONFIG = deps.config
   local function child(parent, name) return parent and parent:FindFirstChild(name) end
   function builder.get(time)
-    local utils, world, players = deps.utils, deps.world, deps.players; local trainingState = deps.getTrainingState()
+    local utils, world, players = deps.utils, deps.world, deps.players
+    local trainingState = deps.getTrainingState()
     time = finite(time) and time or utils.now()
     if
       builder.cached
@@ -21,9 +23,13 @@ function Snapshots.create(deps)
       return builder.cached
     end
     if deps.inTrainingArea() then
-      local sample = trainingState; local model = child(child(child(world, "Training"), "TrainingClient"), "TrainingBall")
-      if not sample or time < sample.receivedAt or time - sample.receivedAt > 0.6 or not model or not model:IsA("BasePart") or not model.Parent then return nil end
-      local age = math.clamp(world:GetServerTimeNow() - sample.serverTime, 0, 0.25); local target = finite(sample.goal) and sample.goal > 0 and sample.goal or -1
+      local sample = trainingState
+      local model = child(child(child(world, "Training"), "TrainingClient"), "TrainingBall")
+      if not sample or time < sample.receivedAt or time - sample.receivedAt > 0.6 or not model or not model:IsA("BasePart") or not model.Parent then
+        return nil
+      end
+      local age = math.clamp(world:GetServerTimeNow() - sample.serverTime, 0, 0.25)
+      local target = finite(sample.goal) and sample.goal > 0 and sample.goal or -1
       local result = {
         schema = 2,
         mode = "training",
@@ -46,29 +52,44 @@ function Snapshots.create(deps)
         targetSignals = deps.getTrainingSignals(model, sample.goal, players.LocalPlayer.UserId, sample.serverTime, sample.receivedAt, world:GetServerTimeNow()),
       }
 
-      builder.cached, builder.cachedAt = result, time; return result
+      builder.cached, builder.cachedAt = result, time
+      return result
     end
     local currentBall = deps.getBall()
-    if not currentBall then return nil end
-    local provider = deps.getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, deps.syncData(provider or false)
-    local targetReport = deps.resolveTarget(time, provider, sync, currentBall); local syncReceivedAt = deps.getReceivedAt()
+    if not currentBall then
+      return nil
+    end
+    local provider = deps.getReplicator()
+    local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, deps.syncData(provider or false)
+    local targetReport = deps.resolveTarget(time, provider, sync, currentBall)
+    local syncReceivedAt = deps.getReceivedAt()
     local syncFresh = syncReceivedAt > 0 and time >= syncReceivedAt and time - syncReceivedAt <= CONFIG.PACKET_AGE
-    if not syncFresh then sync = nil; syncReceivedAt = nil end
-    local target = targetReport.targetId; local frozen = deps.getBallFrozen() == true
+    if not syncFresh then
+      sync = nil
+      syncReceivedAt = nil
+    end
+    local target = targetReport.targetId
+    local frozen = deps.getBallFrozen() == true
     if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
       sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
     elseif sampledPosition and sampledAt and time - sampledAt >= CONFIG.SAMPLE_INTERVAL then
-      local elapsed = time - sampledAt; local displacement = position - sampledPosition
+      local elapsed = time - sampledAt
+      local displacement = position - sampledPosition
       if displacement.Magnitude > 0.001 then
         local measured, expected = displacement / elapsed, sync and tonumber(sync.Speed)
-        if elapsed <= CONFIG.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time
-        else measuredVelocity, movedAt = Vector3.zero, nil end
+        if elapsed <= CONFIG.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then
+          measuredVelocity, movedAt = measured, time
+        else
+          measuredVelocity, movedAt = Vector3.zero, nil
+        end
       elseif movedAt and time - movedAt > 0.1 then
         measuredVelocity = Vector3.zero
       end
       sampledPosition, sampledAt = position, time
     end
-    if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
+    if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then
+      velocity = measuredVelocity or Vector3.zero
+    end
     local result = {
       schema = 2,
       generatedAt = time,
@@ -102,7 +123,8 @@ function Snapshots.create(deps)
       highlightTargetId = sync and sync.HighlightTargetPlayerID,
     }
 
-    builder.cached, builder.cachedAt = result, time; return result
+    builder.cached, builder.cachedAt = result, time
+    return result
   end
   function builder.invalidate()
     builder.cached, builder.cachedAt = nil, -math.huge

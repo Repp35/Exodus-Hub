@@ -48,7 +48,9 @@ for _, name in ipairs({ "Heartbeat", "PostSimulation", "PreSimulation", "RenderS
 end
 local game = { PlaceId = 0 }
 function game:GetService(name)
-  if not services[name] then services[name] = node(name) end
+  if not services[name] then
+    services[name] = node(name)
+  end
   return services[name]
 end
 local input = game:GetService("UserInputService")
@@ -65,7 +67,8 @@ local Enum = setmetatable({}, {
     if not enumCache[group] then
       enumCache[group] = setmetatable({}, {
         __index = function(self, key)
-          local item = { Name = key, EnumType = self, __kind = "EnumItem" }; rawset(self, key, item)
+          local item = { Name = key, EnumType = self, __kind = "EnumItem" }
+          rawset(self, key, item)
           return item
         end,
       })

@@ -1,28 +1,26 @@
 -- [[ spatial visual selection ]]
+-- @modules renderspatial
 
 -- code
 local Spatial = {}
 function Spatial.setup() return true end
-local revealedVisuals = setmetatable({}, { __mode = "k" })
-local CONFIG = {
-  MAX_REVEALS_PER_TICK = 4,
-}
-
-local MAX_REVEALS_PER_TICK = CONFIG.MAX_REVEALS_PER_TICK
-local function shouldHideVisual(object, reason)
-  if revealedVisuals[object] then return false end
-  if reason then return true end
-  revealedVisuals[object] = true; return false
-end
 local function verticalDecision(minY, maxY, cameraY, previous, options)
-  if options.CullFloorY and maxY < options.CullFloorY then return "floor" end
-  if not options.CullVertical then return nil end
+  if options.CullFloorY and maxY < options.CullFloorY then
+    return "floor"
+  end
+  if not options.CullVertical then
+    return nil
+  end
   local margin = options.CullVerticalMargin or 20
   local above = (options.CullAbove or 200) - (if previous == "above" then margin else 0)
   local below = (options.CullBelow or 100) - (if previous == "below" then margin else 0)
   local anchorY = options.CullAnchorY or cameraY
-  if minY > math.max(cameraY, anchorY) + above then return "above" end
-  if maxY < math.min(cameraY, anchorY) - below then return "below" end
+  if minY > math.max(cameraY, anchorY) + above then
+    return "above"
+  end
+  if maxY < math.min(cameraY, anchorY) - below then
+    return "below"
+  end
   return nil
 end
 local function boundsHalf(frame, size)
@@ -50,100 +48,129 @@ local function cameraPlanes(view)
 end
 local function inCameraView(delta, half, view)
   for _, plane in ipairs(view.planes) do
-    local normal = plane.normal; local support = math.abs(normal.X) * half.X + math.abs(normal.Y) * half.Y + math.abs(normal.Z) * half.Z
-    if normal:Dot(delta) + support + plane.padding < 0 then return false end
+    local normal = plane.normal
+    local support = math.abs(normal.X) * half.X + math.abs(normal.Y) * half.Y + math.abs(normal.Z) * half.Z
+    if normal:Dot(delta) + support + plane.padding < 0 then
+      return false
+    end
   end
   return true
 end
 local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
-  local delta = position - view.position; local options = view.options
-  local origin = view.focus or view.position; local rangeDelta = position - origin
+  local delta = position - view.position
+  local options = view.options
+  local origin = view.focus or view.position
+  local rangeDelta = position - origin
   local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z)
   local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
-  if surfaceDistance > options.CullDistance then return "distance", nil end
+  if surfaceDistance > options.CullDistance then
+    return "distance", nil
+  end
   local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
-  if vertical then return vertical, nil end
-  if turnHold or inCameraView(delta, half, view) then return nil, nil end
-  if not options.CullView or surfaceDistance <= options.CullKeepNear then return nil, nil end
+  if vertical then
+    return vertical, nil
+  end
+  if turnHold or inCameraView(delta, half, view) then
+    return nil, nil
+  end
+  if not options.CullView or surfaceDistance <= options.CullKeepNear then
+    return nil, nil
+  end
   outsideSince = outsideSince or now
-  if now - outsideSince >= options.CullHideDelay then return "view", outsideSince end
+  if now - outsideSince >= options.CullHideDelay then
+    return "view", outsideSince
+  end
   return nil, outsideSince
 end
 local function createSpatialController(services, getOption, PROFILE)
-  local Workspace, player = services.Workspace, services.Player; local controller = {}
+  local Workspace = services.Workspace
+  local controller = {}
   local roots = services.Roots or { Workspace }
   local function inScope(object)
     for _, root in ipairs(roots) do
-      if object == root or object:IsDescendantOf(root) then return true end
+      if object == root or object:IsDescendantOf(root) then
+        return true
+      end
     end
     return false
   end
-  local active, alive = false, true; local records, chunks, chunkList = {}, {}, {}
-  local stack, pending, queued = {}, {}, {}; local head, tail, chunkIndex = 1, 0, 1
+  local active, alive = false, true
+  local records, chunks, chunkList = {}, {}, {}
+  local stack, pending, queued = {}, {}, {}
+  local head, tail, chunkIndex = 1, 0, 1
   local driver
-  local connections = {}; local hiddenCount, trackedCount = 0, 0
-  local lobbyHidden, lastLobby = false, nil; local elapsed, holdUntil, lastLook = 1, 0, nil
-  local cameraSnapshot, lastCameraFrame
-  local hiddenEntries, hiddenCursor = {}, 1
+  local connections = {}
+  local hiddenCount, trackedCount = 0, 0
+  local elapsed, holdUntil, lastLook = 1, 0, nil
+  local cameraSnapshot
   local function option(key, fallback)
     local value = getOption(key)
     return if value == nil then fallback else value
   end
   local function setHidden(entry, hidden)
-    if hidden and revealedVisuals[entry.object] then return end
-    if entry.hidden == hidden then return end
-    entry.hidden = hidden
-    if hidden then
-      entry.hiddenIndex = #hiddenEntries + 1; hiddenEntries[entry.hiddenIndex] = entry
-    elseif entry.hiddenIndex then
-      local index = entry.hiddenIndex; local last = hiddenEntries[#hiddenEntries]
-      hiddenEntries[index] = last
-      if last then last.hiddenIndex = index end
-      hiddenEntries[#hiddenEntries] = nil; entry.hiddenIndex = nil
+    if entry.hidden == hidden then
+      return
     end
+    entry.hidden = hidden
     hiddenCount += if hidden then 1 else -1
     services.OnHidden(entry.object, hidden)
   end
   local function forget(object)
     local entry = records[object]
-    if not entry then return end
-    setHidden(entry, false); records[object] = nil
-    trackedCount -= 1; local chunk = entry.chunk
-    local last = chunk.parts[#chunk.parts]; chunk.parts[entry.index] = last
-    if last then last.index = entry.index end
+    if not entry then
+      return
+    end
+    setHidden(entry, false)
+    records[object] = nil
+    trackedCount -= 1
+    local chunk = entry.chunk
+    local last = chunk.parts[#chunk.parts]
+    chunk.parts[entry.index] = last
+    if last then
+      last.index = entry.index
+    end
     chunk.parts[#chunk.parts] = nil
     if #chunk.parts == 0 then
-      chunks[chunk.key] = nil; local lastChunk = chunkList[#chunkList]
+      chunks[chunk.key] = nil
+      local lastChunk = chunkList[#chunkList]
       chunkList[chunk.index] = lastChunk
-      if lastChunk then lastChunk.index = chunk.index end
+      if lastChunk then
+        lastChunk.index = chunk.index
+      end
       chunkList[#chunkList] = nil
     end
   end
-  local function lobbyRoot()
-    local root = Workspace:FindFirstChild("Game"); return root and root:FindFirstChild("Lobby")
-  end
-  local function updateLobby()
-    local root = lobbyRoot(); local lives = tonumber(player:GetAttribute("Lives")) or 0
-    local hidden = active and option("HideLobbyInMatch", true) and Workspace:GetAttribute("MatchStatus") == 6 and lives > 0 and root ~= nil
-    if hidden ~= lobbyHidden or root ~= lastLobby then lobbyHidden, lastLobby = hidden, root; services.OnLobbyHidden(hidden, root) end
-  end
   local modelBounds = setmetatable({}, { __mode = "k" })
   local function visualBounds(object)
-    if object:IsA("BasePart") and not object:IsA("Terrain") then return object.Position, boundsHalf(object.CFrame, object.Size) end
-    if object:IsA("Explosion") then return object.Position, Vector3.zero end
+    if object:IsA("BasePart") and not object:IsA("Terrain") then
+      return object.Position, boundsHalf(object.CFrame, object.Size)
+    end
+    if object:IsA("Explosion") then
+      return object.Position, Vector3.zero
+    end
     if object:IsA("Beam") or object:IsA("Trail") then
       local first, second = object.Attachment0, object.Attachment1
-      if first and second then local a, b = first.WorldPosition, second.WorldPosition; return (a + b) * 0.5, Vector3.new(math.abs(a.X - b.X), math.abs(a.Y - b.Y), math.abs(a.Z - b.Z)) * 0.5 end
+      if first and second then
+        local a, b = first.WorldPosition, second.WorldPosition
+        return (a + b) * 0.5, Vector3.new(math.abs(a.X - b.X), math.abs(a.Y - b.Y), math.abs(a.Z - b.Z)) * 0.5
+      end
     end
     local subject = object
-    if object:IsA("Highlight") or object:IsA("BillboardGui") or object:IsA("SurfaceGui") or object:IsA("PVAdornment") then subject = object.Adornee or object.Parent end
+    if object:IsA("Highlight") or object:IsA("BillboardGui") or object:IsA("SurfaceGui") or object:IsA("PVAdornment") then
+      subject = object.Adornee or object.Parent
+    end
     while subject and subject ~= Workspace do
-      if subject:IsA("Attachment") then return subject.WorldPosition, Vector3.zero end
-      if subject:IsA("BasePart") then return subject.Position, boundsHalf(subject.CFrame, subject.Size) end
+      if subject:IsA("Attachment") then
+        return subject.WorldPosition, Vector3.zero
+      end
+      if subject:IsA("BasePart") then
+        return subject.Position, boundsHalf(subject.CFrame, subject.Size)
+      end
       if subject:IsA("Model") then
         local cached = modelBounds[subject]
         if not cached then
-          local frame, size = subject:GetBoundingBox(); cached = { frame.Position, boundsHalf(frame, size) }
+          local frame, size = subject:GetBoundingBox()
+          cached = { frame.Position, boundsHalf(frame, size) }
           modelBounds[subject] = cached
         end
         return cached[1], cached[2]
@@ -171,10 +198,16 @@ local function createSpatialController(services, getOption, PROFILE)
       or object:IsA("Texture")
   end
   local function register(object)
-    if records[object] then return end
-    if not eligible(object) then return end
-    local position = visualBounds(object) or Vector3.zero; local size = 64
-    local x, y, z = math.floor(position.X / size), math.floor(position.Y / size), math.floor(position.Z / size); local key = x .. ":" .. y .. ":" .. z
+    if records[object] then
+      return
+    end
+    if not eligible(object) then
+      return
+    end
+    local position = visualBounds(object) or Vector3.zero
+    local size = 64
+    local x, y, z = math.floor(position.X / size), math.floor(position.Y / size), math.floor(position.Z / size)
+    local key = x .. ":" .. y .. ":" .. z
     local chunk = chunks[key]
     if not chunk then
       chunk = {
@@ -185,37 +218,51 @@ local function createSpatialController(services, getOption, PROFILE)
 
       chunks[key], chunkList[chunk.index] = chunk, chunk
     end
-    local entry = { object = object, position = position, chunk = chunk, index = #chunk.parts + 1, hidden = false }; chunk.parts[entry.index], records[object] = entry, entry
+    local entry = { object = object, position = position, chunk = chunk, index = #chunk.parts + 1, hidden = false }
+    chunk.parts[entry.index], records[object] = entry, entry
     trackedCount += 1
     if cameraSnapshot then
       local actualPosition, half = visualBounds(object)
-      if not revealedVisuals[object] then
-        if actualPosition then entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false) end
-        setHidden(entry, shouldHideVisual(object, entry.reason))
+      if actualPosition then
+        entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false)
       end
+      setHidden(entry, entry.reason ~= nil)
     end
   end
   local function enqueue(object)
-    if not active or not option("CullEnabled", true) or queued[object] then return end
-    tail += 1; pending[tail], queued[object] = object, true
+    if not active or not option("CullEnabled", true) or queued[object] then
+      return
+    end
+    tail += 1
+    pending[tail], queued[object] = object, true
   end
   local function nextNode()
     if head <= tail then
-      local object = pending[head]; pending[head], queued[object] = nil, nil
+      local object = pending[head]
+      pending[head], queued[object] = nil, nil
       head += 1
-      if head > tail then pending, head, tail = {}, 1, 0 end
+      if head > tail then
+        pending, head, tail = {}, 1, 0
+      end
       return object, false
     end
     while #stack > 0 do
-      local frame = stack[#stack]; local object = frame.items[frame.index]
-      if not object then stack[#stack] = nil; continue end
-      frame.index += 1; return object, true
+      local frame = stack[#stack]
+      local object = frame.items[frame.index]
+      if not object then
+        stack[#stack] = nil
+        continue
+      end
+      frame.index += 1
+      return object, true
     end
     return nil, false
   end
   local function currentOptions(camera)
-    local aspect = camera.ViewportSize.X / math.max(camera.ViewportSize.Y, 1); local margin = math.rad(option("CullViewDegrees", PROFILE.CullViewDegrees))
-    local vertical = math.rad(camera.FieldOfView * 0.5); local horizontal = math.atan(math.tan(vertical) * aspect)
+    local aspect = camera.ViewportSize.X / math.max(camera.ViewportSize.Y, 1)
+    local margin = math.rad(option("CullViewDegrees", PROFILE.CullViewDegrees))
+    local vertical = math.rad(camera.FieldOfView * 0.5)
+    local horizontal = math.atan(math.tan(vertical) * aspect)
     return {
       CullDistance = option("CullDistance", PROFILE.CullDistance),
       CullKeepNear = option("CullKeepNear", PROFILE.CullKeepNear),
@@ -232,11 +279,20 @@ local function createSpatialController(services, getOption, PROFILE)
   end
   function controller:Tick(now, camera)
     table.clear(modelBounds)
-    if not active or not alive or not option("CullEnabled", true) then return end
-    local deadline = os.clock() + option("CullBudgetMs", 2) / 1000; local count = 0
-    if not camera then return end
+    if not active or not alive or not option("CullEnabled", true) then
+      return
+    end
+    local indexing = #stack > 0 or head <= tail
+    local budget = indexing and 0.004 or option("CullBudgetMs", 0.8) / 1000
+    local deadline = os.clock() + budget
+    local count = 0
+    if not camera then
+      return
+    end
     local look = camera.CFrame.LookVector
-    if lastLook and look:Dot(lastLook) < 0.75 then holdUntil = now + 0.15 end
+    if lastLook and look:Dot(lastLook) < 0.75 then
+      holdUntil = now + 0.15
+    end
     lastLook = look
     cameraSnapshot = {
       position = camera.CFrame.Position,
@@ -247,88 +303,123 @@ local function createSpatialController(services, getOption, PROFILE)
       options = currentOptions(camera),
     }
 
-    lastCameraFrame = camera.CFrame; cameraSnapshot.planes = cameraPlanes(cameraSnapshot)
-    if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
-    if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
-    if not active or not alive then return end
-    local scanDeadline = os.clock() + option("CullBudgetMs", 2) / 2000
-    while count < 80 and os.clock() < scanDeadline do
+    cameraSnapshot.planes = cameraPlanes(cameraSnapshot)
+    if services.GetFocusY then
+      cameraSnapshot.options.CullAnchorY = services.GetFocusY()
+    end
+    if services.GetFloorY then
+      cameraSnapshot.options.CullFloorY = services.GetFloorY()
+    end
+    if not active or not alive then
+      return
+    end
+    local scanDeadline = os.clock() + budget * 0.65
+    while count < (indexing and 4096 or 160) and os.clock() < scanDeadline do
       local object, descend = nextNode()
-      if not object then break end
+      if not object then
+        break
+      end
       if inScope(object) then
         if descend then
           local children = object:GetChildren()
-          if #children > 0 then stack[#stack + 1] = { items = children, index = 1 } end
+          if #children > 0 then
+            stack[#stack + 1] = { items = children, index = 1 }
+          end
         end
         register(object)
       end
       count += 1
     end
-    local restoreLimit = math.min(#hiddenEntries, 32); local restoreDeadline = os.clock() + math.max(0, deadline - os.clock()) * 0.5
-    local revealCount = 0
-    for _ = 1, restoreLimit do
-      if #hiddenEntries == 0 or revealCount >= MAX_REVEALS_PER_TICK or os.clock() >= restoreDeadline then break end
-      if hiddenCursor > #hiddenEntries then hiddenCursor = 1 end
-      local entry = hiddenEntries[hiddenCursor]; local object = entry.object
-      if not object.Parent then
-        forget(object)
-      else
-        local position, half = visualBounds(object); local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
-        if not shouldHideVisual(object, reason) then
-          entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false)
-          revealCount += 1
+    -- Revisit visible and hidden entries; moving cameras and objects can cross either boundary.
+    local visited = 0
+    while #chunkList > 0 and visited < #chunkList and os.clock() < deadline do
+      if chunkIndex > #chunkList then
+        chunkIndex = 1
+      end
+      local chunk = chunkList[chunkIndex]
+      chunkIndex += 1
+      visited += 1
+      chunk.cursor = chunk.cursor or 1
+      local countInChunk = 0
+      while #chunk.parts > 0 and countInChunk < #chunk.parts and os.clock() < deadline do
+        if chunk.cursor > #chunk.parts then
+          chunk.cursor = 1
+        end
+        local entry = chunk.parts[chunk.cursor]
+        chunk.cursor += 1
+        countInChunk += 1
+        if not entry.object.Parent or not inScope(entry.object) then
+          forget(entry.object)
         else
-          hiddenCursor += 1
+          local position, half = visualBounds(entry.object)
+          if position then
+            entry.reason, entry.outsideSince = renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
+            setHidden(entry, entry.reason ~= nil)
+          end
         end
       end
     end
   end
   local function clearSpatial()
     for _, entry in pairs(records) do
-      if entry.hidden then revealedVisuals[entry.object] = true end
       setHidden(entry, false)
     end
-    records, chunks, chunkList, stack, pending, queued = {}, {}, {}, {}, {}, {}; head, tail, chunkIndex, trackedCount = 1, 0, 1, 0
-    lastLook, elapsed = nil, 1; hiddenEntries, hiddenCursor, lastCameraFrame = {}, 1, nil
+    records, chunks, chunkList, stack, pending, queued = {}, {}, {}, {}, {}, {}
+    head, tail, chunkIndex, trackedCount = 1, 0, 1, 0
+    lastLook, elapsed = nil, 1
   end
   local function refreshDriver()
-    if driver then driver:Disconnect(); driver = nil end
-    if not active or not option("CullEnabled", true) then return end
+    if driver then
+      driver:Disconnect()
+      driver = nil
+    end
+    if not active or not option("CullEnabled", true) then
+      return
+    end
     driver = services.RunService.Heartbeat:Connect(function(dt)
       elapsed += dt
-      if elapsed >= option("CullInterval", 0.1) then elapsed = 0; controller:Tick(os.clock(), Workspace.CurrentCamera) end
+      if (#stack > 0 or head <= tail) or elapsed >= option("CullInterval", 0.1) then
+        elapsed = 0
+        controller:Tick(os.clock(), Workspace.CurrentCamera)
+      end
     end)
   end
   function controller:SetEnabled(value)
-    if not alive then return end
-    active = value; clearSpatial()
-    if active and option("CullEnabled", true) then stack = { { items = table.clone(roots), index = 1 } } end
-    updateLobby(); refreshDriver()
-    if active then self:Tick(os.clock(), Workspace.CurrentCamera) end
+    if not alive then
+      return
+    end
+    active = value
+    clearSpatial()
+    if active and option("CullEnabled", true) then
+      stack = { { items = table.clone(roots), index = 1 } }
+    end
+    refreshDriver()
+    if active then
+      self:Tick(os.clock(), Workspace.CurrentCamera)
+    end
   end
   function controller:Refresh()
-    if not active then return end
-    updateLobby()
+    if not active then
+      return
+    end
+    self:Tick(os.clock(), Workspace.CurrentCamera)
   end
-  function controller:GetStatus()
-    return { Tracked = trackedCount, Hidden = hiddenCount, Chunks = #chunkList, LobbyHidden = lobbyHidden, Indexing = #stack > 0 or head <= tail }
-  end
+  function controller:GetStatus() return { Tracked = trackedCount, Hidden = hiddenCount, Chunks = #chunkList, Indexing = #stack > 0 or head <= tail } end
   function controller:Destroy()
-    if not alive then return end
-    self:SetEnabled(false); alive = false
+    if not alive then
+      return
+    end
+    self:SetEnabled(false)
+    alive = false
     for _, connection in ipairs(connections) do
       connection:Disconnect()
     end
   end
   for _, root in ipairs(roots) do
-    connections[#connections + 1] = root.DescendantAdded:Connect(function(object)
-      enqueue(object)
-      if object.Name == "Lobby" then updateLobby() end
-    end)
+    connections[#connections + 1] = root.DescendantAdded:Connect(function(object) enqueue(object) end)
     connections[#connections + 1] = root.DescendantRemoving:Connect(function(object) forget(object) end)
   end
-  connections[#connections + 1] = Workspace:GetAttributeChangedSignal("MatchStatus"):Connect(updateLobby)
-  connections[#connections + 1] = player:GetAttributeChangedSignal("Lives"):Connect(updateLobby); return controller
+  return controller
 end
 Spatial.create = createSpatialController
 Spatial.__contract = {

@@ -1,0 +1,44 @@
+name: Validate hub
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Luau 0.748
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/luau-lang/luau/releases/download/0.748/luau-ubuntu.zip \
+            --output "$RUNNER_TEMP/luau.zip"
+          echo "e6905c04dbccaeff54ca4986b0017f125db5aa301bcb34d0446355cbfee5bc83  $RUNNER_TEMP/luau.zip" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/luau"
+          unzip -q "$RUNNER_TEMP/luau.zip" -d "$RUNNER_TEMP/luau"
+          chmod +x "$RUNNER_TEMP/luau/"*
+          echo "$RUNNER_TEMP/luau" >> "$GITHUB_PATH"
+      - name: Verify generated catalogs
+        run: python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
+      - name: Test runtime, APIs and permissions
+        run: python3 'exodus hub/indeed/tools/run_tests.py' --hub all --require-tools
+      - name: Verify icons
+        run: python3 'exodus hub/indeed/tools/build_ui_icons.py' --check
+      - name: Check formatting
+        run: python3 'exodus hub/indeed/formatter.py' --check 'exodus hub'
+      - name: Check Python syntax
+        run: python3 -m compileall -q 'exodus hub/indeed' 'exodus hub/hubs'

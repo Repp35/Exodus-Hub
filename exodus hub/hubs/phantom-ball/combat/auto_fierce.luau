@@ -25,14 +25,21 @@ local function fierceReady()
   then
     return false
   end
-  if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then return false end
+  if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then
+    return false
+  end
   return type(ability.IsAvailable) ~= "function" or ability:IsAvailable(false)
 end
 local function eligible()
-  if not enabled() or not fierceReady() then return nil end
-  local now = os.clock(); local value = gameInfo.getDefenseSnapshot(now)
-  local player = utils.getLocalPlayer(); local character = player and player.Character
-  local root = character and character:FindFirstChild("HumanoidRootPart"); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  if not enabled() or not fierceReady() then
+    return nil
+  end
+  local now = os.clock()
+  local value = gameInfo.getDefenseSnapshot(now)
+  local player = utils.getLocalPlayer()
+  local character = player and player.Character
+  local root = character and character:FindFirstChild("HumanoidRootPart")
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   if
     not value
     or value.mode == "training"
@@ -51,43 +58,81 @@ local function eligible()
     frameLead = 1 / 60,
     rootVelocity = root.AssemblyLinearVelocity,
   })
-  if not t or not t.ready or (not t.approaching and t.timeToKill ~= 0) then return nil end
+  if not t or not t.ready or (not t.approaching and t.timeToKill ~= 0) then
+    return nil
+  end
   local recovery = cooldown.getDeflectRecoveryState(t.timeToKill, 1 / 60)
-  if not recovery or not recovery.needsFierce then return nil end
+  if not recovery or not recovery.needsFierce then
+    return nil
+  end
   local observedCooldown = recovery.cooldown
-  if not observedCooldown or observedCooldown.source ~= "local" or observedCooldown.blocking ~= true or observedCooldown.miss ~= true then return nil end
+  if not observedCooldown or observedCooldown.source ~= "local" or observedCooldown.blocking ~= true or observedCooldown.miss ~= true then
+    return nil
+  end
   local episode = observedCooldown.episode
-  if type(episode) ~= "number" or episode <= lastEpisode then return nil end
+  if type(episode) ~= "number" or episode <= lastEpisode then
+    return nil
+  end
   local pressAt, accepted = observedCooldown.pressAt, gameInfo.getLastAcceptedDeflectAt()
-  if type(pressAt) ~= "number" or type(accepted) ~= "number" or math.abs(accepted - pressAt) > 0.01 then return nil end
+  if type(pressAt) ~= "number" or type(accepted) ~= "number" or math.abs(accepted - pressAt) > 0.01 then
+    return nil
+  end
   return value, episode, pressAt, observedCooldown.confirmationVersion
 end
 local function update()
-  if pending then return end
+  if pending then
+    return
+  end
   local value, episode, pressAt, confirmation = eligible()
-  if not value then return end
-  local owner, token = generation, nil; local boundParry = autoParry
+  if not value then
+    return
+  end
+  local owner, token = generation, nil
+  local boundParry = autoParry
   pending = true
   local ok, sent = pcall(remote.fireFierce, function()
-    if owner ~= generation then return false end
+    if owner ~= generation then
+      return false
+    end
     local current, currentEpisode, currentPress, currentConfirmation = eligible()
-    if not current or current.ball ~= value.ball or currentEpisode ~= episode or currentPress ~= pressAt or currentConfirmation ~= confirmation then return false end
-    if not token then token = boundParry.beginFierce(); autoSpam.stopSpam("fierce_rescue") end
+    if not current or current.ball ~= value.ball or currentEpisode ~= episode or currentPress ~= pressAt or currentConfirmation ~= confirmation then
+      return false
+    end
+    if not token then
+      token = boundParry.beginFierce()
+      autoSpam.stopSpam("fierce_rescue")
+    end
     return true
   end)
-  if owner ~= generation then return end
+  if owner ~= generation then
+    return
+  end
   pending = false
-  if ok and sent == true then lastEpisode = episode else boundParry.cancelFierce(token) end
-  if not ok and os.clock() - errorAt >= 1 then errorAt = os.clock(); utils.recordError("AutoFierce", tostring(sent)) end
+  if ok and sent == true then
+    lastEpisode = episode
+  else
+    boundParry.cancelFierce(token)
+  end
+  if not ok and os.clock() - errorAt >= 1 then
+    errorAt = os.clock()
+    utils.recordError("AutoFierce", tostring(sent))
+  end
 end
 local function safeUpdate()
   local ok, detail = pcall(update)
-  if not ok and utils and os.clock() - errorAt >= 1 then errorAt = os.clock(); utils.recordError("AutoFierce", tostring(detail)) end
+  if not ok and utils and os.clock() - errorAt >= 1 then
+    errorAt = os.clock()
+    utils.recordError("AutoFierce", tostring(detail))
+  end
 end
 function AutoFierce.setup(deps)
-  if type(deps) ~= "table" then return false, "dependências ausentes" end
+  if type(deps) ~= "table" then
+    return false, "dependências ausentes"
+  end
   for _, name in ipairs({ "Utils", "GameInfo", "DeflectGeometry", "Cooldown", "Remote", "AutoParry", "AutoSpam" }) do
-    if type(deps[name]) ~= "table" then return false, "dependência ausente: " .. name end
+    if type(deps[name]) ~= "table" then
+      return false, "dependência ausente: " .. name
+    end
   end
   AutoFierce.teardown()
   utils, gameInfo, geometry, cooldown, remote, autoParry, autoSpam =
@@ -95,10 +140,12 @@ function AutoFierce.setup(deps)
   return true
 end
 function AutoFierce.onBallSync()
-  safeUpdate(); return true
+  safeUpdate()
+  return true
 end
 function AutoFierce.teardown()
-  generation += 1; pending, lastEpisode, errorAt = false, 0, -math.huge
+  generation += 1
+  pending, lastEpisode, errorAt = false, 0, -math.huge
   utils, gameInfo, geometry, cooldown, remote, autoParry, autoSpam = nil, nil, nil, nil, nil, nil, nil
 end
 AutoFierce.__contract = {

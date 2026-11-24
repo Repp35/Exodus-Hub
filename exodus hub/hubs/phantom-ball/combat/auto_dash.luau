@@ -36,8 +36,10 @@ local function clearExchange()
   exchangePartner, exchangeTarget, exchangeChanges, exchangeAt = nil, nil, 0, nil
 end
 local function clashPartner(packetTarget)
-  local time = utils.now(); local physics = deflectGeometry.getDefensePhysics()
-  local context = gameInfo.getClashContext(true); local snapshot = gameInfo.getSnapshotAt(time)
+  local time = utils.now()
+  local physics = deflectGeometry.getDefensePhysics()
+  local context = gameInfo.getClashContext(true)
+  local snapshot = gameInfo.getSnapshotAt(time)
   if
     not physics
     or physics.inClash ~= true
@@ -48,16 +50,27 @@ local function clashPartner(packetTarget)
     or snapshot.locked
     or (snapshot.syncAt ~= nil and (not finite(snapshot.syncAt) or time < snapshot.syncAt or time - snapshot.syncAt > 0.5))
   then
-    clearExchange(); return nil
+    clearExchange()
+    return nil
   end
   local partner, target = context.partnerId, packetTarget or snapshot.targetId
-  if not finite(partner) or partner <= 0 or partner == localPlayer.UserId or (target ~= localPlayer.UserId and target ~= partner) then clearExchange(); return nil end
-  if exchangePartner ~= partner or (exchangeAt and (time < exchangeAt or time - exchangeAt > CONFIG.MAX_EXCHANGE_AGE)) then clearExchange(); exchangePartner = partner end
+  if not finite(partner) or partner <= 0 or partner == localPlayer.UserId or (target ~= localPlayer.UserId and target ~= partner) then
+    clearExchange()
+    return nil
+  end
+  if exchangePartner ~= partner or (exchangeAt and (time < exchangeAt or time - exchangeAt > CONFIG.MAX_EXCHANGE_AGE)) then
+    clearExchange()
+    exchangePartner = partner
+  end
   if exchangeTarget ~= target then
-    if exchangeTarget ~= nil then exchangeChanges = exchangeChanges + 1 end
+    if exchangeTarget ~= nil then
+      exchangeChanges = exchangeChanges + 1
+    end
     exchangeTarget, exchangeAt = target, time
   end
-  if exchangeChanges < 2 then return nil end
+  if exchangeChanges < 2 then
+    return nil
+  end
   return partner
 end
 local function relevantOpponent(event) return clashPartner() == event.userId end
@@ -86,7 +99,9 @@ local function onDash(event)
     return
   end
   local time = utils.now()
-  if not finite(event.userId) or event.userId <= 0 then return end
+  if not finite(event.userId) or event.userId <= 0 then
+    return
+  end
   if
     time < event.detectedAt
     or time - event.detectedAt > CONFIG.MAX_EVENT_AGE
@@ -96,66 +111,117 @@ local function onDash(event)
     return
   end
   local player = event.player
-  if not player or player.UserId ~= event.userId then return end
-  if event.signalActive ~= true or not gameInfo.isPlayerDashing(player) then return end
-  local character = player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  if not player or player.UserId ~= event.userId then
+    return
+  end
+  if event.signalActive ~= true or not gameInfo.isPlayerDashing(player) then
+    return
+  end
+  local character = player.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   local localHumanoid = localRoot.Parent:FindFirstChildOfClass("Humanoid")
-  if not humanoid or humanoid.Health <= 0 or not localHumanoid or localHumanoid.Health <= 0 then return end
-  local velocity = event.velocity; local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-  if velocity.Y < CONFIG.MIN_UP_SPEED or horizontalSpeed > velocity.Y * CONFIG.MAX_HORIZONTAL_RATIO then return end
-  if not relevantOpponent(event, localRoot) then return end
-  local token = {}; inFlight = token
+  if not humanoid or humanoid.Health <= 0 or not localHumanoid or localHumanoid.Health <= 0 then
+    return
+  end
+  local velocity = event.velocity
+  local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+  if velocity.Y < CONFIG.MIN_UP_SPEED or horizontalSpeed > velocity.Y * CONFIG.MAX_HORIZONTAL_RATIO then
+    return
+  end
+  if not relevantOpponent(event, localRoot) then
+    return
+  end
+  local token = {}
+  inFlight = token
   local ok, result = pcall(movement.upDash)
   if inFlight == token then
     inFlight = nil
-    if ok and result == true and root == localRoot then handledSignals[event.userId] = event.signalAt end
+    if ok and result == true and root == localRoot then
+      handledSignals[event.userId] = event.signalAt
+    end
   end
-  if not ok then warn("[AutoDash] " .. tostring(result)) end
+  if not ok then
+    warn("[AutoDash] " .. tostring(result))
+  end
 end
 
 -- setup
 function AutoDash.setup(deps)
-  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then return false, "DeflectGeometry ausente" end
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement then return false, "dependências ausentes" end
-  AutoDash.teardown(); deflectGeometry = deps.DeflectGeometry
-  utils, gameInfo, dash, movement = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement; localPlayer, runService = utils.getLocalPlayer(), utils.getRunService()
-  if not localPlayer or not runService then return false, "serviços indisponíveis" end
-  dash.setHandler(onDash); return true
+  if type(deps) ~= "table" or type(deps.DeflectGeometry) ~= "table" then
+    return false, "DeflectGeometry ausente"
+  end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement then
+    return false, "dependências ausentes"
+  end
+  AutoDash.teardown()
+  deflectGeometry = deps.DeflectGeometry
+  utils, gameInfo, dash, movement = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement
+  localPlayer, runService = utils.getLocalPlayer(), utils.getRunService()
+  if not localPlayer or not runService then
+    return false, "serviços indisponíveis"
+  end
+  dash.setHandler(onDash)
+  return true
 end
 
 -- character-binding
 function AutoDash.bindCharacter(character)
-  AutoDash.detachCharacter(); local newRoot = character and character:FindFirstChild("HumanoidRootPart")
-  if not newRoot or not newRoot:IsA("BasePart") or not newRoot.Parent then return false, "HumanoidRootPart indisponível" end
+  AutoDash.detachCharacter()
+  local newRoot = character and character:FindFirstChild("HumanoidRootPart")
+  if not newRoot or not newRoot:IsA("BasePart") or not newRoot.Parent then
+    return false, "HumanoidRootPart indisponível"
+  end
   root, lastTickAt = newRoot, -math.huge
   heartbeat = runService.Heartbeat:Connect(function()
-    if not root or not root.Parent then return end
+    if not root or not root.Parent then
+      return
+    end
     local time = utils.now()
-    if time >= lastTickAt and time - lastTickAt < CONFIG.TICK_INTERVAL then return end
+    if time >= lastTickAt and time - lastTickAt < CONFIG.TICK_INTERVAL then
+      return
+    end
     lastTickAt = time
-    if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then clearExchange(); return end
+    if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then
+      clearExchange()
+      return
+    end
     local partner = clashPartner()
-    if partner then dash.tick(time, true, partner) end
+    if partner then
+      dash.tick(time, true, partner)
+    end
   end)
-  utils.trackCharacter(heartbeat); return true
+  utils.trackCharacter(heartbeat)
+  return true
 end
 function AutoDash.onBallSync(data)
-  if not root or not utils or not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true then clearExchange(); return end
-  if type(data) ~= "table" then return end
-  if data.Teleported then clearExchange(); return end
+  if not root or not utils or not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true then
+    clearExchange()
+    return
+  end
+  if type(data) ~= "table" then
+    return
+  end
+  if data.Teleported then
+    clearExchange()
+    return
+  end
   clashPartner(data.TargetPlayerID)
 end
 function AutoDash.detachCharacter()
-  root, inFlight, lastTickAt = nil, nil, -math.huge; table.clear(handledSignals)
+  root, inFlight, lastTickAt = nil, nil, -math.huge
+  table.clear(handledSignals)
   clearExchange()
   if heartbeat then
-    utils.untrackCharacter(heartbeat); heartbeat:Disconnect()
+    utils.untrackCharacter(heartbeat)
+    heartbeat:Disconnect()
     heartbeat = nil
   end
 end
 function AutoDash.teardown()
   AutoDash.detachCharacter()
-  if dash then dash.setHandler(nil) end
+  if dash then
+    dash.setHandler(nil)
+  end
   utils, gameInfo, dash, movement, localPlayer, runService = nil, nil, nil, nil, nil, nil
 end
 

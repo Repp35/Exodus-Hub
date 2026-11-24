@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(ROOT / 'indeed/checks'))
 from manifests import manifest, all_entries, source_for
 
-def smoke(binary, universal=True, hub_id=None, assertions=""):
+def smoke(binary, universal=True, hub_id=None, assertions="", bootstrap=False):
     universal = hub_id is None or hub_id == "universal"
     entries = manifest(universal, hub_id or "universal")
     code = (Path(__file__).with_name('engine_api.luau')).read_text()
@@ -104,6 +104,34 @@ end
 loaded.utils.stop()
 print("Module exports, dependency views and infrastructure initialization OK")
 '''
+    if bootstrap:
+        start = code.rindex('loaded.gamecontext.configure(profile)')
+        end = code.index('local pages = ', start)
+        code = code[:start] + '''
+local order, visited = {}, {}
+local function visit(name)
+  if visited[name] or name == "permissions" or name == "ui" then return end
+  visited[name] = true
+  for _, dependency in pairs(loaded[name].__contract.requires or {}) do visit(dependency) end
+  if name ~= "character" then order[#order + 1] = name end
+end
+for name in pairs(loaded) do visit(name) end
+order[#order + 1] = "character"
+loaded.ui.setup = function(deps) assert(type(deps.Controls.onReload) == "function"); return true end
+local ok, runtime = loaded.bootstrap.start(loaded, order, {}, profile, {
+  reload = function() return true end, latest = function() return "revision" end,
+  prepare = function() return function() end end, report = function(_, message) error(message) end,
+})
+assert(ok and type(runtime) == "table")
+''' + code[end:]
+        start = code.index('for index = #order, 1, -1 do')
+        end = code.index('print("Module exports', start)
+        code = code[:start] + '''
+loaded.utils.stop(); loaded.utils.stop()
+assert(not loaded.utils.isActive())
+local state = loaded.utils.getStateSnapshot()
+assert(state.connectionCounts.global == 0 and state.connectionCounts.character == 0)
+''' + code[end:]
     code = code.replace('-- PROFILE_ASSERTIONS', assertions)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / 'runtime_api.luau'

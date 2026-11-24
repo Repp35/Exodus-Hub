@@ -1,4 +1,5 @@
 -- [[ auto jump ]]
+-- @modules autojump
 
 -- module
 local AutoJump = {}
@@ -17,54 +18,94 @@ local CONFIG = {
 
 -- jump-control
 local function stopJump()
-  epoch += 1; local connection = jumpConnection
+  epoch += 1
+  local connection = jumpConnection
   jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
-  if not connection then return end
-  if utils then utils.untrackGlobal(connection) end
+  if not connection then
+    return
+  end
+  if utils then
+    utils.untrackGlobal(connection)
+  end
   connection:Disconnect()
 end
 
 -- jump-loop
 local function jumpStep(player)
   local character = player.Character
-  if character ~= jumpCharacter then jumpCharacter, jumpHumanoid = character, nil end
-  if not character or not character.Parent then return end
+  if character ~= jumpCharacter then
+    jumpCharacter, jumpHumanoid = character, nil
+  end
+  if not character or not character.Parent then
+    return
+  end
   local humanoid = jumpHumanoid
-  if not humanoid or humanoid.Parent ~= character then humanoid = character:FindFirstChildOfClass("Humanoid"); jumpHumanoid = humanoid end
-  if not humanoid or humanoid.Health <= 0 or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then return end
-  if humanoid:GetState() ~= CONFIG.JUMPING_STATE then humanoid:ChangeState(CONFIG.JUMPING_STATE) end
+  if not humanoid or humanoid.Parent ~= character then
+    humanoid = character:FindFirstChildOfClass("Humanoid")
+    jumpHumanoid = humanoid
+  end
+  if not humanoid or humanoid.Health <= 0 or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then
+    return
+  end
+  if humanoid:GetState() ~= CONFIG.JUMPING_STATE then
+    humanoid:ChangeState(CONFIG.JUMPING_STATE)
+  end
 end
 
 -- synchronization
 function AutoJump.sync()
-  if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then stopJump(); return true end
-  if jumpConnection and jumpConnection.Connected ~= false then return true end
-  stopJump(); local player, runService = utils.getLocalPlayer(), utils.getRunService()
-  if not player or not runService or not runService.Heartbeat then return false, "Jogador ou Heartbeat indisponível" end
+  if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then
+    stopJump()
+    return true
+  end
+  if jumpConnection and jumpConnection.Connected ~= false then
+    return true
+  end
+  stopJump()
+  local player, runService = utils.getLocalPlayer(), utils.getRunService()
+  if not player or not runService or not runService.Heartbeat then
+    return false, "Jogador ou Heartbeat indisponível"
+  end
   local token = epoch
   jumpConnection = runService.Heartbeat:Connect(function()
-    if token ~= epoch then return end
-    if not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then stopJump(); return end
+    if token ~= epoch then
+      return
+    end
+    if not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then
+      stopJump()
+      return
+    end
     jumpStep(player)
   end)
-  utils.trackGlobal(jumpConnection); return true
+  utils.trackGlobal(jumpConnection)
+  return true
 end
 
 -- setup
 function AutoJump.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
-  AutoJump.teardown(); utils = deps.Utils
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
+    return false, "Utils ausente"
+  end
+  AutoJump.teardown()
+  utils = deps.Utils
   configObserver = utils.observeConfig(function(changes)
-    if changes.AutoJump ~= nil then AutoJump.sync() end
+    if changes.AutoJump ~= nil then
+      AutoJump.sync()
+    end
   end)
-  utils.trackGlobal(configObserver); return AutoJump.sync()
+  utils.trackGlobal(configObserver)
+  return AutoJump.sync()
 end
 function AutoJump.teardown()
   if configObserver then
-    if utils then utils.untrackGlobal(configObserver) end
-    configObserver:Disconnect(); configObserver = nil
+    if utils then
+      utils.untrackGlobal(configObserver)
+    end
+    configObserver:Disconnect()
+    configObserver = nil
   end
-  stopJump(); utils = nil
+  stopJump()
+  utils = nil
 end
 
 -- contract

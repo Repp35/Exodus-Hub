@@ -1,4 +1,5 @@
 -- [[ fly ]]
+-- @modules fly
 
 local Fly = {}
 
@@ -47,16 +48,22 @@ local bindings = {
 local connections = {}
 local connectionPool
 local function disconnect(name)
-  if connectionPool then connectionPool.disconnect(name) end
+  if connectionPool then
+    connectionPool.disconnect(name)
+  end
 end
 local function connect(name, signal, callback) return connectionPool.connect(name, signal, callback) end
 local function disconnectPrefix(prefix)
   for name in pairs(connections) do
-    if name:sub(1, #prefix) == prefix then disconnect(name) end
+    if name:sub(1, #prefix) == prefix then
+      disconnect(name)
+    end
   end
 end
 local function destroy(object)
-  if object then pcall(object.Destroy, object) end
+  if object then
+    pcall(object.Destroy, object)
+  end
 end
 local function clearControls()
   table.clear(pressedKeys)
@@ -68,76 +75,121 @@ local function detachFly()
   if flyRoot and flyRoot.Parent then
     pcall(function() flyRoot.AssemblyLinearVelocity = Vector3.zero end)
   end
-  destroy(flyVelocity); destroy(flyGyro)
+  destroy(flyVelocity)
+  destroy(flyGyro)
   if flyHumanoid and flyHumanoid.Parent then
     pcall(function()
       if flyPlatformStand ~= nil then
         flyHumanoid.PlatformStand = flyPlatformStand
       end
-      if flyAutoRotate ~= nil then flyHumanoid.AutoRotate = flyAutoRotate end
+      if flyAutoRotate ~= nil then
+        flyHumanoid.AutoRotate = flyAutoRotate
+      end
     end)
   end
-  flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro = nil, nil, nil, nil, nil; flyPlatformStand, flyAutoRotate = nil, nil
+  flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro = nil, nil, nil, nil, nil
+  flyPlatformStand, flyAutoRotate = nil, nil
 end
 local function flyCharacterReady()
-  local player = Utils.getLocalPlayer(); local character = player and player.Character
-  local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
-  if not character or not humanoid or humanoid.Health <= 0 or not root then detachFly(); return nil end
+  local player = Utils.getLocalPlayer()
+  local character = player and player.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  local root = character and character:FindFirstChild("HumanoidRootPart")
+  if not character or not humanoid or humanoid.Health <= 0 or not root then
+    detachFly()
+    return nil
+  end
   if flyCharacter ~= character or flyHumanoid ~= humanoid or flyRoot ~= root then
-    detachFly(); flyCharacter, flyHumanoid, flyRoot = character, humanoid, root
+    detachFly()
+    flyCharacter, flyHumanoid, flyRoot = character, humanoid, root
     flyPlatformStand, flyAutoRotate = humanoid.PlatformStand, humanoid.AutoRotate
   end
   if not flyVelocity or not flyVelocity.Parent then
-    flyVelocity = Instance.new("BodyVelocity"); flyVelocity.Name = "ExodusFlyVelocity"
-    flyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9); flyVelocity.P = 9e4
+    flyVelocity = Instance.new("BodyVelocity")
+    flyVelocity.Name = "ExodusFlyVelocity"
+    flyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    flyVelocity.P = 9e4
     flyVelocity.Parent = root
   end
   if not flyGyro or not flyGyro.Parent then
-    flyGyro = Instance.new("BodyGyro"); flyGyro.Name = "ExodusFlyGyro"
-    flyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9); flyGyro.P = 9e4
-    flyGyro.D = 1000; flyGyro.Parent = root
+    flyGyro = Instance.new("BodyGyro")
+    flyGyro.Name = "ExodusFlyGyro"
+    flyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    flyGyro.P = 9e4
+    flyGyro.D = 1000
+    flyGyro.Parent = root
   end
   return humanoid
 end
 local function getPlayerControls()
-  if playerControls and playerControlsModule and playerControlsModule.Parent then return playerControls end
-  local player = Utils.getLocalPlayer(); local scripts = player and player:FindFirstChild("PlayerScripts")
+  if playerControls and playerControlsModule and playerControlsModule.Parent then
+    return playerControls
+  end
+  local player = Utils.getLocalPlayer()
+  local scripts = player and player:FindFirstChild("PlayerScripts")
   local module = scripts and scripts:FindFirstChild("PlayerModule")
-  if not module then return nil end
-  local owner = epoch; local ok, value = pcall(require, module)
-  if owner ~= epoch or not Utils or not states.Fly then return nil end
+  if not module then
+    return nil
+  end
+  local owner = epoch
+  local ok, value = pcall(require, module)
+  if owner ~= epoch or not Utils or not states.Fly then
+    return nil
+  end
   if ok and type(value) == "table" and type(value.GetControls) == "function" then
     local ready, result = pcall(value.GetControls, value)
-    if owner == epoch and Utils and states.Fly and ready and result and type(result.GetMoveVector) == "function" then playerControls, playerControlsModule = result, module end
+    if owner == epoch and Utils and states.Fly and ready and result and type(result.GetMoveVector) == "function" then
+      playerControls, playerControlsModule = result, module
+    end
   end
   return playerControls
 end
 local function updateFly()
-  if not Utils or not states.Fly then return end
-  local owner = epoch; local humanoid = flyCharacterReady()
+  if not Utils or not states.Fly then
+    return
+  end
+  local owner = epoch
+  local humanoid = flyCharacterReady()
   local camera = Workspace.CurrentCamera
-  if not humanoid or not camera then return end
+  if not humanoid or not camera then
+    return
+  end
   local direction
-  if UIS:GetFocusedTextBox() then clearControls() end
+  if UIS:GetFocusedTextBox() then
+    clearControls()
+  end
   if UIS.TouchEnabled and UIS:GetLastInputType() == Enum.UserInputType.Touch then
     local controller = getPlayerControls()
-    if controller then local movement = controller:GetMoveVector(); direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
-    else direction = humanoid.MoveDirection end
+    if controller then
+      local movement = controller:GetMoveVector()
+      direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
+    else
+      direction = humanoid.MoveDirection
+    end
   else
     direction = camera.CFrame.LookVector * (controls.Forward + controls.Backward)
       + camera.CFrame.RightVector * (controls.Left + controls.Right)
       + Vector3.new(0, controls.Up + controls.Down, 0)
   end
-  if owner ~= epoch or not states.Fly or not Utils or humanoid ~= flyHumanoid or not flyRoot or not flyRoot.Parent then return end
-  if direction.Magnitude > 1 then direction = direction.Unit end
-  local speed = math.clamp(tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10); local velocity = direction * speed * 50
-  flyVelocity.Velocity = velocity; flyRoot.AssemblyLinearVelocity = velocity
-  flyGyro.CFrame = camera.CFrame; humanoid.PlatformStand = true
+  if owner ~= epoch or not states.Fly or not Utils or humanoid ~= flyHumanoid or not flyRoot or not flyRoot.Parent then
+    return
+  end
+  if direction.Magnitude > 1 then
+    direction = direction.Unit
+  end
+  local speed = math.clamp(tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10)
+  local velocity = direction * speed * 50
+  flyVelocity.Velocity = velocity
+  flyRoot.AssemblyLinearVelocity = velocity
+  flyGyro.CFrame = camera.CFrame
+  humanoid.PlatformStand = true
   humanoid.AutoRotate = false
 end
 local function startFly()
   connect("FlyBegan", UIS.InputBegan, function(input, processed)
-    if processed then return end
+    if processed then
+      return
+    end
     local binding = bindings[input.KeyCode]
     if binding then
       pressedKeys[input.KeyCode] = true
@@ -158,50 +210,90 @@ local function startFly()
       end
     end
   end)
-  connect("FlyFocus", UIS.WindowFocusReleased, clearControls); local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
-  if not frameSignal then return false end
-  connect("FlyFrame", frameSignal, updateFly); updateFly()
+  connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
+  local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
+  if not frameSignal then
+    return false
+  end
+  connect("FlyFrame", frameSignal, updateFly)
+  updateFly()
   return true
 end
 local function stopFly()
-  epoch += 1; disconnectPrefix("Fly")
-  clearControls(); detachFly()
-  playerControls, playerControlsModule = nil, nil; return true
+  epoch += 1
+  disconnectPrefix("Fly")
+  clearControls()
+  detachFly()
+  playerControls, playerControlsModule = nil, nil
+  return true
 end
 function Fly.setEnabled(enabled)
-  if not Utils then return false, "recurso indisponível" end
+  if not Utils then
+    return false, "recurso indisponível"
+  end
   local value = enabled == true
-  if not Utils.setConfig({ UniversalFly = value }) then return false, "configuração rejeitada" end
-  if states.Fly == value then return true end
-  states.Fly = value; local ok, result, detail = pcall(value and startFly or stopFly)
+  if not Utils.setConfig({ UniversalFly = value }) then
+    return false, "configuração rejeitada"
+  end
+  if states.Fly == value then
+    return true
+  end
+  states.Fly = value
+  local ok, result, detail = pcall(value and startFly or stopFly)
   if not ok or result == false then
-    pcall(stopFly); states.Fly = false
-    Utils.setConfig({ UniversalFly = false }); return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+    pcall(stopFly)
+    states.Fly = false
+    Utils.setConfig({ UniversalFly = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
   end
   return true
 end
 function Fly.setValue(value)
-  if not Utils then return false, "recurso indisponível" end
+  if not Utils then
+    return false, "recurso indisponível"
+  end
   value = tonumber(value)
-  if not value or value ~= value or value == math.huge or value == -math.huge then return false, "velocidade inválida" end
-  if not Utils.setConfig({ UniversalFlySpeed = math.clamp(value, 0.1, 10) }) then return false end
-  if states.Fly then updateFly() end
+  if not value or value ~= value or value == math.huge or value == -math.huge then
+    return false, "velocidade inválida"
+  end
+  if not Utils.setConfig({ UniversalFlySpeed = math.clamp(value, 0.1, 10) }) then
+    return false
+  end
+  if states.Fly then
+    updateFly()
+  end
   return true
 end
 function Fly.teardown()
-  if configObserver then configObserver:Disconnect(); configObserver = nil end
-  stopFly(); states.Fly = false
-  if connectionPool then connectionPool.destroy(); connectionPool = nil end
-  Utils = nil; return true
+  if configObserver then
+    configObserver:Disconnect()
+    configObserver = nil
+  end
+  stopFly()
+  states.Fly = false
+  if connectionPool then
+    connectionPool.destroy()
+    connectionPool = nil
+  end
+  Utils = nil
+  return true
 end
 function Fly.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  Fly.teardown(); Utils = deps.Utils
-  connectionPool = deps.Lifetime.connections(Utils); connections = connectionPool.connections
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
+    return false, "dependência ausente: Utils"
+  end
+  Fly.teardown()
+  Utils = deps.Utils
+  connectionPool = deps.Lifetime.connections(Utils)
+  connections = connectionPool.connections
   configObserver = Utils.observeConfig(function(changes)
-    if changes.UniversalFly ~= nil then Fly.setEnabled(changes.UniversalFly == true) end
+    if changes.UniversalFly ~= nil then
+      Fly.setEnabled(changes.UniversalFly == true)
+    end
   end)
-  if Utils.getConfigValue("UniversalFly") == true then return Fly.setEnabled(true) end
+  if Utils.getConfigValue("UniversalFly") == true then
+    return Fly.setEnabled(true)
+  end
   return true
 end
 Fly.__config = CONFIG

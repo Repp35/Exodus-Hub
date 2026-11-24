@@ -1,20 +1,24 @@
 -- [[ input ]]
+-- @modules uiinput
 
 -- module
 local Controller = {}
 
 -- configuration
-local CONFIG = {}
 
 -- setup
 function Controller.setup() return true end
 
 -- controller
 function Controller.create(context)
-  local Utils = context.deps.Utils; local UIState = context.state
-  local UIS = context.services.UIS; local trackConn = context.trackConn
+  local Utils = context.deps.Utils
+  local UIState = context.state
+  local UIS = context.services.UIS
+  local trackConn = context.trackConn
   local function inputBinding(input)
-    if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType.Name:match("^Gamepad") then return input.KeyCode end
+    if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType.Name:match("^Gamepad") then
+      return input.KeyCode
+    end
     if
       input.UserInputType == Enum.UserInputType.MouseButton1
       or input.UserInputType == Enum.UserInputType.MouseButton2
@@ -28,8 +32,13 @@ function Controller.create(context)
   local function bindInput(actions)
     trackConn(UIS.InputBegan:Connect(function(input, gameProcessed)
       local gamepad = input.UserInputType.Name:match("^Gamepad") ~= nil
-      if (input.KeyCode == Enum.KeyCode.ButtonSelect or input.KeyCode == Enum.KeyCode.Menu) and not UIState.keyCapture and not UIS:GetFocusedTextBox() then context.window.toggle(); return end
-      if UIState.panelOpen and gamepad and not UIState.keyCapture then return end
+      if (input.KeyCode == Enum.KeyCode.ButtonSelect or input.KeyCode == Enum.KeyCode.Menu) and not UIState.keyCapture and not UIS:GetFocusedTextBox() then
+        context.window.toggle()
+        return
+      end
+      if UIState.panelOpen and gamepad and not UIState.keyCapture then
+        return
+      end
       if
         gameProcessed
         or UIState.keyCapture
@@ -40,14 +49,21 @@ function Controller.create(context)
       then
         return
       end
-      if UIState.closing then return end
+      if UIState.closing then
+        return
+      end
       local config = Utils.getConfig() or {}
-      if context.combatUI ~= false and config.DynamicParry == true and isKey(input, config.DynamicParryKey) then return end
+      if context.combatUI ~= false and config.DynamicParry == true and isKey(input, config.DynamicParryKey) then
+        return
+      end
       if isKey(input, config.Keybind) then
         actions.triggerShortcut(inputBinding(input))
       elseif context.combatUI ~= false and isKey(input, config.SpamKeybind) then
         if config.ManualSpamMode == "Hold" then
-          if not UIState.manualHoldInput then UIState.manualHoldInput = input; context.floating.setSpam(true) end
+          if not UIState.manualHoldInput then
+            UIState.manualHoldInput = input
+            context.floating.setSpam(true)
+          end
         else
           context.floating.setSpam(not UIState.spamOn)
         end
@@ -57,18 +73,29 @@ function Controller.create(context)
     end))
     trackConn(UIS.InputEnded:Connect(function(input)
       local held = UIState.manualHoldInput
-      if held and (held == input or (inputBinding(held) and inputBinding(held) == inputBinding(input))) then UIState.manualHoldInput = nil; context.floating.setSpam(false) end
+      if held and (held == input or (inputBinding(held) and inputBinding(held) == inputBinding(input))) then
+        UIState.manualHoldInput = nil
+        context.floating.setSpam(false)
+      end
     end))
     trackConn(UIS.WindowFocusReleased:Connect(function()
-      if UIState.manualHoldInput then UIState.manualHoldInput = nil; context.floating.setSpam(false) end
+      if UIState.manualHoldInput then
+        UIState.manualHoldInput = nil
+        context.floating.setSpam(false)
+      end
     end))
   end
-  local gui = game:GetService("GuiService"); local previousSelection = gui.SelectedObject
+  local gui = game:GetService("GuiService")
+  local previousSelection = gui.SelectedObject
   local function visible(object)
-    if not object or not object.Parent then return false end
+    if not object or not object.Parent then
+      return false
+    end
     local parent = object
     while parent and parent ~= context.refs.screenGui do
-      if parent:IsA("GuiObject") and not parent.Visible then return false end
+      if parent:IsA("GuiObject") and not parent.Visible then
+        return false
+      end
       parent = parent.Parent
     end
     return parent == context.refs.screenGui
@@ -76,11 +103,15 @@ function Controller.create(context)
   local savedNavigation = {}
   for _, property in ipairs({ "GuiNavigationEnabled", "AutoSelectGuiEnabled" }) do
     local ok, value = pcall(function() return gui[property] end)
-    if ok then savedNavigation[property] = value end
+    if ok then
+      savedNavigation[property] = value
+    end
   end
   local navigationOwned = false
   local function setNavigation(value)
-    if value == navigationOwned then return end
+    if value == navigationOwned then
+      return
+    end
     navigationOwned = value
     for property, previous in pairs(savedNavigation) do
       pcall(function() gui[property] = value and true or previous end)
@@ -89,27 +120,39 @@ function Controller.create(context)
   local controllerNavigation = UIS.GamepadEnabled
   local function focusFirst()
     local panel = context.refs.configPanel
-    if not panel then return end
+    if not panel then
+      return
+    end
     for _, item in ipairs(panel:GetDescendants()) do
-      if item:IsA("GuiButton") and item.Selectable and item.Active and visible(item) then gui.SelectedObject = item; return end
+      if item:IsA("GuiButton") and item.Selectable and item.Active and visible(item) then
+        gui.SelectedObject = item
+        return
+      end
     end
   end
   trackConn(
     UIS.LastInputTypeChanged:Connect(function(kind) controllerNavigation = kind.Name:match("^Gamepad") ~= nil or kind == Enum.UserInputType.Keyboard end)
   )
   trackConn(context.services.RunService.Heartbeat:Connect(function()
-    local selected = gui.SelectedObject; setNavigation(UIState.panelOpen and controllerNavigation)
+    local selected = gui.SelectedObject
+    setNavigation(UIState.panelOpen and controllerNavigation)
     if UIState.panelOpen and controllerNavigation then
-      if not visible(selected) then focusFirst() end
+      if not visible(selected) then
+        focusFirst()
+      end
     elseif selected and selected:IsDescendantOf(context.refs.screenGui) then
       gui.SelectedObject = nil
     end
   end))
   context.scope.add(function()
-    setNavigation(false); local selected = gui.SelectedObject
-    if selected and selected:IsDescendantOf(context.refs.screenGui) then gui.SelectedObject = previousSelection and previousSelection.Parent and previousSelection or nil end
+    setNavigation(false)
+    local selected = gui.SelectedObject
+    if selected and selected:IsDescendantOf(context.refs.screenGui) then
+      gui.SelectedObject = previousSelection and previousSelection.Parent and previousSelection or nil
+    end
   end)
-  bindInput(context.actions); return {}
+  bindInput(context.actions)
+  return {}
 end
 
 -- contract

@@ -1,11 +1,11 @@
 -- [[ ui ]]
+-- @modules ui
 
 -- module
 local ExodusUI = {}
 local active
 
 -- configuration
-local CONFIG = {}
 
 -- public-components
 local Components = {}
@@ -32,46 +32,76 @@ ExodusUI.Components = Components
 
 -- composition
 function ExodusUI.setup(deps, preview)
-  if type(deps) ~= "table" or type(deps.Controls) ~= "table" then return false, "missing UI dependencies" end
+  if type(deps) ~= "table" or type(deps.Controls) ~= "table" then
+    return false, "missing UI dependencies"
+  end
   for alias in pairs(ExodusUI.__contract.requires) do
-    if type(deps[alias]) ~= "table" then return false, "missing UI dependency: " .. alias end
+    if type(deps[alias]) ~= "table" then
+      return false, "missing UI dependency: " .. alias
+    end
   end
   for alias, methods in pairs(ExodusUI.__contract.requiresMethods) do
     for _, method in ipairs(methods) do
-      if type(deps[alias][method]) ~= "function" then return false, "missing UI method: " .. alias .. "." .. method end
+      if type(deps[alias][method]) ~= "function" then
+        return false, "missing UI method: " .. alias .. "." .. method
+      end
     end
   end
   if type(_G.ExodusUICleanup) == "function" then
-    if not preview and type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
+    if not preview and type(_G.ExodusUIFadeOut) == "function" then
+      pcall(_G.ExodusUIFadeOut)
+    end
     _G.ExodusUICleanup()
   else
-    local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"); local old = playerGui:FindFirstChild("ExodusUISystem")
-    if old then old:Destroy() end
+    local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    local old = playerGui:FindFirstChild("ExodusUISystem")
+    if old then
+      old:Destroy()
+    end
   end
-  local context = deps.Context.create(deps, preview and preview.deviceDesktop); active = context
-  context.hub = deps.GameContext.getProfile(); context.phantomBall = deps.GameContext.isPhantomBall()
-  local hubUI = deps.Hub.getUIConfig(); context.combatUI = hubUI.combatUI == true
-  context.notifications = deps.Notifications.create(context); context.notifications.layer()
-  context.floating = deps.Floating.create(context); context.window = deps.Window.create(context)
-  deps.Telemetry.create(context); context.lifecycle = deps.Lifecycle.create(context)
+  local context = deps.Context.create(deps, preview and preview.deviceDesktop)
+  active = context
+  context.hub = deps.GameContext.getProfile()
+  local hubUI = deps.Hub.getUIConfig()
+  context.combatUI = hubUI.combatUI == true
+  context.abilityKeys = hubUI.abilityKeys or {}
+  context.notifications = deps.Notifications.create(context)
+  context.notifications.layer()
+  context.floating = deps.Floating.create(context)
+  context.window = deps.Window.create(context)
+  deps.Telemetry.create(context)
+  context.lifecycle = deps.Lifecycle.create(context)
   local function cleanup()
     context.destroy()
     if _G.ExodusUICleanup == cleanup then
-      if active == context then active = nil end
-      _G.ExodusUICleanup, _G.ExodusUIFadeOut, _G.ExodusUIRestore = nil, nil, nil; _G.ExodusShowPersistentNotification, _G.ExodusClearPersistentNotification = nil, nil
+      if active == context then
+        active = nil
+      end
+      _G.ExodusUICleanup, _G.ExodusUIFadeOut, _G.ExodusUIRestore = nil, nil, nil
+      _G.ExodusShowPersistentNotification, _G.ExodusClearPersistentNotification = nil, nil
     end
   end
-  _G.ExodusUICleanup = cleanup; _G.ExodusUIFadeOut = context.lifecycle.fade
-  _G.ExodusUIRestore = context.lifecycle.restore; _G.ExodusShowPersistentNotification = context.notifications.persistent
-  _G.ExodusClearPersistentNotification = context.notifications.clear; local rebuildQueued = false
+  _G.ExodusUICleanup = cleanup
+  _G.ExodusUIFadeOut = context.lifecycle.fade
+  _G.ExodusUIRestore = context.lifecycle.restore
+  _G.ExodusShowPersistentNotification = context.notifications.persistent
+  _G.ExodusClearPersistentNotification = context.notifications.clear
+  local rebuildQueued = false
   local function rebuild(reset)
-    if rebuildQueued then return end
-    rebuildQueued = true; local owner = context.refs.screenGui
+    if rebuildQueued then
+      return
+    end
+    rebuildQueued = true
+    local owner = context.refs.screenGui
     local wasOpen, snapshot = context.state.panelOpen, context.pages.snapshot()
     task.defer(function()
-      if not context.scope.alive or not owner.Parent or context.state.closing then return end
+      if not context.scope.alive or not owner.Parent or context.state.closing then
+        return
+      end
       local ok, reason = ExodusUI.setup(deps, { snapshot = not reset and snapshot or nil, open = wasOpen, deviceDesktop = context.state.deviceDesktop })
-      if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
+      if not ok then
+        warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason))
+      end
     end)
   end
   context.actions = deps.UIActions.create({
@@ -94,21 +124,37 @@ function ExodusUI.setup(deps, preview)
     abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
     onNavigate = context.window.updateNavigation,
   })
-  context.floating.refreshAbilities(); context.updateResponsiveScale()
-  deps.Input.create(context); deps.Assists.create(context)
-  if preview and preview.snapshot then context.pages.restore(preview.snapshot) end
+  context.floating.refreshAbilities()
+  context.updateResponsiveScale()
+  deps.Input.create(context)
+  deps.Assists.create(context)
+  if preview and preview.snapshot then
+    context.pages.restore(preview.snapshot)
+  end
   context.scope.add(deps.Utils.observeSpam(function()
     local manual = deps.Utils.isManualSpamActive()
-    if context.state.spamOn ~= manual then context.floating.setSpam(manual) end
+    if context.state.spamOn ~= manual then
+      context.floating.setSpam(manual)
+    end
     context.actions.refreshManual()
   end))
   context.scope.add(deps.Utils.observeConfig(function(changes)
-    context.floating.sync(changes); context.actions.refreshManual()
-    if changes.ForcePCUI ~= nil then rebuild() end
+    context.floating.sync(changes)
+    context.actions.refreshManual()
+    if changes.ForcePCUI ~= nil then
+      rebuild()
+    end
   end))
-  _G.ExodusUIReturnAfterUpdate = nil
-  if preview and preview.open then context.window.toggle() end
+  if preview and preview.open then
+    context.window.toggle()
+  end
   return true
+end
+
+function ExodusUI.notify(...)
+  if active and active.scope.alive then
+    active.notifications.persistent(...)
+  end
 end
 
 -- contract
@@ -128,15 +174,13 @@ ExodusUI.__contract = {
     Window = "uiwindow",
     Floating = "uifloating",
     Notifications = "uinotificationview",
-    StatusView = "uistatus",
-    Status = "status",
     Telemetry = "uitelemetry",
     Input = "uiinput",
     Assists = "uiassists",
     Lifecycle = "uilifecycle",
   },
   requiresMethods = {
-    GameContext = { "isPhantomBall", "getProfile" },
+    GameContext = { "getProfile" },
     Utils = {
       "getConfig",
       "getConfigValue",
@@ -157,6 +201,7 @@ ExodusUI.__contract = {
     },
     Hub = {
       "getUIConfig",
+      "getReadouts",
       "hasClashPrediction",
       "getAbilityAvailability",
       "getGameContext",
@@ -173,8 +218,6 @@ ExodusUI.__contract = {
     Window = { "create" },
     Floating = { "create" },
     Notifications = { "create" },
-    StatusView = { "format" },
-    Status = { "get" },
     Telemetry = { "create" },
     Input = { "create" },
     Assists = { "create" },
@@ -182,7 +225,7 @@ ExodusUI.__contract = {
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },
-  provides = { "setup" },
+  provides = { "setup", "notify" },
 }
 
 return ExodusUI

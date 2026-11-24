@@ -1,59 +1,47 @@
-#!/usr/bin/env python3
-"""Compatible command and import entry point for the modular formatter."""
-from formatting import (
-    FormatterError,
-    normalized_title,
-    valid_section,
-    section_from_comment,
-    section_name_from_comment,
-    canonical_section_name,
-    configuration_section_is_tuning,
-    normalize_section_case,
-    long_bracket_open,
-    quoted_string_end,
-    strip_unwanted_comments,
-    add_section_spacing,
-    finish_source,
-    remove_empty_lines,
-    add_initial_dependency_spacing,
-    brace_delta,
-    add_table_spacing,
-    expand_inline_config_tables,
-    expand_dense_named_tables,
-    expand_module_declarations,
-    audit_module_config,
-    add_final_return_spacing,
-    add_title,
-    require_sections,
-    organize_literal_constants,
-    apply_directives,
-    parse_section_specs,
-    parse_section_edits,
-    edit_sections,
-    insert_sections,
-    mask_literals,
-    delimiters_balanced,
-    simple_statement,
-    line_indent,
-    compact_statement_runs,
-    compact_if_at,
-    compact_simple_if_blocks,
-    integer_stylua_setting,
-    string_stylua_setting,
-    find_stylua,
-    make_stylua_command,
-    run_stylua,
-    HUB_ROOT,
-    DEFAULT_CONFIG,
-    is_excluded,
-    walk_directory,
-    collect_files,
-    build_parser,
-    output_path_for,
-    write_atomically,
-    format_files,
-    main,
-)
+"""Format Luau with the bundled StyLua binary; --check never changes files."""
+from pathlib import Path
+import argparse
+import hashlib
+import os
+import shutil
+import subprocess
 
-if __name__ == "__main__":
+ROOT = Path(__file__).resolve().parents[1]
+RESOURCES = Path(__file__).with_name('formatting') / 'resources'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--check', action='store_true')
+    mode.add_argument('--in-place', action='store_true')
+    parser.add_argument('paths', nargs='*', type=Path, default=[ROOT])
+    args = parser.parse_args()
+    binary = os.environ.get('STYLUA_BIN') or shutil.which('stylua')
+    if not binary:
+        binary = RESOURCES / 'stylua-linux-x86_64'
+    files = set()
+    for path in args.paths:
+        if not path.exists():
+            parser.error(f'Path not found: {path}')
+        for candidate in path.rglob('*.luau') if path.is_dir() else [path]:
+            if candidate.suffix == '.luau' and not any(part in {'.git', '__pycache__'} for part in candidate.parts):
+                files.add(candidate)
+    if not files:
+        parser.error('No Luau files found')
+    command = [str(binary), '--config-path', str(RESOURCES / 'stylua.toml'), '--verify']
+    if not args.in_place:
+        command.append('--check')
+    command += [str(path) for path in sorted(files)]
+    def fingerprint():
+        return [hashlib.sha256(path.read_bytes()).digest() for path in sorted(files)]
+    for _ in range(4 if args.in_place else 1):
+        before = fingerprint()
+        result = subprocess.run(command)
+        if result.returncode or not args.in_place or fingerprint() == before:
+            return result.returncode
+    raise SystemExit('StyLua did not reach a stable format after four passes')
+
+
+if __name__ == '__main__':
     raise SystemExit(main())

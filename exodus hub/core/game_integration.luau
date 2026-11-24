@@ -1,55 +1,93 @@
 -- [[ game_integration ]]
+-- @modules gamecontext, hubapi, runtime
 
 -- code
 local __part_gamecontext = (function()
-  local GameContext = {}; local profile = { id = "universal", title = "Universal", author = "deltapolinha_2915" }
+  local GameContext = {}
+  local profile = { id = "universal", title = "Universal", author = "deltapolinha_2915" }
   function GameContext.setup() return true end
   function GameContext.configure(value)
-    profile = table.clone(value); return true
+    profile = table.clone(value)
+    return true
   end
   function GameContext.getProfile() return table.clone(profile) end
-  function GameContext.isPhantomBall() return profile.id == "phantom-ball" end
   function GameContext.supportsModule() return true end
-  GameContext.__contract = { provides = { "setup", "configure", "getProfile", "isPhantomBall", "supportsModule" }, requires = {} }; return GameContext
+  GameContext.__contract = { provides = { "setup", "configure", "getProfile", "supportsModule" }, requires = {} }
+  return GameContext
 end)()
 local __part_hubapi = (function()
-  local HubAPI = {}; local modules = {}
+  local HubAPI = {}
+  local api = {}
   function HubAPI.setup() return true end
   function HubAPI.configure(loaded)
-    modules = loaded; return true
+    api = loaded.gameruntime and loaded.gameruntime.createAPI(loaded) or {}
+    return true
   end
   function HubAPI.teardown()
-    modules = {}; return true
+    api = {}
+    return true
   end
-  function HubAPI.areAbilitiesEnabled() return modules.gameinfo ~= nil and modules.gameinfo.areAbilitiesEnabled() end
+  function HubAPI.areAbilitiesEnabled() return api.areAbilitiesEnabled and api.areAbilitiesEnabled() or false end
   function HubAPI.getAbilityAvailability(name)
-    if modules.gameinfo then return modules.gameinfo.getAbilityAvailability(name) end
+    if api.getAbilityAvailability then
+      return api.getAbilityAvailability(name)
+    end
     return false, "Recurso indisponível neste jogo"
   end
-  function HubAPI.getUIConfig() return modules.gameui and modules.gameui.definition or {} end
-  function HubAPI.getGameContext() return modules.gameinfo and modules.gameinfo.getGameContext() or {} end
+  function HubAPI.getUIConfig() return api.getUIConfig and api.getUIConfig() or {} end
+  function HubAPI.getGameContext() return api.getGameContext and api.getGameContext() or {} end
   function HubAPI.observeAbilityMode(callback)
-    if modules.gameinfo then return modules.gameinfo.observeAbilityMode(callback) end
+    if api.observeAbilityMode then
+      return api.observeAbilityMode(callback)
+    end
     return { Disconnect = function() end }
   end
-  function HubAPI.hasClashPrediction() return modules.autospam ~= nil and modules.autospam.hasClashPrediction() end
-  function HubAPI.createCrateNetwork() return modules.gameinfo and modules.gameinfo.createCrateNetwork() end
-  function HubAPI.spinCrate(...)
-    if modules.gameinfo then return modules.gameinfo.spinCrate(...) end
-    return false
-  end
+  function HubAPI.hasClashPrediction() return api.hasClashPrediction and api.hasClashPrediction() or false end
   function HubAPI.resetState()
-    if modules.spam then modules.spam.resetState() end
+    if api.resetState then
+      api.resetState()
+    end
   end
-  function HubAPI.isNativeVisualAvailable() return modules.nativevisuals ~= nil end
+  function HubAPI.isNativeVisualAvailable() return api.createVisualAdapter ~= nil end
   function HubAPI.applyVisualPolicy(...)
-    if modules.nativevisuals then return modules.nativevisuals.apply(...) end
+    if api.applyVisualPolicy then
+      return api.applyVisualPolicy(...)
+    end
     local _, target, watch = ...
     return target, watch
   end
-  function HubAPI.createVisualAdapter(...)
-    if modules.nativevisuals then return modules.nativevisuals.create(...) end
-    return nil
+  function HubAPI.createVisualAdapter(...) return api.createVisualAdapter and api.createVisualAdapter(...) end
+  function HubAPI.getReadouts() return api.readouts or {} end
+  function HubAPI.getJumpButton() return api.getJumpButton and api.getJumpButton() end
+  function HubAPI.createActions(context) return api.createActions and api.createActions(context) or {} end
+  function HubAPI.getControls() return api.controls or {} end
+  function HubAPI.canUpdate()
+    for _, blocked in ipairs(api.updateBlockers or {}) do
+      local ok, value = pcall(blocked)
+      if not ok then
+        return false, tostring(value)
+      end
+      if value then
+        return false, "Aguardando um estado seguro do jogo"
+      end
+    end
+    return true
+  end
+  function HubAPI.getMiniVisibility()
+    local result = {}
+    for key, rule in pairs(api.miniVisibility or {}) do
+      local ok, visible = pcall(rule)
+      if ok then
+        result[key] = visible == true
+      end
+    end
+    return result
+  end
+  function HubAPI.migrateConfig(data)
+    if api.migrateConfig then
+      return api.migrateConfig(data)
+    end
+    return false
   end
   HubAPI.__contract = {
     access = {
@@ -57,13 +95,19 @@ local __part_hubapi = (function()
       methods = {
         configure = "infrastructure.write",
         resetState = "combat.runtime",
-        createCrateNetwork = "game.inventory",
-        spinCrate = "game.inventory",
+        createActions = "game.inventory",
         applyVisualPolicy = "render.write",
         createVisualAdapter = "render.write",
       },
     },
     provides = {
+      "getReadouts",
+      "getJumpButton",
+      "createActions",
+      "getControls",
+      "canUpdate",
+      "getMiniVisibility",
+      "migrateConfig",
       "setup",
       "configure",
       "teardown",
@@ -73,8 +117,6 @@ local __part_hubapi = (function()
       "getGameContext",
       "observeAbilityMode",
       "hasClashPrediction",
-      "createCrateNetwork",
-      "spinCrate",
       "resetState",
       "isNativeVisualAvailable",
       "applyVisualPolicy",
@@ -88,18 +130,15 @@ local __part_runtime = (function()
   local Runtime = {}
   function Runtime.setup() return true end
   function Runtime.bind(loaded, ...)
-    if loaded.gameruntime then return loaded.gameruntime.bind(loaded, ...) end
+    if loaded.gameruntime then
+      return loaded.gameruntime.bind(loaded, ...)
+    end
     return {
       mode = loaded.gamecontext.getProfile().id,
-      parryRemote = false,
-      parryInitialized = false,
-      watcher = false,
-      ballSync = false,
-      maintenance = false,
-      ballSyncSubscribers = 0,
     }
   end
-  Runtime.__contract = { provides = { "setup", "bind" }, requires = {} }; return Runtime
+  Runtime.__contract = { provides = { "setup", "bind" }, requires = {} }
+  return Runtime
 end)()
 
 return { __bundle = { gamecontext = __part_gamecontext, hubapi = __part_hubapi, runtime = __part_runtime } }

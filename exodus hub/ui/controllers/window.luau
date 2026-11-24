@@ -1,41 +1,62 @@
 -- [[ window ]]
+-- @modules uiwindow
 
 -- module
 local Controller = {}
 
 -- configuration
-local CONFIG = {}
 
 -- setup
 function Controller.setup() return true end
 
 -- controller
 function Controller.create(context)
-  local Utils = context.deps.Utils; local UIState = context.state
-  local CONFIG = context.theme; local C = context.theme.COLORS
-  local PW = context.theme.PANEL_W; local PH = context.theme.PANEL_H
-  local TITLE_H = context.theme.TITLE_H; local PAD = context.theme.PAD
-  local BTN_SIZE = context.theme.BTN_SIZE; local PARTICLE_COLORS = context.theme.PARTICLE_COLORS
-  local inst = context.inst; local corner = context.corner
-  local stroke = context.stroke; local twPlay = context.twPlay
-  local safeCancel = context.safeCancel; local trackConn = context.trackConn
-  local untrackConn = context.untrackConn; local safeDisconnect = context.safeDisconnect
-  local makeDraggable = context.makeDraggable; local makeBtn = context.makeBtn
-  local _wait = task.wait; local _spawn = task.spawn
+  local Utils = context.deps.Utils
+  local UIState = context.state
+  local CONFIG = context.theme
+  local C = context.theme.COLORS
+  local PW = context.theme.PANEL_W
+  local PH = context.theme.PANEL_H
+  local TITLE_H = context.theme.TITLE_H
+  local PAD = context.theme.PAD
+  local BTN_SIZE = context.theme.BTN_SIZE
+  local PARTICLE_COLORS = context.theme.PARTICLE_COLORS
+  local inst = context.inst
+  local corner = context.corner
+  local stroke = context.stroke
+  local twPlay = context.twPlay
+  local safeCancel = context.safeCancel
+  local trackConn = context.trackConn
+  local untrackConn = context.untrackConn
+  local safeDisconnect = context.safeDisconnect
+  local makeDraggable = context.makeDraggable
+  local makeBtn = context.makeBtn
+  local _wait = task.wait
+  local _spawn = task.spawn
   local function btnPos()
-    local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
-    if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
+    local config = Utils.getConfig()
+    local x, y = config.BtnX, config.BtnY
+    if type(x) == "number" and type(y) == "number" then
+      return UDim2.new(0, x, 0, y)
+    end
     return UDim2.new(1, -70, 0.5, -28)
   end
   local function panelPos()
-    local config = Utils.getConfig(); local x, y = config.PanelX, config.PanelY
-    if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
+    local config = Utils.getConfig()
+    local x, y = config.PanelX, config.PanelY
+    if type(x) == "number" and type(y) == "number" then
+      return UDim2.new(0, x, 0, y)
+    end
     return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
   end
   local function spawnParticle()
-    if not context.refs.particleLayer or not context.refs.particleLayer.Parent then return end
-    local isFar = math.random() < 0.6; local size = isFar and math.random(2, 3) or math.random(4, 6)
-    local startTrans = isFar and 0.5 or 0.2; local color = PARTICLE_COLORS[math.random(1, #PARTICLE_COLORS)]
+    if not context.refs.particleLayer or not context.refs.particleLayer.Parent then
+      return
+    end
+    local isFar = math.random() < 0.6
+    local size = isFar and math.random(2, 3) or math.random(4, 6)
+    local startTrans = isFar and 0.5 or 0.2
+    local color = PARTICLE_COLORS[math.random(1, #PARTICLE_COLORS)]
     local dot = inst("Frame", {
       Size = UDim2.new(0, size, 0, size),
       Position = UDim2.new(math.random(), 0, 1, 0),
@@ -44,18 +65,25 @@ function Controller.create(context)
       ZIndex = 4,
       Parent = context.refs.particleLayer,
     })
-    corner(dot, 999); local dur = isFar and math.random(5, 9) or math.random(3, 5)
+    corner(dot, 999)
+    local dur = isFar and math.random(5, 9) or math.random(3, 5)
     local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1)
     local travel = twPlay(dot, dur, {
       Position = UDim2.new(endX, 0, -0.1, 0),
       BackgroundTransparency = 1,
     })
-    if not travel then dot:Destroy(); return end
+    if not travel then
+      dot:Destroy()
+      return
+    end
     if travel then
       local connection
       connection = trackConn(travel.Completed:Connect(function()
-        safeDisconnect(connection); untrackConn(connection)
-        if dot.Parent then dot:Destroy() end
+        safeDisconnect(connection)
+        untrackConn(connection)
+        if dot.Parent then
+          dot:Destroy()
+        end
       end))
     end
   end
@@ -69,13 +97,22 @@ function Controller.create(context)
     then
       return
     end
-    UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
+    UIState.panelOpen = not UIState.panelOpen
+    safeCancel(UIState.panelTween)
     safeCancel(UIState.btnTween)
-    if context.kit then context.kit.dismiss() end
-    if context.pages then context.pages.suspend() end
+    if context.kit then
+      context.kit.dismiss()
+    end
+    if context.pages then
+      context.pages.suspend()
+    end
     if UIState.panelOpen then
-      if not context.refs.configPanel.Visible then context.refs.configPanel.GroupTransparency = 1; context.refs.configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
-      context.refs.configPanel.Visible = true; context.updateResponsiveScale()
+      if not context.refs.configPanel.Visible then
+        context.refs.configPanel.GroupTransparency = 1
+        context.refs.configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97)
+      end
+      context.refs.configPanel.Visible = true
+      context.updateResponsiveScale()
       UIState.panelTween = twPlay(context.refs.configPanel, "panel", { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 })
       UIState.btnTween = twPlay(context.refs.floatingButton, "control", { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) })
     else
@@ -86,13 +123,16 @@ function Controller.create(context)
         local conn
         conn = trackConn(UIState.panelTween.Completed:Connect(function()
           if not UIState.panelOpen then
-            context.refs.configPanel.Visible = false; context.refs.configPanel.Size = UDim2.new(0, PW, 0, PH)
+            context.refs.configPanel.Visible = false
+            context.refs.configPanel.Size = UDim2.new(0, PW, 0, PH)
             context.refs.configPanel.GroupTransparency = 0
           end
-          safeDisconnect(conn); untrackConn(conn)
+          safeDisconnect(conn)
+          untrackConn(conn)
         end))
       else
-        context.refs.configPanel.Visible = false; context.refs.configPanel.Size = UDim2.new(0, PW, 0, PH)
+        context.refs.configPanel.Visible = false
+        context.refs.configPanel.Size = UDim2.new(0, PW, 0, PH)
         context.refs.configPanel.GroupTransparency = 0
       end
     end
@@ -112,18 +152,24 @@ function Controller.create(context)
     ZIndex = 10,
     Parent = context.refs.screenGui,
   })
-  corner(context.refs.floatingButton, 999); context.refs.floatingButtonStroke = stroke(context.refs.floatingButton, C.accent, 2)
+  corner(context.refs.floatingButton, 999)
+  context.refs.floatingButtonStroke = stroke(context.refs.floatingButton, C.accent, 2)
   context.refs.floatingButtonStroke.Transparency = 1
   task.defer(function()
-    if not context.refs.floatingButton or not context.refs.floatingButton.Parent then return end
+    if not context.refs.floatingButton or not context.refs.floatingButton.Parent then
+      return
+    end
     twPlay(context.refs.floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) })
     twPlay(context.refs.floatingButtonStroke, "panel", { Transparency = 0 })
   end)
   UIState.btnIsDragging = makeDraggable(context.refs.floatingButton, context.refs.floatingButton, function()
-    context.setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset); context.setConfigValue("BtnY", context.refs.floatingButton.Position.Y.Offset)
+    context.setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset)
+    context.setConfigValue("BtnY", context.refs.floatingButton.Position.Y.Offset)
   end)
   trackConn(context.refs.floatingButton.Activated:Connect(function()
-    if UIState.btnIsDragging() then return end
+    if UIState.btnIsDragging() then
+      return
+    end
     togglePanel()
   end))
   context.refs.configPanel = inst("CanvasGroup", {
@@ -138,7 +184,8 @@ function Controller.create(context)
     ClipsDescendants = true,
     Parent = context.refs.screenGui,
   })
-  corner(context.refs.configPanel, 16); stroke(context.refs.configPanel, C.accent, 1.5)
+  corner(context.refs.configPanel, 16)
+  stroke(context.refs.configPanel, C.accent, 1.5)
   context.refs.particleLayer = inst("Frame", {
     Name = "ParticleLayer",
     Size = UDim2.new(1, 0, 1, 0),
@@ -151,7 +198,9 @@ function Controller.create(context)
   _spawn(function()
     while context.scope.alive and context.refs.configPanel == particlePanel and particlePanel.Parent do
       _wait(math.random() * 0.6 + 0.15)
-      if context.refs.configPanel == particlePanel and particlePanel.Parent and particlePanel.Visible and not UIState.closing then spawnParticle() end
+      if context.refs.configPanel == particlePanel and particlePanel.Parent and particlePanel.Visible and not UIState.closing then
+        spawnParticle()
+      end
     end
   end)
   context.refs.titleBar = inst("Frame", {
@@ -222,11 +271,14 @@ function Controller.create(context)
     ZIndex = 7,
     Parent = context.refs.titleBar,
   })
-  corner(context.refs.minimizeButton, 8); context.kit.icon(context.refs.minimizeButton, "minimize")
+  corner(context.refs.minimizeButton, 8)
+  context.kit.icon(context.refs.minimizeButton, "minimize")
   trackConn(context.refs.minimizeButton.MouseEnter:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0 }) end))
   trackConn(context.refs.minimizeButton.MouseLeave:Connect(function() twPlay(context.refs.minimizeButton, "feedback", { BackgroundTransparency = 0.3 }) end))
   trackConn(context.refs.minimizeButton.Activated:Connect(function()
-    if UIState.panelOpen then togglePanel() end
+    if UIState.panelOpen then
+      togglePanel()
+    end
   end))
   local settingsButton = inst("TextButton", {
     Name = "HubSettingsButton",
@@ -241,7 +293,8 @@ function Controller.create(context)
     ZIndex = 9,
     Parent = context.refs.titleBar,
   })
-  corner(settingsButton, 8); context.kit.icon(settingsButton, "settings")
+  corner(settingsButton, 8)
+  context.kit.icon(settingsButton, "settings")
   local assistsButton = inst("TextButton", {
     Name = "HubAssistsButton",
     Visible = context.combatUI ~= false,
@@ -253,7 +306,8 @@ function Controller.create(context)
     ZIndex = 9,
     Parent = context.refs.titleBar,
   })
-  corner(assistsButton, 8); context.kit.icon(assistsButton, "assists")
+  corner(assistsButton, 8)
+  context.kit.icon(assistsButton, "assists")
   trackConn(assistsButton.Activated:Connect(function() context.pages.toggle("assists") end))
   context.refs.killBtn = inst("TextButton", {
     Size = UDim2.new(0, 124, 0, 26),
@@ -269,8 +323,10 @@ function Controller.create(context)
   })
   corner(context.refs.killBtn, 6)
   trackConn(context.refs.killBtn.Activated:Connect(function() context.lifecycle.animateClose("close") end))
-  context.refs.reloadButton = makeBtn("Reload", 0, 0, 124, 26, context.refs.configPanel, C.btnBlue); context.refs.reloadButton.Name = "ReloadHub"
-  context.refs.reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); context.refs.reloadButton.TextSize = 11
+  context.refs.reloadButton = makeBtn("Reload", 0, 0, 124, 26, context.refs.configPanel, C.btnBlue)
+  context.refs.reloadButton.Name = "ReloadHub"
+  context.refs.reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26)
+  context.refs.reloadButton.TextSize = 11
   trackConn(context.refs.reloadButton.Activated:Connect(function() context.lifecycle.animateClose("reload") end))
   local previous = inst("TextButton", {
     Name = "PreviousPage",
@@ -308,15 +364,22 @@ function Controller.create(context)
     ZIndex = 7,
     Parent = context.refs.configPanel,
   })
-  corner(previous, 6); corner(nextPage, 6)
-  local previousIcon = context.kit.icon(previous, "chevron", { Rotation = 90 }); local nextIcon = context.kit.icon(nextPage, "chevron", { Rotation = -90 })
+  corner(previous, 6)
+  corner(nextPage, 6)
+  local previousIcon = context.kit.icon(previous, "chevron", { Rotation = 90 })
+  local nextIcon = context.kit.icon(nextPage, "chevron", { Rotation = -90 })
   local function updateNavigation(state)
     assistsButton.BackgroundColor3 = state.id == "assists" and C.accent or C.btnDark
-    pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title; previous.Visible = not state.utility
-    nextPage.Visible = not state.utility; previous.Active = state.index ~= nil and state.index > 1
-    previous.Selectable = previous.Active; nextPage.Active = state.index ~= nil and state.index < state.count
-    nextPage.Selectable = nextPage.Active; previousIcon.ImageTransparency = previous.Active and 0 or 0.7
-    nextIcon.ImageTransparency = nextPage.Active and 0 or 0.7; settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
+    pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title
+    previous.Visible = not state.utility
+    nextPage.Visible = not state.utility
+    previous.Active = state.index ~= nil and state.index > 1
+    previous.Selectable = previous.Active
+    nextPage.Active = state.index ~= nil and state.index < state.count
+    nextPage.Selectable = nextPage.Active
+    previousIcon.ImageTransparency = previous.Active and 0 or 0.7
+    nextIcon.ImageTransparency = nextPage.Active and 0 or 0.7
+    settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
   end
   trackConn(settingsButton.Activated:Connect(function() context.pages.toggle("config") end))
   trackConn(previous.Activated:Connect(function() context.pages.step(-1) end))

@@ -116,5 +116,6 @@
       "view": "ui.write",
       "tools": "tooling.execute"
     }
-  }
+  },
+  "dataFolder": "Exodus Hub"
 }

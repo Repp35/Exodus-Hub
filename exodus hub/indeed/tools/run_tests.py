@@ -3,12 +3,19 @@ from pathlib import Path
 import argparse
 import subprocess
 import sys
+import os
+import shutil
 ROOT = Path(__file__).resolve().parents[2]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--hub', default='all', help='all, universal, or a registered game folder')
+    parser.add_argument('--require-tools', action='store_true', help='fail instead of skipping missing Luau tools')
     args = parser.parse_args()
+    if args.require_tools:
+        for variable, binary in [('LUAU_BIN', 'luau'), ('LUAU_COMPILE_BIN', 'luau-compile'), ('LUAU_ANALYZE_BIN', 'luau-analyze')]:
+            if not shutil.which(os.environ.get(variable, binary)):
+                parser.error(f'Required tool missing: {binary}')
     paths = []
     if args.hub in ('all', 'universal'):
         paths.append(ROOT / 'indeed/tests')

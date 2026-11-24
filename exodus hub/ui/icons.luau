@@ -1,4 +1,5 @@
 -- [[ uiicons ]]
+-- @modules uiicons
 
 -- module
 local Icons = {}
@@ -29,7 +30,8 @@ local CONFIG = {
 
 -- setup
 function Icons.setup(deps)
-  Theme = deps.Theme.tokens; return true
+  Theme = deps.Theme.tokens
+  return true
 end
 
 -- assets
@@ -42,43 +44,65 @@ end
 local function decode(payload)
   local bytes = {}
   for index = 1, #payload, 4 do
-    local a, b, c, d = string.byte(payload, index, index + 3); local value = digits[a] * 262144 + digits[b] * 4096 + (digits[c] or 0) * 64 + (digits[d] or 0)
+    local a, b, c, d = string.byte(payload, index, index + 3)
+    local value = digits[a] * 262144 + digits[b] * 4096 + (digits[c] or 0) * 64 + (digits[d] or 0)
     bytes[#bytes + 1] = string.char(math.floor(value / 65536) % 256)
-    if c ~= 61 then bytes[#bytes + 1] = string.char(math.floor(value / 256) % 256) end
-    if d ~= 61 then bytes[#bytes + 1] = string.char(value % 256) end
+    if c ~= 61 then
+      bytes[#bytes + 1] = string.char(math.floor(value / 256) % 256)
+    end
+    if d ~= 61 then
+      bytes[#bytes + 1] = string.char(value % 256)
+    end
   end
   return table.concat(bytes)
 end
 local function resolve(name)
   local definition = assert(CONFIG.IMAGES[name], "Unknown UI icon: " .. tostring(name))
-  if cache[name] then return cache[name] end
-  local image = definition.fallback; local asset = getcustomasset or getsynasset
+  if cache[name] then
+    return cache[name]
+  end
+  local image = definition.fallback
+  local asset = getcustomasset or getsynasset
   if type(writefile) == "function" and type(asset) == "function" then
     local ok, result = pcall(function()
       local folder = "exodus hub"
-      if type(makefolder) == "function" and (type(isfolder) ~= "function" or not isfolder(folder)) then pcall(makefolder, folder) end
+      if type(makefolder) == "function" and (type(isfolder) ~= "function" or not isfolder(folder)) then
+        pcall(makefolder, folder)
+      end
       local path = folder .. "/ui_" .. name .. "_" .. CONFIG.VERSION .. ".png"
-      if type(isfile) ~= "function" or not isfile(path) then writefile(path, decode(definition.png)) end
+      if type(isfile) ~= "function" or not isfile(path) then
+        writefile(path, decode(definition.png))
+      end
       return asset(path)
     end)
-    if ok and type(result) == "string" and result ~= "" then image = result end
+    if ok and type(result) == "string" and result ~= "" then
+      image = result
+    end
   end
-  cache[name] = image; return image
+  cache[name] = image
+  return image
 end
 
 -- public-api
 function Icons.create(parent, name, properties)
-  local icon = Instance.new("ImageLabel"); icon.Name = "Icon_" .. name
-  icon.BackgroundTransparency = 1; icon.Active = false
-  icon.Selectable = false; icon.BorderSizePixel = 0
-  icon.Image = resolve(name); icon.ImageColor3 = Theme.COLORS.text
-  icon.ScaleType = Enum.ScaleType.Fit; icon.AnchorPoint = Vector2.new(0.5, 0.5)
-  icon.Position = UDim2.fromScale(0.5, 0.5); icon.Size = UDim2.fromOffset(18, 18)
+  local icon = Instance.new("ImageLabel")
+  icon.Name = "Icon_" .. name
+  icon.BackgroundTransparency = 1
+  icon.Active = false
+  icon.Selectable = false
+  icon.BorderSizePixel = 0
+  icon.Image = resolve(name)
+  icon.ImageColor3 = Theme.COLORS.text
+  icon.ScaleType = Enum.ScaleType.Fit
+  icon.AnchorPoint = Vector2.new(0.5, 0.5)
+  icon.Position = UDim2.fromScale(0.5, 0.5)
+  icon.Size = UDim2.fromOffset(18, 18)
   icon.ZIndex = parent.ZIndex + 1
   for key, value in pairs(properties or {}) do
     icon[key] = value
   end
-  icon.Parent = parent; return icon
+  icon.Parent = parent
+  return icon
 end
 
 -- contract
