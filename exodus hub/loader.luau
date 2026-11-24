@@ -1,86 +1,5 @@
 -- [[ loader ]]
 
--- module
-local Loader = {}
-local function printRawError(moduleName, message, filePath)
-  local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
-  if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
-end
-local function printStartup(message)
-  if type(print) == "function" then print(message) end
-end
-local function fallbackNotification(message, key, kind, duration)
-  local players = game:GetService("Players"); local player = players.LocalPlayer
-  local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-  if not playerGui then return end
-  local gui = playerGui:FindFirstChild("ExodusPersistentNotifications")
-  if not gui then
-    gui = Instance.new("ScreenGui"); gui.Name = "ExodusPersistentNotifications"
-    gui.DisplayOrder = 2147483647; gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true; gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-    gui.Parent = playerGui
-  end
-  local layer = gui:FindFirstChild("NotificationLayer")
-  if not layer then
-    layer = Instance.new("Frame"); layer.Name = "NotificationLayer"
-    layer.Size = UDim2.fromScale(1, 1); layer.BackgroundTransparency = 1
-    layer.Parent = gui
-  end
-  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_"); local card = layer:FindFirstChild("Notification_" .. safeKey)
-  if not card then
-    card = Instance.new("CanvasGroup"); card.Name = "Notification_" .. safeKey
-    card:SetAttribute("ExodusNotificationKey", safeKey); card.AnchorPoint = Vector2.new(0.5, 1)
-    card.Position = UDim2.new(0.5, 0, 1, -24); card.Size = UDim2.fromOffset(320, 38)
-    card.BackgroundColor3 = kind == "critical" and Color3.fromRGB(153, 27, 27) or Color3.fromRGB(45, 55, 130); card.BackgroundTransparency = 0.12
-    card.ZIndex = 100; card.Parent = layer
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = card; local label = Instance.new("TextLabel")
-    label.Name = "Message"; label.Size = UDim2.new(1, -20, 1, 0)
-    label.Position = UDim2.fromOffset(10, 0); label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.new(1, 1, 1); label.TextSize = 13
-    label.Font = Enum.Font.GothamBold; label.TextXAlignment = Enum.TextXAlignment.Center
-    label.Parent = card
-  end
-  local label = card:FindFirstChild("Message")
-  if label then
-    label.TextColor3 = Color3.new(1, 1, 1); label.RichText = false
-    label.TextStrokeTransparency = 1; label.ZIndex = 101
-    label.Text = tostring(message)
-  end
-  if duration == nil and key ~= "dumper" then duration = 2.5 end
-  card.GroupTransparency = 0; card.Visible = true
-  local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1; card:SetAttribute("ExodusNotificationGeneration", generation)
-  if duration and duration > 0 then
-    task.delay(duration, function()
-      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then card:Destroy() end
-    end)
-  end
-end
-local function notifyPersistent(message, key, kind, duration)
-  local show = _G.ExodusShowPersistentNotification
-  if type(show) == "function" then
-    local ok = pcall(show, message, key, kind, duration)
-    if ok then return end
-  end
-  fallbackNotification(message, key, kind, duration)
-end
-local function clearPersistent(key)
-  local clear = _G.ExodusClearPersistentNotification
-  if type(clear) == "function" then
-    local ok = pcall(clear, key)
-    if ok then return end
-  end
-  local player = game:GetService("Players").LocalPlayer; local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-  local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications"); local layer = gui and gui:FindFirstChild("NotificationLayer")
-  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_"); local card = layer and layer:FindFirstChild("Notification_" .. safeKey)
-  if card then card:Destroy() end
-end
-local function notifyCritical(moduleName)
-  notifyPersistent(("Critical error in %s. Check the console."):format(tostring(moduleName or "the hub")), "critical", "critical")
-end
-local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
-local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
-
 -- configuration
 local CONFIG = {
   USER_ID = 222319587,
@@ -100,6 +19,79 @@ local CONFIG = {
   MAX_PENDING_REQUESTS = 24,
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
+  -- Repository endpoints and request policy
+  REPOSITORY_API = "https://api.github.com/repositories/",
+  RAW_BASE_URL = "https://raw.githubusercontent.com/",
+  HEAD_REF_PATH = "/git/ref/heads/",
+  CACHE_QUERY_KEY = "exodus_cache",
+  API_HEADERS = {
+    ["Accept"] = "application/vnd.github+json",
+    ["User-Agent"] = "Exodus-Hub-Loader",
+    ["Cache-Control"] = "no-cache, no-store",
+  },
+  RAW_CACHE_HEADERS = { ["Cache-Control"] = "no-cache, no-store" },
+  RETRYABLE_HTTP_STATUS = { [408] = true, [425] = true, [429] = true },
+
+  -- Module discovery and lifecycle
+  REGISTRY_PATH = "hubs/registry.luau",
+  CATALOG_PATH = "hubs/catalog.luau",
+  DEFAULT_HUB = { id = "universal", title = "Universal", author = "deltapolinha_2915", notification = "Exodus Hub · Universal carregado." },
+  CLEANUP_IGNORE_FAILURE = { invisicam = true },
+  CLASH_CONTEXT_MAX_AGE = 0.8,
+  CLASH_CLEAR_DELAY = 0.4,
+  CLASH_POLL_INTERVAL = 0.06,
+  CLEANUP_MODULES = {
+    "servers",
+    "universal",
+    "infinitejump",
+    "noclip",
+    "fly",
+    "invisicam",
+    "infinitezoom",
+    "speed",
+    "gravity",
+    "dumper",
+    "character",
+    "dynamicparry",
+    "spam",
+    "autodash",
+    "autospam",
+    "clashstats",
+    "autodark",
+    "autofierce",
+    "autojump",
+    "camera",
+    "antilag",
+    "movement",
+    "dash",
+    "autoparry",
+    "cooldown",
+    "remote",
+  },
+
+  -- Fallback notifications (seconds and visual defaults)
+  NOTIFICATIONS = {
+    DEFAULT_DURATION = 2.5,
+    STARTUP_WARNING_DURATION = 2.5,
+    NAVIGATION_DURATION = 5,
+    HUB_LOADED_DURATION = 5,
+    DISPLAY_ORDER = 2147483647,
+    WIDTH = 320,
+    HEIGHT = 38,
+    BOTTOM_OFFSET = 24,
+    BACKGROUND_TRANSPARENCY = 0.12,
+    CRITICAL_COLOR = { 153, 27, 27 },
+    INFO_COLOR = { 45, 55, 130 },
+    TEXT_COLOR = { 255, 255, 255 },
+    CORNER_RADIUS = 10,
+    TEXT_PADDING = 10,
+    TEXT_SIZE = 13,
+    TEXT_FONT = "GothamBold",
+    CARD_ZINDEX = 100,
+    TEXT_ZINDEX = 101,
+  },
+
+  -- Base module manifest
   MODULES = {
     { name = "gamecontext", path = "core/game_integration.luau" },
     { name = "hubapi", path = "core/game_integration.luau" },
@@ -155,6 +147,88 @@ local CONFIG = {
   },
 }
 
+-- module
+local Loader = {}
+local function printRawError(moduleName, message, filePath)
+  local output = ("[%s] %s: %s"):format(tostring(filePath or CONFIG.ENTRY_POINT), tostring(moduleName), tostring(message))
+  if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
+end
+local function printStartup(message)
+  if type(print) == "function" then print(message) end
+end
+local function fallbackNotification(message, key, kind, duration)
+  local players = game:GetService("Players"); local player = players.LocalPlayer
+  local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+  if not playerGui then return end
+  local gui = playerGui:FindFirstChild("ExodusPersistentNotifications")
+  if not gui then
+    gui = Instance.new("ScreenGui"); gui.Name = "ExodusPersistentNotifications"
+    gui.DisplayOrder = CONFIG.NOTIFICATIONS.DISPLAY_ORDER; gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true; gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.Parent = playerGui
+  end
+  local layer = gui:FindFirstChild("NotificationLayer")
+  if not layer then
+    layer = Instance.new("Frame"); layer.Name = "NotificationLayer"
+    layer.Size = UDim2.fromScale(1, 1); layer.BackgroundTransparency = 1
+    layer.Parent = gui
+  end
+  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_"); local card = layer:FindFirstChild("Notification_" .. safeKey)
+  if not card then
+    card = Instance.new("CanvasGroup"); card.Name = "Notification_" .. safeKey
+    card:SetAttribute("ExodusNotificationKey", safeKey); card.AnchorPoint = Vector2.new(0.5, 1)
+    card.Position = UDim2.new(0.5, 0, 1, -CONFIG.NOTIFICATIONS.BOTTOM_OFFSET); card.Size = UDim2.fromOffset(CONFIG.NOTIFICATIONS.WIDTH, CONFIG.NOTIFICATIONS.HEIGHT)
+    card.BackgroundColor3 = Color3.fromRGB(table.unpack(kind == "critical" and CONFIG.NOTIFICATIONS.CRITICAL_COLOR or CONFIG.NOTIFICATIONS.INFO_COLOR)); card.BackgroundTransparency = CONFIG.NOTIFICATIONS.BACKGROUND_TRANSPARENCY
+    card.ZIndex = CONFIG.NOTIFICATIONS.CARD_ZINDEX; card.Parent = layer
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, CONFIG.NOTIFICATIONS.CORNER_RADIUS)
+    corner.Parent = card; local label = Instance.new("TextLabel")
+    label.Name = "Message"; label.Size = UDim2.new(1, -2 * CONFIG.NOTIFICATIONS.TEXT_PADDING, 1, 0)
+    label.Position = UDim2.fromOffset(CONFIG.NOTIFICATIONS.TEXT_PADDING, 0); label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR)); label.TextSize = CONFIG.NOTIFICATIONS.TEXT_SIZE
+    label.Font = Enum.Font[CONFIG.NOTIFICATIONS.TEXT_FONT]; label.TextXAlignment = Enum.TextXAlignment.Center
+    label.Parent = card
+  end
+  local label = card:FindFirstChild("Message")
+  if label then
+    label.TextColor3 = Color3.fromRGB(table.unpack(CONFIG.NOTIFICATIONS.TEXT_COLOR)); label.RichText = false
+    label.TextStrokeTransparency = 1; label.ZIndex = CONFIG.NOTIFICATIONS.TEXT_ZINDEX
+    label.Text = tostring(message)
+  end
+  if duration == nil and key ~= "dumper" then duration = CONFIG.NOTIFICATIONS.DEFAULT_DURATION end
+  card.GroupTransparency = 0; card.Visible = true
+  local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1; card:SetAttribute("ExodusNotificationGeneration", generation)
+  if duration and duration > 0 then
+    task.delay(duration, function()
+      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then card:Destroy() end
+    end)
+  end
+end
+local function notifyPersistent(message, key, kind, duration)
+  local show = _G.ExodusShowPersistentNotification
+  if type(show) == "function" then
+    local ok = pcall(show, message, key, kind, duration)
+    if ok then return end
+  end
+  fallbackNotification(message, key, kind, duration)
+end
+local function clearPersistent(key)
+  local clear = _G.ExodusClearPersistentNotification
+  if type(clear) == "function" then
+    local ok = pcall(clear, key)
+    if ok then return end
+  end
+  local player = game:GetService("Players").LocalPlayer; local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+  local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications"); local layer = gui and gui:FindFirstChild("NotificationLayer")
+  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_"); local card = layer and layer:FindFirstChild("Notification_" .. safeKey)
+  if card then card:Destroy() end
+end
+local function notifyCritical(moduleName)
+  notifyPersistent(("Critical error in %s. Check the console."):format(tostring(moduleName or "the hub")), "critical", "critical")
+end
+local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
+local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
+
+
 local PROJECT_PATH = CONFIG.PROJECT_PATH
 local BASE_URL
 local HttpService = game:GetService("HttpService")
@@ -163,7 +237,7 @@ local function cacheBuster()
   cacheSequence += 1; return ("%d-%d-%d"):format(os.time(), math.floor(os.clock() * 1000000), cacheSequence)
 end
 local MODULE_MANIFEST = CONFIG.MODULES
-local selectedHub = { id = "universal", title = "Universal", author = "deltapolinha_2915", notification = "Exodus Hub · Universal carregado." }
+local selectedHub = table.clone(CONFIG.DEFAULT_HUB)
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
@@ -195,7 +269,7 @@ local function validateExecutor()
 end
 local function isRetryableHttp(message)
   local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)"))
-  return statusCode == nil or statusCode == 408 or statusCode == 425 or statusCode == 429 or (statusCode and statusCode >= 500 and statusCode <= 599)
+  return statusCode == nil or CONFIG.RETRYABLE_HTTP_STATUS[statusCode] == true or (statusCode and statusCode >= 500 and statusCode <= 599)
 end
 local function waitBeforeRetry(attempt)
   if type(task) == "table" and type(task.wait) == "function" then local delays = CONFIG.RETRY_DELAYS; task.wait(delays[attempt] or delays[#delays] or 0) end
@@ -295,38 +369,11 @@ local function stopPreviousRuntime()
   _G.ExodusSourceCache = nil; _G.ExodusRequestedRevision = nil
   local function attempt(name, action)
     local ok, result = cleanupCall(name, action)
-    if not ok and name ~= "invisicam" then clean = false end
+    if not ok and not CONFIG.CLEANUP_IGNORE_FAILURE[name] then clean = false end
     return ok, result
   end
   if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
-  for _, name in ipairs({
-    "servers",
-    "universal",
-    "infinitejump",
-    "noclip",
-    "fly",
-    "invisicam",
-    "infinitezoom",
-    "speed",
-    "gravity",
-    "dumper",
-    "character",
-    "dynamicparry",
-    "spam",
-    "autodash",
-    "autospam",
-    "clashstats",
-    "autodark",
-    "autofierce",
-    "autojump",
-    "camera",
-    "antilag",
-    "movement",
-    "dash",
-    "autoparry",
-    "cooldown",
-    "remote",
-  }) do
+  for _, name in ipairs(CONFIG.CLEANUP_MODULES) do
     local module = Modules[name]
     if type(module) == "table" then
       if type(module.teardown) == "function" then attempt(name, module.teardown) elseif type(module.resetState) == "function" then attempt(name, module.resetState) end
@@ -354,14 +401,10 @@ local function execute(name, chunk)
   return module
 end
 local function resolveLatestRevision()
-  local repositoryURL = "https://api.github.com/repositories/" .. tostring(CONFIG.REPOSITORY_ID)
-  local headers = {
-    ["Accept"] = "application/vnd.github+json",
-    ["User-Agent"] = "Exodus-Hub-Loader",
-    ["Cache-Control"] = "no-cache, no-store",
-  }
+  local repositoryURL = CONFIG.REPOSITORY_API .. tostring(CONFIG.REPOSITORY_ID)
+  local headers = CONFIG.API_HEADERS
 
-  local metadata, metadataError = request(repositoryURL .. "?exodus_cache=" .. cacheBuster(), headers)
+  local metadata, metadataError = request(repositoryURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
   if not metadata then return nil, metadataError end
   local decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
   if not decoded or type(repo) ~= "table" or type(repo.full_name) ~= "string" or not repo.full_name:match("^[%w_.%-]+/[%w_.%-]+$") then return nil, "Invalid repository metadata" end
@@ -372,12 +415,12 @@ local function resolveLatestRevision()
   else
     if type(branch) ~= "string" or branch == "" then return nil, "Invalid repository branch" end
     local encodedBranch = branch:gsub("[^/]+", function(segment) return HttpService:UrlEncode(segment) end)
-    local headURL = repositoryURL .. "/git/ref/heads/" .. encodedBranch; local body, requestError = request(headURL .. "?exodus_cache=" .. cacheBuster(), headers)
+    local headURL = repositoryURL .. CONFIG.HEAD_REF_PATH .. encodedBranch; local body, requestError = request(headURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
     if not body then return nil, requestError end
     local ok, document = pcall(HttpService.JSONDecode, HttpService, body); revision = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
     if not validRevision(revision) then return nil, "Invalid branch revision: " .. branch end
   end
-  BASE_URL = "https://raw.githubusercontent.com/" .. repo.full_name .. "/"
+  BASE_URL = CONFIG.RAW_BASE_URL .. repo.full_name .. "/"
   if CONFIG.DEBUG then printStartup(("[Exodus] Repository %s, revision %s"):format(repo.full_name, revision)) end
   return revision
 end
@@ -401,8 +444,8 @@ local function loadModule(name, relativePath, url)
   end
   local pending = { pending = true }; downloadCache[url] = pending
   local ok, chunk, detail = pcall(function()
-    local downloadURL = CONFIG.BYPASS_IMMUTABLE_CACHE and (url .. "?exodus_cache=" .. cacheBuster()) or url
-    local headers = CONFIG.BYPASS_IMMUTABLE_CACHE and { ["Cache-Control"] = "no-cache, no-store" } or nil; local source, fetchError = request(downloadURL, headers)
+    local downloadURL = CONFIG.BYPASS_IMMUTABLE_CACHE and (url .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster()) or url
+    local headers = CONFIG.BYPASS_IMMUTABLE_CACHE and CONFIG.RAW_CACHE_HEADERS or nil; local source, fetchError = request(downloadURL, headers)
     if not source then return nil, fetchError end
     return compile(relativePath, source)
   end)
@@ -412,9 +455,9 @@ local function loadModule(name, relativePath, url)
   return chunk, detail
 end
 local function selectHub(revision)
-  local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local registryChunk, registryError = loadModule("hub registry", "hubs/registry.luau", root .. "hubs/registry.luau")
+  local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local registryChunk, registryError = loadModule("hub registry", CONFIG.REGISTRY_PATH, root .. CONFIG.REGISTRY_PATH)
   if not registryChunk then return false, registryError end
-  local registry = execute("hub registry", registryChunk); local catalogChunk, catalogError = loadModule("hub catalog", "hubs/catalog.luau", root .. "hubs/catalog.luau")
+  local registry = execute("hub registry", registryChunk); local catalogChunk, catalogError = loadModule("hub catalog", CONFIG.CATALOG_PATH, root .. CONFIG.CATALOG_PATH)
   if not catalogChunk then return false, catalogError end
   local catalog = execute("hub catalog", catalogChunk); selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
   local extra = selectedHub.modules or {}; local common = {}
@@ -518,7 +561,7 @@ local function loadModules(urls, prepared)
     return results
   end
   activeLoaded = loaded; local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
-  if results.permissions then permissions.configure(selectedHub.permissionPolicy); permissions.validate("permissions", permissions, "core/permissions.luau") end
+  if results.permissions then permissions.configure(selectedHub.permissionPolicy); permissions.validate("permissions", permissions, MODULE_BY_NAME.permissions.path) end
   loaded.permissions = register("permissions", permissions)
   for _, entry in ipairs(MODULE_MANIFEST) do
     local name = entry.name
@@ -581,9 +624,9 @@ local function loadInterface(loaded, controls)
   if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
   if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
   local function navigate(method)
-    local function status(message) notifyPersistent(message, "server_navigation", "info", 5) end
+    local function status(message) notifyPersistent(message, "server_navigation", "info", CONFIG.NOTIFICATIONS.NAVIGATION_DURATION) end
     local ok, detail = loaded.servers[method](status)
-    if not ok then loaded.utils.recordError("Servers", tostring(detail)); notifyPersistent(tostring(detail), "server_navigation", "warning", 5) end
+    if not ok then loaded.utils.recordError("Servers", tostring(detail)); notifyPersistent(tostring(detail), "server_navigation", "warning", CONFIG.NOTIFICATIONS.NAVIGATION_DURATION) end
   end
   controls.onRejoin = function() navigate("rejoin") end
   controls.onServerHop = function() navigate("hop") end
@@ -635,7 +678,7 @@ local function clashInProgress(loaded)
     end
     if type(loaded.gameinfo.getClashContext) == "function" then
       local ok, context = pcall(loaded.gameinfo.getClashContext)
-      if ok and type(context) == "table" and type(context.age) == "number" and context.age >= 0 and context.age <= 0.8 then return true end
+      if ok and type(context) == "table" and type(context.age) == "number" and context.age >= 0 and context.age <= CONFIG.CLASH_CONTEXT_MAX_AGE then return true end
     end
   end
   if type(loaded.autospam) == "table" and type(loaded.autospam.getActivationContext) == "function" then
@@ -662,9 +705,9 @@ local function waitForClashToEnd(onWaiting, isCurrent)
     else
       if not waiting then return true end
       clearSince = clearSince or os.clock()
-      if os.clock() - clearSince >= 0.4 then return true end
+      if os.clock() - clearSince >= CONFIG.CLASH_CLEAR_DELAY then return true end
     end
-    task.wait(0.06)
+    task.wait(CONFIG.CLASH_POLL_INTERVAL)
   end
   return false
 end
@@ -754,7 +797,7 @@ local function startInternal()
     end,
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
-  Exodus.Hub = table.clone(selectedHub); notifyPersistent(selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."), "hub_loaded", "info", 5)
+  Exodus.Hub = table.clone(selectedHub); notifyPersistent(selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."), "hub_loaded", "info", CONFIG.NOTIFICATIONS.HUB_LOADED_DURATION)
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
@@ -783,7 +826,7 @@ function Loader.start()
   if startLock or _G.ExodusLoaderStartToken then
     local message = "Inicialização já em andamento. Aguarde o carregamento atual."
     if type(warn) == "function" then warn("[Exodus] " .. message) else printStartup(message) end
-    pcall(notifyPersistent, message, "startup_in_progress", "warning", 2.5); return true, nil, nil, "in_progress"
+    pcall(notifyPersistent, message, "startup_in_progress", "warning", CONFIG.NOTIFICATIONS.STARTUP_WARNING_DURATION); return true, nil, nil, "in_progress"
   end
   local ready, reason = validateExecutor()
   if not ready then return false, "Loader", reason end
@@ -812,7 +855,7 @@ local function startSafely()
   if status == "in_progress" then return nil end
   if started ~= true then
     moduleName = moduleName or "Loader"; startError = startError or started
-    local entry = MODULE_BY_NAME[moduleName]; printRawError(moduleName, startError, entry and entry.path or "loader.luau")
+    local entry = MODULE_BY_NAME[moduleName]; printRawError(moduleName, startError, entry and entry.path or CONFIG.ENTRY_POINT)
     notifyCritical(moduleName)
     Loader.lastError = startError
     Loader.lastErrorModule = moduleName
