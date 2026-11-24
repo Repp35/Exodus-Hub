@@ -138,10 +138,16 @@ function UIKit.create(options)
       inst("UIStroke", { Color = automatic and outlineColor() or color, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, surface)
     line.Transparency = 0
     if automatic then
-      local connection = root:GetPropertyChangedSignal("BackgroundColor3"):Connect(function() line.Color = outlineColor() end)
+      line.Color = Color3.new(1, 1, 1)
+      local gradient = inst("UIGradient", { Rotation = 20 }, line)
+      local function updateOutline() gradient.Color = Appearance.borderGradient(root.BackgroundColor3, root:GetAttribute("ExodusBorderHover") or 0) end
+      updateOutline()
+      local connection = root:GetPropertyChangedSignal("BackgroundColor3"):Connect(updateOutline)
+      local hover = root:GetAttributeChangedSignal("ExodusBorderHover"):Connect(updateOutline)
       local cleanup
       cleanup = root.Destroying:Connect(function()
         connection:Disconnect()
+        hover:Disconnect()
         cleanup:Disconnect()
       end)
     end
@@ -351,7 +357,7 @@ function UIKit.create(options)
         for _, value in pairs(activeTargets) do
           strength = math.max(strength, value)
         end
-        childMotion.play(root, "feedback", { BackgroundColor3 = strength > 0 and kit.interactionColor(C.card, strength == 2) or C.card })
+        root:SetAttribute("ExodusBorderHover", strength)
       end, function() return handle.enabled end)
     end
     controlOwners[root] = handle
@@ -579,7 +585,7 @@ UIKit.__contract = {
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
-    Appearance = { "borderColor", "interactionColor" },
+    Appearance = { "borderColor", "interactionColor", "borderGradient" },
     Runtime = { "scope", "motion", "isVisible", "bindDrag", "mountLayer" },
     Icons = { "create" },
     Display = { "install" },

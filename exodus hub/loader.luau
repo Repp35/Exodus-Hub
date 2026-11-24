@@ -70,29 +70,27 @@ local Appearance = (function()
 
   local Appearance = {}
   function Appearance.setup() return true end
-  local function luminance(color)
-    local function channel(value) return value <= 0.04045 and value / 12.92 or ((value + 0.055) / 1.055) ^ 2.4 end
-    return 0.2126 * channel(color.R) + 0.7152 * channel(color.G) + 0.0722 * channel(color.B)
-  end
   function Appearance.borderColor(background, light)
-    local base = luminance(background)
-    local target = base < 0.179 and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
-    local low, high = 0, 1
-    for _ = 1, 12 do
-      local alpha = (low + high) / 2
-      local candidate = luminance(background:Lerp(target, alpha))
-      local contrast = (math.max(base, candidate) + 0.05) / (math.min(base, candidate) + 0.05)
-      if contrast >= 3 then
-        high = alpha
-      else
-        low = alpha
-      end
+    local hue, saturation, value = background:ToHSV()
+    if saturation < 0.1 then
+      hue, saturation = 0.72, 0.58
     end
-    return background:Lerp(target, high)
+    saturation = math.clamp(saturation + 0.08, 0.58, 0.86)
+    local brightness = value > 0.72 and value * 0.68 or math.clamp(value + 0.38, 0.56, 0.72)
+    return Color3.fromHSV(hue, saturation, brightness)
   end
   function Appearance.interactionColor(background, pressed)
-    local target = luminance(background) > 0.85 and Color3.new(0, 0, 0) or Color3.new(1, 1, 1)
-    return background:Lerp(target, pressed and 0.34 or 0.22)
+    local hue, saturation, value = Appearance.borderColor(background):ToHSV()
+    return Color3.fromHSV(hue, saturation, math.min(0.88, value + (pressed and 0.19 or 0.12)))
+  end
+  function Appearance.borderGradient(background, strength)
+    local hue, saturation = background:ToHSV()
+    local color = strength and strength > 0 and Appearance.interactionColor(background, strength > 1) or Appearance.borderColor(background)
+    local _, tint, value = color:ToHSV()
+    local purple = saturation < 0.1 or (hue >= 0.55 and hue <= 0.82)
+    local first = purple and 0.70 or ((hue - 0.015) % 1)
+    local last = purple and 0.90 or ((hue + 0.015) % 1)
+    return ColorSequence.new(Color3.fromHSV(first, tint, value), Color3.fromHSV(last, tint, value))
   end
   local function instance(class, properties, parent)
     local object = Instance.new(class)
@@ -191,7 +189,10 @@ local Appearance = (function()
     card.BackgroundColor3 = palette(kind)
     card.BackgroundTransparency = 0.12
     local outline = card:FindFirstChild("Outline")
-    outline:FindFirstChildOfClass("UIStroke").Color = Appearance.borderColor(card.BackgroundColor3)
+    local line = outline:FindFirstChildOfClass("UIStroke")
+    line.Color = Color3.new(1, 1, 1)
+    local gradient = line:FindFirstChildOfClass("UIGradient") or instance("UIGradient", { Rotation = 20 }, line)
+    gradient.Color = Appearance.borderGradient(card.BackgroundColor3)
     content.Position = UDim2.fromOffset(padding, 6)
     content.Size = UDim2.new(1, -padding * 2, 1, -12)
     content.ScrollingEnabled, content.ScrollBarThickness = overflow, overflow and 2 or 0
@@ -202,7 +203,7 @@ local Appearance = (function()
     label.Size = UDim2.new(1, overflow and -4 or 0, 0, math.max(height - 12, math.ceil(size.Y) + 2))
     return card
   end
-  Appearance.__contract = { provides = { "setup", "borderColor", "interactionColor", "notification", "updateNotification" }, requires = {} }
+  Appearance.__contract = { provides = { "setup", "borderColor", "interactionColor", "borderGradient", "notification", "updateNotification" }, requires = {} }
   return Appearance
 
 end)()

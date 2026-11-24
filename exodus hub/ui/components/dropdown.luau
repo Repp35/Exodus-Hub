@@ -88,7 +88,7 @@ function Components.install(context)
     kit.feedback(
       handle.scope,
       trigger,
-      function(active, pressed) handle.motion.play(trigger, "feedback", { BackgroundColor3 = active and kit.interactionColor(C.inputBg, pressed) or C.inputBg }) end,
+      function(active, pressed) trigger:SetAttribute("ExodusBorderHover", active and (pressed and 2 or 1) or 0) end,
       function() return handle.enabled end
     )
     function handle.setValue(nextValue)
@@ -226,7 +226,7 @@ function Components.install(context)
         local selected = choiceValue(choice) == value
         local item = button(list, choiceLabel(choice), {
           LayoutOrder = index,
-          BackgroundColor3 = C.cardHover,
+          BackgroundColor3 = C.card,
           BackgroundTransparency = 1,
           TextColor3 = selected and C.text or C.subtext,
           ZIndex = 3,
@@ -246,10 +246,11 @@ function Components.install(context)
             activeItem, resetActive = nil, nil
           end
           local selectedNow = selecting and choiceValue(choice) == value
+          item:SetAttribute("ExodusBorderHover", active and (pressed and 2 or 1) or 0)
           menuMotion.play(border, "feedback", { Transparency = (active or selectedNow) and 0 or 1 })
           menuMotion.play(item, "feedback", {
-            BackgroundTransparency = (selectedNow or active) and 0.1 or 1,
-            BackgroundColor3 = active and kit.interactionColor(C.card, pressed) or C.card,
+            BackgroundTransparency = selectedNow and 0.1 or 1,
+            BackgroundColor3 = C.card,
             TextColor3 = (active or selectedNow) and C.text or C.subtext,
           })
         end, function() return not selecting and not closing end)
