@@ -5,6 +5,8 @@
 local CONFIG = {
   USER_ID = 222319587,
   REPOSITORY_ID = 1334849119,
+  REPOSITORY_NAME = "Repp35/Exodus-Hub",
+  DEFAULT_BRANCH = "main",
   BRANCH = false,
   REVISION = false,
   ENTRY_POINT = "loader.luau",
@@ -369,7 +371,22 @@ local requestState = type(_G.ExodusRequestState) == "table" and _G.ExodusRequest
 if type(requestState.pending) ~= "number" or requestState.pending < 0 then
   requestState.pending = 0
 end
+if type(requestState.cooldowns) ~= "table" then
+  requestState.cooldowns = {}
+  -- Migrate the former global cooldown without blocking independent CDNs.
+  if type(requestState.retryAt) == "number" then
+    requestState.cooldowns["api.github.com"] = requestState.retryAt
+  end
+end
 _G.ExodusRequestState = requestState
+local function host(url) return url:match("^https://([^/]+)") or "" end
+local function blocked(url)
+  local deadline = requestState.cooldowns[host(url)] or 0
+  if deadline > os.time() then
+    requestState.retryAt = deadline
+    return { rateLimited = true, retryAfter = deadline - os.time() }
+  end
+end
 local function requestOnce(url, headers)
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
@@ -378,8 +395,9 @@ local function requestOnce(url, headers)
   if type(task) == "table" and type(task.wait) == "function" then
     local queueDeadline = os.clock() + CONFIG.REQUEST_TIMEOUT
     while true do
-      if requestState.retryAt and requestState.retryAt > os.time() then
-        return nil, "Aguardando limite HTTP", { rateLimited = true, retryAfter = requestState.retryAt - os.time() }
+      local cooldown = blocked(url)
+      if cooldown then
+        return nil, "Aguardando limite HTTP", cooldown
       end
       local now = os.clock()
       if now >= queueDeadline then
@@ -440,25 +458,29 @@ local function requestOnce(url, headers)
   end
   return responseBody
 end
-local function request(url, headers)
+local function requestSingle(url, headers)
   if type(url) ~= "string" or url == "" then
     return nil, "URL inválida"
   end
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
   end
-  if requestState.retryAt and requestState.retryAt > os.time() then
-    return nil, "Aguardando limite HTTP", { rateLimited = true, retryAfter = requestState.retryAt - os.time() }
+  local cooldown = blocked(url)
+  if cooldown then
+    return nil, "Aguardando limite HTTP", cooldown
   end
   local lastError, lastMeta
   for attempt = 1, CONFIG.MAX_ATTEMPTS do
     local body, err, meta = requestOnce(url, headers)
     if body then
+      requestState.retryAt = nil
       return body
     end
     lastError, lastMeta = err, meta
     if meta and meta.rateLimited then
-      requestState.retryAt = math.max(requestState.retryAt or 0, os.time() + math.max(1, meta.retryAfter or CONFIG.RATE_LIMIT_DEFAULT_DELAY))
+      local key = host(url)
+      requestState.cooldowns[key] = math.max(requestState.cooldowns[key] or 0, os.time() + math.max(1, meta.retryAfter or CONFIG.RATE_LIMIT_DEFAULT_DELAY))
+      requestState.retryAt = requestState.cooldowns[key]
       return nil, ("%s (rate limit; retry in %ds)"):format(lastError, math.ceil(meta.retryAfter or CONFIG.RATE_LIMIT_DEFAULT_DELAY)), lastMeta
     end
     if not isRetryableHttp(lastError) then
@@ -472,6 +494,31 @@ local function request(url, headers)
   return nil, message, lastMeta
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
+local function request(url, headers)
+  local body, reason, meta = requestSingle(url, headers)
+  if body or not meta or not meta.rateLimited or (meta.retryAfter or 0) <= 5 then
+    return body, reason, meta
+  end
+  local owner, repo, revision, path = url:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([%x]+)/([^?]+)")
+  if not owner or not validRevision(revision) then
+    return nil, reason, meta
+  end
+  pcall(notifyPersistent, "Exodus · Erro HTTP. Tentando outro CDN…", "loader_transport", "critical", 5)
+  local mirrors = {
+    "https://cdn.jsdelivr.net/gh/" .. owner .. "/" .. repo .. "@" .. revision .. "/" .. path,
+    "https://rawcdn.githack.com/" .. owner .. "/" .. repo .. "/" .. revision .. "/" .. path,
+  }
+  for _, mirror in ipairs(mirrors) do
+    local source = requestSingle(mirror)
+    if source then
+      pcall(clearPersistent, "loader_transport")
+      return source
+    end
+  end
+  -- Restore the original failure only after every independent source failed.
+  requestState.retryAt = requestState.cooldowns[host(url)]
+  return nil, reason .. "; CDNs alternativos indisponíveis", meta
+end
 
 -- registry
 local function clearRegistry()
@@ -537,13 +584,47 @@ local function execute(name, chunk)
   return module
 end
 local repositoryMetadata
+local function resolveGitRevision()
+  local repo = repositoryMetadata or { full_name = CONFIG.REPOSITORY_NAME, default_branch = CONFIG.DEFAULT_BRANCH }
+  local branch = CONFIG.BRANCH or repo.default_branch
+  local body, reason = requestSingle("https://github.com/" .. repo.full_name .. ".git/info/refs?service=git-upload-pack", { ["Git-Protocol"] = "version=0" })
+  if not body then
+    return nil, reason
+  end
+  local cursor = 1
+  while cursor + 3 <= #body do
+    local length = tonumber(body:sub(cursor, cursor + 3), 16)
+    if not length then
+      break
+    end
+    if length == 0 then
+      cursor += 4
+    elseif length < 4 or cursor + length - 1 > #body then
+      break
+    else
+      local packet = body:sub(cursor + 4, cursor + length - 1)
+      local revision, ref = packet:match("^([%x]+) ([^%z\n]+)")
+      if validRevision(revision) and ref == "refs/heads/" .. branch then
+        BASE_URL = CONFIG.RAW_BASE_URL .. repo.full_name .. "/"
+        _G.ExodusRepositoryBaseURL = BASE_URL
+        return revision
+      end
+      cursor += length
+    end
+  end
+  return nil, "Não foi possível resolver a revisão pelo protocolo Git"
+end
 local function resolveLatestRevision()
   local repositoryURL = CONFIG.REPOSITORY_API .. tostring(CONFIG.REPOSITORY_ID)
   local headers = CONFIG.API_HEADERS
   local repo = repositoryMetadata
   if not repo then
-    local metadata, metadataError = request(repositoryURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
+    local metadata, metadataError, metadataMeta = request(repositoryURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
     if not metadata then
+      if metadataMeta and metadataMeta.rateLimited and metadataMeta.retryAfter > 5 then
+        pcall(notifyPersistent, "Exodus · API limitada. Consultando revisão por Git…", "loader_transport", "critical", 5)
+        return resolveGitRevision()
+      end
       return nil, metadataError
     end
     local decoded
@@ -568,8 +649,11 @@ local function resolveLatestRevision()
     end
     local encodedBranch = branch:gsub("[^/]+", function(segment) return HttpService:UrlEncode(segment) end)
     local headURL = repositoryURL .. CONFIG.HEAD_REF_PATH .. encodedBranch
-    local body, requestError = request(headURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
+    local body, requestError, requestMeta = request(headURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
     if not body then
+      if requestMeta and requestMeta.rateLimited and requestMeta.retryAfter > 5 then
+        return resolveGitRevision()
+      end
       return nil, requestError
     end
     local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
