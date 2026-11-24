@@ -546,6 +546,33 @@ local function validSource(source, path)
   end
   return type(loadstring) == "function" and loadstring(source, path) ~= nil
 end
+local function githubPayload(body)
+  local ok, data = pcall(HttpService.JSONDecode, HttpService, body)
+  if not ok or type(data) ~= "table" or data.encoding ~= "base64" or type(data.content) ~= "string" then
+    return nil
+  end
+  local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  local bytes, value, bits = {}, 0, 0
+  for char in data.content:gmatch(".") do
+    if char == "=" then
+      break
+    end
+    if not char:match("%s") then
+      local position = alphabet:find(char, 1, true)
+      if not position then
+        return nil
+      end
+      value, bits = value * 64 + position - 1, bits + 6
+      if bits >= 8 then
+        bits -= 8
+        local divisor = 2 ^ bits
+        bytes[#bytes + 1] = string.char(math.floor(value / divisor))
+        value %= divisor
+      end
+    end
+  end
+  return table.concat(bytes), data.sha
+end
 local function request(url, headers)
   local owner, repo, revision, path = url:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([%x]+)/([^?]+)")
   local pinned = owner and validRevision(revision)
@@ -566,9 +593,15 @@ local function request(url, headers)
   local mirrors = {
     { url = "https://cdn.jsdelivr.net/gh/" .. suffix },
     { url = "https://rawcdn.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
+    { url = "https://cdn.statically.io/gh/" .. suffix },
     {
       url = "https://api.github.com/repos/" .. prefix .. "/contents/" .. path .. "?ref=" .. revision,
       headers = { Accept = "application/vnd.github.raw+json", ["User-Agent"] = "Exodus-Hub-Loader" },
+    },
+    {
+      url = "https://api.github.com/repos/" .. prefix .. "/contents/" .. path .. "?ref=" .. revision,
+      headers = { Accept = "application/vnd.github.object+json" },
+      json = true,
     },
     { url = "https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
     { url = "https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path },
@@ -577,6 +610,8 @@ local function request(url, headers)
     { url = "https://gcore.jsdelivr.net/gh/" .. suffix },
     { url = "https://testingcf.jsdelivr.net/gh/" .. suffix },
     { url = "https://quantil.jsdelivr.net/gh/" .. suffix },
+    { url = "https://api.github.com/repos/" .. prefix .. "/git/blobs/", blob = true, headers = { Accept = "application/vnd.github.raw+json" } },
+    { url = "https://api.github.com/repos/" .. prefix .. "/git/blobs/", blob = true, json = true, headers = { Accept = "application/vnd.github+json" } },
   }
   local preferred = requestState.preferredSource
   for index, mirror in ipairs(mirrors) do
@@ -591,7 +626,38 @@ local function request(url, headers)
     if os.clock() >= deadline then
       break
     end
-    local source = requestSingle(mirror.url, mirror.headers)
+    local target = mirror.url
+    if mirror.blob then
+      requestState.blobs = type(requestState.blobs) == "table" and requestState.blobs or {}
+      local blob = requestState.blobs[url]
+      if not validRevision(blob) and not blocked(target) then
+        local raw =
+          requestSingle("https://api.github.com/repos/" .. prefix .. "/git/trees/" .. revision .. "?recursive=1", { Accept = "application/vnd.github+json" })
+        if raw then
+          local ok, tree = pcall(HttpService.JSONDecode, HttpService, raw)
+          if ok and type(tree) == "table" and type(tree.tree) == "table" then
+            local decodedPath = path:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end)
+            for _, entry in ipairs(tree.tree) do
+              if entry.type == "blob" and entry.path == decodedPath and validRevision(entry.sha) then
+                blob = entry.sha
+                requestState.blobs[url] = blob
+                break
+              end
+            end
+          end
+        end
+      end
+      target = validRevision(blob) and (target .. blob) or nil
+    end
+    local source = target and requestSingle(target, mirror.headers)
+    if source and mirror.json then
+      local decoded, blob = githubPayload(source)
+      source = decoded
+      if validRevision(blob) then
+        requestState.blobs = type(requestState.blobs) == "table" and requestState.blobs or {}
+        requestState.blobs[url] = blob
+      end
+    end
     if source and validSource(source, path) then
       requestState.preferredSource = host(mirror.url)
       pcall(clearPersistent, "loader_transport")

@@ -44,10 +44,12 @@ local function start()
       for _, host in ipairs({"cdn.jsdelivr.net", "fastly.jsdelivr.net", "gcore.jsdelivr.net", "testingcf.jsdelivr.net", "quantil.jsdelivr.net"}) do
         urls[#urls+1]={url="https://" .. host .. "/gh/" .. suffix}
       end
+      urls[#urls+1]={url="https://cdn.statically.io/gh/" .. suffix}
       table.insert(urls,3,{url="https://rawcdn.githack.com/" .. prefix .. "/" .. revision .. "/" .. path})
       table.insert(urls,4,{url="https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path})
       urls[#urls+1]={url="https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path}
       urls[#urls+1]={url="https://api.github.com/repos/" .. prefix .. "/contents/" .. path .. "?ref=" .. revision,headers={Accept="application/vnd.github.raw+json"}}
+      urls[#urls+1]={url="https://api.github.com/repos/" .. prefix .. "/contents/" .. path .. "?ref=" .. revision,headers={Accept="application/vnd.github.object+json"},json=true}
     end
     local fetchers, seen = {}, {}
     local function add(fn)
@@ -65,7 +67,24 @@ local function start()
           local status=tonumber(response.StatusCode or response.status_code) or 200
           local source=response.Body or response.body or response.ResponseBody
           if status>=200 and status<300 and type(source)=="string" then
-            chunk, failure=loadstring(source)
+            if target.json then
+              local ok, data=pcall(function() return game:GetService("HttpService"):JSONDecode(source) end)
+              if ok and type(data)=="table" and data.encoding=="base64" and type(data.content)=="string" then
+                local alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+                local bytes,value,bits={},0,0
+                for char in data.content:gmatch(".") do
+                  if char=="=" then break end
+                  if not char:match("%s") then
+                    local position=alphabet:find(char,1,true)
+                    if not position then error("Base64 inválido") end
+                    value,bits=value*64+position-1,bits+6
+                    if bits>=8 then bits-=8; local divisor=2^bits; bytes[#bytes+1]=string.char(math.floor(value/divisor)); value%=divisor end
+                  end
+                end
+                source=table.concat(bytes)
+              else source="" end
+            end
+            chunk, failure=source~="" and loadstring(source) or nil
             if chunk then env.ExodusCachedLoader={url=state.entryURL,source=source}; break end
           else
             failure="HTTP " .. tostring(status)
