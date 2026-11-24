@@ -140,7 +140,8 @@ function UIKit.create(options)
     if automatic then
       line.Color = Color3.new(1, 1, 1)
       local gradient = inst("UIGradient", { Rotation = 20 }, line)
-      local animation = game:GetService("TweenService"):Create(gradient, TweenInfo.new(8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Rotation = 40 })
+      local animation =
+        game:GetService("TweenService"):Create(gradient, TweenInfo.new(8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Rotation = 40 })
       animation:Play()
       local function updateOutline() gradient.Color = Appearance.borderGradient(root.BackgroundColor3, root:GetAttribute("ExodusBorderHover") or 0) end
       updateOutline()

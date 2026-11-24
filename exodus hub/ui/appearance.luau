@@ -21,7 +21,9 @@ function Appearance.borderGradient(background, strength)
   local hue, saturation = background:ToHSV()
   local color = strength and strength > 0 and Appearance.interactionColor(background, strength > 1) or Appearance.borderColor(background)
   local _, tint, value = color:ToHSV()
-  if saturation < 0.1 then hue = 0.69 end
+  if saturation < 0.1 then
+    hue = 0.69
+  end
   local first = (hue - 0.025) % 1
   local last = (hue + 0.025) % 1
   return ColorSequence.new(Color3.fromHSV(first, tint, value), Color3.fromHSV(last, tint, value))
