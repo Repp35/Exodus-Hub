@@ -26,11 +26,11 @@ local function instance(_, properties, parent)
 end
 local deferred = {}
 task.defer = function(callback) deferred[#deferred + 1] = callback end
-for _, phantomBall in ipairs({ false, true }) do
+for _, combatUI in ipairs({ false, true }) do
   for _, desktop in ipairs({ false, true }) do
     local drags = false
     local context = {
-      phantomBall = phantomBall,
+      combatUI = combatUI,
       deps = {
         Utils = {
           getConfig = function() return {} end,
@@ -77,7 +77,7 @@ for _, phantomBall in ipairs({ false, true }) do
     assert(panel.Visible and context.state.panelOpen, "Dragging toggled menu"); drags = false
     launcher.Activated:Fire(); assert(not panel.Visible and not context.state.panelOpen, "Launcher did not minimize menu")
     window.toggle(); assert(panel.Visible and context.state.panelOpen, "Menu cannot reopen")
-    if not phantomBall then
+    if not combatUI then
       loaded.uifloating.create(context); assert(context.refs.floatingButton == launcher, "Universal controller replaced launcher")
       assert(context.refs.clashBall == nil and context.refs.parryBall == nil and context.refs.miniGui == nil, "Combat widgets leaked")
     end

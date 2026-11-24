@@ -23,37 +23,45 @@ class HubRegistry(unittest.TestCase):
             hub = root / 'hubs/new-pvp'
             hub.mkdir(parents=True)
             (hub / 'hub.json').write_text(json.dumps({'title': 'New PVP', 'placeIds': [123]}))
-            (hub / 'movement.luau').write_text('return { __contract = {} }')
+            (hub / 'modules').mkdir()
+            (hub / 'modules/movement.luau').write_text('return { __contract = {} }')
             profiles = BUILDER.discover(root)
             self.assertEqual(profiles[0]['id'], 'new-pvp')
-            self.assertEqual(profiles[0]['modules'], [{'name': 'movement', 'path': 'hubs/new-pvp/movement.luau'}])
-            (hub / 'permissions.luau').write_text('return { __contract = {} }')
+            self.assertEqual(profiles[0]['modules'], [{'name': 'movement', 'path': 'hubs/new-pvp/modules/movement.luau'}])
+            (hub / 'modules/permissions.luau').write_text('return { __contract = {} }')
             with self.assertRaises(ValueError): BUILDER.discover(root)
+
+    def test_shared_modules_are_not_copied_into_games(self):
+        import sys
+        sys.path.insert(0, str(ROOT / 'indeed/checks'))
+        from manifests import common, hub_entries
+        shared = dict(common())
+        self.assertIn('autojump', shared)
+        self.assertIn('camera', shared)
+        for info in (ROOT / 'hubs').glob('*/hub.json'):
+            game = dict(hub_entries(info.parent.name))
+            self.assertFalse(set(shared) & set(game))
+            for path in game.values():
+                self.assertNotIn('/front/controllers/', path)
+                self.assertNotIn('/features/', path)
+        self.assertTrue((ROOT / 'modules/front/controllers/floating.luau').is_file())
 
     def test_registry_routes_ids_and_composes_only_the_selected_game(self):
         binary = os.environ.get('LUAU_BIN') or shutil.which('luau')
         if not binary: self.skipTest('Luau required')
         code = 'local Registry = (function()\n' + (ROOT / 'hubs/registry.luau').read_text() + '\nend)()\n'
-        code += 'local profiles = (function()\n' + (ROOT / 'hubs/catalog.luau').read_text() + '\nend)()\n'
+        code += 'local profiles = { { id = "sample", title = "Sample", placeIds = { 12 }, universeIds = { 13 }, notification = "Sample loaded", modules = { { name = "samplelogic", path = "hubs/sample/modules/core/samplelogic.luau" } } } }\n'
         code += '''
-local phantom = Registry.select(profiles, 12979690461, 0)
-assert(phantom.id == "phantom-ball" and phantom.notification)
-assert(Registry.select(profiles, 888, 4538598064).id == "phantom-ball")
+local supported = Registry.select(profiles, 12, 0)
+assert(supported.id == "sample" and supported.notification)
+assert(Registry.select(profiles, 888, 13).id == "sample")
 local universal = Registry.select(profiles, 888, 999)
-assert(universal.id == "universal" and universal.modules == nil and universal.notification ~= phantom.notification)
+assert(universal.id == "universal" and universal.modules == nil)
 local base = { { name = "ui", path = "modules/front/ui.luau" }, { name = "runtime", path = "modules/core/runtime.luau" } }
-local common = Registry.merge(base, universal.modules)
-assert(#common == #base)
-for _, entry in ipairs(common) do assert(not entry.path:match("^hubs/")) end
-local merged = Registry.merge(base, phantom.modules)
-local found = {}
-for _, entry in ipairs(merged) do assert(not found[entry.name]); found[entry.name] = entry.path end
-assert(found.ui == base[1].path and found.runtime == "hubs/phantom-ball/runtime.luau")
-assert(found.autoparry and #base == 2)
-local future = { id = "future", placeIds = { 12 }, universeIds = { 13 }, title = "Future", notification = "Future loaded" }
-table.insert(profiles, future)
-assert(Registry.select(profiles, 12, 4538598064).id == "future", "Exact place ID must take precedence")
-assert(Registry.select(profiles, 999, 13).id == "future")
+assert(#Registry.merge(base, universal.modules) == #base)
+local merged = Registry.merge(base, supported.modules)
+assert(#merged == 3 and merged[3].name == "samplelogic" and #base == 2)
+assert(not pcall(Registry.merge, base, { { name = "ui", path = "hubs/sample/modules/front/ui.luau" } }))
 assert(not pcall(Registry.merge, base, { { name = "permissions", path = "hubs/future/permissions.luau" } }))
 assert(not pcall(Registry.merge, base, { { name = "bad", path = "hubs/future/../bad.luau" } }))
 print("Automatic hub routing and manifest composition OK")

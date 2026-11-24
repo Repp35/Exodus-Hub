@@ -11,7 +11,7 @@ LOADER = (ROOT / "loader.luau").read_text(encoding="utf-8")
 import sys
 sys.path.insert(0, str(ROOT / 'indeed/checks'))
 from manifests import manifest, all_entries
-MANIFEST = manifest()
+MANIFEST = manifest(universal=True)
 
 
 def table_after(text: str, field: str) -> str | None:

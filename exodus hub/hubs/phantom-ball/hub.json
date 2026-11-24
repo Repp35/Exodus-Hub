@@ -8,5 +8,6 @@
   "universeIds": [
     4538598064
   ],
-  "notification": "Exodus Hub · Phantom Ball carregado."
+  "notification": "Exodus Hub · Phantom Ball carregado.",
+  "checkPermissions": true
 }

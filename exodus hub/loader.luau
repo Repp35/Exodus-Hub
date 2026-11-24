@@ -120,6 +120,8 @@ local CONFIG = {
     { name = "renderadapter", path = "modules/render/adapter.luau" },
     { name = "renderspatial", path = "modules/render/spatial.luau" },
     { name = "antilag", path = "modules/render/antilag.luau" },
+    { name = "autojump", path = "modules/features/autojump.luau" },
+    { name = "camera", path = "modules/features/camera.luau" },
     { name = "infinitejump", path = "modules/features/infinitejump.luau" },
     { name = "noclip", path = "modules/features/noclip.luau" },
     { name = "fly", path = "modules/features/fly.luau" },
@@ -577,7 +579,7 @@ local function clashInProgress(loaded)
 end
 local function matchInProgress()
   local loaded = Exodus.Context
-  if type(loaded) == "table" and not loaded.gamecontext.isPhantomBall() then return false end
+  if type(loaded) == "table" and not loaded.gameinfo then return false end
   if type(loaded) ~= "table" or type(loaded.gameinfo) ~= "table" or type(loaded.gameinfo.getGameContext) ~= "function" then return false end
   local ok, context = pcall(loaded.gameinfo.getGameContext); return ok and type(context) == "table" and (context.inMatch == true)
 end
@@ -653,7 +655,7 @@ local function startInternal()
   utils.setLifecyclePhase("binding"); local runtime, runtimeError = loaded.runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
   if type(runtime) ~= "table" then return stopStartup(utils, "Runtime", runtimeError) end
   Exodus.Runtime = runtime
-  _G.ExodusOnBurst = if loaded.gamecontext.isPhantomBall() then loaded.autoparry.fire else nil
+  _G.ExodusOnBurst = if loaded.autoparry then loaded.autoparry.fire else nil
   local uiReady, uiModule, uiError = loadInterface(loaded, {
     onAutoDarkChanged = function() loaded.autodark.sync() end,
     onAutoJumpChanged = function() loaded.autojump.sync() end,

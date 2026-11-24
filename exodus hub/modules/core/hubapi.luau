@@ -15,6 +15,7 @@ function HubAPI.getAbilityAvailability(name)
   if modules.gameinfo then return modules.gameinfo.getAbilityAvailability(name) end
   return false, "Recurso indisponível neste jogo"
 end
+function HubAPI.getUIConfig() return modules.gameui and modules.gameui.definition or {} end
 function HubAPI.getGameContext() return modules.gameinfo and modules.gameinfo.getGameContext() or {} end
 function HubAPI.observeAbilityMode(callback)
   if modules.gameinfo then return modules.gameinfo.observeAbilityMode(callback) end
@@ -46,6 +47,7 @@ HubAPI.__contract = {
     "teardown",
     "areAbilitiesEnabled",
     "getAbilityAvailability",
+    "getUIConfig",
     "getGameContext",
     "observeAbilityMode",
     "hasClashPrediction",

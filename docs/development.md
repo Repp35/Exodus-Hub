@@ -1,55 +1,50 @@
 # Desenvolvimento
 
-O projeto é um hub cliente distribuído por HTTP. O loader resolve uma revisão
-imutável do GitHub e usa o manifesto para baixar os módulos daquela revisão.
+## Alterar a base ou um jogo
 
-## Verificações básicas
+Recursos compartilhados e toda a UI ficam em `exodus hub/modules/`.
+Lógica exclusiva de um jogo fica em `exodus hub/hubs/<jogo>/modules/`.
+Não copie módulos da base para a pasta do jogo. O nome de cada arquivo `.luau`
+é sua chave no carregador; as dependências devem constar em `__contract`.
 
-Instale os executáveis oficiais `luau`, `luau-compile` e `luau-analyze` da versão
-0.748 e coloque-os no PATH. Alternativamente, configure `LUAU_BIN`,
-`LUAU_COMPILE_BIN` e `LUAU_ANALYZE_BIN`.
-
-Execute na raiz:
+Ao adicionar ou remover arquivos de jogos, o workflow de formatação gera o
+catálogo automaticamente. O procedimento local equivalente, executado na raiz:
 
 ```sh
-python3 -m unittest discover -s 'exodus hub/indeed/tests' -p 'test_*.py'
-python3 'exodus hub/indeed/tools/check_permissions.py'
+python3 'exodus hub/indeed/tools/build_hub_catalog.py'
+python3 'exodus hub/indeed/formatter.py' --in-place 'exodus hub'
+```
+
+## Verificar
+
+Use `luau`, `luau-compile` e `luau-analyze` da versão 0.748 no PATH, ou defina
+`LUAU_BIN`, `LUAU_COMPILE_BIN` e `LUAU_ANALYZE_BIN`.
+
+```sh
+python3 'exodus hub/indeed/tools/run_tests.py' --hub all
+python3 'exodus hub/indeed/tools/run_tests.py' --hub universal
+python3 'exodus hub/indeed/tools/run_tests.py' --hub phantom-ball
+python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
 python3 'exodus hub/indeed/tools/build_ui_icons.py' --check
 python3 'exodus hub/indeed/formatter.py' --check 'exodus hub'
 ```
 
-A suíte verifica manifesto, exports, dependências, ciclos, permissões,
-compilação Luau, globais não declarados e inicialização das APIs sem interface
-visual. Não verifica constantes, decisões ou regras de combate. Os testes do
-formatter verificam somente a ferramenta de desenvolvimento.
+A suíte verifica sintaxe Luau, contratos, permissões, seleção por IDs, descoberta
+de pastas, ausência de cópias da base, composição de páginas, abertura do menu e
+repetições do dumper. Os serviços Roblox usados nos testes são simulados.
+Sem os executáveis Luau, parte das verificações é ignorada; o CI instala os três.
 
-O smoke de APIs executa os módulos reais em Luau, com serviços mínimos para
-carregamento. Não emula renderização, rede, física nem resultados do servidor.
-A análise de globais usa uma lista explícita de APIs Roblox/executor; não é uma
-checagem completa de tipos com as definições do Roblox Studio. Sem os binários
-Luau, os testes correspondentes são marcados como ignorados; o CI instala os
-três executáveis e executa essas verificações.
+Valide também no cliente Roblox: abrir e reabrir o menu, alternar Modo PC,
+respawn, fechar/recarregar, recursos universais e funções específicas do jogo.
+O teste local não confirma renderização, respostas do servidor ou APIs de cada
+executor. As ferramentas manuais ficam em `exodus hub/indeed/diagnostics/`.
 
-Os antigos testes de comportamento e suas fixtures estão em
-`exodus hub/indeed/legacy_tests`, fora da descoberta padrão. Eles documentam
-expectativas históricas, algumas incompatíveis com o código atual, e não são
-critério de aprovação do rework. Não é necessário atualizá-los ao ajustar lógica.
+`indeed/` da base contém apenas infraestrutura e testes universais.
+Cada jogo guarda testes e diagnósticos em `hubs/<jogo>/indeed/`. O catálogo
+considera apenas arquivos dentro de `hubs/<jogo>/modules/`, portanto nunca
+baixa testes ou diagnósticos como parte do hub.
 
-## Organização
-
-- `modules/core`: inicialização, configuração, estado, persistência, diagnóstico,
-  permissões, recursos e agendamento de combate.
-- `hubs/<jogo>/modules/game`: integração nativa, jogadores, presença, sincronização e snapshots.
-- `hubs/<jogo>/modules/combat`: regras de defesa, clash, habilidades, movimento e envio.
-- `modules/features`: recursos universais independentes.
-- `modules/render`: AntiLag, adaptação nativa, propriedades reversíveis e seleção espacial.
-- `modules/tools`: dump e navegação de servidores.
-- `modules/front`: biblioteca e controladores da interface existente.
-
-Módulos de jogos são descobertos automaticamente nas pastas com `hub.json`.
-Atualize seus contratos; não há lista manual de módulos de jogo no loader.
-O workflow de formatação gera `hubs/catalog.luau` antes de formatar os arquivos.
-As famílias de permissões são definidas em `modules/core/permissions.luau`.
-A ordenação de inicialização é derivada das dependências, sem ciclos.
-
-Veja [o relatório do rework](rework.md) para decisões e validação em execução.
+A suíte de um jogo decide suas verificações específicas. No Phantom Ball,
+`checkPermissions` em `hub.json` habilita a auditoria de permissões do jogo.
+Isso não obriga outros jogos a executar essa auditoria. A validação dos contratos
+dos módulos efetivamente carregados continua sendo responsabilidade do loader.

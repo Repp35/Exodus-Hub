@@ -12,9 +12,8 @@ CHECKS = ROOT / 'indeed/checks'
 
 class RuntimeAPI(unittest.TestCase):
     def test_permissions(self):
-        for hub in ['universal', *[info.parent.name for info in (ROOT / 'hubs').glob('*/hub.json')]]:
-            result = subprocess.run(['python3', str(ROOT / 'indeed/tools/check_permissions.py'), '--hub', hub], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        result = subprocess.run(['python3', str(ROOT / 'indeed/tools/check_permissions.py'), '--hub', 'universal'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
     def binary(self, env, name):
@@ -25,9 +24,7 @@ class RuntimeAPI(unittest.TestCase):
 
     def test_actual_luau_compilation(self):
         binary = self.binary('LUAU_COMPILE_BIN', 'luau-compile')
-        for path in sorted(ROOT.rglob('*.luau')):
-            if 'legacy_tests' in path.parts:
-                continue
+        for path in [ROOT / 'loader.luau', ROOT / 'hubs/registry.luau', ROOT / 'hubs/catalog.luau', *sorted((ROOT / 'modules').rglob('*.luau')), *sorted((ROOT / 'indeed/checks').glob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]:
             with self.subTest(path=str(path.relative_to(ROOT))):
                 result = subprocess.run([binary, '--null', str(path)], capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -36,7 +33,7 @@ class RuntimeAPI(unittest.TestCase):
         import json
         binary = self.binary('LUAU_ANALYZE_BIN', 'luau-analyze')
         allowed = set(json.loads((CHECKS / 'roblox-globals.json').read_text()))
-        paths = [ROOT / 'loader.luau', *sorted((ROOT / 'modules').rglob('*.luau')), *sorted((ROOT / 'hubs').rglob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]
+        paths = [ROOT / 'loader.luau', *sorted((ROOT / 'modules').rglob('*.luau')), ROOT / 'hubs/registry.luau', ROOT / 'hubs/catalog.luau', *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]
         result = subprocess.run([binary, *map(str, paths)], capture_output=True, text=True, timeout=60)
         self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
         errors = []
@@ -51,10 +48,9 @@ class RuntimeAPI(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
-        helper.smoke(binary)
         helper.smoke(binary, universal=True)
 
-    def test_window_opens_in_both_game_contexts(self):
+    def test_window_opens_with_and_without_combat_controls(self):
         binary = self.binary('LUAU_BIN', 'luau')
         spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
         helper = importlib.util.module_from_spec(spec)

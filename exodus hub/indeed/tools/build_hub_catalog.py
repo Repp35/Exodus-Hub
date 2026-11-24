@@ -9,7 +9,7 @@ DEFAULT_AUTHOR = 'deltapolinha_2915'
 
 def discover(root=ROOT):
     profiles, ids, places, universes = [], set(), set(), set()
-    reserved = {'permissions', 'gamecontext', 'hubapi'}
+    reserved = set(re.findall(r'\{\s*name\s*=\s*"(\w+)"', (ROOT / 'loader.luau').read_text()))
     for info in sorted((root / 'hubs').glob('*/hub.json')):
         profile = json.loads(info.read_text())
         ident = profile.get('id', info.parent.name)
@@ -29,7 +29,7 @@ def discover(root=ROOT):
         if not profile.get('placeIds') and not profile.get('universeIds'):
             raise ValueError(f'{info}: at least one game ID required')
         modules, seen = [], set()
-        for path in sorted(info.parent.rglob('*.luau')):
+        for path in sorted((info.parent / 'modules').rglob('*.luau')):
             name = path.stem
             if not re.fullmatch(r'\w+', name) or name in seen or name in reserved:
                 raise ValueError(f'{path}: duplicate, reserved or invalid module name')
@@ -45,6 +45,7 @@ def literal(value):
     if isinstance(value, str): return json.dumps(value, ensure_ascii=False)
     if isinstance(value, list): return '{ ' + ', '.join(literal(item) for item in value) + ' }'
     if isinstance(value, dict): return '{ ' + ', '.join(f'{key} = {literal(item)}' for key, item in value.items()) + ' }'
+    if type(value) is bool: return "true" if value else "false"
     if type(value) is int: return str(value)
     raise ValueError(f'Unsupported catalog value: {value!r}')
 

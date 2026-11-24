@@ -28,7 +28,7 @@ jobs:
           python3 'exodus hub/indeed/tools/build_hub_catalog.py'
           python3 'exodus hub/indeed/formatter.py' --in-place 'exodus hub/hubs/catalog.luau'
       - name: Validate APIs, permissions and Luau compatibility
-        run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
+        run: python3 "exodus hub/indeed/tools/run_tests.py" --hub all
       - name: Validate bundled icons
         run: python3 "exodus hub/indeed/tools/build_ui_icons.py" --check
       - name: Check formatting

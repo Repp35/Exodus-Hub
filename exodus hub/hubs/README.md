@@ -1,40 +1,37 @@
-# Exodus Hub: integrações de jogos
+# Adicionar um jogo
 
-`loader.luau` é a única entrada. A base em `modules/` fornece interface,
-animações, recursos universais, Anti Lag, dump, persistência e navegação.
-Cada pasta de jogo contém seus módulos e um `hub.json` com os IDs.
+Todo jogo carrega os módulos universais e a mesma UI de `../modules/`.
+A pasta do jogo contém somente sua lógica específica e a configuração do que
+aparece na UI. Não copie nem substitua módulos da base.
 
-O catálogo é gerado automaticamente no GitHub pelo workflow de formatação,
-sempre que arquivos Luau ou metadados de jogos mudam. Não edite `catalog.luau`.
-O loader lê o catálogo, prioriza Place ID e depois Universe ID, e baixa somente
-a base mais os módulos do jogo selecionado, todos na mesma revisão imutável.
-Jogos sem cadastro recebem apenas a versão universal.
+## Cadastro e descoberta automática
 
-## Adicionar um jogo
-
-1. Crie `hubs/nome-do-jogo/hub.json`:
+Crie `hubs/nome-do-jogo/hub.json`:
 
 ```json
 {
-  "id": "nome-do-jogo",
   "title": "Nome do jogo",
   "placeIds": [123456789],
   "universeIds": [987654321]
 }
 ```
 
-Use os IDs reais. `id` é opcional quando igual ao nome da pasta. Um dos grupos
-de IDs basta. `author` e `notification` são opcionais; o autor padrão continua
-`deltapolinha_2915` e a notificação usa o título do jogo.
+Troque pelos IDs reais. Um dos grupos de IDs basta. O identificador é o nome da
+pasta. `author` e `notification` são opcionais; o autor padrão é
+`deltapolinha_2915` e a notificação padrão usa o título.
 
-2. Coloque os módulos `.luau` dentro da pasta. O nome do arquivo é a chave do
-módulo: `movement.luau` registra `movement`. Não repita nomes na mesma integração.
-Subpastas são percorridas automaticamente. Não existe lista manual de scripts.
+Coloque os módulos `.luau` em subpastas de `modules/`. O nome do arquivo é sua
+chave: `movement.luau` registra `movement`. Não repita nomes na mesma integração
+nem use nomes já existentes na base universal.
+
+O workflow encontra os arquivos e gera `catalog.luau`. Não é necessário editar
+o loader, o registro ou uma lista de scripts. A ordem vem das dependências.
+
+## Contrato de módulo
 
 ```lua
 local Feature = {}
 function Feature.setup(deps)
-  -- Inicialize o recurso e registre a limpeza.
   return true
 end
 function Feature.teardown()
@@ -47,37 +44,44 @@ Feature.__contract = {
 return Feature
 ```
 
-Declare dependências em `__contract.requires` e métodos em `requiresMethods`.
-A ordem é calculada pelas dependências; ciclos e dependências ausentes são erros.
-Hooks de personagem só iniciam depois de todos os módulos selecionados.
+Declare dependências em `requires` e seus métodos em `requiresMethods`.
+Libere conexões, tarefas e alterações no `teardown`. Siga as famílias da base:
+`modules/core/`, `modules/game/`, `modules/combat/`, `modules/render/` e
+`modules/front/`.
 
-3. Envie ao GitHub. O workflow encontra a pasta e atualiza o catálogo. Não é
-necessário editar o loader, o registro ou um manifesto do jogo. Localmente,
-execute `python3 'exodus hub/indeed/tools/build_hub_catalog.py'` e o formatter.
+## Configurar a UI
 
-## Estender a interface e o runtime
+Use um módulo `modules/front/app/gameui.luau` com `definition` declarada como
+dado público no contrato. A configuração aceita:
 
-Uma integração pode substituir módulos da base pelo mesmo nome de arquivo.
-Por exemplo, `uiconfig.luau` define páginas e configurações; `runtime.luau`
-conecta os eventos específicos. A interface principal e as animações da base
-continuam compartilhadas. Os módulos reservados `permissions`, `gamecontext` e
-`hubapi` não podem ser substituídos. A ponte `hubapi` oferece hooks opcionais
-para integrações nativas, sem exigir módulos de combate na versão universal.
+| Campo | Uso |
+| --- | --- |
+| `pages` | Páginas do jogo usando os componentes existentes |
+| `additions` | Controles adicionais em uma página existente |
+| `pageOrder` | Ordem dos IDs das páginas |
+| `combatUI` | Habilitar os controles compartilhados de combate |
 
-Use a mesma organização de permissões da base: `modules/combat/`,
-`modules/game/`, `modules/core/`, `modules/features/`, `render/` e `front/`.
-Os contratos são validados antes da inicialização.
+Configurações próprias ficam em `__config.schema` e `__config.defaults`.
+Não repita as configurações universais. Veja o `gameui.luau` do Phantom Ball.
+Nenhum script de jogo cria componentes ou injeta UI.
 
-## Phantom Ball
+Eventos específicos podem ser conectados por `modules/core/gameruntime.luau`,
+exportando `bind`. A ponte `hubapi` fornece acessos opcionais aos módulos nativos;
+a UI continua pertencendo à base.
 
-A pasta `phantom-ball/` preserva combate, habilidades, controles móveis,
-telemetria e definições de interface existentes. O Anti Lag nativo está em
-`render/nativevisuals.luau`; o motor geral continua na base. A configuração antiga
-mantém a pasta `Exodus Hub`. Outras integrações usam `Exodus Hub/hubs/<id>`.
+[Mapa da estrutura](../../docs/structure.md) ·
+[Verificações](../../docs/development.md)
 
-No momento, a integração específica cadastrada é Phantom Ball. MM2 e outros
-jogos usam a versão universal até receberem módulos próprios.
+## Testes do jogo
 
-Os testes cobrem APIs e roteamento com serviços simulados; renderização,
-comportamento de servidores e compatibilidade com executores precisam ser
-validados no cliente Roblox. O loader não pode fornecer APIs ausentes no executor.
+Coloque testes em `indeed/tests/`, diagnósticos em `indeed/diagnostics/` e
+ferramentas auxiliares no `indeed/` do próprio jogo. Não coloque arquivos de
+desenvolvimento dentro de `modules/`. O runner encontra as suítes automaticamente:
+
+```sh
+python3 'exodus hub/indeed/tools/run_tests.py' --hub nome-do-jogo
+```
+
+A auditoria de permissões específica é optativa por integração. O Phantom Ball
+usa `"checkPermissions": true` em `hub.json`; seu teste respeita esse campo.
+Outras integrações definem as verificações necessárias em suas próprias suítes.

@@ -52,6 +52,8 @@ local CONFIG = {
         {
           title = "Universal Controls",
           components = {
+            { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind" },
+            { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
             { kind = "toggle", title = "Anti AFK", key = "AntiAFK", action = "antiAFK", shortcutKey = "AntiAFKKeybind" },
             {
               kind = "toggle",
@@ -183,64 +185,12 @@ local CONFIG = {
       DesktopNotifications = "boolean",
       DesktopShortcutNotifications = "boolean",
       ForcePCUI = "boolean",
-      AutoParry = "boolean",
-      AutoParryWindowFactor = "rate",
-      AutoParryFactor08Applied = "boolean",
-      AutoParryFactor03Applied = "boolean",
       CameraSensitivity = "rate",
       AntiAFK = "boolean",
-      ParryBallVisible = "boolean",
-      ParryBallX = "position",
-      ParryBallY = "position",
-      AutoSpam = "boolean",
-      AutoDark = "boolean",
-      AutoFierce = "boolean",
       AutoJump = "boolean",
-      AutoClashUpDash = "boolean",
-      ClashBallVisible = "boolean",
-      ClashDistanceVisible = "boolean",
-      ClashTravelTimeVisible = "boolean",
-      ClashGateInfoVisible = "boolean",
-      APMaxCpsVisible = "boolean",
-      MiniSpamVisible = "boolean",
-      MiniSpamScale = "miniScale",
-      MiniSpamWidth = "miniScale",
-      MiniSpamHeight = "miniScale",
-      DarkBallVisible = "boolean",
-      JumpBallVisible = "boolean",
-      UpDashBallVisible = "boolean",
-      CPS = "rate",
-      CPF = "rate",
-      MS = "rate",
-      SpamRateMode = "rateMode",
-      DynamicParry = "boolean",
-      DynamicParryMode = "spamActivation",
-      DynamicParryKey = "keyCode",
-      DynamicParryDeactivation = "boolean",
-      ManualSpamMode = "spamActivation",
-      ClickMethod = "clickMethod",
-      Keybind = "keyCode",
-      SpamKeybind = "keyCode",
-      ManualSpamUIOnDuel = "boolean",
-      ParryOnDeath = "boolean",
-      ManualSpamEnabled = "boolean",
-      ParryKeybind = "keyCode",
-      ClashKeybind = "keyCode",
-      DarkKeybind = "keyCode",
       JumpKeybind = "keyCode",
-      UpDashKeybind = "keyCode",
       BtnX = "position",
       BtnY = "position",
-      ClashBallX = "position",
-      ClashBallY = "position",
-      DarkBallX = "position",
-      DarkBallY = "position",
-      JumpBallX = "position",
-      JumpBallY = "position",
-      UpDashBallX = "position",
-      UpDashBallY = "position",
-      MiniX = "position",
-      MiniY = "position",
       PanelX = "position",
       PanelY = "position",
     },
@@ -249,50 +199,10 @@ local CONFIG = {
       DesktopNotifications = true,
       DesktopShortcutNotifications = true,
       ForcePCUI = false,
-      AutoParry = true,
-      AutoParryWindowFactor = 0.45,
-      AutoParryFactor08Applied = true,
-      AutoParryFactor03Applied = true,
       CameraSensitivity = 1.5,
       AntiAFK = true,
-      ParryBallVisible = false,
-      AutoSpam = true,
-      AutoDark = false,
-      AutoFierce = true,
       AutoJump = false,
-      AutoClashUpDash = true,
-      ClashBallVisible = false,
-      ClashDistanceVisible = false,
-      ClashTravelTimeVisible = false,
-      ClashGateInfoVisible = false,
-      APMaxCpsVisible = false,
-      MiniSpamVisible = false,
-      MiniSpamScale = 1,
-      MiniSpamWidth = 1,
-      MiniSpamHeight = 1,
-      DarkBallVisible = false,
-      JumpBallVisible = false,
-      UpDashBallVisible = false,
-      CPS = 200,
-      CPF = 10,
-      MS = 10,
-      SpamRateMode = "CPF",
-      DynamicParry = false,
-      DynamicParryMode = "Toggle",
-      DynamicParryKey = Enum.KeyCode.F,
-      DynamicParryDeactivation = true,
-      ManualSpamMode = "Toggle",
-      ClickMethod = "Deflect",
-      Keybind = Enum.KeyCode.F9,
-      SpamKeybind = Enum.KeyCode.F,
-      ManualSpamUIOnDuel = false,
-      ParryOnDeath = false,
-      ManualSpamEnabled = false,
-      ParryKeybind = Enum.KeyCode.P,
-      ClashKeybind = Enum.KeyCode.C,
-      DarkKeybind = Enum.KeyCode.D,
       JumpKeybind = Enum.KeyCode.J,
-      UpDashKeybind = Enum.KeyCode.U,
     },
   },
 }
@@ -309,12 +219,41 @@ for _, page in ipairs(CONFIG.PAGES) do
     end
   end
 end
+function UIConfig.getPages(definition)
+  definition = definition or {}; local pages, byId = {}, {}
+  for _, source in ipairs(CONFIG.PAGES) do
+    local page = table.clone(source); page.sections = {}
+    for _, originalSection in ipairs(source.sections) do
+      local section = table.clone(originalSection); section.components = table.clone(originalSection.components or {})
+      page.sections[#page.sections + 1] = section
+    end
+    byId[page.id] = page; pages[#pages + 1] = page
+  end
+  for _, page in ipairs(definition.pages or {}) do
+    assert(not byId[page.id], "Duplicate game page: " .. tostring(page.id)); byId[page.id] = page
+    pages[#pages + 1] = page
+  end
+  for _, addition in ipairs(definition.additions or {}) do
+    local page = assert(byId[addition.page], "Unknown UI page"); local section = assert(page.sections[addition.section or 1], "Unknown UI section")
+    for _, component in ipairs(addition.components or {}) do
+      section.components[#section.components + 1] = component
+    end
+  end
+  local ordered, seen = {}, {}
+  for _, id in ipairs(definition.pageOrder or {}) do
+    if byId[id] and not seen[id] then ordered[#ordered + 1] = byId[id]; seen[id] = true end
+  end
+  for _, page in ipairs(pages) do
+    if not seen[page.id] then ordered[#ordered + 1] = page end
+  end
+  return ordered
+end
 
 -- public-api
 UIConfig.pages = CONFIG.PAGES
 UIConfig.__config = CONFIG.SETTINGS
 
 -- contract
-UIConfig.__contract = { provides = {}, data = { "pages" }, requires = {} }
+UIConfig.__contract = { provides = { "getPages" }, data = { "pages" }, requires = {} }
 
 return UIConfig

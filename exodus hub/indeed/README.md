@@ -4,7 +4,6 @@ Esta pasta não integra a distribuição HTTP do hub.
 
 - `tests/`: verificações de APIs, manifesto, permissões, compilação e carregamento Luau; não verificam regras de combate.
 - `checks/`: ambiente mínimo de serviços para o smoke de APIs e lista de globais externos.
-- `legacy_tests/`: testes, fixtures e benchmark históricos, preservados fora da suíte padrão; podem conter expectativas obsoletas.
 - `diagnostics/`: inspeção e captura manual de desempenho no cliente Roblox.
 - `tools/`: validação de permissões e geração/validação de assets.
 - `formatter.py`, `formatting/`: CLI, regras e backend StyLua.

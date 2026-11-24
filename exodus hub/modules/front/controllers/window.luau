@@ -244,7 +244,7 @@ function Controller.create(context)
   corner(settingsButton, 8); context.kit.icon(settingsButton, "settings")
   local assistsButton = inst("TextButton", {
     Name = "HubAssistsButton",
-    Visible = context.phantomBall ~= false,
+    Visible = context.combatUI ~= false,
     Size = UDim2.fromOffset(30, 30),
     Position = UDim2.new(1, -PAD - 102, 0.5, -15),
     BackgroundColor3 = C.btnDark,

@@ -91,7 +91,7 @@ def permitted(consumer, provider, member, data=False):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', action='store_true', help='List every module and its fixed family capabilities')
-    parser.add_argument('--hub', default='phantom-ball')
+    parser.add_argument('--hub', default='universal')
     arguments = parser.parse_args()
     entries = manifest(arguments.hub == "universal", arguments.hub)
     modules, errors = {}, []

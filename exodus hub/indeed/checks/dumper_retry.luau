@@ -54,7 +54,7 @@ end
 local game = object("Game", "DataModel")
 game.PlaceId, game.GameId = 42, 7
 local objects = {}
-local productName, productFailure, productHang = "Phantom Ball", false, false
+local productName, productFailure, productHang = "Example Game", false, false
 function game:GetDescendants() return objects end
 function game:GetService(name)
   if name == "CollectionService" then
@@ -98,7 +98,7 @@ failWrite = function(path, count) return path:find("/scripts/WriteRetry", 1, tru
 local result, messages = execute()
 assert(result.total == 21 and result.saved == 19 and result.failed == 2)
 assert(result.initialFailed == 20 and result.recovered == 18 and result.retryRounds == 10)
-assert(result.folder == "SrcDump_Phantom_Ball_1")
+assert(result.folder == "SrcDump_Example_Game_1")
 assert(files[result.folder .. "/summary.txt"]:find("recovered_on_retry=18", 1, true))
 assert(not files[result.folder .. "/manifest.txt"]:find("[PENDING]", 1, true))
 local failureLog = files[result.folder .. "/errors.txt"]
@@ -112,7 +112,7 @@ objects = { object("Stable", "LocalScript", game, "return 1") }
 apis = {}
 failWrite = nil
 local nextResult = execute()
-assert(nextResult.folder == "SrcDump_Phantom_Ball_2")
+assert(nextResult.folder == "SrcDump_Example_Game_2")
 assert(nextResult.retryRounds == 0 and nextResult.failed == 0)
 productName = "A/B: Game?"
 assert(execute().folder == "SrcDump_A_B_Game__1")

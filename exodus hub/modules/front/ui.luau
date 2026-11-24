@@ -50,6 +50,7 @@ function ExodusUI.setup(deps, preview)
   end
   local context = deps.Context.create(deps, preview and preview.deviceDesktop); active = context
   context.hub = deps.GameContext.getProfile(); context.phantomBall = deps.GameContext.isPhantomBall()
+  local hubUI = deps.Hub.getUIConfig(); context.combatUI = hubUI.combatUI == true
   context.notifications = deps.Notifications.create(context); context.notifications.layer()
   context.floating = deps.Floating.create(context); context.window = deps.Window.create(context)
   deps.Telemetry.create(context); context.lifecycle = deps.Lifecycle.create(context)
@@ -84,9 +85,9 @@ function ExodusUI.setup(deps, preview)
     rebuild = rebuild,
     abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
   })
-  context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIPages.forGame(deps.UIConfig.pages, context.phantomBall), {
+  context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIPages.forGame(deps.UIConfig.getPages(hubUI), context.combatUI), {
     desktop = context.state.desktop,
-    capabilities = { clashPrediction = context.phantomBall and deps.Hub.hasClashPrediction() },
+    capabilities = { clashPrediction = context.combatUI and deps.Hub.hasClashPrediction() },
     read = deps.Utils.getConfigValue,
     resolve = context.actions.resolve,
     onComponent = context.actions.attach,
@@ -155,12 +156,14 @@ ExodusUI.__contract = {
       "author",
     },
     Hub = {
+      "getUIConfig",
       "hasClashPrediction",
       "getAbilityAvailability",
       "getGameContext",
       "areAbilitiesEnabled",
       "observeAbilityMode",
     },
+    UIConfig = { "getPages" },
     UIKit = { "create" },
     UIPages = { "create", "forGame" },
     UIActions = { "create" },

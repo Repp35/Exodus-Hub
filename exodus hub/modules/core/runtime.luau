@@ -3,7 +3,8 @@
 -- code
 local Runtime = {}
 function Runtime.setup() return true end
-function Runtime.bind(loaded)
+function Runtime.bind(loaded, ...)
+  if loaded.gameruntime then return loaded.gameruntime.bind(loaded, ...) end
   return {
     mode = loaded.gamecontext.getProfile().id,
     parryRemote = false,
