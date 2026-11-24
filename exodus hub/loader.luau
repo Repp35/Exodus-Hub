@@ -21,7 +21,7 @@ local CONFIG = {
   DOWNLOAD_WORKERS = 1,
   REQUEST_INTERVAL = 0,
   REQUEST_TIMEOUT = 5,
-  MAX_PENDING_REQUESTS = 1,
+  MAX_PENDING_REQUESTS = 3,
   DOWNLOAD_TIMEOUT = 5,
   PROJECT_PATH = "exodus%20hub/",
   REPOSITORY_API = "https://api.github.com/repositories/",
@@ -312,21 +312,58 @@ end
 -- http
 local function getRequestFunction()
   local environment = type(getgenv) == "function" and getgenv() or _G
-  local synApi = type(environment.syn) == "table" and environment.syn or nil
-  local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
-  for _, candidate in ipairs({
-    environment.request or false,
-    environment.http_request or false,
-    synApi and synApi.request or false,
-    fluxusApi and fluxusApi.request or false,
-  }) do
-    if type(candidate) == "function" then
-      return candidate
+  local candidates, seen = {}, {}
+  local function add(candidate)
+    if type(candidate) == "function" and not seen[candidate] then
+      seen[candidate] = true
+      candidates[#candidates + 1] = candidate
     end
   end
-  return nil
+  add(environment.request)
+  add(environment.http_request)
+  for _, name in ipairs({ "syn", "fluxus", "http" }) do
+    local api = environment[name]
+    if type(api) == "table" then
+      add(api.request)
+    end
+  end
+  add(function(options) return { StatusCode = 200, Body = game:HttpGet(options.Url) } end)
+  add(function(options) return { StatusCode = 200, Body = game:HttpGetAsync(options.Url) } end)
+  add(function(options) return { StatusCode = 200, Body = HttpService:GetAsync(options.Url) } end)
+  local first = 1
+  local function advance() first = first % #candidates + 1 end
+  return function(options)
+    local reason = "Nenhum transporte HTTP respondeu"
+    local start = first
+    for offset = 0, #candidates - 1 do
+      local index = (start + offset - 1) % #candidates + 1
+      local ok, response = pcall(candidates[index], options)
+      if ok and type(response) == "table" then
+        local code = tonumber(response.StatusCode or response.status_code)
+        local body = response.Body or response.body or response.ResponseBody
+        if code and (code < 200 or code >= 300) or type(body) == "string" and body ~= "" then
+          first = index
+          if not code then
+            response.StatusCode = 200
+          end
+          return response
+        end
+      end
+      reason = tostring(response)
+      -- HttpGet throws for HTTP failures. Do not retry a blocked host through
+      -- another executor API; let the source fallback honor its cooldown.
+      if not ok then
+        local code = tonumber(reason:match("[Hh][Tt][Tt][Pp]%s*:?%s*(%d%d%d)"))
+        if code then
+          return { StatusCode = code, Body = reason }
+        end
+      end
+    end
+    error(reason, 0)
+  end,
+    advance
 end
-local requestFunction = getRequestFunction()
+local requestFunction, advanceTransport = getRequestFunction()
 local function validateExecutor()
   if type(requestFunction) ~= "function" then
     return false, "executor sem request HTTP suportado"
@@ -394,6 +431,9 @@ local function requestOnce(url, headers)
   end
   -- Reserve a global slot before yielding so updates and reloads share pacing.
   if type(task) == "table" and type(task.wait) == "function" then
+    if requestState.pending >= CONFIG.MAX_PENDING_REQUESTS then
+      return nil, "Transportes HTTP ocupados"
+    end
     local queueDeadline = os.clock() + CONFIG.REQUEST_TIMEOUT
     while true do
       local cooldown = blocked(url)
@@ -429,6 +469,7 @@ local function requestOnce(url, headers)
       task.wait()
     end
     if not finished then
+      advanceTransport()
       return nil, "Tempo limite da requisição HTTP"
     end
   else
@@ -495,30 +536,70 @@ local function requestSingle(url, headers)
   return nil, message, lastMeta
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
-local function request(url, headers)
-  local body, reason, meta = requestSingle(url, headers)
-  if body or not meta or not meta.rateLimited or (meta.retryAfter or 0) <= 5 then
-    return body, reason, meta
+local function validSource(source, path)
+  if type(source) ~= "string" or source == "" then
+    return false
   end
+  if path:match("%.json$") then
+    local ok, data = pcall(HttpService.JSONDecode, HttpService, source)
+    return ok and type(data) == "table" and data.version == 1 and type(data.sources) == "table"
+  end
+  return type(loadstring) == "function" and loadstring(source, path) ~= nil
+end
+local function request(url, headers)
   local owner, repo, revision, path = url:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([%x]+)/([^?]+)")
-  if not owner or not validRevision(revision) then
+  local pinned = owner and validRevision(revision)
+  local body, reason, meta = requestSingle(url, headers)
+  if body and (not pinned or validSource(body, path)) then
+    return body
+  end
+  if not pinned then
     return nil, reason, meta
   end
-  pcall(notifyPersistent, "Exodus · Erro HTTP. Tentando outro CDN…", "loader_transport", "critical", 5)
+  if meta and meta.rateLimited and (meta.retryAfter or 0) <= 5 then
+    return nil, reason, meta
+  end
+  reason = reason or "Resposta inválida da origem"
+  pcall(notifyPersistent, "Exodus · Falha na origem. Tentando fontes alternativas…", "loader_transport", "critical", 5)
+  local prefix = owner .. "/" .. repo
+  local suffix = prefix .. "@" .. revision .. "/" .. path
   local mirrors = {
-    "https://cdn.jsdelivr.net/gh/" .. owner .. "/" .. repo .. "@" .. revision .. "/" .. path,
-    "https://rawcdn.githack.com/" .. owner .. "/" .. repo .. "/" .. revision .. "/" .. path,
+    { url = "https://cdn.jsdelivr.net/gh/" .. suffix },
+    { url = "https://rawcdn.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
+    {
+      url = "https://api.github.com/repos/" .. prefix .. "/contents/" .. path .. "?ref=" .. revision,
+      headers = { Accept = "application/vnd.github.raw+json", ["User-Agent"] = "Exodus-Hub-Loader" },
+    },
+    { url = "https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
+    { url = "https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path },
+    -- Official jsDelivr testing endpoints are last-resort routes, never primary.
+    { url = "https://fastly.jsdelivr.net/gh/" .. suffix },
+    { url = "https://gcore.jsdelivr.net/gh/" .. suffix },
+    { url = "https://testingcf.jsdelivr.net/gh/" .. suffix },
+    { url = "https://quantil.jsdelivr.net/gh/" .. suffix },
   }
+  local preferred = requestState.preferredSource
+  for index, mirror in ipairs(mirrors) do
+    if host(mirror.url) == preferred then
+      mirrors[1], mirrors[index] = mirror, mirrors[1]
+      break
+    end
+  end
+  -- Bound the fallback phase; hanging native requests cannot spawn an endless queue.
+  local deadline = os.clock() + CONFIG.REQUEST_TIMEOUT
   for _, mirror in ipairs(mirrors) do
-    local source = requestSingle(mirror)
-    if source then
+    if os.clock() >= deadline then
+      break
+    end
+    local source = requestSingle(mirror.url, mirror.headers)
+    if source and validSource(source, path) then
+      requestState.preferredSource = host(mirror.url)
       pcall(clearPersistent, "loader_transport")
       return source
     end
   end
-  -- Restore the original failure only after every independent source failed.
   requestState.retryAt = requestState.cooldowns[host(url)]
-  return nil, reason .. "; CDNs alternativos indisponíveis", meta
+  return nil, reason .. "; fontes alternativas indisponíveis", meta
 end
 
 -- registry
@@ -590,6 +671,12 @@ local function resolveGitRevision()
   local branch = CONFIG.BRANCH or repo.default_branch
   local body, reason = requestSingle("https://github.com/" .. repo.full_name .. ".git/info/refs?service=git-upload-pack", { ["Git-Protocol"] = "version=0" })
   if not body then
+    local cached = _G.ExodusLastLoadedRevision
+    if validRevision(cached) then
+      BASE_URL = CONFIG.RAW_BASE_URL .. repo.full_name .. "/"
+      _G.ExodusRepositoryBaseURL = BASE_URL
+      return cached
+    end
     return nil, reason
   end
   local cursor = 1
@@ -622,7 +709,7 @@ local function resolveLatestRevision()
   if not repo then
     local metadata, metadataError, metadataMeta = request(repositoryURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
     if not metadata then
-      if metadataMeta and metadataMeta.rateLimited and metadataMeta.retryAfter > 5 then
+      if not metadataMeta or not metadataMeta.rateLimited or metadataMeta.retryAfter > 5 then
         pcall(notifyPersistent, "Exodus · API limitada. Consultando revisão por Git…", "loader_transport", "critical", 5)
         return resolveGitRevision()
       end
@@ -631,7 +718,7 @@ local function resolveLatestRevision()
     local decoded
     decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
     if not decoded or type(repo) ~= "table" or type(repo.full_name) ~= "string" or not repo.full_name:match("^[%w_.%-]+/[%w_.%-]+$") then
-      return nil, "Invalid repository metadata"
+      return resolveGitRevision()
     end
     if tonumber(repo.id) ~= CONFIG.REPOSITORY_ID or type(repo.owner) ~= "table" or tonumber(repo.owner.id) ~= CONFIG.USER_ID then
       return nil, "Repository or owner ID mismatch"
@@ -652,7 +739,7 @@ local function resolveLatestRevision()
     local headURL = repositoryURL .. CONFIG.HEAD_REF_PATH .. encodedBranch
     local body, requestError, requestMeta = request(headURL .. "?" .. CONFIG.CACHE_QUERY_KEY .. "=" .. cacheBuster(), headers)
     if not body then
-      if requestMeta and requestMeta.rateLimited and requestMeta.retryAfter > 5 then
+      if not requestMeta or not requestMeta.rateLimited or requestMeta.retryAfter > 5 then
         return resolveGitRevision()
       end
       return nil, requestError
@@ -660,7 +747,7 @@ local function resolveLatestRevision()
     local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
     revision = ok and type(document) == "table" and type(document.object) == "table" and document.object.sha
     if not validRevision(revision) then
-      return nil, "Invalid branch revision: " .. branch
+      return resolveGitRevision()
     end
   end
   BASE_URL = CONFIG.RAW_BASE_URL .. repo.full_name .. "/"
@@ -1062,6 +1149,7 @@ local function startInternal()
   end
   activeLoaded = loaded
   local uiReady, runtime = loaded.bootstrap.start(loaded, MODULE_ORDER, urls, selectedHub, {
+    revision = version,
     entryURL = function()
       return BASE_URL .. (CONFIG.BRANCH or (repositoryMetadata and repositoryMetadata.default_branch) or "main") .. "/" .. PROJECT_PATH .. CONFIG.ENTRY_POINT
     end,

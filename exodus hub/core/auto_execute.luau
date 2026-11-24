@@ -36,9 +36,49 @@ local function start()
     return
   end
   local success, reason = pcall(function()
-    local source = game:HttpGet(state.entryURL)
-    local chunk, compileError = loadstring(source)
-    assert(chunk, compileError)
+    local owner, repo, _, path = state.entryURL:match("^https://raw%.githubusercontent%.com/([^/]+)/([^/]+)/([^/]+)/(.+)$")
+    local revision = current.revision
+    local urls = {{url=state.entryURL}}
+    if owner and type(revision)=="string" and #revision==40 and revision:match("^[%x]+$") then
+      local prefix, suffix = owner .. "/" .. repo, owner .. "/" .. repo .. "@" .. revision .. "/" .. path
+      for _, host in ipairs({"cdn.jsdelivr.net", "fastly.jsdelivr.net", "gcore.jsdelivr.net", "testingcf.jsdelivr.net", "quantil.jsdelivr.net"}) do
+        urls[#urls+1]={url="https://" .. host .. "/gh/" .. suffix}
+      end
+      table.insert(urls,3,{url="https://rawcdn.githack.com/" .. prefix .. "/" .. revision .. "/" .. path})
+      table.insert(urls,4,{url="https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path})
+      urls[#urls+1]={url="https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path}
+      urls[#urls+1]={url="https://api.github.com/repos/" .. prefix .. "/contents/" .. path .. "?ref=" .. revision,headers={Accept="application/vnd.github.raw+json"}}
+    end
+    local fetchers, seen = {}, {}
+    local function add(fn)
+      if type(fn)=="function" and not seen[fn] then seen[fn]=true; fetchers[#fetchers+1]=fn end
+    end
+    add(env.request); add(env.http_request)
+    for _, name in ipairs({"syn","fluxus","http"}) do if type(env[name])=="table" then add(env[name].request) end end
+    add(function(options) return {StatusCode=200,Body=game:HttpGet(options.Url)} end)
+    add(function(options) return {StatusCode=200,Body=game:HttpGetAsync(options.Url)} end)
+    local chunk, failure
+    for _, target in ipairs(urls) do
+      for _, fetch in ipairs(fetchers) do
+        local ok, response = pcall(fetch,{Url=target.url,Method="GET",Headers=target.headers,Timeout=1})
+        if ok and type(response)=="table" then
+          local status=tonumber(response.StatusCode or response.status_code) or 200
+          local source=response.Body or response.body or response.ResponseBody
+          if status>=200 and status<300 and type(source)=="string" then
+            chunk, failure=loadstring(source)
+            if chunk then env.ExodusCachedLoader={url=state.entryURL,source=source}; break end
+          else
+            failure="HTTP " .. tostring(status)
+            if status==403 or status==429 then break end
+          end
+        else failure=tostring(response) end
+      end
+      if chunk then break end
+    end
+    if not chunk and type(env.ExodusCachedLoader)=="table" and env.ExodusCachedLoader.url==state.entryURL then
+      chunk, failure=loadstring(env.ExodusCachedLoader.source)
+    end
+    assert(chunk,failure or "Todas as fontes do loader falharam")
     chunk()
   end)
   if success then return end
@@ -72,6 +112,7 @@ local function sync()
     environment.makefolder("Exodus Hub")
   end
   settings.entryURL = channel.entryURL()
+  settings.revision = channel.revision
   environment.writefile(PATH, game:GetService("HttpService"):JSONEncode(settings))
   local source = bootstrap()
   environment.writefile(SCRIPT, source)
