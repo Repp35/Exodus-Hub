@@ -6,8 +6,8 @@ Universe ID `4538598064`. A relação foi consultada em
 Studio, nomes de objetos e atributos de outros jogos não habilitam a integração.
 
 Dentro do Phantom Ball, todos os módulos e páginas continuam disponíveis.
-Fora dele, o loader não executa setup nem bindCharacter dos módulos game/combat,
-do CombatLoop, do Auto Jump específico de partida ou do adaptador de sensibilidade
+Fora dele, o loader não baixa nem executa os módulos game/combat do Phantom Ball,
+o CombatLoop, o Auto Jump específico de partida ou o adaptador de sensibilidade
 de câmera. O runtime não instala watchers, transporte nem manutenção da bola.
 As configurações de combate salvas são preservadas, mas não iniciam esses módulos.
 

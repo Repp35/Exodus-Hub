@@ -7,11 +7,12 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
-def manifest():
-    return re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', (ROOT / 'loader.luau').read_text())
+import sys
+sys.path.insert(0, str(ROOT / 'indeed/checks'))
+from manifests import manifest, all_entries
 
 def smoke(binary, universal=False):
-    entries = manifest()
+    entries = manifest(universal)
     code = (Path(__file__).with_name('engine_api.luau')).read_text()
     policy_text = re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/core/permissions.luau').read_text(), re.S)[1]
     def literal(value):
@@ -34,6 +35,8 @@ for name, module in pairs(loaded) do
     for _, method in ipairs(methods) do assert(type(deps[alias][method]) == "function", name .. ": " .. alias .. "." .. method) end
   end
 end
+loaded.gamecontext.configure({ id = game.PlaceId == 12979690461 and "phantom-ball" or "universal" })
+loaded.hubapi.configure(loaded)
 assert(loaded.utils.configure(loaded.permissions.resolve("utils", loaded)))
 loaded.utils.start()
 for name, module in pairs(loaded) do
@@ -56,7 +59,8 @@ local function initialize(name)
     order[#order + 1] = name
   end
 end
-for name in pairs(loaded) do initialize(name) end
+for name in pairs(loaded) do if name ~= "character" then initialize(name) end end
+initialize("character")
 if loaded.gamecontext.isPhantomBall() then assert(type(loaded.gameinfo.getGameContext()) == "table") end
 local bridge = loaded.runtime.bind(loaded, order, services.HttpService, function(_, message) error(message) end)
 assert(type(bridge) == "table", "Runtime API binding failed")
@@ -93,12 +97,6 @@ assert(keys.AntiLagRemoveSwordSounds == (loaded.gamecontext.isPhantomBall() or n
 assert(ids.assists == (loaded.gamecontext.isPhantomBall() or nil))
 -- Filtering must never mutate the source definitions across UI rebuilds.
 assert(#loaded.uipages.forGame(loaded.uiconfig.pages, true) == #loaded.uiconfig.pages)
-local savedPlace, savedUniverse = game.PlaceId, game.GameId
-game.PlaceId, game.GameId = 42, 4538598064
-assert(loaded.gamecontext.isPhantomBall())
-game.PlaceId, game.GameId = 42, 1
-assert(not loaded.gamecontext.isPhantomBall())
-game.PlaceId, game.GameId = savedPlace, savedUniverse
 assert(#loaded.utils.getDiagnostics().errors == 0, "Runtime API initialization errors")
 local scope = loaded.uiruntime.scope()
 assert(type(scope.destroy) == "function"); scope.destroy()

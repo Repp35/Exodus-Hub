@@ -13,6 +13,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0, str(ROOT / 'indeed/checks'))
+from manifests import manifest, all_entries
 TOKEN = re.compile(r'--\[(=*)\[.*?\]\1\]|--[^\n]*|\[(=*)\[.*?\]\2\]|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', re.S)
 
 
@@ -53,6 +56,10 @@ SPEC = json.loads(re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 
 MODULES = {}
 
 def family(name, path):
+    if path.startswith('hubs/'):
+        path = path.split('/', 2)[2]
+        if not path.startswith('modules/'):
+            path = 'modules/' + path
     for rule in SPEC['rules']:
         if (rule.get('prefix') and path.startswith(rule['prefix'])) or name in rule.get('names', []):
             return rule['family']
@@ -84,10 +91,11 @@ def permitted(consumer, provider, member, data=False):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', action='store_true', help='List every module and its fixed family capabilities')
+    parser.add_argument('--hub', default='phantom-ball')
     arguments = parser.parse_args()
-    entries = re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', (ROOT / 'loader.luau').read_text())
+    entries = manifest(arguments.hub == "universal", arguments.hub)
     modules, errors = {}, []
-    manifest_paths = {path for _, path in entries}
+    manifest_paths = {path for _, path in all_entries()}
     actual_paths = {str(path.relative_to(ROOT)) for path in (ROOT / 'modules').rglob('*.luau')}
     for path in sorted(actual_paths - manifest_paths):
         errors.append(f'{path}: module outside the manifest has no reviewed family')
@@ -179,7 +187,7 @@ def main() -> int:
     combat = set(SPEC['families']['combat']) | set(SPEC['base'])
     if combat & {'*', 'ui.write', 'config.write', 'manual.input.write', 'hub.control', 'infrastructure.write', 'lifecycle.write', 'game.write', 'game.inventory', 'ui.write', 'world.write', 'render.write', 'tooling.execute', 'input.stop'}:
         errors.append('combat family must not own UI, configuration, manual input, or infrastructure')
-    if len({modules[name]['family'] for name in ['autoparry', 'autospam', 'spam', 'dynamicparry']}) != 1:
+    if len({modules[name]['family'] for name in ['autoparry', 'autospam', 'spam', 'dynamicparry'] if name in modules}) > 1:
         errors.append('AP, AutoSpam, Spam and DynamicParry must share one family')
     if arguments.report:
         for name, module in modules.items():

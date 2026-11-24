@@ -168,7 +168,7 @@ local function startSession()
     profile = requestedProfile(),
     runService = runService,
     replicated = replicated,
-    compatible = gameContext.isPhantomBall(),
+    compatible = adapter.isAvailable(),
   }
 
   session = owner
@@ -343,7 +343,7 @@ AntiLag.__contract = {
   requiresMethods = {
     GameContext = { "isPhantomBall" },
     Properties = { "create" },
-    Adapter = { "create", "apply" },
+    Adapter = { "create", "apply", "isAvailable" },
     Spatial = { "create" },
     Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "isActive", "observeConfig", "trackGlobal", "untrackGlobal", "recordError" },
   },

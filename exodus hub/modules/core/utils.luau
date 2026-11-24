@@ -121,7 +121,9 @@ local function recordTransition(...) return diagnostics.recordTransition(...) en
 function Utils.ensureDataFolder() return persistence.ensureDataFolder() end
 function Utils.loadConfig() return persistence.load() end
 function Utils.configure(deps)
-  stateModule = deps.State; state = stateModule.create()
+  local profile = deps.GameContext.getProfile(); CONFIG.AUTHOR = profile.author or "deltapolinha_2915"
+  CONFIG.FOLDER = profile.id == "phantom-ball" and "Exodus Hub" or "Exodus Hub/hubs/" .. (profile.id or "universal"); stateModule = deps.State
+  state = stateModule.create()
   diagnostics = deps.Diagnostics.create({
     state = state,
     config = CONFIG,
@@ -304,11 +306,13 @@ _G.ExodusStop = Utils.stop
 -- contract
 Utils.__contract = {
   requires = {
+    GameContext = "gamecontext",
     State = "state",
     Persistence = "persistence",
     Diagnostics = "diagnostics",
   },
   requiresMethods = {
+    GameContext = { "getProfile" },
     State = { "create", "copy" },
     Persistence = { "create" },
     Diagnostics = { "create" },

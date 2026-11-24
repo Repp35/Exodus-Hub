@@ -39,14 +39,16 @@ critério de aprovação do rework. Não é necessário atualizá-los ao ajustar
 
 - `modules/core`: inicialização, configuração, estado, persistência, diagnóstico,
   permissões, recursos e agendamento de combate.
-- `modules/game`: integração nativa, jogadores, presença, sincronização e snapshots.
-- `modules/combat`: regras de defesa, clash, habilidades, movimento e envio.
+- `hubs/<jogo>/modules/game`: integração nativa, jogadores, presença, sincronização e snapshots.
+- `hubs/<jogo>/modules/combat`: regras de defesa, clash, habilidades, movimento e envio.
 - `modules/features`: recursos universais independentes.
 - `modules/render`: AntiLag, adaptação nativa, propriedades reversíveis e seleção espacial.
 - `modules/tools`: dump e navegação de servidores.
 - `modules/front`: biblioteca e controladores da interface existente.
 
-Ao adicionar ou mover um módulo, atualize o manifesto no loader e seu contrato.
+Módulos de jogos são descobertos automaticamente nas pastas com `hub.json`.
+Atualize seus contratos; não há lista manual de módulos de jogo no loader.
+O workflow de formatação gera `hubs/catalog.luau` antes de formatar os arquivos.
 As famílias de permissões são definidas em `modules/core/permissions.luau`.
 A ordenação de inicialização é derivada das dependências, sem ciclos.
 

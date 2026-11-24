@@ -49,10 +49,10 @@ function ExodusUI.setup(deps, preview)
     if old then old:Destroy() end
   end
   local context = deps.Context.create(deps, preview and preview.deviceDesktop); active = context
-  context.phantomBall = deps.GameContext.isPhantomBall(); context.notifications = deps.Notifications.create(context)
-  context.notifications.layer(); context.floating = deps.Floating.create(context)
-  context.window = deps.Window.create(context); deps.Telemetry.create(context)
-  context.lifecycle = deps.Lifecycle.create(context)
+  context.hub = deps.GameContext.getProfile(); context.phantomBall = deps.GameContext.isPhantomBall()
+  context.notifications = deps.Notifications.create(context); context.notifications.layer()
+  context.floating = deps.Floating.create(context); context.window = deps.Window.create(context)
+  deps.Telemetry.create(context); context.lifecycle = deps.Lifecycle.create(context)
   local function cleanup()
     context.destroy()
     if _G.ExodusUICleanup == cleanup then
@@ -82,15 +82,15 @@ function ExodusUI.setup(deps, preview)
     setSpam = context.floating.setSpam,
     showMini = context.floating.showMini,
     rebuild = rebuild,
-    abilitiesEnabled = deps.GameInfo.areAbilitiesEnabled,
+    abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
   })
   context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIPages.forGame(deps.UIConfig.pages, context.phantomBall), {
     desktop = context.state.desktop,
-    capabilities = { clashPrediction = context.phantomBall and deps.AutoSpam.hasClashPrediction() },
+    capabilities = { clashPrediction = context.phantomBall and deps.Hub.hasClashPrediction() },
     read = deps.Utils.getConfigValue,
     resolve = context.actions.resolve,
     onComponent = context.actions.attach,
-    abilitiesEnabled = deps.GameInfo.areAbilitiesEnabled,
+    abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
     onNavigate = context.window.updateNavigation,
   })
   context.floating.refreshAbilities(); context.updateResponsiveScale()
@@ -116,9 +116,7 @@ ExodusUI.__contract = {
     Utils = "utils",
     GameContext = "gamecontext",
     UIConfig = "uiconfig",
-    GameInfo = "gameinfo",
-    AutoSpam = "autospam",
-    AutoParry = "autoparry",
+    Hub = "hubapi",
     UIKit = "uikit",
     UIPages = "uipages",
     UIActions = "uiactions",
@@ -137,7 +135,7 @@ ExodusUI.__contract = {
     Lifecycle = "uilifecycle",
   },
   requiresMethods = {
-    GameContext = { "isPhantomBall" },
+    GameContext = { "isPhantomBall", "getProfile" },
     Utils = {
       "getConfig",
       "getConfigValue",
@@ -156,14 +154,13 @@ ExodusUI.__contract = {
       "version",
       "author",
     },
-    GameInfo = {
+    Hub = {
+      "hasClashPrediction",
       "getAbilityAvailability",
       "getGameContext",
       "areAbilitiesEnabled",
       "observeAbilityMode",
     },
-    AutoSpam = { "getStatus", "hasClashPrediction" },
-    AutoParry = { "getStatus" },
     UIKit = { "create" },
     UIPages = { "create", "forGame" },
     UIActions = { "create" },

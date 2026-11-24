@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - '**.luau'
+      - 'exodus hub/hubs/**/hub.json'
+      - 'exodus hub/indeed/tools/build_hub_catalog.py'
       - 'exodus hub/indeed/formatter.py'
       - 'exodus hub/indeed/formatting/**'
       - 'exodus hub/indeed/tests/test_formatter_*.py'
@@ -17,6 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test formatter
         run: python3 -m unittest discover -s 'exodus hub/indeed/tests' -p 'test_formatter_*.py'
+      - name: Discover game hubs
+        run: python3 'exodus hub/indeed/tools/build_hub_catalog.py'
       - name: Format and verify Luau files
         run: |
           python3 'exodus hub/indeed/formatter.py' --in-place .
@@ -27,6 +31,6 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add -u -- '*.luau'
-            git commit -m 'style: format Luau files'
+            git commit -m 'build: refresh hub catalog and format Luau files'
             git push
           fi

@@ -15,7 +15,7 @@ local CONFIG = {
 
 -- setup
 function Actions.setup(deps)
-  Utils, GameInfo, Dumper = deps.Utils, deps.GameInfo, deps.Dumper; return true
+  Utils, GameInfo, Dumper = deps.Utils, deps.Hub, deps.Dumper; return true
 end
 
 -- actions
@@ -224,10 +224,10 @@ end
 -- contract
 Actions.__contract = {
   provides = { "setup", "create" },
-  requires = { Utils = "utils", GameInfo = "gameinfo", Dumper = "dumper" },
+  requires = { Utils = "utils", Hub = "hubapi", Dumper = "dumper" },
   requiresMethods = {
     Utils = { "getConfigValue", "getLocalPlayer", "isActive", "isManualSpamActive", "observeConfig", "resetConfig", "recordError" },
-    GameInfo = { "createCrateNetwork", "spinCrate", "getAbilityAvailability" },
+    Hub = { "createCrateNetwork", "spinCrate", "getAbilityAvailability" },
     Dumper = { "start", "isRunning" },
   },
 }

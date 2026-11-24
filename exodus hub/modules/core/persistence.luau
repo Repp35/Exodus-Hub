@@ -9,7 +9,11 @@ function Persistence.create(deps)
   function store.ensureDataFolder()
     if type(makefolder) ~= "function" then error("API externa ausente: makefolder", 2) end
     if type(isfolder) ~= "function" then error("API externa ausente: isfolder", 2) end
-    if not isfolder(CONFIG.FOLDER) then makefolder(CONFIG.FOLDER) end
+    local current = ""
+    for part in CONFIG.FOLDER:gmatch("[^/]+") do
+      current = current == "" and part or current .. "/" .. part
+      if not isfolder(current) then makefolder(current) end
+    end
     return true, CONFIG.FOLDER
   end
   local function isPersistentConfigKey(key) return type(key) == "string" and key:sub(1, #CONFIG.SESSION_ONLY_PREFIX) ~= CONFIG.SESSION_ONLY_PREFIX end

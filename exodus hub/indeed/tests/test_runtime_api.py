@@ -12,8 +12,10 @@ CHECKS = ROOT / 'indeed/checks'
 
 class RuntimeAPI(unittest.TestCase):
     def test_permissions(self):
-        result = subprocess.run(['python3', str(ROOT / 'indeed/tools/check_permissions.py')], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for hub in ['universal', *[info.parent.name for info in (ROOT / 'hubs').glob('*/hub.json')]]:
+            result = subprocess.run(['python3', str(ROOT / 'indeed/tools/check_permissions.py'), '--hub', hub], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
     def binary(self, env, name):
         binary = os.environ.get(env) or shutil.which(name)
@@ -34,7 +36,7 @@ class RuntimeAPI(unittest.TestCase):
         import json
         binary = self.binary('LUAU_ANALYZE_BIN', 'luau-analyze')
         allowed = set(json.loads((CHECKS / 'roblox-globals.json').read_text()))
-        paths = [ROOT / 'loader.luau', *sorted((ROOT / 'modules').rglob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]
+        paths = [ROOT / 'loader.luau', *sorted((ROOT / 'modules').rglob('*.luau')), *sorted((ROOT / 'hubs').rglob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]
         result = subprocess.run([binary, *map(str, paths)], capture_output=True, text=True, timeout=60)
         self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
         errors = []

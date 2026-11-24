@@ -106,7 +106,7 @@ function Context.create(deps, deviceDesktop)
   end
   local abilityKeys = { AutoDark = "dark", DarkBallVisible = "dark", AutoFierce = "fierce", AutoClashUpDash = "dash", UpDashBallVisible = "dash" }
   local function canUseAbility(name)
-    local available, reason = deps.GameInfo.getAbilityAvailability(name)
+    local available, reason = deps.Hub.getAbilityAvailability(name)
     if not available and context.notifications then context.notifications.toast(reason) end
     return available
   end

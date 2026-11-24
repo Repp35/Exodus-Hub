@@ -15,6 +15,13 @@ local POLICY_JSON = [=[
 {
   "rules": [
     {
+      "names": [
+        "runtime",
+        "uiconfig"
+      ],
+      "family": "infrastructure"
+    },
+    {
       "prefix": "modules/front/library/",
       "family": "view"
     },
@@ -168,11 +175,26 @@ local POLICY_JSON = [=[
         "spinCrate": "game.inventory"
       }
     },
-    "renderproperties": { "default": "render.write" },
-    "renderadapter": { "default": "render.write" },
-    "renderspatial": { "default": "render.write" },
-    "lifetime": { "default": "lifetime.manage" },
-    "profiler": { "default": "diagnostics.write", "methods": { "getStatus": "internal.read", "isEnabled": "internal.read", "setEnabled": "infrastructure.write" } },
+    "renderproperties": {
+      "default": "render.write"
+    },
+    "renderadapter": {
+      "default": "render.write"
+    },
+    "renderspatial": {
+      "default": "render.write"
+    },
+    "lifetime": {
+      "default": "lifetime.manage"
+    },
+    "profiler": {
+      "default": "diagnostics.write",
+      "methods": {
+        "getStatus": "internal.read",
+        "isEnabled": "internal.read",
+        "setEnabled": "infrastructure.write"
+      }
+    },
     "deflectgeometry": {
       "default": "internal.read"
     },
@@ -226,6 +248,17 @@ local POLICY_JSON = [=[
       "methods": {
         "resetState": "combat.runtime"
       }
+    },
+    "hubapi": {
+      "default": "internal.read",
+      "methods": {
+        "configure": "infrastructure.write",
+        "resetState": "combat.runtime",
+        "createCrateNetwork": "game.inventory",
+        "spinCrate": "game.inventory",
+        "applyVisualPolicy": "render.write",
+        "createVisualAdapter": "render.write"
+      }
     }
   }
 }
@@ -238,6 +271,10 @@ local function contains(items, value)
   return false
 end
 local function familyFor(name, path)
+  if path and path:match("^hubs/[%w%-]+/") then
+    path = path:gsub("^hubs/[%w%-]+/", "")
+    if path:sub(1, 8) ~= "modules/" then path = "modules/" .. path end
+  end
   for _, rule in ipairs(POLICY.rules) do
     if (rule.prefix and path and path:sub(1, #rule.prefix) == rule.prefix) or contains(rule.names, name) then return rule.family end
   end

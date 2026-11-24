@@ -8,7 +8,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LOADER = (ROOT / "loader.luau").read_text(encoding="utf-8")
-MANIFEST = re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', LOADER)
+import sys
+sys.path.insert(0, str(ROOT / 'indeed/checks'))
+from manifests import manifest, all_entries
+MANIFEST = manifest()
 
 
 def table_after(text: str, field: str) -> str | None:

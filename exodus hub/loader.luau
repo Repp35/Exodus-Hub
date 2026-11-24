@@ -92,10 +92,9 @@ local CONFIG = {
   PROJECT_PATH = "exodus%20hub/",
   MODULES = {
     { name = "gamecontext", path = "modules/core/gamecontext.luau" },
+    { name = "hubapi", path = "modules/core/hubapi.luau" },
     { name = "lifetime", path = "modules/core/lifetime.luau" },
     { name = "profiler", path = "modules/core/profiler.luau" },
-    { name = "playerregistry", path = "modules/game/players.luau" },
-    { name = "combatloop", path = "modules/core/combatloop.luau" },
     { name = "status", path = "modules/core/status.luau" },
     { name = "runtime", path = "modules/core/runtime.luau" },
     { name = "permissions", path = "modules/core/permissions.luau" },
@@ -117,18 +116,6 @@ local CONFIG = {
     { name = "persistence", path = "modules/core/persistence.luau" },
     { name = "diagnostics", path = "modules/core/diagnostics.luau" },
     { name = "utils", path = "modules/core/utils.luau" },
-    { name = "ballsync", path = "modules/game/ballsync.luau" },
-    { name = "targeting", path = "modules/game/targeting.luau" },
-    { name = "deflectgeometry", path = "modules/combat/deflectgeometry.luau" },
-    { name = "presence", path = "modules/game/presence.luau" },
-    { name = "snapshots", path = "modules/game/snapshots.luau" },
-    { name = "gameinfo", path = "modules/game/gameinfo.luau" },
-    { name = "cooldown", path = "modules/combat/cooldown.luau" },
-    { name = "clashstats", path = "modules/combat/clashstats.luau" },
-    { name = "autodark", path = "modules/combat/autodark.luau" },
-    { name = "movement", path = "modules/combat/movement.luau" },
-    { name = "autojump", path = "modules/features/autojump.luau" },
-    { name = "camera", path = "modules/features/camera.luau" },
     { name = "renderproperties", path = "modules/render/properties.luau" },
     { name = "renderadapter", path = "modules/render/adapter.luau" },
     { name = "renderspatial", path = "modules/render/spatial.luau" },
@@ -140,14 +127,6 @@ local CONFIG = {
     { name = "infinitezoom", path = "modules/features/infinitezoom.luau" },
     { name = "speed", path = "modules/features/speed.luau" },
     { name = "gravity", path = "modules/features/gravity.luau" },
-    { name = "remote", path = "modules/combat/remote.luau" },
-    { name = "autofierce", path = "modules/combat/autofierce.luau" },
-    { name = "autoparry", path = "modules/combat/autoparry.luau" },
-    { name = "dash", path = "modules/combat/dash.luau" },
-    { name = "autospam", path = "modules/combat/autospam.luau" },
-    { name = "autodash", path = "modules/combat/autodash.luau" },
-    { name = "dynamicparry", path = "modules/combat/dynamicparry.luau" },
-    { name = "spam", path = "modules/combat/spam.luau" },
     { name = "character", path = "modules/core/character.luau" },
     { name = "dumper", path = "modules/tools/dumper.luau" },
     { name = "servers", path = "modules/tools/servers.luau" },
@@ -173,6 +152,7 @@ local function cacheBuster()
   cacheSequence += 1; return ("%d-%d-%d"):format(os.time(), math.floor(os.clock() * 1000000), cacheSequence)
 end
 local MODULE_MANIFEST = CONFIG.MODULES
+local selectedHub = { id = "universal", title = "Universal", author = "deltapolinha_2915", notification = "Exodus Hub · Universal carregado." }
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
@@ -389,6 +369,20 @@ local function loadModule(name, relativePath, url)
   if not source then return nil, fetchError end
   return compile(name, source)
 end
+local function selectHub(revision)
+  local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local registryChunk, registryError = loadModule("hub registry", "hubs/registry.luau", root .. "hubs/registry.luau")
+  if not registryChunk then return false, registryError end
+  local registry = execute("hub registry", registryChunk); local catalogChunk, catalogError = loadModule("hub catalog", "hubs/catalog.luau", root .. "hubs/catalog.luau")
+  if not catalogChunk then return false, catalogError end
+  local catalog = execute("hub catalog", catalogChunk); selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
+  local extra = selectedHub.modules or {}; MODULE_MANIFEST = registry.merge(CONFIG.MODULES, extra)
+  table.clear(MODULE_ORDER); table.clear(MODULE_BY_NAME)
+  for _, entry in ipairs(MODULE_MANIFEST) do
+    MODULE_BY_NAME[entry.name] = entry
+    if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
+  end
+  return true
+end
 local function orderModulesByDependencies(loaded)
   local positions, state, ordered = {}, {}, {}
   for index, name in ipairs(MODULE_ORDER) do
@@ -413,8 +407,9 @@ local function orderModulesByDependencies(loaded)
   end
   table.clear(MODULE_ORDER)
   for _, name in ipairs(ordered) do
-    MODULE_ORDER[#MODULE_ORDER + 1] = name
+    if name ~= "character" then MODULE_ORDER[#MODULE_ORDER + 1] = name end
   end
+  if loaded.character then MODULE_ORDER[#MODULE_ORDER + 1] = "character" end
 end
 local function loadModules(urls, prepared)
   local loaded, results = {}, prepared or {}
@@ -632,6 +627,8 @@ local startupPerformed = false
 local function startInternal()
   local wasStarted = Exodus.Started == true; local version, revisionError = resolveLatestRevision()
   if not version then return false, "Loader", revisionError or "revisão atual indisponível" end
+  local selected, selectionError = selectHub(version)
+  if not selected then return false, "Loader", selectionError end
   local urls = buildURLs(version); local prepared, prepareModule, prepareError = loadModules(urls)
   if not prepared then return false, prepareModule, prepareError end
   printStartup("Exodus: Initializing..."); _G.ExodusShutdownReason = "restart"
@@ -641,7 +638,8 @@ local function startInternal()
   if not playerReady then return false, "Loader", playerError end
   local loaded, moduleName, loadError = loadModules(urls, prepared)
   if not loaded then return false, moduleName, loadError end
-  activeLoaded = loaded; local utils = loaded.utils
+  activeLoaded = loaded; loaded.gamecontext.configure(selectedHub)
+  loaded.hubapi.configure(loaded); local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
   utils.configure(loaded.permissions.resolve("utils", loaded)); utils.start()
   utils.setLifecyclePhase("loading"); loaded.status.configure(loaded, utils.recordError)
@@ -677,7 +675,7 @@ local function startInternal()
     end,
     onPanic = function()
       utils.setConfig({ AutoParry = false, AutoSpam = false }); utils.stopAllSpam()
-      loaded.autospam.stopSpam()
+      if loaded.autospam then loaded.autospam.stopSpam() end
     end,
     onClose = function() utils.stop() end,
     onReload = reloadLatest,
@@ -687,6 +685,7 @@ local function startInternal()
     end,
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
+  Exodus.Hub = table.clone(selectedHub); notifyPersistent(selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."), "hub_loaded", "info", 5)
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
