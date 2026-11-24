@@ -52,4 +52,11 @@ class RuntimeAPI(unittest.TestCase):
         helper.smoke(binary)
         helper.smoke(binary, universal=True)
 
+    def test_window_opens_in_both_game_contexts(self):
+        binary = self.binary('LUAU_BIN', 'luau')
+        spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        helper.launcher_smoke(binary)
+
 if __name__ == '__main__': unittest.main()

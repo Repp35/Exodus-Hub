@@ -29,20 +29,15 @@ function Controller.create(context)
   local Utils = context.deps.Utils; local GameInfo = context.deps.GameInfo
   local AutoSpam = context.deps.AutoSpam; local Controls = context.deps.Controls
   local UIState = context.state; local C = context.theme.COLORS
-  local BTN_SIZE = context.theme.BTN_SIZE; local CLASH_SIZE = context.theme.CLASH_SIZE
-  local OFFSCREEN_X = (-context.theme.CLASH_SIZE - 40); local MINI_W = context.theme.MINI_W
-  local MINI_H = context.theme.MINI_H; local inst = context.inst
-  local corner = context.corner; local stroke = context.stroke
-  local twPlay = context.twPlay; local safeCancel = context.safeCancel
-  local viewport = context.viewport; local setConfigValue = context.setConfigValue
-  local trackConn = context.trackConn; local untrackConn = context.untrackConn
-  local safeDisconnect = context.safeDisconnect; local makeDraggable = context.makeDraggable
+  local CLASH_SIZE = context.theme.CLASH_SIZE; local OFFSCREEN_X = (-context.theme.CLASH_SIZE - 40)
+  local MINI_W = context.theme.MINI_W; local MINI_H = context.theme.MINI_H
+  local inst = context.inst; local corner = context.corner
+  local stroke = context.stroke; local twPlay = context.twPlay
+  local safeCancel = context.safeCancel; local viewport = context.viewport
+  local setConfigValue = context.setConfigValue; local trackConn = context.trackConn
+  local untrackConn = context.untrackConn; local safeDisconnect = context.safeDisconnect
+  local makeDraggable = context.makeDraggable
   local setSpam
-  local function btnPos()
-    local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
-    if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
-    return UDim2.new(1, -70, 0.5, -28)
-  end
   local function paintBall(ball, value, onText, offText, onColor, offColor, onSize, offSize)
     if not ball or not ball.Parent then return end
     ball.Text = value and onText or offText
@@ -169,28 +164,6 @@ function Controller.create(context)
       end))
     end
   end
-  context.refs.floatingButton = inst("TextButton", {
-    Name = "ExodusFloatingButton",
-    Size = UDim2.fromOffset(BTN_SIZE * 0.7, BTN_SIZE * 0.7),
-    Position = btnPos(),
-    BackgroundColor3 = C.header,
-    BackgroundTransparency = 1,
-    Text = "E",
-    TextColor3 = C.text,
-    TextTransparency = 1,
-    TextSize = 26,
-    Font = Enum.Font.GothamBold,
-    Active = true,
-    ZIndex = 10,
-    Parent = context.refs.screenGui,
-  })
-  corner(context.refs.floatingButton, 999); context.refs.floatingButtonStroke = stroke(context.refs.floatingButton, C.accent, 2)
-  context.refs.floatingButtonStroke.Transparency = 1
-  task.defer(function()
-    if not context.refs.floatingButton or not context.refs.floatingButton.Parent then return end
-    twPlay(context.refs.floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) })
-    twPlay(context.refs.floatingButtonStroke, "panel", { Transparency = 0 })
-  end)
   local config = Utils.getConfig(); local clashX = config.ClashBallX or 14
   local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
   context.refs.clashBall = inst("TextButton", {
@@ -234,13 +207,6 @@ function Controller.create(context)
       local value = Utils.getConfigValue("AutoParry") ~= true
       if setConfigValue("AutoParry", value) and context.notifications.toast then context.notifications.toast("Auto Parry " .. (value and "On" or "Off")) end
     end
-  end))
-  UIState.btnIsDragging = makeDraggable(context.refs.floatingButton, context.refs.floatingButton, function()
-    setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset); setConfigValue("BtnY", context.refs.floatingButton.Position.Y.Offset)
-  end)
-  trackConn(context.refs.floatingButton.Activated:Connect(function()
-    if UIState.btnIsDragging() then return end
-    context.window.toggle()
   end))
   local isClashDragging = makeDraggable(context.refs.clashBall, context.refs.clashBall, function()
     setConfigValue("ClashBallX", context.refs.clashBall.Position.X.Offset); setConfigValue("ClashBallY", context.refs.clashBall.Position.Y.Offset)

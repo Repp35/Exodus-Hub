@@ -116,3 +116,19 @@ print("Module exports, dependency views and infrastructure initialization OK")
     if result.returncode:
         raise AssertionError(result.stdout + result.stderr)
     return result.stdout
+
+
+def launcher_smoke(binary):
+    checks = Path(__file__).parent
+    code = (checks / 'engine_api.luau').read_text()
+    for name, path in manifest():
+        if name in {'uitheme', 'uiwindow', 'uifloating'}:
+            code += f'\nloaded["{name}"] = (function()\n{(ROOT / path).read_text()}\nend)()\n'
+    code += '\n' + (checks / 'window_launcher.luau').read_text()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / 'window_launcher.luau'
+        path.write_text(code)
+        result = subprocess.run([binary, str(path)], capture_output=True, text=True, timeout=30)
+    if result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return result.stdout

@@ -22,6 +22,11 @@ function Controller.create(context)
   local untrackConn = context.untrackConn; local safeDisconnect = context.safeDisconnect
   local makeDraggable = context.makeDraggable; local makeBtn = context.makeBtn
   local _wait = task.wait; local _spawn = task.spawn
+  local function btnPos()
+    local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
+    if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
+    return UDim2.new(1, -70, 0.5, -28)
+  end
   local function panelPos()
     local config = Utils.getConfig(); local x, y = config.PanelX, config.PanelY
     if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
@@ -92,6 +97,35 @@ function Controller.create(context)
       end
     end
   end
+  context.refs.floatingButton = inst("TextButton", {
+    Name = "ExodusFloatingButton",
+    Size = UDim2.fromOffset(BTN_SIZE * 0.7, BTN_SIZE * 0.7),
+    Position = btnPos(),
+    BackgroundColor3 = C.header,
+    BackgroundTransparency = 1,
+    Text = "E",
+    TextColor3 = C.text,
+    TextTransparency = 1,
+    TextSize = 26,
+    Font = Enum.Font.GothamBold,
+    Active = true,
+    ZIndex = 10,
+    Parent = context.refs.screenGui,
+  })
+  corner(context.refs.floatingButton, 999); context.refs.floatingButtonStroke = stroke(context.refs.floatingButton, C.accent, 2)
+  context.refs.floatingButtonStroke.Transparency = 1
+  task.defer(function()
+    if not context.refs.floatingButton or not context.refs.floatingButton.Parent then return end
+    twPlay(context.refs.floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) })
+    twPlay(context.refs.floatingButtonStroke, "panel", { Transparency = 0 })
+  end)
+  UIState.btnIsDragging = makeDraggable(context.refs.floatingButton, context.refs.floatingButton, function()
+    context.setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset); context.setConfigValue("BtnY", context.refs.floatingButton.Position.Y.Offset)
+  end)
+  trackConn(context.refs.floatingButton.Activated:Connect(function()
+    if UIState.btnIsDragging() then return end
+    togglePanel()
+  end))
   context.refs.configPanel = inst("CanvasGroup", {
     Name = "ExodusPanel",
     Size = UDim2.new(0, PW, 0, PH),
