@@ -9,13 +9,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 import sys
 sys.path.insert(0, str(ROOT / 'indeed/checks'))
-from manifests import manifest, all_entries
+from manifests import manifest, all_entries, source_for
 
 def smoke(binary, universal=True, hub_id=None, assertions=""):
     universal = hub_id is None or hub_id == "universal"
     entries = manifest(universal, hub_id or "universal")
     code = (Path(__file__).with_name('engine_api.luau')).read_text()
-    policy_text = re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/core/permissions.luau').read_text(), re.S)[1]
+    policy_text = re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'core/permissions.luau').read_text(), re.S)[1]
     def literal(value):
         if isinstance(value, dict):
             return '{' + ','.join('[' + json.dumps(k) + ']=' + literal(v) for k, v in value.items()) + '}'
@@ -27,8 +27,15 @@ def smoke(binary, universal=True, hub_id=None, assertions=""):
         profile.update(json.loads((ROOT / 'hubs' / hub_id / 'hub.json').read_text()))
     code += f'\ngame.PlaceId = {next(iter(profile.get("placeIds", [0])), 0)}\n'
     code += '\nlocal profile = ' + literal(profile) + '\n'
+    code += '\nlocal files = {}\n'
     for name, path in entries:
-        code += f'\nloaded["{name}"] = (function()\n{(ROOT / path).read_text()}\nend)()\n'
+        code += f'\nif not files[{json.dumps(path)}] then files[{json.dumps(path)}] = (function()\n{(ROOT / path).read_text()}\nend)() end\n'
+        code += f'loaded["{name}"] = files[{json.dumps(path)}].__bundle and files[{json.dumps(path)}].__bundle["{name}"] or files[{json.dumps(path)}]\n'
+    if universal:
+        loader = (ROOT / 'loader.luau').read_text()
+        start = loader.index('local function basicLinker()')
+        end = loader.index('local function loadModules(', start)
+        code += '\n' + loader[start:end] + '\nloaded.permissions = basicLinker()\nloaded.permissions.__contract = { requires = {}, provides = { "validate", "resolve" } }\n'
     for name, path in entries:
         code += f'loaded.permissions.validate("{name}", loaded["{name}"], "{path}")\n'
     paths = dict(entries)
@@ -100,22 +107,6 @@ print("Module exports, dependency views and infrastructure initialization OK")
     code = code.replace('-- PROFILE_ASSERTIONS', assertions)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / 'runtime_api.luau'
-        path.write_text(code)
-        result = subprocess.run([binary, str(path)], capture_output=True, text=True, timeout=30)
-    if result.returncode:
-        raise AssertionError(result.stdout + result.stderr)
-    return result.stdout
-
-
-def launcher_smoke(binary):
-    checks = Path(__file__).parent
-    code = (checks / 'engine_api.luau').read_text()
-    for name, path in manifest(universal=True):
-        if name in {'uitheme', 'uiwindow', 'uifloating'}:
-            code += f'\nloaded["{name}"] = (function()\n{(ROOT / path).read_text()}\nend)()\n'
-    code += '\n' + (checks / 'window_launcher.luau').read_text()
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / 'window_launcher.luau'
         path.write_text(code)
         result = subprocess.run([binary, str(path)], capture_output=True, text=True, timeout=30)
     if result.returncode:

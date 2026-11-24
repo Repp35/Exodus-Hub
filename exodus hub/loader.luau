@@ -83,70 +83,70 @@ local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 
 -- configuration
 local CONFIG = {
-  REPOSITORY_URL = "https://raw.githubusercontent.com/Repp35/Exodus-v2/",
-  HEAD_URL = "https://api.github.com/repos/Repp35/Exodus-v2/git/ref/heads/main",
+  REPOSITORY_ID = 1334849119,
+  HEAD_URL = "https://api.github.com/repositories/1334849119/git/ref/heads/main",
   DOWNLOAD_WORKERS = 12,
   REQUEST_TIMEOUT = 8,
   MAX_PENDING_REQUESTS = 24,
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
   MODULES = {
-    { name = "gamecontext", path = "modules/core/gamecontext.luau" },
-    { name = "hubapi", path = "modules/core/hubapi.luau" },
-    { name = "lifetime", path = "modules/core/lifetime.luau" },
-    { name = "profiler", path = "modules/core/profiler.luau" },
-    { name = "status", path = "modules/core/status.luau" },
-    { name = "runtime", path = "modules/core/runtime.luau" },
-    { name = "permissions", path = "modules/core/permissions.luau" },
-    { name = "config", path = "modules/core/config.luau" },
-    { name = "uiconfig", path = "modules/front/app/definitions.luau" },
-    { name = "uitheme", path = "modules/front/library/theme.luau" },
-    { name = "uiruntime", path = "modules/front/library/runtime.luau" },
-    { name = "uiicons", path = "modules/front/library/icons.luau" },
-    { name = "uidisplay", path = "modules/front/library/components/display.luau" },
-    { name = "uicontrols", path = "modules/front/library/components/controls.luau" },
-    { name = "uiinputs", path = "modules/front/library/components/inputs.luau" },
-    { name = "uiselection", path = "modules/front/library/components/selection.luau" },
-    { name = "uidropdown", path = "modules/front/library/components/dropdown.luau" },
-    { name = "uikit", path = "modules/front/library/core.luau" },
-    { name = "uipages", path = "modules/front/library/pages.luau" },
-    { name = "uinotifications", path = "modules/front/app/notification-policy.luau" },
-    { name = "uiactions", path = "modules/front/app/actions.luau" },
-    { name = "state", path = "modules/core/state.luau" },
-    { name = "persistence", path = "modules/core/persistence.luau" },
-    { name = "diagnostics", path = "modules/core/diagnostics.luau" },
-    { name = "utils", path = "modules/core/utils.luau" },
-    { name = "renderproperties", path = "modules/render/properties.luau" },
-    { name = "renderadapter", path = "modules/render/adapter.luau" },
-    { name = "renderspatial", path = "modules/render/spatial.luau" },
-    { name = "antilag", path = "modules/render/antilag.luau" },
-    { name = "autojump", path = "modules/features/autojump.luau" },
-    { name = "camera", path = "modules/features/camera.luau" },
-    { name = "infinitejump", path = "modules/features/infinitejump.luau" },
-    { name = "noclip", path = "modules/features/noclip.luau" },
-    { name = "fly", path = "modules/features/fly.luau" },
-    { name = "invisicam", path = "modules/features/invisicam.luau" },
-    { name = "infinitezoom", path = "modules/features/infinitezoom.luau" },
-    { name = "speed", path = "modules/features/speed.luau" },
-    { name = "gravity", path = "modules/features/gravity.luau" },
-    { name = "character", path = "modules/core/character.luau" },
-    { name = "dumper", path = "modules/tools/dumper.luau" },
-    { name = "servers", path = "modules/tools/servers.luau" },
-    { name = "uicontext", path = "modules/front/controllers/context.luau" },
-    { name = "uiwindow", path = "modules/front/controllers/window.luau" },
-    { name = "uifloating", path = "modules/front/controllers/floating.luau" },
-    { name = "uinotificationview", path = "modules/front/controllers/notifications.luau" },
-    { name = "uistatus", path = "modules/front/app/status-view.luau" },
-    { name = "uitelemetry", path = "modules/front/controllers/telemetry.luau" },
-    { name = "uiassists", path = "modules/front/controllers/assists.luau" },
-    { name = "uiinput", path = "modules/front/controllers/input.luau" },
-    { name = "uilifecycle", path = "modules/front/controllers/lifecycle.luau" },
-    { name = "ui", path = "modules/front/ui.luau" },
+    { name = "gamecontext", path = "core/game_integration.luau" },
+    { name = "hubapi", path = "core/game_integration.luau" },
+    { name = "lifetime", path = "core/lifetime.luau" },
+    { name = "profiler", path = "core/diagnostics.luau" },
+    { name = "status", path = "core/diagnostics.luau" },
+    { name = "runtime", path = "core/game_integration.luau" },
+    { name = "permissions", path = "core/permissions.luau" },
+    { name = "config", path = "core/config.luau" },
+    { name = "uiconfig", path = "ui/definitions.luau" },
+    { name = "uitheme", path = "ui/theme.luau" },
+    { name = "uiruntime", path = "ui/runtime.luau" },
+    { name = "uiicons", path = "ui/icons.luau" },
+    { name = "uidisplay", path = "ui/components/basic.luau" },
+    { name = "uicontrols", path = "ui/components/basic.luau" },
+    { name = "uiinputs", path = "ui/components/inputs.luau" },
+    { name = "uiselection", path = "ui/components/basic.luau" },
+    { name = "uidropdown", path = "ui/components/dropdown.luau" },
+    { name = "uikit", path = "ui/toolkit.luau" },
+    { name = "uipages", path = "ui/pages.luau" },
+    { name = "uinotifications", path = "ui/controllers/notifications.luau" },
+    { name = "uiactions", path = "ui/actions.luau" },
+    { name = "state", path = "core/session.luau" },
+    { name = "persistence", path = "core/persistence.luau" },
+    { name = "diagnostics", path = "core/diagnostics.luau" },
+    { name = "utils", path = "core/session.luau" },
+    { name = "renderproperties", path = "universal/anti_lag/properties.luau" },
+    { name = "renderadapter", path = "universal/anti_lag/antilag.luau" },
+    { name = "renderspatial", path = "universal/anti_lag/spatial.luau" },
+    { name = "antilag", path = "universal/anti_lag/antilag.luau" },
+    { name = "autojump", path = "universal/autojump.luau" },
+    { name = "camera", path = "universal/camera.luau" },
+    { name = "infinitejump", path = "universal/infinitejump.luau" },
+    { name = "noclip", path = "universal/noclip.luau" },
+    { name = "fly", path = "universal/fly.luau" },
+    { name = "invisicam", path = "universal/camera.luau" },
+    { name = "infinitezoom", path = "universal/camera.luau" },
+    { name = "speed", path = "universal/speed.luau" },
+    { name = "gravity", path = "universal/gravity.luau" },
+    { name = "character", path = "core/character.luau" },
+    { name = "dumper", path = "universal/dumper.luau" },
+    { name = "servers", path = "universal/servers.luau" },
+    { name = "uicontext", path = "ui/controllers/context.luau" },
+    { name = "uiwindow", path = "ui/controllers/window.luau" },
+    { name = "uifloating", path = "ui/controllers/floating.luau" },
+    { name = "uinotificationview", path = "ui/controllers/notifications.luau" },
+    { name = "uistatus", path = "ui/controllers/information.luau" },
+    { name = "uitelemetry", path = "ui/controllers/information.luau" },
+    { name = "uiassists", path = "ui/controllers/assists.luau" },
+    { name = "uiinput", path = "ui/controllers/input.luau" },
+    { name = "uilifecycle", path = "ui/controllers/lifecycle.luau" },
+    { name = "ui", path = "ui/interface.luau" },
   },
 }
 
 local PROJECT_PATH = CONFIG.PROJECT_PATH
-local BASE_URL = CONFIG.REPOSITORY_URL
+local BASE_URL
 local HEAD_URL = CONFIG.HEAD_URL
 local HttpService = game:GetService("HttpService")
 local cacheSequence = 0
@@ -343,12 +343,20 @@ local function compile(name, source)
   if not chunk then return nil, compileError end
   return chunk
 end
+local executionCache = {}
 local function execute(name, chunk)
-  local module = chunk()
+  local module = executionCache[chunk]
+  if not module then module = chunk(); executionCache[chunk] = module end
+  if type(module) == "table" and module.__bundle then module = module.__bundle[name] end
   if type(module) ~= "table" then error(name .. " não retornou uma tabela", 2) end
   return module
 end
 local function resolveLatestRevision()
+  local metadata, metadataError = request("https://api.github.com/repositories/" .. CONFIG.REPOSITORY_ID)
+  if not metadata then return nil, metadataError end
+  local decoded, repo = pcall(HttpService.JSONDecode, HttpService, metadata)
+  if not decoded or type(repo) ~= "table" or type(repo.full_name) ~= "string" then return nil, "Invalid repository metadata" end
+  BASE_URL = "https://raw.githubusercontent.com/" .. repo.full_name .. "/"
   local body, requestError = request(HEAD_URL .. "?exodus_cache=" .. cacheBuster(), {
     ["Accept"] = "application/vnd.github+json",
     ["User-Agent"] = "Exodus-Hub-Loader",
@@ -366,10 +374,23 @@ local function buildURLs(revision)
   end
   return urls
 end
+local downloadCache = {}
 local function loadModule(name, relativePath, url)
+  local previous = downloadCache[url]
+  if previous then
+    while previous.pending do
+      task.wait()
+    end
+    return previous.chunk, previous.error
+  end
+  local pending = { pending = true }; downloadCache[url] = pending
   local source, fetchError = request(url .. "?exodus_cache=" .. cacheBuster(), { ["Cache-Control"] = "no-cache, no-store" })
-  if not source then return nil, fetchError end
-  return compile(name, source)
+  if not source then
+    pending.pending, pending.error = false, fetchError
+    return nil, fetchError
+  end
+  local chunk, detail = compile(relativePath, source); pending.chunk, pending.error, pending.pending = chunk, detail, false
+  return chunk, detail
 end
 local function selectHub(revision)
   local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local registryChunk, registryError = loadModule("hub registry", "hubs/registry.luau", root .. "hubs/registry.luau")
@@ -377,8 +398,12 @@ local function selectHub(revision)
   local registry = execute("hub registry", registryChunk); local catalogChunk, catalogError = loadModule("hub catalog", "hubs/catalog.luau", root .. "hubs/catalog.luau")
   if not catalogChunk then return false, catalogError end
   local catalog = execute("hub catalog", catalogChunk); selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
-  local extra = selectedHub.modules or {}; MODULE_MANIFEST = registry.merge(CONFIG.MODULES, extra)
-  table.clear(MODULE_ORDER); table.clear(MODULE_BY_NAME)
+  local extra = selectedHub.modules or {}; local common = {}
+  for _, entry in ipairs(CONFIG.MODULES) do
+    if entry.name ~= "permissions" or selectedHub.permissions == true then common[#common + 1] = entry end
+  end
+  MODULE_MANIFEST = registry.merge(common, extra); table.clear(MODULE_ORDER)
+  table.clear(MODULE_BY_NAME)
   for _, entry in ipairs(MODULE_MANIFEST) do
     MODULE_BY_NAME[entry.name] = entry
     if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
@@ -412,6 +437,28 @@ local function orderModulesByDependencies(loaded)
     if name ~= "character" then MODULE_ORDER[#MODULE_ORDER + 1] = name end
   end
   if loaded.character then MODULE_ORDER[#MODULE_ORDER + 1] = "character" end
+end
+local function basicLinker()
+  local linker = {}
+  function linker.validate(name, module)
+    assert(type(module.__contract) == "table", name .. ": missing API contract")
+    for _, method in ipairs(module.__contract.provides or {}) do
+      assert(type(module[method]) == "function", name .. ": missing " .. method)
+    end
+    return true
+  end
+  function linker.resolve(name, loaded)
+    local dependencies = {}
+    for alias, source in pairs(loaded[name].__contract.requires or {}) do
+      local provider = assert(loaded[source], "Missing dependency: " .. source)
+      for _, method in ipairs((loaded[name].__contract.requiresMethods or {})[alias] or {}) do
+        assert(type(provider[method]) == "function", source .. ": missing " .. method)
+      end
+      dependencies[alias] = provider
+    end
+    return dependencies
+  end
+  return linker
 end
 local function loadModules(urls, prepared)
   local loaded, results = {}, prepared or {}
@@ -450,7 +497,8 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions, "modules/core/permissions.luau")
+  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
+  if results.permissions then permissions.validate("permissions", permissions, "core/permissions.luau") end
   loaded.permissions = register("permissions", permissions)
   for _, entry in ipairs(MODULE_MANIFEST) do
     local name = entry.name

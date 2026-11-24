@@ -9,5 +9,6 @@
     4538598064
   ],
   "notification": "Exodus Hub · Phantom Ball carregado.",
-  "checkPermissions": true
+  "checkPermissions": true,
+  "permissions": true
 }

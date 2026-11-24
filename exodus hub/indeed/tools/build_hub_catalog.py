@@ -29,8 +29,9 @@ def discover(root=ROOT):
         if not profile.get('placeIds') and not profile.get('universeIds'):
             raise ValueError(f'{info}: at least one game ID required')
         modules, seen = [], set()
-        for path in sorted((info.parent / 'modules').rglob('*.luau')):
-            name = path.stem
+        for path in sorted(info.parent.rglob('*.luau')):
+            if "indeed" in path.relative_to(info.parent).parts: continue
+            name = path.stem.replace("_", "")
             if not re.fullmatch(r'\w+', name) or name in seen or name in reserved:
                 raise ValueError(f'{path}: duplicate, reserved or invalid module name')
             if '__contract' not in path.read_text():

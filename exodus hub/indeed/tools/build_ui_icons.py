@@ -8,14 +8,14 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = ROOT / 'modules/front/library/icons.luau'
+MODULE = ROOT / 'ui/icons.luau'
 NAMES = ('settings', 'chevron', 'minimize', 'assists')
 
 
 def generated(source: str) -> str:
     fingerprint = hashlib.sha256()
     for name in NAMES:
-        image = (ROOT / 'assets/ui' / f'{name}.png').read_bytes()
+        image = (ROOT / 'ui/assets' / f'{name}.png').read_bytes()
         if not image.startswith(b'\x89PNG\r\n\x1a\n'):
             raise ValueError(f'{name}: expected a PNG image')
         fingerprint.update(name.encode() + b'\0' + image)

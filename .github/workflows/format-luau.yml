@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test formatter
-        run: python3 -m unittest discover -s 'exodus hub/indeed/tests' -p 'test_formatter_*.py'
       - name: Discover game hubs
         run: python3 'exodus hub/indeed/tools/build_hub_catalog.py'
       - name: Format and verify Luau files

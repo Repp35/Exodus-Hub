@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LOADER = (ROOT / "loader.luau").read_text(encoding="utf-8")
 import sys
 sys.path.insert(0, str(ROOT / 'indeed/checks'))
-from manifests import manifest, all_entries
+from manifests import manifest, all_entries, source_for
 MANIFEST = manifest(universal=True)
 
 
@@ -44,7 +44,7 @@ def grouped_lists(text: str | None) -> dict[str, list[str]]:
 def load_contracts() -> dict[str, dict]:
     contracts = {}
     for name, path in MANIFEST:
-        source = (ROOT / path).read_text(encoding="utf-8")
+        source = source_for(name, path)
         module_name = re.search(r"^local\s+(\w+)\s*=\s*\{\s*\}", source, re.MULTILINE)
         if not module_name:
             raise AssertionError(f"{name}: could not identify module table")

@@ -1,51 +1,50 @@
-# Estrutura atual
-
-Exodus tem um loader, uma base universal e módulos específicos por jogo.
-Todo jogo carrega a base universal. Quando há um ID cadastrado, o loader também
-carrega os módulos da pasta correspondente.
+# Estrutura do Exodus
 
 | Caminho | Responsabilidade |
 | --- | --- |
-| `exodus hub/loader.luau` | Selecionar o jogo, baixar módulos e iniciar a sessão |
-| `exodus hub/modules/core/` | Configuração, permissões, estado, ciclo de vida e ponte com o jogo |
-| `exodus hub/modules/front/` | Toda a UI: componentes, páginas, mini UIs, spam, atalhos e animações |
-| `exodus hub/modules/features/` | Funções universais, incluindo Auto Jump e câmera |
-| `exodus hub/modules/render/` | Anti Lag geral e restauração de propriedades |
-| `exodus hub/modules/tools/` | Dumper e navegação de servidores |
-| `exodus hub/hubs/<jogo>/modules/` | Lógica específica do jogo e configuração declarativa da UI |
-| `exodus hub/hubs/<jogo>/hub.json` | Nome, IDs, autor e notificação |
-| `exodus hub/hubs/catalog.luau` | Catálogo gerado automaticamente; não editar à mão |
-| `exodus hub/indeed/` | Testes e ferramentas universais |
-| `exodus hub/hubs/<jogo>/indeed/` | Testes, ferramentas e diagnósticos exclusivos do jogo |
+| `exodus hub/loader.luau` | Entrada única; identifica o jogo e carrega a sessão |
+| `exodus hub/core/` | Sessão, configurações, armazenamento, diagnóstico e integração |
+| `exodus hub/universal/` | Recursos carregados em todos os jogos |
+| `exodus hub/universal/anti_lag/` | Anti Lag, propriedades reversíveis e seleção espacial |
+| `exodus hub/ui/` | Toda a interface, páginas, temas, ações e componentes |
+| `exodus hub/ui/controllers/` | Janela, minis, spam, atalhos, notificações e informações |
+| `exodus hub/ui/components/` | Componentes reutilizáveis |
+| `exodus hub/ui/assets/` | Ícones e imagens |
+| `exodus hub/hubs/<jogo>/` | Somente lógica e configuração específicas do jogo |
+| `exodus hub/indeed/` | Ferramentas e verificações mínimas universais |
+| `exodus hub/hubs/<jogo>/indeed/` | Ferramentas e verificações específicas do jogo |
 
-## Carregamento
+## Phantom Ball
 
-1. O loader resolve uma revisão do repositório.
-2. Consulta o catálogo; Place ID tem prioridade sobre Universe ID.
-3. Baixa a base universal e, quando houver suporte, os módulos daquele jogo.
-4. Valida contratos e dependências e calcula a ordem de inicialização.
-5. Inicia a UI compartilhada usando a configuração do jogo e mostra a notificação.
+- `combat/`: funções ativas como Auto Parry, Auto Spam e habilidades.
+- `prediction/`: geometria, previsão de dash e estatísticas de clash.
+- `game/`: bola, jogadores, partida, cooldowns, remotes e adaptação nativa.
+- `combat_loop.luau`: coordena as avaliações de combate.
+- `game_runtime.luau`: conecta os eventos do jogo.
+- `game_ui.luau`: apenas dados que configuram a UI compartilhada.
+- `hub.json`: IDs, nome, autor, notificação e opções da integração.
 
-Todos os downloads da sessão usam a mesma revisão. Um jogo sem suporte não baixa
-a lógica do Phantom Ball. Módulos da base não podem ser substituídos por cópias
-na pasta do jogo.
+## Carregamento e renomeação
 
-## Interface
+O loader consulta o repositório pelo ID numérico `1334849119`. O endereço atual
+é obtido pela API do GitHub; usuário e nome do repositório não ficam fixos no
+loader. Os arquivos da sessão são baixados na mesma revisão imutável.
+Depois de renomear o repositório, use seu novo endereço para obter o loader.
 
-Os componentes existem apenas em `modules/front/`, inclusive os controles de
-spam e as mini UIs. O arquivo `gameui.luau` do jogo fornece somente dados:
-`pages`, `additions`, `pageOrder` e `combatUI`. Não cria instâncias nem injeta UI.
-A base combina essa configuração com as páginas universais.
+Place ID tem prioridade sobre Universe ID. Sempre são carregadas a base e a UI;
+a lógica de um jogo só é baixada quando seus IDs correspondem.
+O catálogo é gerado automaticamente a partir das pastas com `hub.json`.
 
-## Jogos
+`"permissions": true` habilita a política de permissões para a integração.
+Sem essa opção, o arquivo de permissões não é baixado. O loader mantém somente
+as verificações básicas de contratos, APIs e dependências.
 
-A integração cadastrada é Phantom Ball, em `hubs/phantom-ball/`. Ela contém
-combate, sincronização da bola, adaptador visual nativo e configurações próprias.
-MM2 e outros jogos usam a base universal até receberem módulos específicos.
+## Arquivos reunidos
 
-A configuração antiga do Phantom Ball permanece em `Exodus Hub`. As demais
-sessões usam `Exodus Hub/hubs/<id>`. O README.md principal não faz parte desta
-manutenção de documentação.
+Sessão/estado, integração, diagnóstico, câmera, notificações, informações e
+componentes básicos foram agrupados por responsabilidade. Dentro desses arquivos,
+as APIs existentes permanecem em seções isoladas para preservar referências e
+limpeza. Cada arquivo é baixado, compilado e executado uma vez por carregamento.
+Auto Parry e Auto Spam continuam independentes.
 
-Veja [como adicionar um jogo](../exodus%20hub/hubs/README.md) e
-[como verificar alterações](development.md).
+[Adicionar jogos](../exodus%20hub/hubs/README.md) · [Verificações](development.md)

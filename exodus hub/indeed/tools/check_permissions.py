@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(ROOT / 'indeed/checks'))
-from manifests import manifest, all_entries
+from manifests import manifest, all_entries, source_for
 TOKEN = re.compile(r'--\[(=*)\[.*?\]\1\]|--[^\n]*|\[(=*)\[.*?\]\2\]|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', re.S)
 
 
@@ -52,14 +52,19 @@ def lists(source: str) -> dict[str, set[str]]:
     return {alias: names(body) for alias, body in re.findall(r'(\w+)\s*=\s*\{([^{}]*)\}', source)}
 
 
-SPEC = json.loads(re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/core/permissions.luau').read_text(), re.S)[1])
+SPEC = json.loads(re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'core/permissions.luau').read_text(), re.S)[1])
 MODULES = {}
 
 def family(name, path):
-    if path.startswith('hubs/'):
-        path = path.split('/', 2)[2]
-        if not path.startswith('modules/'):
-            path = 'modules/' + path
+    if path.startswith('core/'): path = 'modules/' + path
+    elif path.startswith('ui/'):
+        view = {'uikit','uitheme','uiruntime','uiicons','uipages','uidisplay','uicontrols','uiinputs','uiselection','uidropdown'}
+        path = ('modules/front/library/' if name in view else 'modules/front/') + name
+    elif path.startswith('universal/'):
+        path = ('modules/tools/' if name in {'dumper','servers'} else 'modules/render/' if '/anti_lag/' in path else 'modules/features/') + name
+    elif path.startswith('hubs/'):
+        part = path.split('/')[2]
+        path = ('modules/combat/' if part in {'combat','prediction'} or name in {'remote','movement','cooldown'} else 'modules/render/' if name == 'nativevisuals' else 'modules/game/' if part == 'game' else 'modules/core/') + name
     for rule in SPEC['rules']:
         if (rule.get('prefix') and path.startswith(rule['prefix'])) or name in rule.get('names', []):
             return rule['family']
@@ -96,13 +101,13 @@ def main() -> int:
     entries = manifest(arguments.hub == "universal", arguments.hub)
     modules, errors = {}, []
     manifest_paths = {path for _, path in all_entries()}
-    actual_paths = {str(path.relative_to(ROOT)) for path in (ROOT / 'modules').rglob('*.luau')}
+    actual_paths = {str(path.relative_to(ROOT)) for folder in ('core','universal','ui') for path in (ROOT / folder).rglob('*.luau')}
     for path in sorted(actual_paths - manifest_paths):
         errors.append(f'{path}: module outside the manifest has no reviewed family')
     global MODULES
     MODULES = modules
     for name, path in entries:
-        source = clean((ROOT / path).read_text())
+        source = clean(source_for(name, path))
         contract = table(source, '__contract')
         if not contract:
             errors.append(f'{path}: missing literal __contract')

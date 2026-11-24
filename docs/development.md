@@ -1,50 +1,29 @@
 # Desenvolvimento
 
-## Alterar a base ou um jogo
+Código compartilhado fica em `core/`, `ui/` e `universal/`.
+Código de um jogo fica diretamente em `hubs/<jogo>/`, separado por responsabilidade.
+Arquivos de testes e diagnósticos ficam no `indeed/` correspondente e nunca são
+incluídos no catálogo de execução.
 
-Recursos compartilhados e toda a UI ficam em `exodus hub/modules/`.
-Lógica exclusiva de um jogo fica em `exodus hub/hubs/<jogo>/modules/`.
-Não copie módulos da base para a pasta do jogo. O nome de cada arquivo `.luau`
-é sua chave no carregador; as dependências devem constar em `__contract`.
-
-Ao adicionar ou remover arquivos de jogos, o workflow de formatação gera o
-catálogo automaticamente. O procedimento local equivalente, executado na raiz:
+Execute na raiz do repositório:
 
 ```sh
 python3 'exodus hub/indeed/tools/build_hub_catalog.py'
 python3 'exodus hub/indeed/formatter.py' --in-place 'exodus hub'
-```
-
-## Verificar
-
-Use `luau`, `luau-compile` e `luau-analyze` da versão 0.748 no PATH, ou defina
-`LUAU_BIN`, `LUAU_COMPILE_BIN` e `LUAU_ANALYZE_BIN`.
-
-```sh
 python3 'exodus hub/indeed/tools/run_tests.py' --hub all
-python3 'exodus hub/indeed/tools/run_tests.py' --hub universal
-python3 'exodus hub/indeed/tools/run_tests.py' --hub phantom-ball
-python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
 python3 'exodus hub/indeed/tools/build_ui_icons.py' --check
 python3 'exodus hub/indeed/formatter.py' --check 'exodus hub'
 ```
 
-A suíte verifica sintaxe Luau, contratos, permissões, seleção por IDs, descoberta
-de pastas, ausência de cópias da base, composição de páginas, abertura do menu e
-repetições do dumper. Os serviços Roblox usados nos testes são simulados.
-Sem os executáveis Luau, parte das verificações é ignorada; o CI instala os três.
+Os executáveis Luau 0.748 podem ser fornecidos por `LUAU_BIN`,
+`LUAU_COMPILE_BIN` e `LUAU_ANALYZE_BIN`, ou pelo PATH.
+As verificações cobrem apenas sintaxe, APIs, dependências e permissões.
+Não há suíte de comportamento de combate, interface ou dumper.
+O carregamento universal também é verificado sem a política de permissões.
 
-Valide também no cliente Roblox: abrir e reabrir o menu, alternar Modo PC,
-respawn, fechar/recarregar, recursos universais e funções específicas do jogo.
-O teste local não confirma renderização, respostas do servidor ou APIs de cada
-executor. As ferramentas manuais ficam em `exodus hub/indeed/diagnostics/`.
+Use `--hub universal` ou `--hub phantom-ball` para executar apenas uma suíte.
+O campo `checkPermissions` do jogo controla sua auditoria de desenvolvimento;
+`permissions` controla o uso da política durante a execução do hub.
 
-`indeed/` da base contém apenas infraestrutura e testes universais.
-Cada jogo guarda testes e diagnósticos em `hubs/<jogo>/indeed/`. O catálogo
-considera apenas arquivos dentro de `hubs/<jogo>/modules/`, portanto nunca
-baixa testes ou diagnósticos como parte do hub.
-
-A suíte de um jogo decide suas verificações específicas. No Phantom Ball,
-`checkPermissions` em `hub.json` habilita a auditoria de permissões do jogo.
-Isso não obriga outros jogos a executar essa auditoria. A validação dos contratos
-dos módulos efetivamente carregados continua sendo responsabilidade do loader.
+O CI executa as verificações mínimas. Renderização e comportamento real devem
+ser conferidos no cliente Roblox e no executor utilizado.
