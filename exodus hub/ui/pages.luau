@@ -407,14 +407,12 @@ function Pages.create(kit, parent, definitions, context)
     if immediate then
       owner.children.Size = UDim2.new(1, -12, 0, height)
       owner.children.Visible = expanded
-      motion.fade(owner.children, 0, expanded and 0 or 1)
       owner.childContent.Position = UDim2.fromOffset(0, 0)
       return
     end
     if expanded then
       if not owner.children.Visible then
         owner.childContent.Position = UDim2.fromOffset(0, -14)
-        motion.fade(owner.children, 0, 1)
       end
       owner.children.Visible = true
     end
@@ -425,12 +423,8 @@ function Pages.create(kit, parent, definitions, context)
       end
       owner.children.Size = UDim2.new(1, -12, 0, height)
       owner.children.Visible = expanded
-      if expanded then
-        motion.fade(owner.children, 0, 0)
-      end
       owner.disclosureTween, owner.disclosureSlide = nil, nil
     end
-    motion.fade(owner.children, "control", expanded and 0 or 1)
     owner.disclosureTween = motion.play(owner.children, "control", { Size = UDim2.new(1, -12, 0, height) }, finish)
     if not owner.disclosureTween then
       finish()
