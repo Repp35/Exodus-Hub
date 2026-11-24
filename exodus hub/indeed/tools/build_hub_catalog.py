@@ -82,6 +82,21 @@ def main():
                 raise SystemExit(f'{path.name} is stale. Run build_hub_catalog.py.')
         else:
             path.write_text(expected)
-    print('Hub catalog OK')
+    # Package runtime sources together: startup fetches one immutable archive,
+    # not a separate HTTP request for every module. Catalog text is canonical.
+    sources = {}
+    for folder in ('core', 'ui', 'universal', 'hubs'):
+        for source in sorted((ROOT / folder).rglob('*.luau')):
+            if 'indeed' in source.relative_to(ROOT).parts: continue
+            sources[source.relative_to(ROOT).as_posix()] = outputs[source] if source in outputs else source.read_text()
+    archive = ROOT / 'dist/runtime.json'
+    expected = json.dumps({'version': 1, 'sources': sources}, ensure_ascii=False, separators=(',', ':')) + '\n'
+    if args.check:
+        if not archive.exists() or archive.read_text() != expected:
+            raise SystemExit('Runtime package is stale. Run build_hub_catalog.py.')
+    else:
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_text(expected)
+    print('Hub catalog and runtime package OK')
 
 if __name__ == '__main__': main()

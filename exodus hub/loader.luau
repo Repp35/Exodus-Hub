@@ -10,7 +10,7 @@ local CONFIG = {
   BRANCH = false,
   REVISION = false,
   ENTRY_POINT = "loader.luau",
-  MAX_ATTEMPTS = 3,
+  MAX_ATTEMPTS = 1,
   RETRY_DELAYS = { 0.25, 0.75, 1.5 },
   RATE_LIMIT_DEFAULT_DELAY = 5,
   MAX_AUTO_RETRY_DELAY = 60,
@@ -19,10 +19,10 @@ local CONFIG = {
   BYPASS_IMMUTABLE_CACHE = false,
   DEBUG = false,
   DOWNLOAD_WORKERS = 1,
-  REQUEST_INTERVAL = 1,
-  REQUEST_TIMEOUT = 8,
+  REQUEST_INTERVAL = 0,
+  REQUEST_TIMEOUT = 5,
   MAX_PENDING_REQUESTS = 1,
-  DOWNLOAD_TIMEOUT = 60,
+  DOWNLOAD_TIMEOUT = 5,
   PROJECT_PATH = "exodus%20hub/",
   REPOSITORY_API = "https://api.github.com/repositories/",
   RAW_BASE_URL = "https://raw.githubusercontent.com/",
@@ -38,6 +38,7 @@ local CONFIG = {
   REGISTRY_PATH = "hubs/registry.luau",
   CATALOG_PATH = "hubs/catalog.luau",
   MANIFEST_PATH = "core/catalog.luau",
+  BUNDLE_PATH = "dist/runtime.json",
   NOTIFICATIONS = {
     DEFAULT_DURATION = 2.5,
     STARTUP_WARNING_DURATION = 2.5,
@@ -680,6 +681,34 @@ end
 local downloadCache = {}
 local sourceCache = type(_G.ExodusSourceCache) == "table" and _G.ExodusSourceCache or { sources = {}, bytes = 0 }
 _G.ExodusSourceCache = sourceCache
+local sourceBundle
+local function bundledSource(path, url)
+  local root = url:sub(1, #url - #path)
+  if sourceBundle and sourceBundle.root == root then
+    return sourceBundle.sources[path]
+  end
+  local cached = sourceCache.bundle
+  if cached and cached.root == root then
+    sourceBundle = cached
+    return cached.sources[path]
+  end
+  local body, reason = request(root .. CONFIG.BUNDLE_PATH)
+  if not body then
+    return nil, reason
+  end
+  local ok, bundle = pcall(HttpService.JSONDecode, HttpService, body)
+  if not ok or type(bundle) ~= "table" or bundle.version ~= 1 or type(bundle.sources) ~= "table" then
+    return nil, "Pacote de módulos inválido"
+  end
+  for name, source in pairs(bundle.sources) do
+    if type(name) ~= "string" or type(source) ~= "string" then
+      return nil, "Fonte inválida no pacote"
+    end
+  end
+  sourceBundle = { root = root, sources = bundle.sources }
+  sourceCache.bundle = sourceBundle
+  return bundle.sources[path], "Módulo ausente no pacote: " .. path
+end
 local function loadModule(name, relativePath, url, fingerprint)
   local cacheKey = fingerprint and (relativePath .. ":" .. fingerprint) or url
   local previous = downloadCache[url]
@@ -700,7 +729,11 @@ local function loadModule(name, relativePath, url, fingerprint)
     local headers = CONFIG.BYPASS_IMMUTABLE_CACHE and CONFIG.RAW_CACHE_HEADERS or nil
     local source, fetchError = sourceCache.sources[cacheKey], nil
     if not source or CONFIG.BYPASS_IMMUTABLE_CACHE then
-      source, fetchError = request(downloadURL, headers)
+      if relativePath == CONFIG.ENTRY_POINT then
+        source, fetchError = request(downloadURL, headers)
+      else
+        source, fetchError = bundledSource(relativePath, url)
+      end
     end
     if not source then
       return nil, fetchError
