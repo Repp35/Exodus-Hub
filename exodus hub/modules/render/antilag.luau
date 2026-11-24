@@ -6,6 +6,7 @@ local Utils
 local properties
 local adapter
 local spatial
+local gameContext
 
 -- configuration
 local CONFIG = {
@@ -167,7 +168,7 @@ local function startSession()
     profile = requestedProfile(),
     runService = runService,
     replicated = replicated,
-    compatible = game.PlaceId == 12979690461 or runService:IsStudio(),
+    compatible = gameContext.isPhantomBall(),
   }
 
   session = owner
@@ -312,7 +313,7 @@ end
 function AntiLag.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   AntiLag.teardown(); Utils = deps.Utils
-  properties, adapter, spatial = deps.Properties, deps.Adapter, deps.Spatial
+  properties, adapter, spatial, gameContext = deps.Properties, deps.Adapter, deps.Spatial, deps.GameContext
   observer = Utils.observeConfig(function(changes)
     for key in pairs(changes) do
       if CONFIG.schema[key] then
@@ -333,12 +334,14 @@ end
 AntiLag.__config = CONFIG
 AntiLag.__contract = {
   requires = {
+    GameContext = "gamecontext",
     Properties = "renderproperties",
     Adapter = "renderadapter",
     Spatial = "renderspatial",
     Utils = "utils",
   },
   requiresMethods = {
+    GameContext = { "isPhantomBall" },
     Properties = { "create" },
     Adapter = { "create", "apply" },
     Spatial = { "create" },

@@ -91,6 +91,7 @@ local CONFIG = {
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
   MODULES = {
+    { name = "gamecontext", path = "modules/core/gamecontext.luau" },
     { name = "lifetime", path = "modules/core/lifetime.luau" },
     { name = "profiler", path = "modules/core/profiler.luau" },
     { name = "playerregistry", path = "modules/game/players.luau" },
@@ -476,6 +477,7 @@ local function collectCharacterBinds(loaded)
     if name ~= "utils" and type(module) == "table" then
       local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true
       local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
+      if not loaded.gamecontext.supportsModule(name, MODULE_BY_NAME[name].path) then continue end
       if hasBindFlag and hasBindFn and hasDetachFn then binds[#binds + 1] = { name = name, bind = module.bindCharacter, detach = module.detachCharacter }
       elseif hasBindFlag then return nil, name, "contrato bindCharacter incompleto" end
     end
@@ -486,7 +488,7 @@ local function initializeModules(loaded)
   local characterBinds, bindModule, bindError = collectCharacterBinds(loaded)
   if not characterBinds then error(("%s: %s"):format(tostring(bindModule), tostring(bindError)), 2) end
   for _, name in ipairs(MODULE_ORDER) do
-    if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
+    if name ~= "utils" and name ~= "config" and name ~= "uiconfig" and loaded.gamecontext.supportsModule(name, MODULE_BY_NAME[name].path) then
       local module = loaded[name]
       if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
       local deps = loaded.permissions.resolve(name, loaded)
@@ -580,6 +582,7 @@ local function clashInProgress(loaded)
 end
 local function matchInProgress()
   local loaded = Exodus.Context
+  if type(loaded) == "table" and not loaded.gamecontext.isPhantomBall() then return false end
   if type(loaded) ~= "table" or type(loaded.gameinfo) ~= "table" or type(loaded.gameinfo.getGameContext) ~= "function" then return false end
   local ok, context = pcall(loaded.gameinfo.getGameContext); return ok and type(context) == "table" and (context.inMatch == true)
 end
@@ -651,7 +654,8 @@ local function startInternal()
   if not utils.setDiagnosticsModules(loaded) then return stopStartup(utils, "Utils", "setDiagnosticsModules rejeitou os módulos") end
   utils.setLifecyclePhase("binding"); local runtime, runtimeError = loaded.runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
   if type(runtime) ~= "table" then return stopStartup(utils, "Runtime", runtimeError) end
-  Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
+  Exodus.Runtime = runtime
+  _G.ExodusOnBurst = if loaded.gamecontext.isPhantomBall() then loaded.autoparry.fire else nil
   local uiReady, uiModule, uiError = loadInterface(loaded, {
     onAutoDarkChanged = function() loaded.autodark.sync() end,
     onAutoJumpChanged = function() loaded.autojump.sync() end,

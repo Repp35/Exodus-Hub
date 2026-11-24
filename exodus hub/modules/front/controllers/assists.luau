@@ -4,6 +4,7 @@
 local Assists = {}
 function Assists.setup() return true end
 function Assists.create(context)
+  if context.phantomBall == false then return {} end
   local utils, gameInfo = context.deps.Utils, context.deps.GameInfo; local players = context.services.Players
   local player = players.LocalPlayer
   local deathConnection, childConnection, currentCharacter

@@ -50,5 +50,6 @@ class RuntimeAPI(unittest.TestCase):
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         helper.smoke(binary)
+        helper.smoke(binary, universal=True)
 
 if __name__ == '__main__': unittest.main()

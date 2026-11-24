@@ -144,7 +144,8 @@ function Character.setup(deps)
   for index, entry in ipairs(deps.characterBinds) do
     if type(entry) ~= "table" or type(entry.bind) ~= "function" or type(entry.detach) ~= "function" then return false, ("characterBinds[%d] inválido"):format(index) end
   end
-  Character.teardown(); utils, spam, binds = deps.Utils, deps.Spam, deps.characterBinds
+  Character.teardown()
+  utils, spam, binds = deps.Utils, if deps.GameContext.isPhantomBall() then deps.Spam else nil, deps.characterBinds
   local player = utils.getLocalPlayer()
   if not player then setPhase("invalid", "player_unavailable"); return false, "Players.LocalPlayer indisponível" end
   setPhase("ready", "character_controller_ready"); local owner = setupEpoch
@@ -176,8 +177,9 @@ function Character.getStatus() return { schema = utils and utils.apiVersion() or
 
 -- contract
 Character.__contract = {
-  requires = { Spam = "spam", Utils = "utils" },
+  requires = { Spam = "spam", Utils = "utils", GameContext = "gamecontext" },
   requiresMethods = {
+    GameContext = { "isPhantomBall" },
     Utils = {
       "getLocalPlayer",
       "isActive",

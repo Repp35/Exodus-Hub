@@ -36,6 +36,23 @@ function Pages.validate(definitions, components)
   end
   assert(normal > 0, "UI needs at least one primary page"); return true
 end
+function Pages.forGame(definitions, phantomBall)
+  local pages = {}
+  for _, sourcePage in ipairs(definitions) do
+    if sourcePage.phantomOnly and not phantomBall then continue end
+    local page = table.clone(sourcePage); page.sections = {}
+    for _, sourceSection in ipairs(sourcePage.sections) do
+      if sourceSection.phantomOnly and not phantomBall then continue end
+      local section = table.clone(sourceSection); section.components = {}
+      for _, definition in ipairs(sourceSection.components or {}) do
+        if not definition.phantomOnly or phantomBall then section.components[#section.components + 1] = table.clone(definition) end
+      end
+      if #section.components > 0 then page.sections[#page.sections + 1] = section end
+    end
+    if #page.sections > 0 then pages[#pages + 1] = page end
+  end
+  return pages
+end
 
 -- rendering
 function Pages.create(kit, parent, definitions, context)
@@ -335,6 +352,6 @@ function Pages.create(kit, parent, definitions, context)
 end
 
 -- contract
-Pages.__contract = { provides = { "setup", "validate", "create" }, requires = {} }
+Pages.__contract = { provides = { "setup", "validate", "create", "forGame" }, requires = {} }
 
 return Pages

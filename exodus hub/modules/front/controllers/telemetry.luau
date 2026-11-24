@@ -32,6 +32,7 @@ function Controller.create(context)
     ZIndex = 199,
     Parent = context.refs.informationGui,
   })
+  if context.phantomBall == false then return {} end
   local textService = game:GetService("TextService")
   local function compactInformation(label)
     local paddingX, paddingY = 8, 5; label.TextSize = 14

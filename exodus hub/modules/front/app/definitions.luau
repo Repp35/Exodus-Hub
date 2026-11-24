@@ -8,6 +8,7 @@ local CONFIG = {
   PAGES = {
     {
       id = "main",
+      phantomOnly = true,
       title = "Main",
       columns = 2,
       sections = {
@@ -123,6 +124,7 @@ local CONFIG = {
     },
     {
       id = "settings",
+      phantomOnly = true,
       title = "Settings",
       columns = 2,
       sections = {
@@ -147,13 +149,13 @@ local CONFIG = {
     },
     {
       id = "utilities",
+      phantomOnly = true,
       title = "Utilities",
       columns = 2,
       sections = {
         {
           title = "Utilities",
           components = {
-            { kind = "toggle", title = "Anti AFK", key = "AntiAFK", action = "antiAFK", shortcutKey = "AntiAFKKeybind" },
             { kind = "toggle", title = "Sword", action = "spinSword", shortcutKey = "SwordKeybind" },
             { kind = "toggle", title = "Emote", action = "spinEmote", shortcutKey = "EmoteKeybind" },
             { kind = "toggle", title = "Explosion", action = "spinExplosion", shortcutKey = "ExplosionKeybind" },
@@ -182,7 +184,7 @@ local CONFIG = {
               increment = 1,
               valueName = "studs",
             },
-            { kind = "toggle", title = "Remover som da espada", key = "AntiLagRemoveSwordSounds", parentKey = "AntiLagEnabled" },
+            { kind = "toggle", title = "Remover som da espada", phantomOnly = true, key = "AntiLagRemoveSwordSounds", parentKey = "AntiLagEnabled" },
             { kind = "toggle", title = "Remover efeitos", key = "AntiLagRemoveEffects", parentKey = "AntiLagEnabled" },
           },
         },
@@ -190,6 +192,7 @@ local CONFIG = {
     },
     {
       id = "automatic",
+      phantomOnly = true,
       title = "Automatic",
       columns = 2,
       sections = {
@@ -235,7 +238,7 @@ local CONFIG = {
     },
     {
       id = "indeed",
-      title = "Indeed",
+      title = "Universals",
       columns = 1,
       width = 360,
       sections = {
@@ -253,6 +256,7 @@ local CONFIG = {
         {
           title = "Universal Controls",
           components = {
+            { kind = "toggle", title = "Anti AFK", key = "AntiAFK", action = "antiAFK", shortcutKey = "AntiAFKKeybind" },
             {
               kind = "toggle",
               title = "Infinite Zoom",
@@ -344,6 +348,7 @@ local CONFIG = {
     },
     {
       id = "assists",
+      phantomOnly = true,
       title = "Assistências",
       columns = 1,
       width = 360,

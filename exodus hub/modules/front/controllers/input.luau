@@ -42,10 +42,10 @@ function Controller.create(context)
       end
       if UIState.closing then return end
       local config = Utils.getConfig() or {}
-      if config.DynamicParry == true and isKey(input, config.DynamicParryKey) then return end
+      if context.phantomBall ~= false and config.DynamicParry == true and isKey(input, config.DynamicParryKey) then return end
       if isKey(input, config.Keybind) then
         actions.triggerShortcut(inputBinding(input))
-      elseif isKey(input, config.SpamKeybind) then
+      elseif context.phantomBall ~= false and isKey(input, config.SpamKeybind) then
         if config.ManualSpamMode == "Hold" then
           if not UIState.manualHoldInput then UIState.manualHoldInput = input; context.floating.setSpam(true) end
         else

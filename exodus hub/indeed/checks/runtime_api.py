@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def manifest():
     return re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', (ROOT / 'loader.luau').read_text())
 
-def smoke(binary):
+def smoke(binary, universal=False):
     entries = manifest()
     code = (Path(__file__).with_name('engine_api.luau')).read_text()
     policy_text = re.search(r'local POLICY_JSON\s*=\s*\[=\[(.*?)\]=\]', (ROOT / 'modules/core/permissions.luau').read_text(), re.S)[1]
@@ -20,10 +20,13 @@ def smoke(binary):
         if isinstance(value, list): return '{' + ','.join(map(literal, value)) + '}'
         return json.dumps(value)
     code += '\nservices.HttpService = { JSONDecode = function(_, text) assert(text == [=[' + policy_text + ']=]); return ' + literal(json.loads(policy_text)) + ' end }\n'
+    code += f'\ngame.PlaceId = {0 if universal else 12979690461}\n'
     for name, path in entries:
         code += f'\nloaded["{name}"] = (function()\n{(ROOT / path).read_text()}\nend)()\n'
     for name, path in entries:
         code += f'loaded.permissions.validate("{name}", loaded["{name}"], "{path}")\n'
+    paths = dict(entries)
+    code += '\nlocal modulePaths = ' + literal(paths) + '\n'
     code += '''
 for name, module in pairs(loaded) do
   local deps = loaded.permissions.resolve(name, loaded)
@@ -45,7 +48,7 @@ local function initialize(name)
   initialized[name] = true
   local module = loaded[name]
   for _, dependency in pairs(module.__contract.requires or {}) do initialize(dependency) end
-  if name ~= "utils" and name ~= "config" and name ~= "uiconfig" and name ~= "permissions" and name ~= "ui" then
+  if name ~= "utils" and name ~= "config" and name ~= "uiconfig" and name ~= "permissions" and name ~= "ui" and loaded.gamecontext.supportsModule(name, modulePaths[name]) then
     local deps = loaded.permissions.resolve(name, loaded)
     if name == "character" then deps.characterBinds = {} end
     local ok, detail = module.setup(deps)
@@ -54,10 +57,48 @@ local function initialize(name)
   end
 end
 for name in pairs(loaded) do initialize(name) end
-assert(type(loaded.gameinfo.getGameContext()) == "table")
+if loaded.gamecontext.isPhantomBall() then assert(type(loaded.gameinfo.getGameContext()) == "table") end
 local bridge = loaded.runtime.bind(loaded, order, services.HttpService, function(_, message) error(message) end)
 assert(type(bridge) == "table", "Runtime API binding failed")
-loaded.combatloop.pulse(1 / 60)
+if loaded.gamecontext.isPhantomBall() then
+  loaded.combatloop.pulse(1 / 60)
+  assert(bridge.mode ~= "universal")
+else
+  assert(bridge.mode == "universal" and bridge.maintenance == false and bridge.ballSyncSubscribers == 0)
+  local floating = loaded.uifloating.create({ phantomBall = false })
+  for _, method in pairs(floating) do method(true) end
+  loaded.uiassists.create({ phantomBall = false })
+  for _, name in ipairs(order) do assert(loaded.gamecontext.supportsModule(name, modulePaths[name]), name) end
+  for _, name in ipairs({ "gameinfo", "combatloop", "autoparry", "autospam", "remote", "autojump", "camera" }) do
+    assert(table.find(order, name) == nil, name .. " started outside Phantom Ball")
+  end
+end
+local pages = loaded.uipages.forGame(loaded.uiconfig.pages, loaded.gamecontext.isPhantomBall())
+local components = setmetatable({}, { __index = function() return function() end end })
+assert(loaded.uipages.validate(pages, components))
+local keys, actions, ids = {}, {}, {}
+for _, page in ipairs(pages) do
+  ids[page.id] = true
+  for _, section in ipairs(page.sections) do
+    for _, item in ipairs(section.components or {}) do
+      if item.key then keys[item.key] = true end
+      if item.action then actions[item.action] = true end
+    end
+  end
+end
+for _, key in ipairs({ "AntiAFK", "ForcePCUI", "AntiLagEnabled", "AntiLagRenderDistance", "AntiLagRemoveEffects", "UniversalFly", "UniversalInfiniteZoom", "UniversalNoclip" }) do assert(keys[key], key) end
+for _, action in ipairs({ "dumper", "rejoin", "serverHop", "resetCharacter", "resetSettings" }) do assert(actions[action], action) end
+assert(keys.AutoParry == (loaded.gamecontext.isPhantomBall() or nil))
+assert(keys.AntiLagRemoveSwordSounds == (loaded.gamecontext.isPhantomBall() or nil))
+assert(ids.assists == (loaded.gamecontext.isPhantomBall() or nil))
+-- Filtering must never mutate the source definitions across UI rebuilds.
+assert(#loaded.uipages.forGame(loaded.uiconfig.pages, true) == #loaded.uiconfig.pages)
+local savedPlace, savedUniverse = game.PlaceId, game.GameId
+game.PlaceId, game.GameId = 42, 4538598064
+assert(loaded.gamecontext.isPhantomBall())
+game.PlaceId, game.GameId = 42, 1
+assert(not loaded.gamecontext.isPhantomBall())
+game.PlaceId, game.GameId = savedPlace, savedUniverse
 assert(#loaded.utils.getDiagnostics().errors == 0, "Runtime API initialization errors")
 local scope = loaded.uiruntime.scope()
 assert(type(scope.destroy) == "function"); scope.destroy()

@@ -11,6 +11,21 @@ function Controller.setup() return true end
 
 -- controller
 function Controller.create(context)
+  if context.phantomBall == false then
+    local function inactive() end
+    return {
+      setSpam = inactive,
+      showMini = inactive,
+      applyMiniScale = inactive,
+      showClashBall = inactive,
+      showParryBall = inactive,
+      showDarkBall = inactive,
+      showJumpBall = inactive,
+      showUpDashBall = inactive,
+      sync = inactive,
+      refreshAbilities = inactive,
+    }
+  end
   local Utils = context.deps.Utils; local GameInfo = context.deps.GameInfo
   local AutoSpam = context.deps.AutoSpam; local Controls = context.deps.Controls
   local UIState = context.state; local C = context.theme.COLORS

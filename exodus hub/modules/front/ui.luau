@@ -49,9 +49,10 @@ function ExodusUI.setup(deps, preview)
     if old then old:Destroy() end
   end
   local context = deps.Context.create(deps, preview and preview.deviceDesktop); active = context
-  context.notifications = deps.Notifications.create(context); context.notifications.layer()
-  context.floating = deps.Floating.create(context); context.window = deps.Window.create(context)
-  deps.Telemetry.create(context); context.lifecycle = deps.Lifecycle.create(context)
+  context.phantomBall = deps.GameContext.isPhantomBall(); context.notifications = deps.Notifications.create(context)
+  context.notifications.layer(); context.floating = deps.Floating.create(context)
+  context.window = deps.Window.create(context); deps.Telemetry.create(context)
+  context.lifecycle = deps.Lifecycle.create(context)
   local function cleanup()
     context.destroy()
     if _G.ExodusUICleanup == cleanup then
@@ -83,9 +84,9 @@ function ExodusUI.setup(deps, preview)
     rebuild = rebuild,
     abilitiesEnabled = deps.GameInfo.areAbilitiesEnabled,
   })
-  context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIConfig.pages, {
+  context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIPages.forGame(deps.UIConfig.pages, context.phantomBall), {
     desktop = context.state.desktop,
-    capabilities = { clashPrediction = deps.AutoSpam.hasClashPrediction() },
+    capabilities = { clashPrediction = context.phantomBall and deps.AutoSpam.hasClashPrediction() },
     read = deps.Utils.getConfigValue,
     resolve = context.actions.resolve,
     onComponent = context.actions.attach,
@@ -113,6 +114,7 @@ end
 ExodusUI.__contract = {
   requires = {
     Utils = "utils",
+    GameContext = "gamecontext",
     UIConfig = "uiconfig",
     GameInfo = "gameinfo",
     AutoSpam = "autospam",
@@ -135,6 +137,7 @@ ExodusUI.__contract = {
     Lifecycle = "uilifecycle",
   },
   requiresMethods = {
+    GameContext = { "isPhantomBall" },
     Utils = {
       "getConfig",
       "getConfigValue",
@@ -162,7 +165,7 @@ ExodusUI.__contract = {
     AutoSpam = { "getStatus", "hasClashPrediction" },
     AutoParry = { "getStatus" },
     UIKit = { "create" },
-    UIPages = { "create" },
+    UIPages = { "create", "forGame" },
     UIActions = { "create" },
     NotificationPolicy = { "shouldShow" },
     Runtime = { "scope", "motion", "isVisible" },

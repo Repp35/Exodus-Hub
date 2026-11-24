@@ -5,6 +5,9 @@ local Runtime = {}
 function Runtime.setup() return true end
 local function contractOf(module) return type(module) == "table" and module.__contract or {} end
 function Runtime.bind(loaded, MODULE_ORDER, HttpService, printRawError)
+  if not loaded.gamecontext.isPhantomBall() then
+    return { mode = "universal", parryRemote = false, parryInitialized = false, watcher = false, ballSync = false, maintenance = false, ballSyncSubscribers = 0 }
+  end
   local utils = loaded.utils; local gameInfo = loaded.gameinfo
   local remote = loaded.remote
   if
