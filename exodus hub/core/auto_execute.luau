@@ -28,8 +28,29 @@ if not allowed then
 end
 if type(state.entryURL) ~= "string" or not state.entryURL:match("^https://raw%.githubusercontent%.com/") then return end
 env.ExodusAutoExecuteStarted = true
-local success, reason = pcall(function() loadstring(game:HttpGet(state.entryURL))() end)
-if not success then env.ExodusAutoExecuteStarted = nil; warn("[Exodus Auto Execute] " .. tostring(reason)) end
+local attempt = 0
+local function start()
+  local valid, current = pcall(function() return game:GetService("HttpService"):JSONDecode(readfile("Exodus Hub/auto_execute.json")) end)
+  if not valid or type(current) ~= "table" or not (current.allGames == true or (type(current.games) == "table" and current.games[key] == true)) then
+    env.ExodusAutoExecuteStarted = nil
+    return
+  end
+  local success, reason = pcall(function()
+    local source = game:HttpGet(state.entryURL)
+    local chunk, compileError = loadstring(source)
+    assert(chunk, compileError)
+    chunk()
+  end)
+  if success then return end
+  attempt += 1
+  local delay = math.min(60, 5 * 2 ^ math.min(attempt - 1, 4))
+  if delay > 5 then
+    warn("[Exodus Auto Execute] Erro: " .. tostring(reason) .. "; nova tentativa em " .. delay .. "s.")
+    pcall(function() game:GetService("StarterGui"):SetCore("SendNotification", {Title="Exodus · Erro", Text="Falha ao carregar. Nova tentativa em " .. delay .. "s.", Duration=5}) end)
+  end
+  task.delay(delay, start)
+end
+start()
 ]]
 end
 local function filesAvailable()

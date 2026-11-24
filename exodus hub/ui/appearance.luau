@@ -6,7 +6,7 @@ local Appearance = {}
 function Appearance.setup() return true end
 function Appearance.borderColor(background, light)
   local hue, saturation, value = background:ToHSV()
-  local brightness = light and math.min(1, value + 0.32) or (value > 0.35 and value * 0.65 or math.min(1, value + 0.12))
+  local brightness = value + (1 - value) * 0.16
   return Color3.fromHSV(hue, saturation, brightness)
 end
 local function instance(class, properties, parent)

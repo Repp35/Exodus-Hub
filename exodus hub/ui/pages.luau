@@ -472,6 +472,23 @@ function Pages.create(kit, parent, definitions, context)
       root.Visible = visible
     end
     for _, page in pairs(registry) do
+      local occupied = {}
+      for _, entry in ipairs(page.rows) do
+        if entry.shown and not entry.parentKey then
+          local column = entry.Root.Parent and entry.Root.Parent.Parent
+          occupied[column] = true
+        end
+      end
+      local nextColumn = 0
+      local pageWidth = page.definition.width or width
+      local columnWidth = (pageWidth - T.GAP * (page.definition.columns - 1)) / page.definition.columns
+      for _, column in ipairs(page.columns) do
+        column.Visible = occupied[column] == true
+        if column.Visible then
+          column.Position = UDim2.fromOffset((width - pageWidth) / 2 + nextColumn * (columnWidth + T.GAP), 0)
+          nextColumn += 1
+        end
+      end
       for key, owner in pairs(page.keyed) do
         if owner.children then
           refreshDisclosure(key, owner, owner.expanded == nil)

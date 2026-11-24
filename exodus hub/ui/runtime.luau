@@ -208,6 +208,7 @@ function Runtime.motion(scope, reducedMotion)
     return tween
   end
   function motion.fade(root, preset, alpha, onComplete)
+    root:SetAttribute("ExodusFadeAlpha", alpha)
     local objects = root:GetDescendants()
     table.insert(objects, 1, root)
     local rootTween
@@ -231,11 +232,16 @@ function Runtime.motion(scope, reducedMotion)
       local saved = faded[object] or {}
       faded[object] = saved
       local goals = {}
+      local opacity, ancestor = 1, object
+      while ancestor do
+        opacity *= 1 - (ancestor:GetAttribute("ExodusFadeAlpha") or 0)
+        ancestor = ancestor.Parent
+      end
       for _, field in ipairs(fields) do
         if saved[field] == nil then
           saved[field] = object[field]
         end
-        goals[field] = saved[field] + (1 - saved[field]) * alpha
+        goals[field] = saved[field] + (1 - saved[field]) * (1 - opacity)
       end
       if next(goals) then
         local tween = motion.play(object, preset, goals, object == root and onComplete or nil)

@@ -60,7 +60,10 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
   local runtime, reason = loaded.runtime.bind(loaded, order, game:GetService("HttpService"), transport.report)
   assert(type(runtime) == "table", tostring(reason))
   local controls = loaded.hubapi.getControls()
-  controls.onClose = utils.stop
+  controls.onClose = function()
+    _G.ExodusLoaderRecoveryToken = nil
+    return utils.stop()
+  end
   controls.onReload = transport.reload
   controls.onUniversalToggle = function(feature, enabled)
     local module = loaded[string.lower(feature)]

@@ -100,13 +100,14 @@ function Location.setup(deps)
     end
     return game:GetService("HttpService"):JSONDecode(raw)
   end
-  local resolving = false
+  local resolving, peer = false, nil
+  local samples, localCountry = {}, nil
   local function resolve(value)
     local ip = publicIP(value)
     if not owner.alive or not ip or resolving or (result.country and result.city) then
       return
     end
-    resolving = true
+    resolving, peer = true, ip
     -- Always pass the verified peer address. An empty URL would locate the user.
     for _, url in ipairs({ "https://ipwho.is/" .. ip, "https://ipapi.co/" .. ip .. "/json/" }) do
       task.spawn(function()
@@ -117,6 +118,10 @@ function Location.setup(deps)
         if not owner.alive or not ok or type(data) ~= "table" or data.ip ~= ip or data.success == false or data.error then
           return
         end
+        if result.estimated then
+          result = {}
+        end
+        result.source = "Geolocalização do endereço do servidor"
         result.country = result.country or text(data.country_name) or text(data.country)
         result.city = result.city or text(data.city)
         if result.country and result.city then
@@ -124,14 +129,22 @@ function Location.setup(deps)
         end
       end)
     end
+    task.delay(10, function()
+      if owner.alive and not (result.country and result.city) then
+        resolving = false
+      end
+    end)
   end
   local function readMetadata()
     local ok, code = pcall(function() return game.ServerRegion end)
     local native = ok and text(code) and regions[string.upper(code)]
     if native then
-      result.country, result.city = native[1], native[2]
+      result = { country = native[1], city = native[2], source = "Região publicada pelo servidor" }
     end
     for _, object in ipairs({ game, game:GetService("Workspace"), game:GetService("ReplicatedStorage") }) do
+      if result.estimated and (attribute(object, "ServerCountry") or attribute(object, "ServerRegion")) then
+        result = {}
+      end
       result.country = result.country or attribute(object, "ServerCountry")
       result.city = result.city or attribute(object, "ServerCity")
       local region = attribute(object, "ServerRegion")
@@ -183,11 +196,75 @@ function Location.setup(deps)
       end
     end)
   end
+  -- Client geolocation is only a fallback country hint, never server-city evidence.
+  local function estimate()
+    if not owner.alive or (result.country and not result.estimated) then
+      return
+    end
+    local stable = #samples >= 20
+    local low, high = math.huge, 0
+    for _, ping in ipairs(samples) do
+      low, high = math.min(low, ping), math.max(high, ping)
+    end
+    stable = stable and high <= 60 and high - low <= 15
+    if stable and localCountry then
+      result = { country = localCountry, estimated = true, source = "Estimativa: país da conexão e ping baixo estável" }
+      failure = nil
+    elseif result.estimated then
+      result = {}
+    end
+  end
+  pcall(function()
+    local elapsed = 0
+    owner.connect(game:GetService("RunService").Heartbeat, function(dt)
+      elapsed += dt
+      if elapsed < 1 then
+        return
+      end
+      elapsed = 0
+      local ok, ping = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
+      if ok and type(ping) == "number" and ping == ping and ping > 0 and ping < math.huge then
+        samples[#samples + 1] = ping
+        if #samples > 20 then
+          table.remove(samples, 1)
+        end
+      else
+        table.clear(samples)
+      end
+      estimate()
+    end)
+  end)
   task.delay(8, function()
     if owner.alive and not (result.country and result.city) then
-      failure = "Localização: não foi possível obter."
+      failure = "Localização ainda não confirmada."
+      task.spawn(function()
+        for _, url in ipairs({ "https://ipwho.is/", "https://ipapi.co/json/" }) do
+          if not owner.alive then
+            return
+          end
+          local ok, data = pcall(fetch, url)
+          if owner.alive and ok and type(data) == "table" and data.success ~= false and not data.error then
+            localCountry = text(data.country_name) or text(data.country)
+            if localCountry then
+              estimate()
+              break
+            end
+          end
+        end
+      end)
     end
   end)
+  local function retryMetadata()
+    if not owner.alive then
+      return
+    end
+    pcall(readMetadata)
+    if peer then
+      resolve(peer)
+    end
+    task.delay(30, retryMetadata)
+  end
+  task.delay(30, retryMetadata)
   return true
 end
 function Location.snapshot() return table.clone(result or {}), failure end

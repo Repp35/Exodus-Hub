@@ -62,3 +62,22 @@ permite rolagem horizontal quando seu conteúdo ultrapassa o espaço disponível
 superfície no loader para mensagens anteriores à carga dos módulos. O CI verifica
 essa cópia; não a edite à mão. Notificações ajustam largura e altura ao texto;
 mensagens maiores que a tela usam rolagem interna, sem truncar o conteúdo.
+
+## Recuperação do loader
+
+HTTP 403 com evidência de limite e HTTP 429 respeitam `Retry-After` ou
+`X-RateLimit-Reset`, até 60 segundos. Esperas maiores mostram um erro e cancelam a tentativa automática. O loader retorna sem lançar erro
+para o executor; esperas de até cinco segundos são silenciosas. De cinco a 60 segundos, mostra o erro e agenda nova tentativa.
+Outras falhas usam intervalos progressivos de 5 a 60 segundos. Carregamentos
+novos invalidam recuperações antigas; fechar o hub cancela sua recuperação.
+O bootstrap de auto execute também repete falhas ao baixar o próprio loader,
+verificando a preferência salva antes de cada tentativa.
+
+Disclosures compõem a transparência dos ancestrais sem sobrescrever a aparência
+original dos títulos e descrições. Colunas visíveis são sempre posicionadas da
+esquerda para a direita, inclusive após filtros e atualização de readouts.
+
+Os downloads usam um único worker e um intervalo mínimo global de um segundo
+entre requisições. Atualizações verificam a revisão a cada cinco minutos.
+O prazo de download mede 60 segundos sem progresso, em vez de limitar a duração
+total de uma fila lenta. Uma requisição pendente impede a abertura da próxima.

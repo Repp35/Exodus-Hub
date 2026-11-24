@@ -122,6 +122,7 @@ function UIKit.create(options)
     local function outlineColor() return Appearance.borderColor(root.BackgroundColor3, light) end
     local line =
       inst("UIStroke", { Color = automatic and outlineColor() or color, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, surface)
+    line.Transparency = 0.15
     if automatic then
       local connection = root:GetPropertyChangedSignal("BackgroundColor3"):Connect(function() line.Color = outlineColor() end)
       local cleanup

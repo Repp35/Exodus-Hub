@@ -29,6 +29,8 @@ class LoaderBehavior(unittest.TestCase):
             code += 'sources[ ' + literal(path) + ' ] = ' + literal(source) + '\n'
         code += '''
 local revision, requests = string.rep("a", 40), 0
+local limited, now, retries, cooldown = true, 1000, {}, "2490"
+task.delay = function(seconds, callback) retries[#retries + 1] = {seconds = seconds, callback = callback} end
 local environment = setmetatable({}, {__index = getfenv()})
 local nativeLoadstring = loadstring
 local function compile(source, name)
@@ -38,6 +40,7 @@ local function compile(source, name)
 end
 local function request(options)
   requests += 1
+  if limited then return {StatusCode = 403, Headers = {["Retry-After"] = cooldown}, Body = "rate limit"} end
   if options.Url:find("api.github.com", 1, true) then
     return {StatusCode = 200, Body = options.Url:find("/git/ref/heads/", 1, true) and "head" or "metadata"}
   end
@@ -58,8 +61,19 @@ for key, value in pairs({game = game, workspace = workspace, Enum = Enum, Color3
   NumberRange = NumberRange, TweenInfo = TweenInfo, _G = _G, task = task, typeof = typeof,
   warn = warn, print = function() end, request = request, loadstring = compile}) do environment[key] = value end
 environment.getgenv = function() return environment end
+environment.os = setmetatable({time = function() return now end}, {__index = os})
 local function start() return assert(compile(sources["loader.luau"], "loader"))() end
+assert(pcall(start), "Rate limiting must never throw")
+assert(requests == 1 and _G.Exodus.StartError, "Rate limiting must defer the entire startup")
+for _, timer in ipairs(retries) do assert(timer.seconds ~= 2490, "Long waits must not schedule a retry") end
+assert(_G.ExodusLoaderRecoveryToken == nil, "Long rate limits must cancel recovery")
+now, cooldown = 3490, "30"
 start()
+local retry
+for _, timer in ipairs(retries) do if timer.seconds == 30 then retry = timer.callback end end
+assert(retry, "Short waits must schedule a retry")
+limited, now = false, 3520
+retry()
 assert(_G.Exodus.Started and _G.Exodus.Utils.isActive())
 local first = requests
 revision = string.rep("b", 40)
@@ -70,7 +84,8 @@ local session = _G.Exodus.Context
 revision = string.rep("c", 40)
 sources["core/bootstrap.luau"] = 'return {__contract = {requires = {}, provides = {"setup"}}}'
 sources["core/catalog.luau"] = BROKEN_CATALOG
-assert(not pcall(start), "Invalid module was accepted")
+assert(pcall(start), "Failed loads must not throw into auto execute")
+assert(_G.Exodus.StartError, "Invalid module must be rejected")
 assert(_G.Exodus.Context == session and session.utils.isActive(), "Working session was stopped before contract validation")
 '''.replace('BROKEN_CATALOG', literal(broken))
         with tempfile.TemporaryDirectory() as folder:

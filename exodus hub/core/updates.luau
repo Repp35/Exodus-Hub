@@ -8,7 +8,7 @@ local transport
 local generation = 0
 local checking = false
 local pending
-local CONFIG = { POLL_SECONDS = 120, SAFE_SECONDS = 0.4, STATE_INTERVAL = 0.1 }
+local CONFIG = { POLL_SECONDS = 300, SAFE_SECONDS = 0.4, STATE_INTERVAL = 0.1 }
 
 function Updates.teardown()
   generation += 1

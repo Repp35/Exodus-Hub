@@ -144,6 +144,7 @@ local __part_uidisplay = (function()
       local handle = control(parent, definition, 40)
       local value = text(handle.Root, "", {
         Name = "Value",
+        RichText = true,
         Position = UDim2.fromOffset(12, 10),
         Size = UDim2.new(1, -24, 0, 20),
         TextSize = TEXT.body,
@@ -161,7 +162,7 @@ local __part_uidisplay = (function()
           ancestor = ancestor.Parent
         end
         local width = math.max(40, handle.Root.AbsoluteSize.X / math.max(0.01, scale) - 24)
-        local bounds = game:GetService("TextService"):GetTextSize(value.Text, value.TextSize, value.Font, Vector2.new(width, 100000))
+        local bounds = game:GetService("TextService"):GetTextSize(value.Text:gsub("<[^>]->", ""), value.TextSize, value.Font, Vector2.new(width, 100000))
         local height = math.max(20, math.ceil(bounds.Y))
         value.Size = UDim2.new(1, -24, 0, height)
         handle.Root.Size = UDim2.new(1, -8, 0, height + 20)

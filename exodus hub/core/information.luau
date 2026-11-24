@@ -12,6 +12,7 @@ local function text(value)
   local content = tostring(value)
   return content:match("%S") and content or nil
 end
+local function escape(value) return (tostring(value):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;")) end
 local function finite(value) return type(value) == "number" and value == value and value >= 0 and value < math.huge end
 function Information.teardown()
   if scope then
@@ -153,12 +154,12 @@ function Information.snapshot()
     local lines = {}
     for _, field in ipairs(fields) do
       if text(field[2]) then
-        lines[#lines + 1] = field[1] .. ": " .. tostring(field[2])
+        lines[#lines + 1] = "<b>" .. escape(field[1]) .. ":</b> " .. escape(field[2])
       end
     end
     for _, failure in ipairs(failures or {}) do
       if issues[failure] then
-        lines[#lines + 1] = issues[failure]
+        lines[#lines + 1] = "<i>" .. escape(issues[failure]) .. "</i>"
       end
     end
     if #lines > 0 then
@@ -173,15 +174,16 @@ function Information.snapshot()
   section("game", { { "Nome", values.game }, { "Criador", values.creator }, { "Grupo", values.group } }, { "game", "creator" })
   local players = utils.getPlayers()
   section("server", {
-    { "País", server.country },
-    { "Cidade", server.city },
+    { "País", server.country and (server.country .. (server.estimated and " (estimativa)" or "")) or "Consultando…" },
+    { "Cidade", server.city or "Não confirmada" },
+    { "Fonte", server.source },
     { "Jogadores", tostring(#players:GetPlayers()) .. (finite(players.MaxPlayers) and (" / " .. tostring(players.MaxPlayers)) or "") },
   }, { "location" })
   section("versions", { { "Hub", values.hubVersion }, { "Script do jogo", values.gameVersion }, { "Roblox", values.clientVersion } }, { "clientVersion" })
   if #values.developers > 0 then
     local names = {}
     for _, name in ipairs(values.developers) do
-      names[#names + 1] = "Nome: " .. name
+      names[#names + 1] = "• <b>" .. escape(name) .. "</b>"
     end
     result.developers = table.concat(names, "\n")
   end

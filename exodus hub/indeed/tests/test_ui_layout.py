@@ -193,6 +193,27 @@ assert(text.TextTransparency == 0.25 and stroke.Transparency == 0.3)
 Runtime.teardown()
 ''')
 
+    def test_nested_fades_compose_without_erasing_child_captions(self):
+        self.run_luau({'Lifetime': 'core/lifetime.luau', 'Runtime': 'ui/runtime.luau'}, r'''
+Runtime.setup({Theme = {tokens = {MOTION = {control = {duration = 0}}}}, Lifetime = Lifetime})
+local parent = instance('Frame', {BackgroundTransparency = 1}, instance('PlayerGui'))
+local child = instance('Frame', {BackgroundTransparency = 1}, parent)
+local title = instance('TextLabel', {BackgroundTransparency = 1, TextTransparency = 0, Text = 'Fly speed'}, child)
+local description = instance('TextLabel', {BackgroundTransparency = 1, TextTransparency = .2, Text = 'Change flight speed'}, child)
+function parent:GetDescendants() return {child, title, description} end
+function child:GetDescendants() return {title, description} end
+local motion = Runtime.motion(Lifetime.scope(), true)
+for _ = 1, 5 do
+  motion.fade(parent, 'control', 1)
+  motion.fade(child, 'control', 0)
+  assert(title.TextTransparency == 1, 'Refreshing a child must respect its collapsed parent')
+  motion.fade(parent, 'control', 0)
+  assert(title.TextTransparency == 0 and description.TextTransparency == .2)
+  assert(title.Text == 'Fly speed' and description.Text == 'Change flight speed')
+end
+Runtime.teardown()
+''')
+
     def test_header_reserves_margins_and_scrolls_only_when_full(self):
         self.run_luau({'Lifetime': 'core/lifetime.luau', 'Header': 'ui/header.luau'}, r'''
 local scope = Lifetime.scope()
@@ -223,7 +244,7 @@ scope.destroy()
         self.run_luau({'Appearance': 'ui/appearance.luau'}, r'''
 for _, base in ipairs({Color3.fromRGB(153,27,27), Color3.fromRGB(34,197,94), Color3.fromRGB(151,66,221)}) do
  local border = Appearance.borderColor(base)
- assert(border.H == base.H and border.S == base.S and border.V < base.V)
+ assert(border.H == base.H and border.S == base.S and border.V > base.V)
 end
 local base = Color3.fromRGB(14,14,34)
 local border = Appearance.borderColor(base, true)
@@ -268,6 +289,10 @@ assert(errors == 1 and context.refs.floatingButton.Text == 'E')
 assert(not context.refs.floatingButton:FindFirstChild('HubIcon').Visible)
 window.setIcon(nil)
 assert(context.refs.floatingButton.Text == 'E')
+for _, alpha in ipairs({0, .6, 1, .1}) do
+ context.refs.floatingButton.BackgroundTransparency = alpha
+ assert(context.refs.floatingButtonStroke.Transparency == alpha, 'Launcher border must track its background')
+end
 scope.destroy()
 ''')
 
@@ -290,6 +315,31 @@ local controller = Pages.create(kit, instance('Frame'), {{id='main', title='Main
 assert(failures.broken and not failures.valid)
 assert(controller.getControl('broken').Root.message:find('Erro:'))
 assert(controller.getControl('valid').Root.Parent.Visible)
+controller.destroy()
+''')
+
+    def test_right_only_sections_move_left_and_restore_when_left_returns(self):
+        self.run_luau({'Lifetime': 'core/lifetime.luau', 'Pages': 'ui/pages.luau'}, r'''
+local state = false
+local kit = {Theme = {PANEL_W=540,PANEL_H=380,PAD=14,TITLE_H=50,GAP=12,CARD_GAP=8,CONTROL_BLEED=2,SCROLLBAR=3,COLORS={}},
+ instance=instance,scope=Lifetime.scope(),Components={}}
+function kit.createMotion() return {fade=function(_,_,_,cb) if cb then cb() end end,cancel=function() end,play=function() end} end
+function kit.observe() return {Disconnect=function() end} end
+function kit.dismiss() end
+function kit.Components.toggle(parent, options)
+ local root=instance('Frame',{Size=UDim2.fromOffset(100,48)},parent)
+ return {Root=root,destroy=function() root:Destroy() end}
+end
+local controller=Pages.create(kit,instance('Frame'),{{id='main',title='Main',columns=2,sections={
+ {column=1,components={{kind='toggle',title='Left',key='left',visibleWhen='showLeft'}}},
+ {column=2,components={{kind='toggle',title='Right',key='right'}}},
+}}},{read=function() return state end})
+local columns=controller.get('main').columns
+assert(not columns[1].Visible and columns[2].Position.X.Offset == 0)
+state=true; controller.refresh()
+assert(columns[1].Visible and columns[1].Position.X.Offset == 0 and columns[2].Position.X.Offset > 0)
+state=false; controller.refresh()
+assert(not columns[1].Visible and columns[2].Position.X.Offset == 0)
 controller.destroy()
 ''')
 

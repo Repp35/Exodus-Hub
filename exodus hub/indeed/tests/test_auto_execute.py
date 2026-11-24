@@ -78,6 +78,17 @@ assert(config.AutoExecute == true, 'Startup toggle must not alter automatic upda
 local boot = assert(loadstring(queued[1]))
 setfenv(boot, setmetatable({game = game, readfile = environment.readfile, getgenv = getgenv}, {__index = getfenv()}))
 assert(pcall(boot))
+-- A failed bootstrap fetch retries, but disabling the setting cancels the pending retry.
+utils.setConfig({AutoExecuteOnJoin = true})
+local retries, fetches = {}, 0
+game.HttpGet = function() fetches += 1; error('offline') end
+local startup = assert(loadstring(files['Exodus Hub/auto_execute.luau']))
+setfenv(startup, setmetatable({game=game,readfile=environment.readfile,getgenv=getgenv,warn=warn,
+ task={delay=function(seconds,callback) retries[#retries+1]={seconds=seconds,callback=callback} end}}, {__index=getfenv()}))
+assert(pcall(startup) and fetches==1 and retries[1].seconds==5)
+utils.setConfig({AutoExecuteOnJoin = false})
+retries[1].callback()
+assert(fetches==1 and not environment.ExodusAutoExecuteStarted, 'Disabled bootstrap must stop retrying')
 AutoExecute.teardown(); AutoExecute.setup({Utils = utils}); AutoExecute.start(transport)
 failQueue = true; utils.setConfig({AutoExecuteOnJoin = true})
 assert(not config.AutoExecuteOnJoin and next(saved().games) == nil and errors == 1)

@@ -156,12 +156,17 @@ function Controller.create(context)
   corner(context.refs.floatingButton, 999)
   context.refs.floatingButtonStroke = context.kit.stroke(context.refs.floatingButton, nil, 2, true)
   context.refs.floatingButtonStroke.Transparency = 1
+  trackConn(
+    context.refs.floatingButton
+      :GetPropertyChangedSignal("BackgroundTransparency")
+      :Connect(function() context.refs.floatingButtonStroke.Transparency = context.refs.floatingButton.BackgroundTransparency end)
+  )
   task.defer(function()
     if not context.refs.floatingButton or not context.refs.floatingButton.Parent then
       return
     end
     twPlay(context.refs.floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) })
-    twPlay(context.refs.floatingButtonStroke, "panel", { Transparency = 0 })
+    -- The outline follows BackgroundTransparency through kit.stroke.
   end)
   UIState.btnIsDragging = makeDraggable(context.refs.floatingButton, context.refs.floatingButton, function()
     context.setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset)

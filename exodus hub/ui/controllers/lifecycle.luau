@@ -11,9 +11,6 @@ function Controller.create(context)
     if not context.scope.alive then
       return
     end
-    if context.notifications.toast then
-      context.notifications.toast("Update failed. Check the console.", true)
-    end
     warn("[Exodus Reload] " .. tostring(message))
   end
   local function fade()

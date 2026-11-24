@@ -11,13 +11,15 @@ local CONFIG = {
   MAX_ATTEMPTS = 3,
   RETRY_DELAYS = { 0.25, 0.75, 1.5 },
   RATE_LIMIT_DEFAULT_DELAY = 5,
+  MAX_AUTO_RETRY_DELAY = 60,
   PLAYER_TIMEOUT = 10,
   CACHE_WAIT_TIMEOUT = 60,
   BYPASS_IMMUTABLE_CACHE = false,
   DEBUG = false,
-  DOWNLOAD_WORKERS = 12,
+  DOWNLOAD_WORKERS = 1,
+  REQUEST_INTERVAL = 1,
   REQUEST_TIMEOUT = 8,
-  MAX_PENDING_REQUESTS = 24,
+  MAX_PENDING_REQUESTS = 1,
   DOWNLOAD_TIMEOUT = 60,
   PROJECT_PATH = "exodus%20hub/",
   REPOSITORY_API = "https://api.github.com/repositories/",
@@ -67,7 +69,7 @@ local Appearance = (function()
   function Appearance.setup() return true end
   function Appearance.borderColor(background, light)
     local hue, saturation, value = background:ToHSV()
-    local brightness = light and math.min(1, value + 0.32) or (value > 0.35 and value * 0.65 or math.min(1, value + 0.12))
+    local brightness = value + (1 - value) * 0.16
     return Color3.fromHSV(hue, saturation, brightness)
   end
   local function instance(class, properties, parent)
@@ -372,6 +374,25 @@ local function requestOnce(url, headers)
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
   end
+  -- Reserve a global slot before yielding so updates and reloads share pacing.
+  if type(task) == "table" and type(task.wait) == "function" then
+    local queueDeadline = os.clock() + CONFIG.REQUEST_TIMEOUT
+    while true do
+      if requestState.retryAt and requestState.retryAt > os.time() then
+        return nil, "Aguardando limite HTTP", { rateLimited = true, retryAfter = requestState.retryAt - os.time() }
+      end
+      local now = os.clock()
+      if now >= queueDeadline then
+        return nil, "Tempo limite ao esperar a fila HTTP"
+      end
+      local wait = (requestState.nextRequestAt or 0) - now
+      if wait <= 0 and requestState.pending < CONFIG.MAX_PENDING_REQUESTS then
+        requestState.nextRequestAt = now + CONFIG.REQUEST_INTERVAL
+        break
+      end
+      task.wait(math.max(0.05, math.min(wait > 0 and wait or 0.1, 1)))
+    end
+  end
   local ok, response
   if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
     if requestState.pending >= CONFIG.MAX_PENDING_REQUESTS then
@@ -426,6 +447,9 @@ local function request(url, headers)
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
   end
+  if requestState.retryAt and requestState.retryAt > os.time() then
+    return nil, "Aguardando limite HTTP", { rateLimited = true, retryAfter = requestState.retryAt - os.time() }
+  end
   local lastError, lastMeta
   for attempt = 1, CONFIG.MAX_ATTEMPTS do
     local body, err, meta = requestOnce(url, headers)
@@ -434,6 +458,7 @@ local function request(url, headers)
     end
     lastError, lastMeta = err, meta
     if meta and meta.rateLimited then
+      requestState.retryAt = math.max(requestState.retryAt or 0, os.time() + math.max(1, meta.retryAfter or CONFIG.RATE_LIMIT_DEFAULT_DELAY))
       return nil, ("%s (rate limit; retry in %ds)"):format(lastError, math.ceil(meta.retryAfter or CONFIG.RATE_LIMIT_DEFAULT_DELAY)), lastMeta
     end
     if not isRetryableHttp(lastError) then
@@ -750,6 +775,7 @@ local function loadModules(urls, prepared)
               results[name] = { error = err }
             end
             pending -= 1
+            deadline = os.clock() + CONFIG.DOWNLOAD_TIMEOUT
           end
         end)
       end
@@ -814,12 +840,14 @@ local function prepareLoader()
   local chunk, err = loadModule("reload loader", CONFIG.ENTRY_POINT, BASE_URL .. revision .. "/" .. PROJECT_PATH .. CONFIG.ENTRY_POINT)
   return chunk, err, revision
 end
-local reloadInFlight = false
+local reloadInFlight, reloadGeneration = false, 0
 local function reloadLatest(onFailure)
   if reloadInFlight then
     return false, "reload already in progress"
   end
   reloadInFlight = true
+  reloadGeneration += 1
+  local generation = reloadGeneration
   local session = _G.ExodusLoaderSessionToken
   task.spawn(function()
     local ok, detail = xpcall(function()
@@ -835,10 +863,28 @@ local function reloadLatest(onFailure)
     end, function(err) return debug.traceback(tostring(err), 2) end)
     reloadInFlight = false
     if not ok then
-      printRawError("Loader", detail)
+      local delay = requestState.retryAt and requestState.retryAt > os.time() and (requestState.retryAt - os.time()) or 10
+      if delay > CONFIG.MAX_AUTO_RETRY_DELAY then
+        pcall(
+          notifyPersistent,
+          ("Exodus · Limite HTTP: espera de %ds. Atualização cancelada; execute novamente mais tarde."):format(math.ceil(delay)),
+          "loader_retry",
+          "critical",
+          10
+        )
+        return
+      end
+      if delay > 5 then
+        pcall(notifyPersistent, ("Exodus · Erro na atualização. Nova tentativa em %ds."):format(math.ceil(delay)), "loader_retry", "critical", 0)
+      end
       if type(onFailure) == "function" then
         task.defer(onFailure, detail)
       end
+      task.delay(delay, function()
+        if generation == reloadGeneration and _G.ExodusLoaderSessionToken == session and Exodus.Context and Exodus.Context.utils.isActive() then
+          reloadLatest(onFailure)
+        end
+      end)
     end
   end)
   return true
@@ -994,23 +1040,59 @@ function Loader.start()
   activeLoaded = nil
   return started, moduleName, startError
 end
+local retryCount = 0
+local recoveryToken = {}
 local function startSafely()
   local started, moduleName, startError, status = Loader.start()
   if status == "in_progress" then
     return nil
   end
+  _G.ExodusLoaderRecoveryToken = recoveryToken
   if started ~= true then
     moduleName = moduleName or "Loader"
     startError = startError or started
     local entry = MODULE_BY_NAME[moduleName]
-    printRawError(moduleName, startError, entry and entry.path or CONFIG.ENTRY_POINT)
-    notifyCritical(moduleName)
     Loader.lastError = startError
     Loader.lastErrorModule = moduleName
     Exodus.StartError = startError
     Exodus.StartErrorModule = moduleName
-    error(("%s: %s"):format(tostring(moduleName), tostring(startError)), 2)
+    retryCount += 1
+    local delay = requestState.retryAt and requestState.retryAt > os.time() and (requestState.retryAt - os.time())
+      or math.min(60, 5 * 2 ^ math.min(retryCount - 1, 4))
+    if delay > 5 then
+      printRawError(moduleName, startError, entry and entry.path or CONFIG.ENTRY_POINT)
+    end
+    if delay > CONFIG.MAX_AUTO_RETRY_DELAY then
+      _G.ExodusLoaderRecoveryToken = nil
+      pcall(
+        notifyPersistent,
+        ("Exodus · Limite HTTP: espera de %ds. Carga cancelada; execute novamente mais tarde."):format(math.ceil(delay)),
+        "loader_retry",
+        "critical",
+        10
+      )
+      return nil
+    end
+    if delay > 5 then
+      pcall(
+        notifyPersistent,
+        ("Exodus · Erro: %s. Nova tentativa em %ds."):format(tostring(startError):match("[^\n]+") or tostring(startError), math.ceil(delay)),
+        "loader_retry",
+        "critical",
+        0
+      )
+    else
+      pcall(clearPersistent, "loader_retry")
+    end
+    task.delay(delay, function()
+      if _G.ExodusLoaderRecoveryToken == recoveryToken and not _G.ExodusLoaderStartToken then
+        startSafely()
+      end
+    end)
+    return nil
   end
+  retryCount = 0
+  pcall(clearPersistent, "loader_retry")
   Loader.lastError = nil
   Loader.lastErrorModule = nil
   Exodus.StartError = nil
