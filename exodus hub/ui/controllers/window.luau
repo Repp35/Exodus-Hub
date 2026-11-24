@@ -175,6 +175,7 @@ function Controller.create(context)
   end))
   context.refs.configPanel = inst("CanvasGroup", {
     Name = "ExodusPanel",
+    Active = true,
     Size = UDim2.new(0, PW, 0, PH),
     Position = panelPos(),
     BackgroundColor3 = C.bg,
@@ -218,44 +219,38 @@ function Controller.create(context)
     function() Utils.setConfig({ PanelX = context.refs.configPanel.Position.X.Offset, PanelY = context.refs.configPanel.Position.Y.Offset }) end
   )
   local titleGroup = inst("Frame", {
-    Size = UDim2.new(1, -CONFIG.TITLE_SIDE_MARGIN * 2, 1, 0),
-    Position = UDim2.new(0, CONFIG.TITLE_SIDE_MARGIN, 0, 0),
+    Name = "Brand",
+    Size = UDim2.new(1, -PAD * 2 - 106, 1, 0),
+    Position = UDim2.fromOffset(PAD, 0),
     BackgroundTransparency = 1,
     ZIndex = 7,
     Parent = context.refs.titleBar,
   })
-  inst("UIListLayout", {
-    FillDirection = Enum.FillDirection.Horizontal,
-    SortOrder = Enum.SortOrder.LayoutOrder,
-    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-    VerticalAlignment = Enum.VerticalAlignment.Center,
-    Padding = UDim.new(0, CONFIG.TITLE_SPACING),
-    Parent = titleGroup,
-  })
   inst("TextLabel", {
-    Size = UDim2.new(0, 0, 1, 0),
-    LayoutOrder = 1,
-    AutomaticSize = Enum.AutomaticSize.X,
+    Name = "HubTitle",
+    Size = UDim2.new(1, 0, 0, 25),
+    Position = UDim2.fromOffset(0, 4),
     BackgroundTransparency = 1,
-    Text = ("%s | v%s"):format(Utils.name(), Utils.version()),
-    TextColor3 = C.text,
-    TextSize = CONFIG.TITLE_TEXT_SIZE,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Center,
+    Text = Utils.name(),
+    TextColor3 = C.accent,
+    TextSize = 22,
+    Font = CONFIG.FONT.brand,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
     ZIndex = 7,
     Parent = titleGroup,
   })
   inst("TextLabel", {
-    Size = UDim2.new(0, 0, 1, 0),
-    LayoutOrder = 2,
-    AutomaticSize = Enum.AutomaticSize.X,
+    Name = "HubMetadata",
+    Size = UDim2.new(1, 0, 0, 15),
+    Position = UDim2.fromOffset(0, 29),
     BackgroundTransparency = 1,
-    Text = "— " .. Utils.author(),
-    TextColor3 = C.text,
-    TextTransparency = CONFIG.AUTHOR_TRANSPARENCY,
-    TextSize = CONFIG.AUTHOR_TEXT_SIZE,
-    Font = Enum.Font.Gotham,
+    Text = ("v%s · %s"):format(Utils.version(), Utils.author()),
+    TextColor3 = C.subtext,
+    TextSize = 11,
+    Font = CONFIG.FONT.body,
     TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
     ZIndex = 7,
     Parent = titleGroup,
   })

@@ -102,8 +102,22 @@ function UIKit.create(options)
   end
   local inst = kit.instance
   function kit.corner(root, radius) return inst("UICorner", { CornerRadius = UDim.new(0, radius or Theme.RADIUS.control) }, root) end
-  function kit.stroke(root, color)
-    local line = inst("UIStroke", { Color = color or C.border, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, root)
+  function kit.stroke(root, color, thickness)
+    local surface = root
+    if root:IsA("CanvasGroup") then
+      local inset = thickness or 1
+      surface = inst("Frame", {
+        Name = "Outline",
+        BackgroundTransparency = 1,
+        Active = false,
+        Position = UDim2.fromOffset(inset, inset),
+        Size = UDim2.new(1, -inset * 2, 1, -inset * 2),
+        ZIndex = Theme.LAYERS.outline,
+      }, root)
+      local radius = root:FindFirstChildOfClass("UICorner")
+      kit.corner(surface, radius and math.max(0, radius.CornerRadius.Offset - inset) or Theme.RADIUS.control)
+    end
+    local line = inst("UIStroke", { Color = color or C.border, Thickness = thickness or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, surface)
     if color == nil or color == C.border or color == C.accent then
       local gradient = inst("UIGradient", {
         Color = ColorSequence.new({
@@ -543,7 +557,7 @@ UIKit.__contract = {
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
-    Runtime = { "scope", "motion", "isVisible", "bindDrag" },
+    Runtime = { "scope", "motion", "isVisible", "bindDrag", "mountLayer" },
     Icons = { "create" },
     Display = { "install" },
     ControlComponents = { "install" },

@@ -111,9 +111,10 @@ function Components.install(context)
         Name = "ExodusDropdown",
         ResetOnSpawn = false,
         IgnoreGuiInset = true,
-        DisplayOrder = options.parent.DisplayOrder + 1,
+        DisplayOrder = Theme.DISPLAY_ORDER,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
       }, options.parent.Parent)
+      openScope.add(Runtime.mountLayer(portal, options.parent.Parent, Theme.SCREEN_LAYERS.popup))
       menu = inst("CanvasGroup", { BackgroundColor3 = C.card, GroupTransparency = 1, ZIndex = 1 }, portal)
       kit.corner(menu)
       kit.stroke(menu)

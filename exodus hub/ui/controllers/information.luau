@@ -8,12 +8,13 @@ function Controller.create(context)
   local inst, utils = context.inst, context.deps.Utils
   local gui = inst("ScreenGui", {
     Name = "ExodusInformationOverlay",
-    DisplayOrder = 2147483647,
+    DisplayOrder = context.theme.DISPLAY_ORDER,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Global,
     Parent = context.playerGui,
   })
+  context.scope.add(context.deps.Runtime.mountLayer(gui, context.playerGui, context.theme.SCREEN_LAYERS.information))
   context.refs.informationGui = gui
   context.refs.toastLayer = inst("Frame", {
     Name = "ExodusToastLayer",

@@ -6,6 +6,10 @@
 local Runtime = {}
 local Theme
 local lifetime
+local layerScope
+local layerParent
+local layers, gameLayers = {}, {}
+local layerSequence, reorderQueued = 0, false
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 
@@ -14,12 +18,110 @@ local CONFIG = { DEFAULT_MOTION = "control" }
 
 -- setup
 function Runtime.setup(deps)
+  Runtime.teardown()
   Theme, lifetime = deps.Theme.tokens, deps.Lifetime
   return true
 end
 
 -- lifetime
 function Runtime.scope() return lifetime.scope() end
+
+-- PlayerGui stays below Roblox CoreGui. Equal display orders use insertion order.
+local function reorderLayers()
+  if reorderQueued or not layerScope or not layerScope.alive then
+    return
+  end
+  reorderQueued = true
+  local owner = layerScope
+  task.defer(function()
+    if layerScope ~= owner or not owner.alive then
+      return
+    end
+    reorderQueued = false
+    local ordered = {}
+    for gui, entry in pairs(layers) do
+      if gui.Parent == layerParent then
+        ordered[#ordered + 1] = entry
+      end
+    end
+    table.sort(ordered, function(a, b) return a.rank == b.rank and a.sequence < b.sequence or a.rank < b.rank end)
+    for _, entry in ipairs(ordered) do
+      entry.gui.Parent = nil
+      entry.gui.Parent = layerParent
+    end
+  end)
+end
+local function watchGameLayer(gui)
+  if not gui:IsA("ScreenGui") or layers[gui] or gui:GetAttribute("ExodusLayer") or gameLayers[gui] then
+    return
+  end
+  local scope = layerScope.child()
+  gameLayers[gui] = scope
+  scope.connect(gui:GetPropertyChangedSignal("DisplayOrder"), function()
+    if gui.DisplayOrder >= Theme.DISPLAY_ORDER then
+      reorderLayers()
+    end
+  end)
+  scope.add(function() gameLayers[gui] = nil end)
+  if gui.DisplayOrder >= Theme.DISPLAY_ORDER then
+    reorderLayers()
+  end
+end
+function Runtime.mountLayer(gui, parent, rank)
+  assert(parent:IsA("PlayerGui"), "Hub layers must remain in PlayerGui")
+  if not layerScope then
+    layerParent, layerScope = parent, lifetime.scope()
+    layerScope.connect(parent.ChildAdded, watchGameLayer)
+    layerScope.connect(parent.ChildRemoved, function(child)
+      if gameLayers[child] then
+        gameLayers[child].destroy()
+      end
+    end)
+    for _, child in ipairs(parent:GetChildren()) do
+      watchGameLayer(child)
+    end
+  end
+  assert(parent == layerParent, "Mixed PlayerGui layer owners")
+  if gameLayers[gui] then
+    gameLayers[gui].destroy()
+  end
+  layerSequence += 1
+  local entry = { gui = gui, rank = rank, sequence = layerSequence, Connected = true }
+  layers[gui] = entry
+  gui:SetAttribute("ExodusLayer", true)
+  gui.DisplayOrder = Theme.DISPLAY_ORDER
+  local scope = layerScope.child()
+  function entry:Disconnect()
+    if not self.Connected then
+      return
+    end
+    self.Connected = false
+    if layers[gui] == self then
+      layers[gui] = nil
+    end
+    scope.destroy()
+  end
+  scope.connect(gui.Destroying, function() entry:Disconnect() end)
+  scope.connect(gui:GetPropertyChangedSignal("DisplayOrder"), function()
+    if gui.DisplayOrder ~= Theme.DISPLAY_ORDER then
+      gui.DisplayOrder = Theme.DISPLAY_ORDER
+    end
+    reorderLayers()
+  end)
+  reorderLayers()
+  return entry
+end
+function Runtime.teardown()
+  if layerScope then
+    layerScope.destroy()
+  end
+  for _, entry in pairs(layers) do
+    entry.Connected = false
+  end
+  layers, gameLayers, layerScope, layerParent = {}, {}, nil, nil
+  layerSequence, reorderQueued = 0, false
+  return true
+end
 
 -- motion
 function Runtime.motion(scope, reducedMotion)
@@ -208,7 +310,7 @@ end
 
 -- contract
 Runtime.__contract = {
-  provides = { "setup", "scope", "motion", "isVisible", "bindDrag" },
+  provides = { "setup", "scope", "motion", "isVisible", "bindDrag", "mountLayer", "teardown" },
   requires = { Theme = "uitheme", Lifetime = "lifetime" },
   requiresMethods = { Lifetime = { "scope" } },
   requiresData = { Theme = { "tokens" } },

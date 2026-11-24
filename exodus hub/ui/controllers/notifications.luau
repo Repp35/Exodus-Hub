@@ -46,6 +46,7 @@ local __part_uinotificationview = (function()
     local safeDisconnect = context.safeDisconnect
     local NotificationPolicy = context.deps.NotificationPolicy
     local state = { order = {}, tweens = {}, generation = 0 }
+    local layerMount
     local showToast, showPersistentNotification, clearPersistentNotification
     local function persistentKey(value) return tostring(value or "general"):gsub("[^%w_%-]", "_") end
     local function persistentPalette(kind)
@@ -70,12 +71,18 @@ local __part_uinotificationview = (function()
       if not state.gui then
         state.gui = inst("ScreenGui", {
           Name = "ExodusPersistentNotifications",
-          DisplayOrder = 2147483647,
+          DisplayOrder = context.theme.DISPLAY_ORDER,
           ResetOnSpawn = false,
           IgnoreGuiInset = true,
           ZIndexBehavior = Enum.ZIndexBehavior.Global,
           Parent = playerGui,
         })
+      end
+      if not layerMount or layerMount.gui ~= state.gui then
+        if layerMount then
+          context.scope.remove(layerMount)
+        end
+        layerMount = context.scope.add(context.deps.Runtime.mountLayer(state.gui, playerGui, context.theme.SCREEN_LAYERS.notifications))
       end
       state.layer = state.gui:FindFirstChild("NotificationLayer")
       if not state.layer then

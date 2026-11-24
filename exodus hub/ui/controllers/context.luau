@@ -13,7 +13,7 @@ function Context.setup() return true end
 -- context
 function Context.create(deps, deviceDesktop)
   local CONFIG = deps.Theme.tokens
-  local C, GRAD = CONFIG.COLORS, CONFIG.GRADIENT
+  local C = CONFIG.COLORS
   local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H
   local UIS, RunService, Players = game:GetService("UserInputService"), game:GetService("RunService"), game:GetService("Players")
   local TweenService = game:GetService("TweenService")
@@ -89,19 +89,7 @@ function Context.create(deps, deviceDesktop)
     return o
   end
   local function corner(obj, r) return inst("UICorner", { CornerRadius = UDim.new(0, r) }, obj) end
-  local function stroke(obj, col, th)
-    local line = inst("UIStroke", { Color = col, Thickness = th or 1 }, obj)
-    if col == C.accent or col == C.border then
-      local gradient = inst("UIGradient", { Rotation = 0 }, line)
-      gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, GRAD[1]),
-        ColorSequenceKeypoint.new(0.5, GRAD[2]),
-        ColorSequenceKeypoint.new(1, GRAD[3]),
-      })
-      outlineGradients[gradient] = true
-    end
-    return line
-  end
+  local function stroke(obj, col, th) return context.kit.stroke(obj, col, th) end
   local function twPlay(obj, duration, props)
     if not obj or obj.Parent == nil then
       return nil
@@ -130,6 +118,11 @@ function Context.create(deps, deviceDesktop)
   local function viewport()
     local currentCamera = workspace.CurrentCamera
     return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
+  end
+  local function safeBounds()
+    local topLeft, bottomRight = game:GetService("GuiService"):GetGuiInset()
+    local size = viewport()
+    return topLeft, Vector2.new(math.max(topLeft.X, size.X - bottomRight.X), math.max(topLeft.Y, size.Y - bottomRight.Y))
   end
   local function canUseAbility(name)
     local available, reason = deps.Hub.getAbilityAvailability(name)
@@ -210,15 +203,16 @@ function Context.create(deps, deviceDesktop)
         state, wasDragged = "Dragging", true
       end
       if state == "Dragging" then
-        local vp, sz = viewport(), target.AbsoluteSize
+        local minimum, maximum = safeBounds()
+        local sz = target.AbsoluteSize
         local scale = coordinateScale and coordinateScale() or (context.refs.responsiveScale and context.refs.responsiveScale.Scale or 1)
         scale = math.max(scale, 0.01)
         local parent = target.Parent
         local origin = parent and parent:IsA("GuiObject") and parent.AbsolutePosition or Vector2.zero
         local anchor = target.AnchorPoint
         target.Position = UDim2.fromOffset(
-          (math.clamp(input.Position.X - dragOffX - sz.X * anchor.X, 0, math.max(0, vp.X - sz.X)) + sz.X * anchor.X - origin.X) / scale,
-          (math.clamp(input.Position.Y - dragOffY - sz.Y * anchor.Y, 0, math.max(0, vp.Y - sz.Y)) + sz.Y * anchor.Y - origin.Y) / scale
+          (math.clamp(input.Position.X - dragOffX - sz.X * anchor.X, minimum.X, math.max(minimum.X, maximum.X - sz.X)) + sz.X * anchor.X - origin.X) / scale,
+          (math.clamp(input.Position.Y - dragOffY - sz.Y * anchor.Y, minimum.Y, math.max(minimum.Y, maximum.Y - sz.Y)) + sz.Y * anchor.Y - origin.Y) / scale
         )
         if onDragMove then
           onDragMove()
@@ -306,12 +300,13 @@ function Context.create(deps, deviceDesktop)
   context.playerGui = playerGui
   context.refs.screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
-    DisplayOrder = 100,
+    DisplayOrder = CONFIG.DISPLAY_ORDER,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = playerGui,
   })
+  context.scope.add(deps.Runtime.mountLayer(context.refs.screenGui, playerGui, CONFIG.SCREEN_LAYERS.window))
   context.kit = deps.UIKit.create({
     parent = context.refs.screenGui,
     read = Utils.getConfigValue,
@@ -325,16 +320,16 @@ function Context.create(deps, deviceDesktop)
   animateOutlines()
   context.refs.responsiveScale = inst("UIScale", { Scale = 1, Parent = context.refs.screenGui })
   local function updateResponsiveScale()
-    local size = viewport()
-    context.refs.responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
+    local minimum, maximum = safeBounds()
+    context.refs.responsiveScale.Scale = math.min(1, math.max(0.1, math.min((maximum.X - minimum.X - 20) / PW, (maximum.Y - minimum.Y - 20) / PH)))
     local scale = context.refs.responsiveScale.Scale
     for _, name in ipairs({ "configPanel", "floatingButton", "clashBall", "parryBall", "darkBall", "jumpBall", "upDashBall" }) do
       local object = context.refs[name]
       if object and object.Parent and object.Visible then
         local pos, dimensions = object.AbsolutePosition, object.AbsoluteSize
         if name == "configPanel" or name == "floatingButton" or pos.X + dimensions.X > 0 then
-          local x = math.clamp(pos.X, 0, math.max(0, size.X - dimensions.X))
-          local y = math.clamp(pos.Y, 0, math.max(0, size.Y - dimensions.Y))
+          local x = math.clamp(pos.X, minimum.X, math.max(minimum.X, maximum.X - dimensions.X))
+          local y = math.clamp(pos.Y, minimum.Y, math.max(minimum.Y, maximum.Y - dimensions.Y))
           if x ~= pos.X or y ~= pos.Y then
             object.Position = UDim2.fromOffset(x / scale, y / scale)
           end

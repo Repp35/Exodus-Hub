@@ -95,6 +95,7 @@ function Pages.create(kit, parent, definitions, context)
   local controller = {}
   local lifetime = kit.scope.child()
   local motion = kit.createMotion(lifetime)
+  local bleed = T.CONTROL_BLEED
   local refreshDisclosure
   local function list(parent, gap)
     return inst(
@@ -103,13 +104,16 @@ function Pages.create(kit, parent, definitions, context)
       parent
     )
   end
-  local function stack(parent, name)
+  local function stack(parent, name, row)
     local root = inst(
-      "CanvasGroup",
-      { Name = name, GroupTransparency = 0, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 6 },
+      row and "CanvasGroup" or "Frame",
+      { Name = name, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 6 },
       parent
     )
-    list(root)
+    list(root, row and T.CARD_GAP or math.max(0, T.CARD_GAP - bleed * 2))
+    if row then
+      inst("UIPadding", { PaddingTop = UDim.new(0, bleed), PaddingBottom = UDim.new(0, bleed) }, root)
+    end
     return root
   end
   local function included(definition)
@@ -174,7 +178,7 @@ function Pages.create(kit, parent, definitions, context)
             if context.resolve then
               options = context.resolve(options) or options
             end
-            local row = stack(sectionRoot, "Row_" .. tostring(source.key or source.action or index))
+            local row = stack(sectionRoot, "Row_" .. tostring(source.key or source.action or index), true)
             row.LayoutOrder = index
             local handle = kit.Components[options.kind](row, options)
             handle.Root.LayoutOrder = 0
@@ -347,7 +351,7 @@ function Pages.create(kit, parent, definitions, context)
             if count > 0 then
               height += layout.Padding.Offset
             end
-            height += rowHeight
+            height += rowHeight + bleed * 2
             count += 1
           end
         end
