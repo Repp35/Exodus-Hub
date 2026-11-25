@@ -169,7 +169,7 @@ function Explosives.observe(snap, targets, cfg)
   return chosen
 end
 function Explosives.needsStrike(snap, target, cfg)
-  if manualOverride or not cfg("MCDTap") or not target or not native.find("EndCrystal", true) then
+  if manualOverride or (not cfg("MCDTap") and not (cfg("MCCrystal") and cfg("MCCrystalAutoCombo"))) or not target or not native.find("EndCrystal", true) then
     return false, false
   end
   for _, block in ipairs(blocks(snap)) do
@@ -183,7 +183,7 @@ function Explosives.needsStrike(snap, target, cfg)
   return false, false
 end
 function Explosives.struck(snap, target, cfg)
-  if not cfg("MCDTap") then
+  if not cfg("MCDTap") and not (cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) then
     return
   end
   for _, block in ipairs(blocks(snap)) do
@@ -239,7 +239,7 @@ function Explosives.pulse(snap, targets, cfg)
         break
       end
     end
-    local launch = cfg("MCDTap") and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
+    local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
     local continuous = (elevated or launch) and geometry.damage(snap, snap.character, top, 6) <= 0
     if target and (target.root.Position - top).Magnitude > 12.8 then
       target = nil
@@ -307,6 +307,17 @@ function Explosives.pulse(snap, targets, cfg)
   return acted
 end
 function Explosives.resumeBase(snap, target, cfg)
+  if
+    not manualOverride
+    and cfg("MCCrystal")
+    and cfg("MCCrystalAutoCombo")
+    and target
+    and target.engaged
+    and target.character.Parent
+    and target.humanoid.Health > 0
+  then
+    remember(target.character, "crystal", snap.now + cfg("MCComboLifetime"))
+  end
   if manualOverride or not encounter or snap.now >= encounter.untilAt or not target or target.character ~= encounter.character then
     return nil
   end
@@ -384,8 +395,12 @@ function Explosives.resumeBase(snap, target, cfg)
     timeout = 0.5,
     point = function() return planned.point end,
     valid = function(s)
-      return encounter == session and not manualOverride and s.now < session.untilAt and target.humanoid.Health > 0
-        and useful(s, planned.cell) and geometry.cellFree(s, planned.cell)
+      return encounter == session
+        and not manualOverride
+        and s.now < session.untilAt
+        and target.humanoid.Health > 0
+        and useful(s, planned.cell)
+        and geometry.cellFree(s, planned.cell)
     end,
     before = function(s) lastBase = s.now end,
     confirm = function(s) return placedBase(s) ~= nil end,

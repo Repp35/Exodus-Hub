@@ -205,7 +205,16 @@ function Geometry.pearl(snap, target, cfg, projectile, destination)
   if horizontal.Magnitude < 0.1 then
     return nil
   end
-  local landing = destination or target.root.Position + target.root.AssemblyLinearVelocity * lead - Vector3.new(0, 3.5, 0)
+  local velocity = target.root.AssemblyLinearVelocity * lead
+  local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+  if horizontalVelocity.Magnitude > 3.2 then
+    horizontalVelocity = horizontalVelocity.Unit * 3.2
+  end
+  local expected = target.root.Position + horizontalVelocity
+  local landing = destination or expected - Vector3.new(0, 3.5, 0)
+  if destination and (destination - expected).Magnitude > 8 then
+    return nil
+  end
   local ground = not destination and native.raycast(landing + Vector3.new(0, 5, 0), Vector3.new(0, -13, 0), { target.character })
   if not destination and (not ground or ground.Normal.Y < 0.7) then
     return nil
@@ -213,7 +222,7 @@ function Geometry.pearl(snap, target, cfg, projectile, destination)
   if not destination then
     landing = ground.Position
   end
-  if (landing - snap.root.Position).Magnitude < 3.2 then
+  if (landing - snap.root.Position).Magnitude < 3.2 or (landing - snap.root.Position).Magnitude > target.distance + 6.4 then
     return nil
   end
   local flat = Vector3.new(landing.X - origin.X, 0, landing.Z - origin.Z)
@@ -258,7 +267,7 @@ function Geometry.pearl(snap, target, cfg, projectile, destination)
     return nil
   end
   local impact = Geometry.projectileLanding(snap, origin, bestDirection * speed, projectile, { target.character })
-  if not impact or (impact - landing).Magnitude > 1.6 then
+  if not impact or (impact - landing).Magnitude > 1.6 or (impact - expected).Magnitude > 8 then
     return nil
   end
   return origin + bestDirection * 30

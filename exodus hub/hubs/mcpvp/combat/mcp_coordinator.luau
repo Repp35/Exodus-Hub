@@ -227,7 +227,7 @@ local function pearl(snap)
     return nil
   end
   local mode = explosives.mode() or (cfg("MCDTap") and "dtap" or cfg("MCCrystal") and "crystal" or cfg("MCAnchor") and "anchor" or nil)
-  local permitted = mode == "dtap" and cfg("MCDTapPearl")
+  local permitted = mode == "dtap" and (cfg("MCDTapPearl") or cfg("MCCrystalAutoCombo") and cfg("MCCrystalPearl"))
     or mode == "crystal" and cfg("MCCrystalPearl")
     or mode == "anchor" and cfg("MCAnchorPearl")
     or not mode and cfg("MCSwordPearl")
@@ -238,6 +238,9 @@ local function pearl(snap)
     enemyPearl = nil
   end
   if not permitted or (not enemyPearl and target.distance < gap) or target.distance > cfg("MCSwordPearlMax") * 3.2 then
+    return nil
+  end
+  if target.distance < gap then
     return nil
   end
   if enemyPearl and (enemyPearl.landing - snap.root.Position).Magnitude < gap then
@@ -266,7 +269,10 @@ local function pearl(snap)
   local planned, plannedAt = point, snap.now
   return {
     id = "pearl_follow",
-    feature = mode == "dtap" and "MCDTapPearl" or mode == "crystal" and "MCCrystalPearl" or mode == "anchor" and "MCAnchorPearl" or "MCSwordPearl",
+    feature = mode == "dtap" and (cfg("MCDTapPearl") and "MCDTapPearl" or "MCCrystalPearl")
+      or mode == "crystal" and "MCCrystalPearl"
+      or mode == "anchor" and "MCAnchorPearl"
+      or "MCSwordPearl",
     target = target.character,
     priority = 65,
     tool = item.tool,
@@ -293,11 +299,7 @@ local function pearl(snap)
       local delta = t.root.Position - s.root.Position
       local motion = t.root.AssemblyLinearVelocity - s.root.AssemblyLinearVelocity
       local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= 2 and motion:Dot(delta.Unit) >= 1
-      return t.engaged
-        and (enemyPearl ~= nil or fleeing)
-        and (enemyPearl ~= nil or t.distance >= gap)
-        and t.distance <= cfg("MCSwordPearlMax") * 3.2
-        and planned ~= nil
+      return t.engaged and (enemyPearl ~= nil or fleeing) and t.distance >= gap and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
     end,
     before = function(s)
       lastPearl = s.now
@@ -393,7 +395,7 @@ local function sword(snap, forCombo)
   local previous = native.equipped()
   local previousClass = previous and previous:GetAttribute("ClassItem")
   local previousBlock = previous and previous:GetAttribute("BlockKey")
-  local returnItem = previousClass == "EndCrystal" or previousClass == "RespawnAnchor" or previousBlock == "respawn_anchor"
+  local returnItem = previousClass == "EndCrystal" or previousClass == "RespawnAnchor" or previousBlock == "respawn_anchor" or previousBlock == "obsidian"
   explosives.release()
   if not native.equip(weapon) then
     if returnItem then
