@@ -3,6 +3,7 @@
 local Native = {}
 local player, world, storage, weapons, geometry, config, controller, utils, rules, anchor
 local functions, nextScan, dispatching = {}, 0, false
+local lastPearlUse = -math.huge
 local function load(name)
   local source = storage:FindFirstChild(name)
   if not source then
@@ -289,16 +290,26 @@ end
 function Native.pearlCooldown() return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1 end
 function Native.pearlReady() return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow() end
 function Native.usePearl(snap, tool, direction)
-  if anchor and anchor.Claims() then
-    return false
+  if anchor and anchor.Claims() then return false end
+  if typeof(direction) ~= "Vector3" or direction.Magnitude < 0.001 then return false end
+  if Native.blocked(snap) or not owned(tool) or tool.Parent ~= snap.character or not Native.pearlReady() then return false end
+  if snap.now - lastPearlUse < math.max(0.36, Native.pearlCooldown()) then return false end
+  local remotes = storage:FindFirstChild("Remotes")
+  local remote = remotes and remotes:FindFirstChild("ItemAction")
+  if not remote or not remote:IsA("RemoteEvent") then return false end
+  -- ItemClient.use's exact request, without touching camera or FrontCameraAim attributes.
+  local params = RaycastParams.new()
+  params.FilterType, params.RespectCanCollide = Enum.RaycastFilterType.Exclude, true
+  local ignored = { snap.character }
+  for _, name in ipairs({ "LocalItemVisuals", "PredictedBlocks", "LocalBowVisuals" }) do
+    local folder = world:FindFirstChild(name)
+    if folder then ignored[#ignored + 1] = folder end
   end
-  if typeof(direction) ~= "Vector3" or direction.Magnitude < 0.001 then
-    return false
-  end
-  if Native.blocked(snap) or not owned(tool) or tool.Parent ~= snap.character or not Native.pearlReady() then
-    return false
-  end
-  return invoke("Use", direction)
+  params.FilterDescendantsInstances = ignored
+  local hit = world:Raycast(snap.eye, direction.Unit * 30, params)
+  lastPearlUse = snap.now
+  remote:FireServer("Use", "Pearl", direction.Unit, hit and hit.Position or nil)
+  return true
 end
 function Native.equip(snap, tool)
   if not owned(tool) then

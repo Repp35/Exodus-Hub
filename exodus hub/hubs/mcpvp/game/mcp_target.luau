@@ -34,7 +34,7 @@ local function candidate(player, snap)
   then
     return nil
   end
-  if (not current or current.player ~= player) and (root.Position - snap.root.Position).Magnitude > tuning.maxRange then
+  if (root.Position - snap.root.Position).Magnitude > tuning.maxRange then
     return nil
   end
   return { player = player, character = character, root = root, humanoid = humanoid }
@@ -147,23 +147,9 @@ function Target.get(snap)
   if fresh and fresh.character ~= current.character then
     fresh = nil
   end
-  if fresh then
-    if native.canHit(snap, fresh) then
-      contact = snap.now
-    end
-    current = fresh
-    return current
-  end
-  if
-    current
-    and current.player.Parent == players
-    and current.player.Character == current.character
-    and current.character.Parent
-    and current.humanoid.Health > 0
-  then
-    current.suspended = true
-    return nil
-  end
+  local expires = math.min(contact + tuning.maxChase, math.max(contact + tuning.targetMemory, holdUntil))
+  if fresh and snap.now <= expires then current = fresh return current end
+  if current then threats[current.character], swings[current.character] = nil, nil end
   current, holdUntil = nil, 0
   local best, bestTime, bestDistance
   for _, entry in pairs(threats) do

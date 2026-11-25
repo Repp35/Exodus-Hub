@@ -26,6 +26,14 @@ function Pearl.setup(deps)
   return true
 end
 function Pearl.reset()
+  if shot and shot.sentAt and not shot.launched then
+    local snap = native.snapshot()
+    local human = shot.character:FindFirstChildOfClass("Humanoid")
+    if human and human.Health > 0 and (not snap or snap.character == shot.character) then
+      shot.cancelAfterConfirm = true
+      return
+    end
+  end
   if shot then
     local snap = native.snapshot()
     if snap then
@@ -164,15 +172,16 @@ local function plan(snap, chosen)
 end
 function Pearl.step(snap, chosen)
   if not utils.getConfigValue("MCAutoPearl") then
-    Pearl.reset()
-    return false
+    if shot and shot.sentAt then shot.cancelAfterConfirm = true
+    else Pearl.reset() return false end
   end
   if shot and shot.character ~= snap.character then
     Pearl.reset()
   end
   if shot then
     if shot.phase == "equip" then
-      local focused = shot.target
+      local focused = target.get(snap)
+      if not focused or focused.character ~= shot.target.character then Pearl.reset() return false end
       if
         focused.player:GetAttribute("ArenaProtected") == true
         or focused.player:GetAttribute("InArena") == false
@@ -187,9 +196,9 @@ function Pearl.step(snap, chosen)
         Pearl.reset()
         return false
       end
-      if snap.tool ~= shot.tool or native.blocked(snap) then
-        return false
-      end
+      if snap.tool ~= shot.tool or native.blocked(snap) then shot.heldAt = nil return false end
+      shot.heldAt = shot.heldAt or snap.now
+      if snap.now - shot.heldAt < 0.08 then return false end
       if snap.now < (shot.planAt or 0) then
         return false
       end
@@ -213,15 +222,19 @@ function Pearl.step(snap, chosen)
       local consumed = not shot.tool.Parent or (tonumber(shot.tool:GetAttribute("Count")) or shot.count) < shot.count
       local cooldown = snap.player:GetAttribute("ItemCooldown_Pearl")
       local acknowledged = type(cooldown) == "number" and cooldown ~= shot.cooldown and not native.pearlReady()
-      if not consumed and not acknowledged then
+      local arrived = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
+      local projectile = shot.id ~= nil
+      local launched = consumed and (projectile or arrived or acknowledged and snap.now - shot.sentAt >= 0.25)
+      if not launched then
         if snap.now - shot.sentAt > 5 and not shot.reported then
           shot.reported = true
           utils.recordError("mcpvp.pearl", "Lançamento pendente sem confirmação de consumo/cooldown; reenvio bloqueado.")
         end
         return false
       end
-      shot.phase = "flight"
+      shot.phase, shot.launched = "flight", true
       restore(snap)
+      if shot.cancelAfterConfirm then shot = nil return false end
     end
     local teleported = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
     local ended = shot.endedAt ~= nil

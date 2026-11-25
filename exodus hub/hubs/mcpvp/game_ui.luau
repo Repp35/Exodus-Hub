@@ -47,13 +47,13 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Lock",
               key = "MCAimLock",
-              description = "Mantém o foco do combate; funciona junto com o Aim Assist.",
+              description = "Acompanha suavemente o alvo visível até 24 studs, com limite de ângulo e velocidade.",
             },
             {
               kind = "toggle",
               title = "Aim Assist",
               key = "MCAimAssist",
-              description = "Ajuda no acompanhamento e na antecipação, com força semelhante e alcance de até 204 studs.",
+              description = "Assistência leve até 16 studs, apenas perto da mira e durante seu movimento. Não centraliza automaticamente.",
             },
             { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
             {
@@ -78,7 +78,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Lança ao sair do alcance: no corpo em curta distância, com previsão e aproximações seguras à distância.",
+              description = "Lança sem mover a câmera. Perseguição limitada pela distância e pelo tempo sem contato.",
             },
             {
               kind = "toggle",
