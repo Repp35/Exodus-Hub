@@ -233,7 +233,10 @@ local function pearl(snap)
     or mode == "crystal" and cfg("MCCrystalPearl")
     or mode == "anchor" and cfg("MCAnchorPearl")
     or not mode and cfg("MCSwordPearl")
-  local gap = (mode and cfg("MCExplosivePearlGap") or cfg("MCSwordPearlGap")) * 3.2
+  local crystalMode = mode == "crystal" or mode == "dtap"
+  local swordItem = native.find("sword", true)
+  local hitReach = swordItem and native.stats(swordItem.tool).reach or 9.6
+  local gap = crystalMode and (hitReach + 0.64) or (mode and cfg("MCExplosivePearlGap") or cfg("MCSwordPearlGap")) * 3.2
   local enemyPearl = enemyPearls[target.character]
   if enemyPearl and snap.now - enemyPearl.at > 5 then
     enemyPearls[target.character] = nil
@@ -250,8 +253,15 @@ local function pearl(snap)
   end
   local relative = target.root.AssemblyLinearVelocity - snap.root.AssemblyLinearVelocity
   local displacement = target.root.Position - snap.root.Position
+  local awaySpeed = crystalMode and 0.8 or 2
+  local relativeSpeed = crystalMode and 0.35 or 1
   if
-    not enemyPearl and (displacement.Magnitude < 0.1 or target.root.AssemblyLinearVelocity:Dot(displacement.Unit) < 2 or relative:Dot(displacement.Unit) < 1)
+    not enemyPearl
+    and (
+      displacement.Magnitude < 0.1
+      or target.root.AssemblyLinearVelocity:Dot(displacement.Unit) < awaySpeed
+      or relative:Dot(displacement.Unit) < relativeSpeed
+    )
   then
     return nil
   end
@@ -300,7 +310,7 @@ local function pearl(snap)
       end
       local delta = t.root.Position - s.root.Position
       local motion = t.root.AssemblyLinearVelocity - s.root.AssemblyLinearVelocity
-      local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= 2 and motion:Dot(delta.Unit) >= 1
+      local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= awaySpeed and motion:Dot(delta.Unit) >= relativeSpeed
       return t.engaged and (enemyPearl ~= nil or fleeing) and t.distance >= gap and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
     end,
     before = function(s)
