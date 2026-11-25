@@ -42,5 +42,6 @@
   "loadstring",
   "getcustomasset",
   "getsynasset",
-  "version"
+  "version",
+  "OverlapParams"
 ]

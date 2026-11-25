@@ -29,12 +29,13 @@ def smoke(binary, universal=True, hub_id=None, assertions="", bootstrap=False):
     for name, path in entries:
         code += f'\nif not files[{json.dumps(path)}] then files[{json.dumps(path)}] = (function()\n{(ROOT / path).read_text()}\nend)() end\n'
         code += f'loaded["{name}"] = files[{json.dumps(path)}].__bundle and files[{json.dumps(path)}].__bundle["{name}"] or files[{json.dumps(path)}]\n'
-    if universal:
+    permissions_enabled = not universal and profile.get("permissions", True) is not False
+    if not permissions_enabled:
         loader = (ROOT / 'loader.luau').read_text()
         start = loader.index('local function basicLinker()')
         end = loader.index('local function loadModules(', start)
         code += '\n' + loader[start:end] + '\nloaded.permissions = basicLinker()\nloaded.permissions.__contract = { requires = {}, provides = { "validate", "resolve" } }\n'
-    if not universal:
+    if permissions_enabled:
         code += '\nloaded.permissions.configure(profile.permissionPolicy)\n'
     for name, path in entries:
         code += f'loaded.permissions.validate("{name}", loaded["{name}"], "{path}")\n'

@@ -1,9 +1,13 @@
 {
   "id": "mcpvp",
   "title": "MCPVP",
-  "placeIds": [75260404327641],
-  "universeIds": [10774244015],
+  "placeIds": [
+    75260404327641
+  ],
+  "universeIds": [
+    10774244015
+  ],
   "notification": "MCPVP carregado.",
   "permissions": false,
-  "version": "0.1.0"
+  "version": "0.2.0"
 }
