@@ -2,7 +2,9 @@
 --!optimize 2
 local GameUI = {}
 local miniBalls = {
-  { title = "Sword", label = "SWORD", key = "MCAutoSword", prefix = "MCSwordBall" },
+  { title = "Aim Lock", label = "LOCK", key = "MCAimLock", prefix = "MCAimLockBall" },
+  { title = "Aim Assist", label = "ASSIST", key = "MCAimAssist", prefix = "MCAimAssistBall" },
+  { title = "Auto Attack", label = "ATTACK", key = "MCAutoSword", prefix = "MCSwordBall" },
   { title = "Auto Crit", label = "CRIT", key = "MCAutoCrit", prefix = "MCCritBall" },
   { title = "Auto Força", label = "FORÇA", key = "MCAutoStrength", prefix = "MCStrengthBall" },
   { title = "Auto Pearl", label = "PEARL", key = "MCAutoPearl", prefix = "MCPearlBall" },
@@ -25,9 +27,9 @@ GameUI.definition = {
           components = {
             {
               kind = "toggle",
-              title = "Sword + Aim Assist / Aim Lock",
+              title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie com dois ataques no alvo. Mantém mira e ritmo dos golpes.",
+              description = "Inicie com dois ataques no alvo. Controla apenas os golpes e a espada.",
             },
             {
               kind = "toggle",
@@ -39,10 +41,35 @@ GameUI.definition = {
           },
         },
         {
+          title = "Mira",
+          column = 2,
+          components = {
+            {
+              kind = "toggle",
+              title = "Aim Lock",
+              key = "MCAimLock",
+              description = "Acompanha o alvo selecionado. Tem prioridade quando as duas miras estão ligadas.",
+            },
+            { kind = "toggle", title = "Aim Assist", key = "MCAimAssist", description = "Ajuda a acompanhar alvos dentro do campo de mira, sem atacar." },
+            { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
+            {
+              kind = "toggle",
+              title = "Modo legit",
+              key = "MCAimLegit",
+              description = "Limita velocidade e aceleração, exige alvo na tela e aguarda reação ao recuperar a visão.",
+            },
+          },
+        },
+        {
           title = "Assistência",
           column = 2,
           components = {
-            { kind = "toggle", title = "Auto Força", key = "MCAutoStrength", description = "Prioriza poções de força na hotbar e joga no pé quando o efeito termina." },
+            {
+              kind = "toggle",
+              title = "Auto Força",
+              key = "MCAutoStrength",
+              description = "Prioriza poções de força na hotbar e joga no pé quando o efeito termina.",
+            },
             {
               kind = "toggle",
               title = "Auto Pearl",
@@ -85,7 +112,8 @@ for _, ball in ipairs(miniBalls) do
     kind = "toggle",
     title = "Mini " .. ball.title .. " UI",
     key = visibleKey,
-    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções." or "Mostra o botão de " .. ball.title .. ".",
+    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções."
+      or "Mostra o botão de " .. ball.title .. ".",
     mobileOnly = true,
   }
 end
