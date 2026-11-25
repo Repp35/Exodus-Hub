@@ -238,20 +238,15 @@ function Explosives.pulse(snap, targets, cfg)
     local entry = state(block)
     local target = candidate(snap, targets, top, 6)
     local elevated = false
-    -- Detonate only while an opponent is above the user and the crystal base.
+    -- Any airborne opponent exposed to this blast is eligible.
     for _, other in ipairs(targets) do
-      if
-        other.humanoid.Health > 0
-        and other.humanoid.FloorMaterial == Enum.Material.Air
-        and above(other, top)
-        and geometry.damage(snap, other.character, top, 6) > 0
-      then
+      if other.humanoid.Health > 0 and other.humanoid.FloorMaterial == Enum.Material.Air and geometry.damage(snap, other.character, top, 6) > 0 then
         target, elevated = other, true
         break
       end
     end
     local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
-    if target and (target.root.Position - top).Magnitude > 12.8 then
+    if target and not elevated and (target.root.Position - top).Magnitude > 12.8 then
       target = nil
     end
     if not target and launch then
