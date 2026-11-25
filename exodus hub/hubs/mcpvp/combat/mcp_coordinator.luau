@@ -439,6 +439,10 @@ local function sword(snap, forCombo)
   local previousBlock = previous and previous:GetAttribute("BlockKey")
   local returnItem = previousClass == "EndCrystal" or previousClass == "RespawnAnchor" or previousBlock == "respawn_anchor" or previousBlock == "obsidian"
   explosives.release()
+  local released = native.equipped()
+  if previousClass == "EndCrystal" and released and released:GetAttribute("BlockKey") == "obsidian" then
+    previous = released
+  end
   if not native.equip(weapon) then
     if returnItem then
       native.restore(previous, native.equipped())

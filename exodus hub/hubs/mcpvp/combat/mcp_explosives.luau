@@ -5,6 +5,7 @@ local native, geometry
 local opportunities, templates = {}, {}
 local comboMode, comboAt = nil, -math.huge
 local original, held, lastPulse = nil, nil, -math.huge
+local heldAuto = false
 local blockSnapshot, blockCache
 local placed = {}
 local manualOverride = false
@@ -89,13 +90,13 @@ end
 function Explosives.release()
   if held then
     local obsidian = native.find("obsidian", true)
-    if obsidian and native.equipped() == held then
+    if heldAuto and obsidian and native.equipped() == held then
       native.restore(obsidian.tool, held)
     else
       native.restore(original, held)
     end
   end
-  original, held = nil, nil
+  original, held, heldAuto = nil, nil, false
 end
 function Explosives.reset()
   Explosives.release()
@@ -298,8 +299,10 @@ function Explosives.pulse(snap, targets, cfg)
     end
     if not held then
       original = native.equipped()
+      heldAuto = original ~= crystalItem.tool
     end
     if not native.equip(crystalItem.tool) then
+      original, heldAuto = nil, false
       continue
     end
     held = crystalItem.tool
@@ -319,8 +322,11 @@ function Explosives.pulse(snap, targets, cfg)
         acted = true
       end
     end
-    if acted or crystal then
+    if acted then
       lastPulse = snap.now
+      return true, target
+    end
+    if crystal and snap.now - lastPulse <= 0.1 then
       return true, target
     end
   end
