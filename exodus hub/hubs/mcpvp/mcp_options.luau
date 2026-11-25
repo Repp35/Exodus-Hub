@@ -2,7 +2,7 @@
 --!optimize 2
 local Options = {}
 Options.__config = {
-  defaults = { MCAutoSword = false, MCAutoPearl = false },
+  defaults = { MCAutoSword = true, MCAutoPearl = true },
   schema = { MCAutoSword = "boolean", MCAutoPearl = "boolean" },
 }
 Options.tuning =

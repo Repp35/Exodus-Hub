@@ -7,7 +7,6 @@ GameUI.definition = {
     {
       id = "mcpvp",
       title = "MCPvP",
-      integrationOnly = true,
       columns = 2,
       sections = {
         {

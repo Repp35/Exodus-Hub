@@ -10,7 +10,7 @@ return {
     placeIds = { 75260404327641 },
     universeIds = { 10774244015 },
     permissions = false,
-    version = "0.1.0",
+    version = "0.1.1",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · MCPvP carregado.",
     modules = {
@@ -24,8 +24,8 @@ return {
       { name = "mcpnative", path = "hubs/mcpvp/game/mcp_native.luau", hash = "59e1bb45dfbd51dd34662a2446f304919d118ba79b60ec086264bc27d9ba99e4" },
       { name = "mcptarget", path = "hubs/mcpvp/game/mcp_target.luau", hash = "95a64bc2ce73722ca7e773cf121c614cc591ba1d005ebbbd81e23e1e23447fb2" },
       { name = "gameruntime", path = "hubs/mcpvp/game_runtime.luau", hash = "201be8427f613ffd1f8c9423c25dc353bb0a0bbbad3f8ec95196d010eaa85d10" },
-      { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "1d98c09fd657ca293968f4cefbb9190746a5c969075d2f3bdbba3e73fa778ca6" },
-      { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "5b1b9eef7165672445a09beceafbaff272167f7c7d55dc21d4c3a64d16d3410f" },
+      { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "19f364fff5d4420010093f5bcdd099dcc4b0d85c0875d022d1e7854cafd34f9f" },
+      { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "edcbc48b078d85fd2d3ef1489c2934b06bbe331af99ee1f49489e5171cbe9a39" },
     },
   },
   {
