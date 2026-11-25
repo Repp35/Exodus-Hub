@@ -56,12 +56,25 @@ local function room(snap, chosen, reach)
   local future = chosen.root.Position - snap.root.Position + (chosen.root.AssemblyLinearVelocity - velocity) * apex
   return Vector3.new(future.X, 0, future.Z).Magnitude <= reach + 1.28
 end
+local function crystalAtJumpHeight(snap)
+  -- Dump: crystal power 6. Minecraft-equivalent blast reach: 12 blocks, 3.2 studs each.
+  local crystals = game:GetService("CollectionService"):GetTagged("EndCrystal")
+  local folder = workspace:FindFirstChild("EndCrystals")
+  if folder then for _, crystal in ipairs(folder:GetChildren()) do crystals[#crystals + 1] = crystal end end
+  local top = snap.root.Position + Vector3.new(0, 4.1, 0)
+  for _, crystal in ipairs(crystals) do
+    local origin = crystal:GetAttribute("CrystalFeet")
+    if typeof(origin) ~= "Vector3" and crystal:IsA("PVInstance") then origin = crystal:GetPivot().Position end
+    if typeof(origin) == "Vector3" and top.Y - 4 >= origin.Y - 0.2 and (top - origin).Magnitude < 12 * 3.2 then return true end
+  end
+  return false
+end
 function Crit.plan(snap, chosen, tool, readyAt)
   if not utils.getConfigValue("MCAutoCrit") then stopJump() jumpAt = nil return end
   if native.blocked(snap) or not possible(snap) or not grounded(snap) or jumpAt or snap.now < fallbackUntil then return end
   -- Jump before the weapon finishes recharging; alignment gates the strike, never the jump.
   if readyAt - snap.now > apex + 0.03 then return end
-  if not room(snap, chosen, native.stats(tool).reach) then return end
+  if crystalAtJumpHeight(snap) or not room(snap, chosen, native.stats(tool).reach) then return end
   native.prepareCritical()
   jumpAt, airborne = snap.now, false
   local owner, humanoid, root = snap.character, snap.humanoid, snap.root

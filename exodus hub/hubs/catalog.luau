@@ -10,12 +10,12 @@ return {
     placeIds = { 75260404327641 },
     universeIds = { 10774244015 },
     permissions = false,
-    version = "0.3.0",
+    version = "0.3.1",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · MCPvP carregado.",
     modules = {
       { name = "autostrength", path = "hubs/mcpvp/combat/auto_strength.luau", hash = "4e0e96f324b7eacf3c7a83a123d68ae333d7c3924042854d04ef0184dcdd360e" },
-      { name = "autocrit", path = "hubs/mcpvp/combat/auto_crit.luau", hash = "9cabfaf4819e3df211fc348b870f94f1967b8618b992d01b4d2d28c6ada5f849" },
+      { name = "autocrit", path = "hubs/mcpvp/combat/auto_crit.luau", hash = "58c03e2a7e9eeee8d1e9ba6207067cd564916c18ff88cecda94f1f53228109c2" },
       { name = "autorefill", path = "hubs/mcpvp/combat/auto_refill.luau", hash = "3bb8cdd9d18bec3d9d7866646032b024fb1953d4dfd2a285dae889533bf90c0f" },
       { name = "autototem", path = "hubs/mcpvp/combat/auto_totem.luau", hash = "686fb91689c434a3d7ac0721f693a7f08dfd5a7f9b235fb2c2e234d123cb61c7" },
       {
