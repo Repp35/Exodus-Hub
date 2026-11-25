@@ -25,7 +25,7 @@ Options.groups = {
     items = {
       { key = "MCCrystal", title = "Crystal Assist", default = false },
       { key = "MCCrystalAutoCombo", title = "Auto Combo no CPvP", default = true, parentKey = "MCCrystal" },
-      { key = "MCCrystalPearl", title = "Permitir Pearl Follow", default = false, parentKey = "MCCrystal" },
+      { key = "MCCrystalPearl", title = "Permitir Pearl Follow", default = true, parentKey = "MCCrystal" },
       { key = "MCDTap", title = "D Tap após golpe", default = false },
       { key = "MCDTapPearl", title = "Permitir pérola no D Tap", default = false, parentKey = "MCDTap" },
     },

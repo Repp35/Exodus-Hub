@@ -616,7 +616,30 @@ function Coordinator.start()
     if not cfg("MCEnabled") then
       return
     end
-    targeting.noteAttack(native.snapshot(), nil, true)
+    local snap = native.snapshot()
+    targeting.noteAttack(snap, nil, true)
+    if not snap or not cfg("MCCrystal") then
+      return
+    end
+    local folder = snap.world:FindFirstChild("EndCrystals")
+    local melee = native.data().geometry
+    local reach = native.stats(snap.equipped).reach
+    if not folder or not melee or type(melee.Box) ~= "function" then
+      return
+    end
+    local chosen, closest
+    for _, crystal in ipairs(folder:GetChildren()) do
+      local point = geometry.blastPosition(crystal)
+      if point then
+        local distance = melee.Box(snap.eye, snap.camera.CFrame.LookVector, point - Vector3.new(3.2, 0, 3.2), point + Vector3.new(3.2, 6.4, 3.2), reach)
+        if distance and (not closest or distance < closest) and native.visible(snap.eye, snap.eye + snap.camera.CFrame.LookVector * distance, crystal) then
+          chosen, closest = crystal, distance
+        end
+      end
+    end
+    if chosen then
+      targeting.noteCrystal(snap, chosen, geometry.blastPosition(chosen))
+    end
   end))
   scope.connect(utils.getRunService().Heartbeat, function()
     local ok, err = pcall(tick)

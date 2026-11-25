@@ -6,6 +6,7 @@ local current, character, localHealth
 local records, nearby = {}, {}
 local pending, memory = nil, 3
 local lastAttempt
+local crystalAttempt
 function Target.setup(deps)
   native, players = deps.Native, game:GetService("Players")
   return true
@@ -13,7 +14,7 @@ end
 function Target.reset()
   current, character, localHealth, pending = nil, nil, nil, nil
   records, nearby = {}, {}
-  lastAttempt = nil
+  lastAttempt, crystalAttempt = nil, nil
 end
 local function record(char)
   local entry = records[char]
@@ -29,6 +30,7 @@ local function record(char)
       clicks = 0,
       authorized = -math.huge,
       contact = -math.huge,
+      crystalDamage = -math.huge,
     }
     records[char] = entry
   end
@@ -169,8 +171,25 @@ function Target.receive(now)
   if attacker then
     local entry = record(attacker.character)
     entry.received = now
+    if entry.crystalDamage > -math.huge then
+      entry.authorized = now + memory
+      entry.contact = now
+      current = attacker.character
+    end
     refreshDuel(entry, now)
   end
+end
+function Target.noteCrystal(snap, crystal, point)
+  if not snap or not crystal or not point then
+    return
+  end
+  local victims = {}
+  for _, candidate in ipairs(nearby) do
+    if candidate.humanoid.Health > 0 and (candidate.root.Position - point).Magnitude <= 38.4 then
+      victims[#victims + 1] = { character = candidate.character, humanoid = candidate.humanoid, health = candidate.humanoid.Health }
+    end
+  end
+  crystalAttempt = { crystal = crystal, point = point, at = snap.now, victims = victims }
 end
 function Target.hold(char, now)
   local entry = record(char)
@@ -216,6 +235,25 @@ function Target.update(snap, cfg)
   end
   memory = cfg("MCTargetMemory")
   nearby = candidates(snap, cfg)
+  if crystalAttempt then
+    local attempt = crystalAttempt
+    if snap.now - attempt.at > 1.2 then
+      crystalAttempt = nil
+    elseif not attempt.crystal.Parent then
+      for index = #attempt.victims, 1, -1 do
+        local victim = attempt.victims[index]
+        if victim.character.Parent and victim.humanoid.Health < victim.health then
+          local entry = record(victim.character)
+          entry.crystalDamage = snap.now
+          if snap.now - entry.received <= memory then
+            entry.authorized, entry.contact = snap.now + memory, snap.now
+            current = victim.character
+          end
+          table.remove(attempt.victims, index)
+        end
+      end
+    end
+  end
   if localHealth and snap.humanoid.Health < localHealth then
     Target.receive(snap.now)
   end
@@ -256,6 +294,9 @@ function Target.update(snap, cfg)
       continue
     end
     local value = candidate.distance / 50 + candidate.angle / 180
+    if entry.crystalDamage > -math.huge and snap.now - entry.received <= memory and candidate.duel then
+      value -= 8
+    end
     if candidate.duel then
       value -= 3
     end
@@ -294,6 +335,7 @@ Target.__contract = {
     "point",
     "canHit",
     "noteAttack",
+    "noteCrystal",
     "confirmHit",
     "noteSwing",
     "noteVictim",
