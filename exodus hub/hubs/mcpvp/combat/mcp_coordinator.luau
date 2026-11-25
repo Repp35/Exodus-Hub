@@ -213,8 +213,13 @@ local function pearl(snap)
   if not target or not target.engaged or snap.now - lastPearl < cfg("MCPearlInterval") then
     return nil
   end
-  if target.player.Character ~= target.character or target.humanoid.Health <= 0 or not target.root.Parent
-    or target.player:GetAttribute("InArena") == false or target.player:GetAttribute("ArenaProtected") == true then
+  if
+    target.player.Character ~= target.character
+    or target.humanoid.Health <= 0
+    or not target.root.Parent
+    or target.player:GetAttribute("InArena") == false
+    or target.player:GetAttribute("ArenaProtected") == true
+  then
     return nil
   end
   local contact = targeting.lastContact(target.character)
@@ -270,9 +275,16 @@ local function pearl(snap)
     timeout = 1,
     point = function() return planned end,
     valid = function(s, t)
-      if not t or t.character ~= opponent or t.player.Character ~= opponent or t.humanoid.Health <= 0
-        or t.player:GetAttribute("ArenaProtected") == true or t.player:GetAttribute("InArena") == false
-        or s.now - contact > 4 or (pearlContacts[opponent] or -math.huge) >= contact then
+      if
+        not t
+        or t.character ~= opponent
+        or t.player.Character ~= opponent
+        or t.humanoid.Health <= 0
+        or t.player:GetAttribute("ArenaProtected") == true
+        or t.player:GetAttribute("InArena") == false
+        or s.now - contact > 4
+        or (pearlContacts[opponent] or -math.huge) >= contact
+      then
         return false
       end
       if s.now - plannedAt >= 0.1 then
@@ -378,16 +390,30 @@ local function sword(snap, forCombo)
       native.prepareCritical()
     end
   end
+  local previous = native.equipped()
+  local previousClass = previous and previous:GetAttribute("ClassItem")
+  local previousBlock = previous and previous:GetAttribute("BlockKey")
+  local returnItem = previousClass == "EndCrystal" or previousClass == "RespawnAnchor" or previousBlock == "respawn_anchor"
   explosives.release()
   if not native.equip(weapon) then
+    if returnItem then
+      native.restore(previous, native.equipped())
+    end
     return false
   end
   local current = native.snapshot()
   if not current then
+    if returnItem then
+      native.restore(previous, weapon)
+    end
     return false
   end
   targeting.noteAttack(current, chosen, forCombo)
-  if not (forCombo and native.strike(chosen.root.Position) or not forCombo and native.action("attack")) then
+  local hit = forCombo and native.strike(chosen.root.Position) or not forCombo and native.action("attack")
+  if returnItem then
+    native.restore(previous, weapon)
+  end
+  if not hit then
     return false
   end
   auraHits[chosen.character] = snap.now
