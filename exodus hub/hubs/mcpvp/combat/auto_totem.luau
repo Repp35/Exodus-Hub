@@ -199,8 +199,20 @@ function Totem.moveReserve(tool, from, destination)
   if not ok then values[from], values[destination] = tool, previous end
   return ok
 end
+function Totem.swapSpeedForStrength(tool, from, destination)
+  if not visible() or from < 10 or destination < 1 or destination > 9 then return false end
+  local values = slots()
+  if not values or values[from] ~= tool or tool:GetAttribute("ClassItem") ~= "StrengthPotion" then return false end
+  local previous = values[destination]
+  if previous and previous.Parent and (tonumber(previous:GetAttribute("Count")) or 1) > 0
+    and previous:GetAttribute("ClassItem") ~= "SpeedPotion" then return false end
+  values[from], values[destination] = previous, tool
+  local ok = pcall(functions.refresh)
+  if not ok then values[from], values[destination] = tool, previous end
+  return ok
+end
 Totem.__contract = {
-  provides = { "setup", "step", "busy", "reset", "teardown", "inventorySlots", "inventoryVisible", "openInventory", "closeInventory", "moveReserve", "setReservations" },
+  provides = { "setup", "step", "busy", "reset", "teardown", "inventorySlots", "inventoryVisible", "openInventory", "closeInventory", "moveReserve", "setReservations", "swapSpeedForStrength" },
   requires = { Native = "mcpnative", Utils = "utils" },
   requiresMethods = { Native = { "snapshot", "findSword", "equip", "blocked" }, Utils = { "getLocalPlayer", "isActive", "getConfigValue" } },
 }

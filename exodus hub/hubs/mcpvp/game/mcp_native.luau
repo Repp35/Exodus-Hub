@@ -201,8 +201,15 @@ function Native.prepareCritical()
   local sprint = combat and combat:FindFirstChild("Sprint")
   if sprint and sprint:IsA("RemoteEvent") then sprint:FireServer(false) end
 end
+function Native.useItem(snap, tool, direction)
+  if Native.blocked(snap) or not owned(tool) or tool.Parent ~= snap.character then return false end
+  local class = tool:GetAttribute("ClassItem")
+  if type(class) ~= "string" then return false end
+  if (tonumber(player:GetAttribute("ItemCooldown_" .. class)) or 0) > world:GetServerTimeNow() then return false end
+  return invoke("Use", direction)
+end
 Native.__contract = {
-  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit", "prepareCritical" },
+  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit", "prepareCritical", "useItem" },
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getLocalPlayer", "getWorkspace", "recordError" } },
 }

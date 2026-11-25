@@ -32,6 +32,7 @@ GameUI.definition = {
           title = "Assistência",
           column = 2,
           components = {
+            { kind = "toggle", title = "Auto Força", key = "MCAutoStrength", description = "Prioriza poções de força na hotbar e joga no pé quando o efeito termina." },
             {
               kind = "toggle",
               title = "Auto Pearl",

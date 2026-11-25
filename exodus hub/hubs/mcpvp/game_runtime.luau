@@ -7,6 +7,7 @@ function Runtime.reset()
   if not modules then
     return
   end
+  modules.autostrength.reset()
   modules.autorefill.reset()
   modules.autototem.reset()
   modules.autopearl.reset()
@@ -77,9 +78,12 @@ function Runtime.bind(loaded)
       return
     end
     loaded.autorefill.observe(snap)
+    if loaded.autostrength.busy() then loaded.autostrength.step(snap) return end
     if loaded.autorefill.busy() then loaded.autorefill.step(snap) return end
     if not loaded.autopearl.busy() then loaded.autototem.step(snap) end
     if loaded.autototem.busy() then return end
+    if not loaded.autopearl.busy() then loaded.autostrength.step(snap) end
+    if loaded.autostrength.busy() then return end
     if not loaded.autopearl.busy() then loaded.autorefill.step(snap) end
     if loaded.autorefill.busy() then return end
     if not loaded.utils.getConfigValue("MCAutoSword") then
@@ -113,7 +117,7 @@ function Runtime.bind(loaded)
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
-    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autototem.busy() or loaded.autorefill.busy() then
+    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autototem.busy() or loaded.autorefill.busy() or loaded.autostrength.busy() then
       return
     end
     local snap = loaded.mcpnative.snapshot()
@@ -125,7 +129,7 @@ function Runtime.bind(loaded)
   return { mode = "mcpvp" }
 end
 function Runtime.createAPI(loaded)
-  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy, loaded.autorefill.busy } }
+  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy, loaded.autorefill.busy, loaded.autostrength.busy } }
 end
 Runtime.__contract = {
   provides = { "setup", "reset", "teardown", "bind", "createAPI" },

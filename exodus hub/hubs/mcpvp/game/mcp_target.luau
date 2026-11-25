@@ -177,7 +177,7 @@ function Target.get(snap)
     return current
   end
   local sword = native.findSword(snap)
-  local focusRange = (sword and native.stats(sword).reach or 9.6) * 3
+  local focusRange = (sword and native.stats(sword).reach or 9.6) * 6
   local nearby = (fresh.root.Position - snap.root.Position).Magnitude <= focusRange
   if not nearby and snap.now - contact > tuning.targetMemory and not (heldCharacter == fresh.character and snap.now < heldUntil) then Target.reset() return nil end
   current = fresh
