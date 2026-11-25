@@ -1,0 +1,12 @@
+{
+  "id": "mcpvp",
+  "title": "MCPvP",
+  "placeIds": [
+    75260404327641
+  ],
+  "universeIds": [
+    10774244015
+  ],
+  "permissions": false,
+  "version": "0.1.0"
+}
