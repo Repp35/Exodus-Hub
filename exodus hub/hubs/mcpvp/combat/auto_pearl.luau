@@ -27,6 +27,32 @@ local function filters(snap)
   params.FilterDescendantsInstances = ignored
   return params
 end
+local function enemyState(snap, chosen)
+  if not enemyPearl or enemyPearl.target ~= chosen.character or snap.now - enemyPearl.at > 6 then return nil end
+  local position = chosen.root.Position
+  if enemyPearl.lastPosition then
+    local dt = math.max(0.001, snap.now - enemyPearl.lastSample)
+    if (position - enemyPearl.lastPosition).Magnitude > math.max(10, dt * 60) then
+      enemyPearl.stableSince = snap.now
+      enemyPearl.confirmed = false
+      enemyPearl.moved = true
+    end
+  end
+  enemyPearl.lastPosition, enemyPearl.lastSample = position, snap.now
+  if enemyPearl.moved and (position - enemyPearl.launchPosition).Magnitude <= 6 then
+    enemyPearl.cancelled = true
+    enemyPearl.confirmed = false
+    if enemyPearl.stableSince and snap.now - enemyPearl.stableSince < 0.3 then return "waiting" end
+    return "cancelled"
+  end
+  local nearLanding = (position - enemyPearl.landing).Magnitude <= 9
+  if nearLanding and not enemyPearl.stableSince then enemyPearl.stableSince = snap.now end
+  if (nearLanding or enemyPearl.moved) and enemyPearl.stableSince and snap.now - enemyPearl.stableSince >= 0.3 then
+    enemyPearl.confirmed = true
+  end
+  if enemyPearl.cancelled then return "cancelled" end
+  return enemyPearl.confirmed and "ready" or "waiting"
+end
 local function worthFollowing(snap, chosen)
   local own = snap.humanoid.Health / math.max(1, snap.humanoid.MaxHealth)
   local enemy = chosen.humanoid.Health / math.max(1, chosen.humanoid.MaxHealth)
@@ -77,16 +103,14 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, gravity, 
   end
   local landing, flight = ballistics.landing(position, velocity, projectile.gravity, projectile.drag, filters(snap))
   if not landing or (landing - snap.root.Position).Magnitude > 256 then return end
-  enemyPearl = { target = chosen.character, id = id, landing = landing, at = snap.now }
+  enemyPearl = { target = chosen.character, id = id, landing = landing, at = snap.now, launchPosition = chosen.root.Position, lastPosition = chosen.root.Position, lastSample = snap.now }
   target.hold(chosen.character, snap.now + math.min(8, flight + 4))
 end
 local function solve(snap, chosen, recovery)
-  if not recovery and enemyPearl and enemyPearl.target == chosen.character and snap.now - enemyPearl.at < 5 and not enemyPearl.arrived then
-    if not worthFollowing(snap, chosen) then return nil end
-    local direction, duration = ballistics.solve(snap.eye, enemyPearl.landing, projectile.speed, projectile.gravity, filters(snap), 4)
-    if direction then return direction, enemyPearl.landing, duration end
-    return nil
-  end
+  local state = enemyState(snap, chosen)
+  if state == "waiting" or (state == "cancelled" and not recovery) then return nil end
+  -- Once the teleport is confirmed, intercept the live opponent instead of the old projectile endpoint.
+  local longFollow = recovery or state == "ready"
   local params = filters(snap)
   local velocity = chosen.root.AssemblyLinearVelocity
   if math.abs(velocity.Y) > 8 or velocity.Magnitude > 45 then return nil end
@@ -98,8 +122,8 @@ local function solve(snap, chosen, recovery)
     if not floor or floor.Normal.Y < 0.65 then return nil end
     destination = floor.Position
     local duration
-    direction, duration = ballistics.solve(snap.eye, destination, projectile.speed, projectile.gravity, params, recovery and 4 or 0.75)
-    if not direction or not duration or duration > (recovery and 4 or 0.75) then return nil end
+    direction, duration = ballistics.solve(snap.eye, destination, projectile.speed, projectile.gravity, params, longFollow and 4 or 0.75)
+    if not direction or not duration or duration > (longFollow and 4 or 0.75) then return nil end
     if math.abs(duration - flight) < 0.015 then return direction, destination, duration end
     flight = duration
   end
@@ -107,7 +131,7 @@ local function solve(snap, chosen, recovery)
   return nil
 end
 local function fleeing(snap, chosen)
-  if enemyPearl and enemyPearl.target == chosen.character and snap.now - enemyPearl.at < 5 then return true end
+  if enemyState(snap, chosen) == "ready" then return true end
   local delta = chosen.root.Position - snap.root.Position
   if delta.Magnitude < 0.01 then return false end
   local velocity = chosen.root.AssemblyLinearVelocity
@@ -124,7 +148,8 @@ function Pearl.step(snap, chosen)
     sessionCharacter, spent, nextPlan = snap.character, {}, 0
   end
   local token, hitAt, hitTarget = target.hitToken()
-  local followsPearl = enemyPearl and enemyPearl.target == chosen.character and snap.now - enemyPearl.at < 5
+  local enemyStatus = enemyState(snap, chosen)
+  local followsPearl = enemyStatus == "ready"
   if pursuit then
     if pursuit.target ~= chosen.character or (hitTarget == chosen.character and token > pursuit.token) then
       pursuit = nil
@@ -196,6 +221,7 @@ function Pearl.step(snap, chosen)
     return false
   end
   if snap.now < nextPlan or not native.pearlReady() or native.blocked(snap) then return false end
+  if enemyStatus == "waiting" or (enemyStatus == "cancelled" and not recovery) then return false end
   nextPlan = snap.now + 0.6
   local tool = native.findPearl(snap)
   if not tool then return false end
