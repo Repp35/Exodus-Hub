@@ -72,7 +72,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Ao sair do alcance de dano, alinha e lança no mesmo frame disponível, com alvo visível e previsão direta do movimento.",
+              description = "Ao sair do alcance de dano, lança no chão aos pés do alvo visível, com previsão curta e colisão no destino.",
             },
             {
               kind = "toggle",

@@ -92,12 +92,11 @@ local function visible(snap, chosen)
 end
 local function plan(snap, chosen)
   if not visible(snap, chosen) then return nil end
-  -- React to the current frame, including jumps and direction changes; no history warm-up.
-  local motion = chosen.root.AssemblyLinearVelocity
-  if motion.Magnitude > 180 then motion = motion.Unit * 180 end
+  local motion = chosen.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+  if motion.Magnitude > 60 then motion = motion.Unit * 60 end
   local latency = 0
   local ok, ping = pcall(snap.player.GetNetworkPing, snap.player)
-  if ok and type(ping) == "number" and ping == ping then latency = math.clamp(ping, 0, 0.3) end
+  if ok and type(ping) == "number" and ping == ping then latency = math.clamp(ping, 0, 0.1) end
   local params, ignored = RaycastParams.new(), { snap.camera }
   for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
     if player.Character then ignored[#ignored + 1] = player.Character end
@@ -107,14 +106,22 @@ local function plan(snap, chosen)
     if folder then ignored[#ignored + 1] = folder end
   end
   params.FilterType, params.RespectCanCollide, params.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, true, ignored
-  local sneak = chosen.character:GetAttribute("Sneaking") == true and 0.96 or 0
-  local flight = (chosen.root.Position - snap.eye).Magnitude / speed
+  local root = chosen.root.Position
+  local flight = (root - snap.eye).Magnitude / speed
   local best, bestFlight, bestPoint
-  for _ = 1, 6 do
-    local point = chosen.root.Position + motion * (latency + flight) - Vector3.new(0, 0.35 + sneak, 0)
-    local direction, duration = ballistics.solve(snap.eye, point, speed, gravity, params, 2, drag, true)
+  for _ = 1, 4 do
+    -- Target a real ground impact below the feet. A body-height crossing keeps flying.
+    local lead = motion * math.min(latency + flight, 0.35)
+    if lead.Magnitude > 3.2 then lead = lead.Unit * 3.2 end
+    local point = root + lead
+    local floor = workspace:Raycast(point + Vector3.new(0, 0.5, 0), Vector3.new(0, -64, 0), params)
+    if not floor or floor.Normal.Y < 0.65 or floor.Material == Enum.Material.Water then break end
+    local block = floor.Instance:GetAttribute("BlockKey")
+    if block == "lava" or block == "water" then break end
+    -- Floor mode verifies the first collision is at this destination, rather than accepting mid-air travel.
+    local direction, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 2, drag, false)
     if not direction then break end
-    best, bestFlight, bestPoint = direction, duration, point
+    best, bestFlight, bestPoint = direction, duration, floor.Position
     if math.abs(duration - flight) < 0.002 then break end
     flight = duration
   end
