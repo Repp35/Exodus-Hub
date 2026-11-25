@@ -35,7 +35,8 @@ function Sword.step(snap, chosen)
   crit.observe(snap)
   if native.blocked(snap) then return false end
   local tool = native.findSword(snap)
-  if not tool or not native.canHit(snap, chosen, tool) then return false end
+  if not tool then return false end
+  if not native.canHit(snap, chosen, tool) and (chosen.root.Position - snap.root.Position).Magnitude > native.stats(tool).reach + 3.2 then return false end
   local speed = native.stats(tool).speed
   if type(speed) ~= "number" or speed <= 0 then return false end
   if snap.tool ~= tool then
@@ -49,6 +50,7 @@ function Sword.step(snap, chosen)
   end
   local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
   local readyAt = math.max(nextAttack, lastSwing + 1 / speed)
+  crit.plan(snap, chosen, tool, readyAt)
   if not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then return false end
   if not crit.ready(snap, chosen, tool, readyAt) then return false end
   target.noteAttack(snap, chosen)
@@ -62,7 +64,7 @@ end
 Sword.__contract = {
   provides = { "setup", "reset", "aim", "step" },
   requires = { Native = "mcpnative", Target = "mcptarget", Options = "mcpoptions", Crit = "autocrit" },
-  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" }, Crit = { "reset", "observe", "ready" } },
+  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" }, Crit = { "reset", "observe", "plan", "ready" } },
   requiresData = { Options = { "tuning" } },
 }
 return Sword
