@@ -38,8 +38,25 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, gravity, 
   local snap = native.snapshot()
   local chosen = target.locked()
   if not snap or not chosen then return end
+  if pursuit and pursuit.id == id and action == "ProjectileEnd" and typeof(kind) == "Vector3" then
+    pursuit.actualLanding, pursuit.impactedAt = kind, snap.now
+    return
+  end
+  if action == "Projectile" and kind == "Pearl" and pursuit and not pursuit.id and snap.now - pursuit.sentAt < 0.7
+    and typeof(position) == "Vector3" then
+    local ownDistance = (position - pursuit.launchEye).Magnitude
+    local unique = ownDistance <= 5
+    for _, other in ipairs(game:GetService("Players"):GetPlayers()) do
+      local root = other.Character and other.Character:FindFirstChild("HumanoidRootPart")
+      if other ~= snap.player and root and (position - (root.Position + Vector3.new(0, 1.184, 0))).Magnitude <= ownDistance + 1 then unique = false end
+    end
+    if unique then
+      pursuit.id, pursuit.accepted = id, true
+      return
+    end
+  end
   if action == "ProjectileEnd" and enemyPearl and enemyPearl.id == id and typeof(kind) == "Vector3" then
-    enemyPearl.landing, enemyPearl.at = kind, snap.now
+    enemyPearl.landing, enemyPearl.at, enemyPearl.arrived = kind, snap.now, true
     return
   end
   if action == "ProjectileMove" and enemyPearl and enemyPearl.id == id and typeof(position) == "Vector3" and typeof(velocity) == "Vector3" then
@@ -63,8 +80,8 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, gravity, 
   enemyPearl = { target = chosen.character, id = id, landing = landing, at = snap.now }
   target.hold(chosen.character, snap.now + math.min(8, flight + 4))
 end
-local function solve(snap, chosen)
-  if enemyPearl and enemyPearl.target == chosen.character and snap.now - enemyPearl.at < 5 then
+local function solve(snap, chosen, recovery)
+  if not recovery and enemyPearl and enemyPearl.target == chosen.character and snap.now - enemyPearl.at < 5 and not enemyPearl.arrived then
     if not worthFollowing(snap, chosen) then return nil end
     local direction, duration = ballistics.solve(snap.eye, enemyPearl.landing, projectile.speed, projectile.gravity, filters(snap), 4)
     if direction then return direction, enemyPearl.landing, duration end
@@ -75,14 +92,14 @@ local function solve(snap, chosen)
   if math.abs(velocity.Y) > 8 or velocity.Magnitude > 45 then return nil end
   local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
   local flight, direction, destination = 0.25, nil, nil
-  for _ = 1, 4 do
+  for _ = 1, 8 do
     local predicted = chosen.root.Position + horizontal * flight
     local floor = workspace:Raycast(predicted + Vector3.new(0, 2, 0), Vector3.new(0, -14, 0), params)
     if not floor or floor.Normal.Y < 0.65 then return nil end
     destination = floor.Position
     local duration
-    direction, duration = ballistics.solve(snap.eye, destination, tuning.pearlSpeed, tuning.pearlGravity, params)
-    if not direction or not duration or duration > 0.75 then return nil end
+    direction, duration = ballistics.solve(snap.eye, destination, projectile.speed, projectile.gravity, params, recovery and 4 or 0.75)
+    if not direction or not duration or duration > (recovery and 4 or 0.75) then return nil end
     if math.abs(duration - flight) < 0.015 then return direction, destination, duration end
     flight = duration
   end
@@ -112,13 +129,24 @@ function Pearl.step(snap, chosen)
     if pursuit.target ~= chosen.character or (hitTarget == chosen.character and token > pursuit.token) then
       pursuit = nil
     elseif pursuit.phase == "flight" then
-      if (snap.root.Position - pursuit.landing).Magnitude <= 12 or native.canHit(snap, chosen) then
+      local actual = pursuit.actualLanding or pursuit.landing
+      local moved = (snap.root.Position - pursuit.launch).Magnitude > 12
+      local arrived = (snap.root.Position - actual).Magnitude <= 12 and moved
+      if native.canHit(snap, chosen) or arrived then
         pursuit.phase, pursuit.deadline = "combat", snap.now + 2.5
+        if not native.canHit(snap, chosen) and pursuit.corrections < 1 then
+          pursuit.phase, pursuit.deadline = "recover", snap.now + 3
+        end
         target.hold(chosen.character, pursuit.deadline)
-      elseif snap.now >= pursuit.deadline then
-        Pearl.reset()
-        target.reset()
-        return false
+      elseif snap.now >= pursuit.deadline or (pursuit.impactedAt and snap.now - pursuit.impactedAt >= 0.4) then
+        if pursuit.accepted and pursuit.corrections < 1 then
+          pursuit.phase, pursuit.deadline = "recover", snap.now + 3
+          target.hold(chosen.character, pursuit.deadline)
+        else
+          Pearl.reset()
+          target.reset()
+          return false
+        end
       end
     elseif snap.now >= pursuit.deadline then
       Pearl.reset()
@@ -130,20 +158,21 @@ function Pearl.step(snap, chosen)
     if pending.character ~= snap.character or pending.target ~= chosen.character then cancel(snap.now) return false end
     if pending.phase == "confirm" then
       if not pending.tool.Parent or (tonumber(pending.tool:GetAttribute("Count")) or 0) < pending.count or not native.pearlReady() then
+        if pursuit then pursuit.accepted = true end
         pending = nil
         return true
       end
       if snap.now >= pending.deadline then cancel(snap.now) end
       return false
     end
-    if native.canHit(snap, chosen) or not fleeing(snap, chosen) or snap.now > pending.deadline then cancel(snap.now) return false end
+    if native.canHit(snap, chosen) or (not pending.recovery and not fleeing(snap, chosen)) or snap.now > pending.deadline then cancel(snap.now) return false end
     if snap.tool ~= pending.tool or snap.now < pending.ready then return false end
-    local direction, landing, flight = solve(snap, chosen)
+    local direction, landing, flight = solve(snap, chosen, pending.recovery)
     if not direction then cancel(snap.now) return false end
     pending.count = tonumber(pending.tool:GetAttribute("Count")) or 0
     -- Spend the authorization before sending, even if the game rejects the use.
     spent[chosen.character] = pending.token
-    pursuit = { target = chosen.character, token = pending.token, phase = "flight", landing = landing, deadline = snap.now + math.max(1.5, flight + 0.9) }
+    pursuit = { target = chosen.character, token = pending.token, phase = "flight", landing = landing, launch = snap.root.Position, launchEye = snap.eye, sentAt = snap.now, corrections = pending.recovery and 1 or 0, deadline = snap.now + math.max(1.5, flight + 0.9) }
     target.hold(chosen.character, pursuit.deadline + 2.5)
     if native.usePearl(snap, pending.tool, direction) then
       pending.phase, pending.deadline = "confirm", snap.now + 0.6
@@ -156,17 +185,24 @@ function Pearl.step(snap, chosen)
   if native.canHit(snap, chosen) then outsideSince = nil return false end
   outsideSince = outsideSince or snap.now
   local gap = (chosen.root.Position - snap.root.Position).Magnitude
-  if pursuit or not fleeing(snap, chosen) or hitTarget ~= chosen.character or token <= (spent[chosen.character] or -1)
-    or (not followsPearl and snap.now - hitAt > tuning.pearlHitAge) or gap < tuning.pearlMinGap or gap > (followsPearl and 256 or tuning.pearlMaxGap)
-    or (not followsPearl and snap.now - outsideSince < tuning.pearlDelay) or snap.now < nextPlan
-    or not native.pearlReady() or native.blocked(snap) then return false end
+  local recovery = pursuit and pursuit.phase == "recover" and pursuit.corrections < 1
+    and snap.humanoid.Health / math.max(1, snap.humanoid.MaxHealth) > 0.3
+  if not recovery then
+    if pursuit or not fleeing(snap, chosen) or hitTarget ~= chosen.character or token <= (spent[chosen.character] or -1)
+      or (not followsPearl and snap.now - hitAt > tuning.pearlHitAge)
+      or gap < tuning.pearlMinGap or gap > (followsPearl and 256 or tuning.pearlMaxGap)
+      or (not followsPearl and snap.now - outsideSince < tuning.pearlDelay) then return false end
+  elseif gap < tuning.pearlMinGap or gap > 256 then
+    return false
+  end
+  if snap.now < nextPlan or not native.pearlReady() or native.blocked(snap) then return false end
   nextPlan = snap.now + 0.6
   local tool = native.findPearl(snap)
   if not tool then return false end
-  local direction = solve(snap, chosen)
+  local direction = solve(snap, chosen, recovery)
   if not direction then return false end
   if not native.equip(snap, tool) then return false end
-  pending = { tool = tool, target = chosen.character, character = snap.character, token = token, ready = snap.now + 0.16, deadline = snap.now + 0.6, phase = "equip" }
+  pending = { tool = tool, target = chosen.character, character = snap.character, token = token, recovery = recovery, ready = snap.now + 0.16, deadline = snap.now + 0.6, phase = "equip" }
   return true
 end
 Pearl.__contract = {

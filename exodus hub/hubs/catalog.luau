@@ -10,7 +10,7 @@ return {
     placeIds = { 75260404327641 },
     universeIds = { 10774244015 },
     permissions = false,
-    version = "0.1.5",
+    version = "0.1.6",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · MCPvP carregado.",
     modules = {
@@ -19,7 +19,7 @@ return {
         path = "hubs/mcpvp/combat/auto_attack_sword.luau",
         hash = "3049f9058fea619638bd707e7162b686600d84c1528cf3c16035c567293d4085",
       },
-      { name = "autopearl", path = "hubs/mcpvp/combat/auto_pearl.luau", hash = "b437947dc4d9f39904d4c97e67e59223e22394c6ee5de3155265b5f026d622ec" },
+      { name = "autopearl", path = "hubs/mcpvp/combat/auto_pearl.luau", hash = "24d6e64a137c30f7519d53f321888aa4f398298d14ef81c35a4eab35bd8a472e" },
       { name = "mcpballistics", path = "hubs/mcpvp/game/mcp_ballistics.luau", hash = "48cb2510064a82804ee3f6999ea9f8515d4d4d2e3152ba3ed721a388250c3227" },
       { name = "mcpnative", path = "hubs/mcpvp/game/mcp_native.luau", hash = "0d729aa2a9e980e5a45c4b474b7ba7aa0652fdcbefaaee2d18f5db347f8ba72c" },
       { name = "mcptarget", path = "hubs/mcpvp/game/mcp_target.luau", hash = "067c21d266470cf2ddc023b88b19ef791419811fd9d17bc0f6b486c13ab41577" },
