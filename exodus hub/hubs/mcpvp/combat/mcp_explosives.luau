@@ -164,8 +164,10 @@ function Explosives.observe(snap, targets, cfg)
         local entry = state(block)
         entry.manualUntil = math.max(entry.manualUntil or -math.huge, placed[block] + cfg("MCComboLifetime"))
         target.manualCombo = true
-        if key == "obsidian" then
+        if key == "obsidian" and not entry.observed then
+          entry.observed = true
           remember(target.character, cfg("MCDTap") and "dtap" or "crystal", entry.manualUntil)
+          encounter.base = block
         end
       end
       if target then
@@ -199,7 +201,9 @@ function Explosives.struck(snap, target, cfg)
       if (top - snap.eye).Magnitude <= 14.4 and (target.root.Position - top).Magnitude <= 12.8 then
         local entry = state(block)
         entry.strikeAt, entry.target = snap.now, target.character
-        entry.spent, entry.finished = false, false
+        if not entry.placeSent and not entry.breakSent then
+          entry.spent, entry.finished = false, false
+        end
         entry.manualUntil = snap.now + cfg("MCComboLifetime")
         comboMode, comboAt = "dtap", snap.now
         remember(target.character, "dtap", entry.manualUntil)
@@ -237,6 +241,27 @@ function Explosives.pulse(snap, targets, cfg)
       continue
     end
     local entry = state(block)
+    if cfg("MCCrystal") and cfg("MCCrystalAutoCombo") and encounter and encounter.base ~= block then
+      continue
+    end
+    local crystal, point = crystalAt(snap, top)
+    if entry.breakSent then
+      if crystal and snap.now - entry.breakSent < 0.8 then
+        return true
+      end
+      entry.breakSent, entry.placeSent, entry.finished = nil, nil, true
+    elseif entry.placeSent then
+      if crystal then
+        entry.placeSent = nil
+      elseif snap.now - entry.placeSent < 0.8 then
+        return true
+      else
+        entry.placeSent, entry.finished = nil, true
+      end
+    end
+    if entry.finished and not crystal then
+      continue
+    end
     local target = candidate(snap, targets, top, 6)
     local elevated = false
     -- Any airborne opponent exposed to this blast is eligible.
@@ -267,7 +292,6 @@ function Explosives.pulse(snap, targets, cfg)
       entry.spent = false
       continue
     end
-    local crystal, point = crystalAt(snap, top)
     -- Place immediately after the sword hit; wait for the airborne damage opportunity only when breaking.
     if not elevated and (not launch or crystal) then
       continue
@@ -308,7 +332,7 @@ function Explosives.pulse(snap, targets, cfg)
           continue
         end
       end
-      local canBreak = crystal and elevated and selfSafe and native.canAct("attack")
+      local canBreak = crystal and not entry.finished and elevated and selfSafe and native.canAct("attack")
       local canPlace = not crystal and not entry.finished and (not entry.spent or selfSafe) and (selfSafe or launch) and native.canAct("use", crystalItem.tool)
       if not canBreak and not canPlace then
         continue
@@ -324,18 +348,15 @@ function Explosives.pulse(snap, targets, cfg)
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Self exposure must block detonation itself, not only replacement placement.
-    if crystal and elevated and selfSafe and native.canAct("attack") then
+    if crystal and not entry.finished and elevated and selfSafe and native.canAct("attack") then
       if native.strike(hitPoint) then
-        entry.spent = true
-        if cfg("MCDTap") or (encounter and encounter.mode == "dtap") then
-          entry.finished = true
-        end
+        entry.spent, entry.breakSent = true, snap.now
         acted = true
       end
     end
     if not crystal and not entry.finished and (not entry.spent or selfSafe) and native.canAct("use") then
       if native.action("use", top - Vector3.new(0, 0.03, 0)) then
-        entry.spent, entry.untilAt = true, snap.now + 0.65
+        entry.spent, entry.untilAt, entry.placeSent = true, snap.now + 0.65, snap.now
         remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
         acted = true
       end
@@ -359,10 +380,13 @@ function Explosives.pulse(snap, targets, cfg)
 end
 function Explosives.resumeBase(snap, target, cfg)
   -- In CPvP an established duel can start a placement session even without a previous base.
-  if not manualOverride and cfg("MCCrystal") and cfg("MCCrystalAutoCombo") and target
+  if cfg("MCCrystal") and cfg("MCCrystalAutoCombo") and target
     and target.engaged and target.character.Parent and target.humanoid.Health > 0
-    and (not encounter or encounter.character ~= target.character or snap.now >= encounter.untilAt) then
-    remember(target.character, cfg("MCDTap") and "dtap" or "crystal", snap.now + cfg("MCComboLifetime"))
+    and not native.usingHeld() then
+    manualOverride = false
+    if not encounter or encounter.character ~= target.character or snap.now >= encounter.untilAt then
+      remember(target.character, cfg("MCDTap") and "dtap" or "crystal", snap.now + cfg("MCComboLifetime"))
+    end
   end
   if manualOverride or not encounter or snap.now >= encounter.untilAt or not target or target.character ~= encounter.character then
     return nil
@@ -405,12 +429,20 @@ function Explosives.resumeBase(snap, target, cfg)
       return nil
     end
     local selfDamage = geometry.damage(s, s.character, top, 6, planned and position or nil)
-    if airborne and selfDamage > 0 then
-      return nil
-    end
+    -- Base placement need not wait for the safe detonation window.
     return damage - selfDamage * 0.25 - (predicted - top).Magnitude * 0.1
   end
   -- Reuse one viable base; select only one new cell when no existing base works.
+  local currentBase = encounter.base
+  if currentBase and currentBase.Parent and (currentBase.Position + Vector3.new(0, 1.6, 0) - snap.eye).Magnitude <= 14.4 then
+    local entry = state(currentBase)
+    if entry.placeSent or entry.breakSent then
+      return nil
+    end
+    if not entry.finished and useful(snap, currentBase.Position, false) and crystalAt(snap, currentBase.Position + Vector3.new(0, 1.6, 0)) then
+      return nil
+    end
+  end
   local bestBlock, bestScore
   for _, block in ipairs(blocks(snap)) do
     if blockKey(block) == "obsidian" then
@@ -421,10 +453,12 @@ function Explosives.resumeBase(snap, target, cfg)
     end
   end
   if bestBlock then
+    encounter.base = bestBlock
     state(bestBlock).manualUntil = encounter.untilAt
     target.manualCombo = true
     return nil
   end
+  encounter.base = nil
   if snap.now - lastBase < 0.08 then
     return nil
   end
@@ -485,7 +519,9 @@ function Explosives.resumeBase(snap, target, cfg)
     success = function(s)
       local block = placedBase(s)
       if block and encounter == session then
-        state(block).manualUntil = session.untilAt
+        local entry = state(block)
+        entry.manualUntil, entry.observed = session.untilAt, true
+        session.base = block
         target.manualCombo = true
       end
     end,
