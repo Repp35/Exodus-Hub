@@ -7,6 +7,7 @@ function Runtime.reset()
   if not modules then
     return
   end
+  modules.autototem.reset()
   modules.autopearl.reset()
   modules.autoattacksword.reset()
   modules.mcptarget.reset()
@@ -67,13 +68,18 @@ function Runtime.bind(loaded)
     end)
   end
   scope.connect(game:GetService("RunService").Heartbeat, function()
-    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") then
-      Runtime.reset()
-      return
-    end
+    if not loaded.utils.isActive() then Runtime.reset() return end
     local snap = loaded.mcpnative.snapshot()
     if not snap then
       Runtime.reset()
+      return
+    end
+    if not loaded.autopearl.busy() then loaded.autototem.step(snap) end
+    if loaded.autototem.busy() then return end
+    if not loaded.utils.getConfigValue("MCAutoSword") then
+      loaded.autopearl.reset()
+      loaded.autoattacksword.reset()
+      loaded.mcptarget.reset()
       return
     end
     bindSwing()
@@ -101,7 +107,7 @@ function Runtime.bind(loaded)
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
-    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autopearl.busy() then
+    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autopearl.busy() or loaded.autototem.busy() then
       return
     end
     local snap = loaded.mcpnative.snapshot()
@@ -113,7 +119,7 @@ function Runtime.bind(loaded)
   return { mode = "mcpvp" }
 end
 function Runtime.createAPI(loaded)
-  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy } }
+  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy } }
 end
 Runtime.__contract = {
   provides = { "setup", "reset", "teardown", "bind", "createAPI" },

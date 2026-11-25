@@ -10,6 +10,11 @@ GameUI.definition = {
       columns = 2,
       sections = {
         {
+          title = "Totem",
+          column = 1,
+          components = { { kind = "toggle", title = "Auto Totem", key = "MCAutoTotem", description = "Prioriza a hotbar, abre o inventário para acessar reservas e preenche espaços vazios." } },
+        },
+        {
           title = "Espada",
           column = 1,
           components = {
