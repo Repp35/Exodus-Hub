@@ -34,7 +34,6 @@ Options.groups = {
     title = "Âncoras",
     items = {
       { key = "MCAnchor", title = "Anchor Assist", default = false },
-      { key = "MCAnchorAuto", title = "Colocar âncoras automaticamente", default = false, parentKey = "MCAnchor" },
       { key = "MCAnchorPearl", title = "Permitir Pearl Follow", default = false, parentKey = "MCAnchor" },
     },
   },

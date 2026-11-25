@@ -152,7 +152,7 @@ function Explosives.observe(snap, targets, cfg)
   return chosen
 end
 function Explosives.needsStrike(snap, target, cfg)
-  local wanted = cfg("MCDTap") and target and target.engaged and (not intent or intent.target ~= target.character or snap.now < intent.untilAt)
+  local wanted = cfg("MCDTap") and target and intent and intent.target == target.character and snap.now < intent.untilAt and dtapBase ~= nil
   local prepared = wanted and intent and intent.target == target.character and dtapBase and existing(snap, dtapBase, "obsidian") ~= nil
   return wanted, prepared
 end
@@ -236,40 +236,8 @@ function Explosives.propose(snap, target, cfg)
       if manual then
         templates[cellKey(block.Position)] = { cell = block.Position, time = time }
       end
-      if manual or (cfg("MCAnchorAuto") and target.engaged) or templates[cellKey(block.Position)] then
+      if manual or templates[cellKey(block.Position)] then
         anchors[#anchors + 1] = block
-      end
-    end
-  end
-  if
-    cfg("MCDTap")
-    and intent
-    and intent.target == target.character
-    and snap.now < intent.untilAt
-    and (not dtapBase or not existing(snap, dtapBase, "obsidian"))
-  then
-    local obsidian = item("obsidian")
-    -- Place toward the opponent only after observed sword damage, never on a mere attack attempt.
-    local flat = target.root.Position - snap.root.Position
-    flat = Vector3.new(flat.X, 0, flat.Z)
-    if obsidian and flat.Magnitude > 1 and target.distance < 12 then
-      local forward = flat.Unit
-      local sideways = Vector3.new(-forward.Z, 0, forward.X)
-      for _, offset in ipairs({ forward * 3.5, forward * 5, forward * 3.5 + sideways * 3.2, forward * 3.5 - sideways * 3.2 }) do
-        local placement = geometry.placement(snap, snap.root.Position + offset - Vector3.new(0, 2.4, 0))
-        if not placement then
-          continue
-        end
-        local point = placement.cell + Vector3.new(0, 1.6, 0)
-        if not geometry.evaluate(snap, target, point, 6, cfg, cfg("MCCrystalDamage"), placement.cell) then
-          continue
-        end
-        local job = buildJob(snap, placement, obsidian, "dtap_base", "MCDTap", 72, cfg)
-        job.success = function(s)
-          dtapBase, comboMode = placement.cell, "dtap"
-          intent = { target = target.character, untilAt = s.now + cfg("MCComboLifetime") }
-        end
-        return job
       end
     end
   end
@@ -300,7 +268,8 @@ function Explosives.propose(snap, target, cfg)
           native = "attack",
           needsEquip = false,
           delay = 0.04,
-          timeout = 0.8,
+          timeout = 0.12,
+          repeatFast = true,
           perform = function() return native.strike(crystalPoint + Vector3.new(0, 1.5, 0)) end,
           valid = function(s, t)
             return crystal.Parent ~= nil
@@ -329,7 +298,8 @@ function Explosives.propose(snap, target, cfg)
           tool = crystalItem.tool,
           native = "use",
           delay = 0.04,
-          timeout = 0.9,
+          timeout = 0.21,
+          repeatFast = true,
           point = function() return top - Vector3.new(0, 0.03, 0) end,
           valid = function(s, t)
             return base.block.Parent ~= nil
@@ -445,16 +415,7 @@ function Explosives.propose(snap, target, cfg)
           end
         end
       end
-      if cfg("MCAnchorAuto") and target.engaged then
-        local delta = target.root.Position - snap.root.Position
-        local flat = Vector3.new(delta.X, 0, delta.Z)
-        if flat.Magnitude > 1 and target.distance < 12 then
-          local placement = geometry.placement(snap, snap.root.Position + flat.Unit * 4.5 - Vector3.new(0, 2.4, 0))
-          if placement and geometry.evaluate(snap, target, placement.cell, 5, cfg, cfg("MCAnchorDamage")) then
-            return buildJob(snap, placement, anchorItem, "anchor_auto", "MCAnchor", 70, cfg)
-          end
-        end
-      end
+
     end
   end
   return nil

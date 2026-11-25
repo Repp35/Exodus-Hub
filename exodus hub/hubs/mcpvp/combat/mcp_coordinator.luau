@@ -104,7 +104,7 @@ local function advance(snap)
       backoff[job.id] = snap.now + 0.05
       cancel("Concluído: " .. job.id)
     elseif snap.now - job.sent > job.timeout then
-      cancel("Sem confirmação: " .. job.id, true)
+      cancel("Nova tentativa: " .. job.id, not job.repeatFast)
     end
     return
   end
@@ -435,7 +435,7 @@ local function tick()
     status = "Respeitando uso manual"
     return
   end
-  if comboStrike(snap) then
+  if not native.usingHeld() and comboStrike(snap) then
     return
   end
   sword(snap)
