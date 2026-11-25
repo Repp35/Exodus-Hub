@@ -166,6 +166,7 @@ function Native.pearlReady()
   return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow()
 end
 function Native.usePearl(snap, tool, direction)
+  if typeof(direction) ~= "Vector3" or direction.Y > 0 then return false end
   if Native.blocked(snap) or not owned(tool) or tool.Parent ~= snap.character or not Native.pearlReady() then return false end
   return invoke("Use", direction)
 end
