@@ -16,7 +16,17 @@ end
 local function record(char)
   local entry = records[char]
   if not entry then
-    entry = { dealt = -math.huge, received = -math.huge, intent = -math.huge, swing = -math.huge, duelUntil = -math.huge, hits = 0 }
+    entry = {
+      dealt = -math.huge,
+      received = -math.huge,
+      intent = -math.huge,
+      swing = -math.huge,
+      duelUntil = -math.huge,
+      hits = 0,
+      manual = -math.huge,
+      clicks = 0,
+      authorized = -math.huge,
+    }
     records[char] = entry
   end
   return entry
@@ -78,7 +88,7 @@ function Target.canHit(snap, target, reach, direction)
   local forward = delta:Dot(direction)
   return forward > 0 and forward <= reach and (delta - direction * forward).Magnitude < 0.7 and native.visible(snap.eye, target.root.Position, target.character)
 end
-function Target.noteAttack(snap, chosen)
+function Target.noteAttack(snap, chosen, manual)
   if not snap or not snap.equipped or native.stats(snap.equipped).type ~= "sword" then
     return
   end
@@ -95,7 +105,10 @@ function Target.noteAttack(snap, chosen)
     return
   end
   local entry = record(chosen.character)
-  entry.intent = snap.now
+  if manual then
+    entry.clicks = snap.now - entry.manual < 1 and entry.clicks + 1 or 1
+    entry.manual = snap.now
+  end
   if not pending or pending.character ~= chosen.character or snap.now - pending.at > 0.7 then
     pending = { character = chosen.character, at = snap.now, health = chosen.humanoid.Health }
   end
@@ -108,6 +121,9 @@ function Target.confirmHit(now)
   local entry = record(pending.character)
   entry.hits = now - entry.dealt <= memory and entry.hits + 1 or 1
   entry.dealt = now
+  if (entry.clicks >= 2 and now - entry.manual < 1) or entry.authorized > now then
+    entry.authorized = now + memory
+  end
   if entry.hits >= 2 then
     entry.duelUntil = now + memory
   end
@@ -153,7 +169,28 @@ function Target.hold(char, now)
   entry.intent = now
   current = char
 end
+function Target.active(now)
+  for char, entry in pairs(records) do
+    local human = char.Parent and char:FindFirstChildOfClass("Humanoid")
+    if human and human.Health > 0 and entry.authorized > now then
+      return true
+    end
+  end
+  return false
+end
 function Target.nearby() return nearby end
+function Target.combatNearby(now)
+  if Target.active(now) then
+    return nearby
+  end
+  local result = {}
+  for _, candidate in ipairs(nearby) do
+    if candidate.manualCombo then
+      result[#result + 1] = candidate
+    end
+  end
+  return result
+end
 function Target.lastHit(char) return record(char).dealt end
 function Target.update(snap, cfg)
   if character ~= snap.character then
@@ -182,8 +219,8 @@ function Target.update(snap, cfg)
     local entry = record(candidate.character)
     local recent = math.max(entry.dealt, entry.received, entry.intent)
     candidate.lastHit, candidate.lastDamage = entry.dealt, entry.received
-    candidate.duel = entry.duelUntil > snap.now
-    candidate.engaged = snap.now - recent < cfg("MCComboLifetime")
+    candidate.duel = entry.authorized > snap.now
+    candidate.engaged = entry.authorized > snap.now
     local retained = current == candidate.character and candidate.engaged
     -- FOV gates idle acquisition only. Actual combat and combo intent remain valid behind the camera or briefly behind a block.
     if not candidate.engaged and (candidate.angle > cfg("MCAcquireFov") or not candidate.visible) then
@@ -221,6 +258,22 @@ function Target.point(snap, target, tolerance)
 end
 Target.__contract = {
   requires = { Native = "mcpnative" },
-  provides = { "setup", "reset", "update", "point", "canHit", "noteAttack", "confirmHit", "noteSwing", "noteVictim", "receive", "hold", "nearby", "lastHit" },
+  provides = {
+    "setup",
+    "reset",
+    "update",
+    "point",
+    "canHit",
+    "noteAttack",
+    "confirmHit",
+    "noteSwing",
+    "noteVictim",
+    "receive",
+    "hold",
+    "nearby",
+    "lastHit",
+    "active",
+    "combatNearby",
+  },
 }
 return Target

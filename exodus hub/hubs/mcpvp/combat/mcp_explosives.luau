@@ -6,6 +6,7 @@ local opportunities, templates = {}, {}
 local comboMode, comboAt = nil, -math.huge
 local original, held, lastPulse = nil, nil, -math.huge
 local blockSnapshot, blockCache
+local placed = {}
 local function blockKey(block) return block:GetAttribute("BlockKey") or string.lower(block.Name) end
 local function blocks(snap)
   if blockSnapshot == snap then
@@ -82,11 +83,12 @@ function Explosives.release()
 end
 function Explosives.reset()
   Explosives.release()
-  opportunities, templates = {}, {}
+  opportunities, templates, placed = {}, {}, {}
   blockSnapshot, blockCache = nil, nil
   comboMode, comboAt, lastPulse = nil, -math.huge, -math.huge
 end
 function Explosives.mark(object, time)
+  placed[object] = time
   if time == nil then
     opportunities[object] = nil
   end
@@ -105,6 +107,16 @@ function Explosives.observe(snap, targets, cfg)
     if (key == "obsidian" and (cfg("MCCrystal") or cfg("MCDTap"))) or (key == "respawn_anchor" and cfg("MCAnchor")) then
       local top = block.Position + Vector3.new(0, key == "obsidian" and 1.6 or 0, 0)
       local target = candidate(snap, targets, top, key == "obsidian" and 6 or 5)
+      if
+        target
+        and (placed[block] or -math.huge) > 0
+        and block:GetAttribute("Builder") == snap.player.UserId
+        and snap.now - placed[block] < cfg("MCComboLifetime")
+        and (target.root.Position - top).Magnitude <= 12.8
+      then
+        state(block).manualUntil = placed[block] + cfg("MCComboLifetime")
+        target.manualCombo = true
+      end
       if target then
         chosen = chosen or target
       end
@@ -117,7 +129,7 @@ function Explosives.needsStrike(snap, target, cfg)
     return false, false
   end
   for _, block in ipairs(blocks(snap)) do
-    if blockKey(block) == "obsidian" then
+    if blockKey(block) == "obsidian" and snap.now < (state(block).manualUntil or -math.huge) then
       local top = block.Position + Vector3.new(0, 1.6, 0)
       if (top - snap.eye).Magnitude <= 14.4 and (target.root.Position - top).Magnitude <= 12.8 and not above(target, top) then
         return true, true
@@ -131,7 +143,7 @@ function Explosives.struck(snap, target, cfg)
     return
   end
   for _, block in ipairs(blocks(snap)) do
-    if blockKey(block) == "obsidian" then
+    if blockKey(block) == "obsidian" and snap.now < (state(block).manualUntil or -math.huge) then
       local top = block.Position + Vector3.new(0, 1.6, 0)
       if (top - snap.eye).Magnitude <= 14.4 and (target.root.Position - top).Magnitude <= 12.8 then
         local entry = state(block)
@@ -221,36 +233,7 @@ function Explosives.pulse(snap, targets, cfg)
   end
   return acted
 end
-function Explosives.defense(snap, cfg)
-  if not cfg("MCDefense") or cfg("MCCrystal") or cfg("MCDTap") or cfg("MCAnchor") then
-    return nil
-  end
-  local folder = snap.world:FindFirstChild("EndCrystals")
-  if not folder then
-    return nil
-  end
-  for _, crystal in ipairs(folder:GetChildren()) do
-    local point = geometry.blastPosition(crystal)
-    if point and geometry.damage(snap, snap.character, point, 6) >= cfg("MCDefenseDamage") then
-      local item = cfg("MCProtectionObsidian") and native.find("obsidian", true)
-      local placement = item and geometry.protection(snap, point)
-      if placement then
-        return {
-          id = "defense_crystal",
-          feature = "MCDefense",
-          priority = 90,
-          tool = item.tool,
-          native = "place",
-          delay = 0,
-          point = function() return placement.point end,
-          valid = function(s) return geometry.cellFree(s, placement.cell) end,
-          confirm = function(s) return not geometry.cellFree(s, placement.cell) end,
-        }
-      end
-    end
-  end
-  return nil
-end
+function Explosives.defense() return nil end
 function Explosives.propose(snap, _, cfg, targets)
   if not cfg("MCAnchor") then
     return nil

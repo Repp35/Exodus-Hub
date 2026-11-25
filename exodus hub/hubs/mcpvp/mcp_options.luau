@@ -47,14 +47,8 @@ Options.groups = {
       { key = "MCApple", title = "Auto Golden Apple", default = false },
     },
   },
-  {
-    id = "safety",
-    title = "Avaliação e proteção",
-    items = {
-      { key = "MCDefense", title = "Proteção contra explosões próximas", default = false },
-    },
-  },
 }
+
 Options.tuning = {
   MCTeamCheck = false,
   MCAcquireFov = 24,
@@ -82,8 +76,6 @@ Options.tuning = {
   MCAnchorRepeat = true,
   MCAnchorDamage = 7,
   MCAnchorRadius = 10,
-  MCAnchorProtection = false,
-  MCAnchorAlwaysProtect = false,
   MCTotemRefill = true,
   MCTotemSlots = 2,
   MCReactionMin = 0.12,
@@ -99,9 +91,6 @@ Options.tuning = {
   MCDamageMargin = 2,
   MCHealthReserve = 25,
   MCDamageUncertainty = 30,
-  MCDefenseDamage = 8,
-  MCProtectionObsidian = true,
-  MCProtectionGlowstone = true,
 }
 Options.__config = { defaults = {}, schema = {} }
 for _, group in ipairs(Options.groups) do

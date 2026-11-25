@@ -217,7 +217,9 @@ local function pearl(snap)
   end
   local relative = target.root.AssemblyLinearVelocity - snap.root.AssemblyLinearVelocity
   local displacement = target.root.Position - snap.root.Position
-  if not enemyPearl and (displacement.Magnitude < 0.1 or relative:Dot(displacement.Unit) < -2) then
+  if
+    not enemyPearl and (displacement.Magnitude < 0.1 or target.root.AssemblyLinearVelocity:Dot(displacement.Unit) < 2 or relative:Dot(displacement.Unit) < 1)
+  then
     return nil
   end
   local item = native.find("Pearl", true)
@@ -245,13 +247,19 @@ local function pearl(snap)
     timeout = 1,
     point = function() return planned end,
     valid = function(s, t)
-      if not t then
+      if not t or t.character ~= opponent then
         return false
       end
       if s.now - plannedAt >= 0.1 then
         planned, plannedAt = geometry.pearl(s, t, cfg, projectile, enemyPearl and enemyPearl.landing), s.now
       end
-      return t.engaged and (enemyPearl ~= nil or t.distance >= gap) and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
+      local delta = t.root.Position - s.root.Position
+      local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= 2
+      return t.engaged
+        and (enemyPearl ~= nil or fleeing)
+        and (enemyPearl ~= nil or t.distance >= gap)
+        and t.distance <= cfg("MCSwordPearlMax") * 3.2
+        and planned ~= nil
     end,
     before = function(s) lastPearl = s.now end,
     success = function()
@@ -269,11 +277,14 @@ end
 local function selectSwordTarget(snap, reach, forCombo)
   local chosen, oldest = nil, math.huge
   for _, candidate in ipairs(targeting.nearby()) do
+    if not forCombo and not targeting.active(snap.now) then
+      continue
+    end
     if forCombo and not explosives.needsStrike(snap, candidate, cfg) then
       continue
     end
     local delta = candidate.root.Position - snap.eye
-    if delta.Magnitude > 0.01 and targeting.canHit(snap, candidate, reach, delta.Unit) then
+    if delta.Magnitude > 0.01 and targeting.canHit(snap, candidate, reach, forCombo and delta.Unit or nil) then
       local last = auraHits[candidate.character] or -math.huge
       if last < oldest then
         chosen, oldest = candidate, last
@@ -342,8 +353,8 @@ local function sword(snap, forCombo)
   if not current then
     return false
   end
-  targeting.noteAttack(current, chosen)
-  if not native.strike(chosen.root.Position) then
+  targeting.noteAttack(current, chosen, forCombo)
+  if not (forCombo and native.strike(chosen.root.Position) or not forCombo and native.action("attack")) then
     return false
   end
   auraHits[chosen.character] = snap.now
@@ -351,7 +362,7 @@ local function sword(snap, forCombo)
   nextAttack = snap.now + recharge
   explosives.struck(snap, chosen, cfg)
   -- Start placement in the same heartbeat as the sword hit, including before knockback replicates.
-  explosives.pulse(snap, targeting.nearby(), cfg)
+  explosives.pulse(snap, targeting.combatNearby(snap.now), cfg)
   status = "Ataque: " .. chosen.player.DisplayName
   return true
 end
@@ -407,7 +418,7 @@ local function tick()
   if active and active.id == "apple" and active.valid and not active.valid(snap, target) and not applePastHalf(snap) then
     cancel("Pausa das maçãs após combate")
   end
-  local emergency = choose(survival, explosives.defense(snap, cfg))
+  local emergency = survival
   local manuallyUsing = snap.player:GetAttribute("OffhandUsing") == true
     or snap.character:GetAttribute("EatingApple")
     or snap.character:GetAttribute("DrinkingPotion")
@@ -446,7 +457,7 @@ local function tick()
   if sword(snap, true) then
     return
   end
-  local explosive = explosives.propose(snap, target, cfg, targeting.nearby())
+  local explosive = explosives.propose(snap, target, cfg, targeting.combatNearby(snap.now))
   if allowed(explosive) and explosive.priority >= 80 then
     explosives.release()
     start(explosive, snap)
@@ -463,7 +474,7 @@ local function tick()
     advance(snap)
     return
   end
-  local pulsing, victim = explosives.pulse(snap, targeting.nearby(), cfg)
+  local pulsing, victim = explosives.pulse(snap, targeting.combatNearby(snap.now), cfg)
   if pulsing then
     if victim then
       targeting.hold(victim.character, snap.now)
@@ -537,7 +548,7 @@ function Coordinator.start()
     if not cfg("MCEnabled") then
       return
     end
-    targeting.noteAttack(native.snapshot())
+    targeting.noteAttack(native.snapshot(), nil, true)
   end))
   scope.connect(utils.getRunService().Heartbeat, function()
     local ok, err = pcall(tick)

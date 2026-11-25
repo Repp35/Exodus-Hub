@@ -11,15 +11,7 @@ function Runtime.createAPI(loaded)
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = function() loaded.mcpcoordinator.reset() end,
     updateBlockers = { function() return loaded.mcpcoordinator.busy() end },
-    readouts = {
-      {
-        id = "mcpvp_status",
-        key = "MCEnabled",
-        anchor = Vector2.new(0, 0.5),
-        position = UDim2.new(0, 0, 0.5, 0),
-        read = function() return loaded.mcpcoordinator.state() end,
-      },
-    },
+    readouts = {},
   }
 end
 Runtime.__contract = { provides = { "setup", "bind", "createAPI" }, requires = { "gameui", "mcpcoordinator" } }

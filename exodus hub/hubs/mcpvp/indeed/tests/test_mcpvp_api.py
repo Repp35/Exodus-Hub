@@ -61,5 +61,5 @@ for key in pairs(loaded.mcpoptions.tuning) do
 end
 local api = loaded.gameruntime.createAPI(loaded)
 assert(type(api.updateBlockers[1]) == "function")
-assert(type(api.readouts[1].read()) == "string")
+assert(#api.readouts == 0)
 ''')
