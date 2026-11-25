@@ -1,13 +1,13 @@
 -- [[ autoattacksword ]]
 --!optimize 2
 local Sword = {}
-local native, target, tuning
+local native, target, tuning, crit
 local nextAttack, selected, equipAt = 0, nil, 0
 function Sword.setup(deps)
-  native, target, tuning = deps.Native, deps.Target, deps.Options.tuning
+  native, target, tuning, crit = deps.Native, deps.Target, deps.Options.tuning, deps.Crit
   return true
 end
-function Sword.reset() nextAttack, selected, equipAt = 0, nil, 0 end
+function Sword.reset() nextAttack, selected, equipAt = 0, nil, 0 if crit then crit.reset() end end
 function Sword.aim(snap, chosen, dt)
   if native.blocked(snap) then return end
   local close = native.canHit(snap, chosen)
@@ -32,6 +32,7 @@ function Sword.aim(snap, chosen, dt)
   camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, point), alpha)
 end
 function Sword.step(snap, chosen)
+  crit.observe(snap)
   if native.blocked(snap) then return false end
   local tool = native.findSword(snap)
   if not tool or not native.canHit(snap, chosen, tool) then return false end
@@ -46,10 +47,10 @@ function Sword.step(snap, chosen)
     end
     return false
   end
-  if snap.now < nextAttack then return false end
   local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
-  if snap.now - lastSwing < 1 / speed then return false end
+  local readyAt = math.max(nextAttack, lastSwing + 1 / speed)
   if not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then return false end
+  if not crit.ready(snap, chosen, tool, readyAt) then return false end
   target.noteAttack(snap, chosen)
   if native.attack(snap, chosen) then
     nextAttack = snap.now + 1 / speed
@@ -60,8 +61,8 @@ function Sword.step(snap, chosen)
 end
 Sword.__contract = {
   provides = { "setup", "reset", "aim", "step" },
-  requires = { Native = "mcpnative", Target = "mcptarget", Options = "mcpoptions" },
-  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" } },
+  requires = { Native = "mcpnative", Target = "mcptarget", Options = "mcpoptions", Crit = "autocrit" },
+  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" }, Crit = { "reset", "observe", "ready" } },
   requiresData = { Options = { "tuning" } },
 }
 return Sword

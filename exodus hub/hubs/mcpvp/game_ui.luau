@@ -27,6 +27,7 @@ GameUI.definition = {
               key = "MCAutoSword",
               description = "Inicie com dois ataques no alvo. Mantém mira e ritmo dos golpes.",
             },
+            { kind = "toggle", title = "Auto Crit", key = "MCAutoCrit", parentKey = "MCAutoSword", description = "Sincroniza o pulo com o cooldown e prioriza golpes durante a descida." },
           },
         },
         {

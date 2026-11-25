@@ -196,8 +196,13 @@ function Native.equip(snap, tool)
   snap.humanoid:EquipTool(tool)
   return true
 end
+function Native.prepareCritical()
+  local combat = storage:FindFirstChild("VoxelCombat")
+  local sprint = combat and combat:FindFirstChild("Sprint")
+  if sprint and sprint:IsA("RemoteEvent") then sprint:FireServer(false) end
+end
 Native.__contract = {
-  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit" },
+  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit", "prepareCritical" },
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getLocalPlayer", "getWorkspace", "recordError" } },
 }
