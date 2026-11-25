@@ -126,6 +126,16 @@ local function advance(snap)
       end
       backoff[job.id] = snap.now
       cancel("Concluído: " .. job.id)
+      if job.id == "anchor_charge" then
+        local fresh = native.snapshot()
+        if fresh then
+          local follow = explosives.propose(fresh, target, cfg, targeting.combatNearby(fresh.now))
+          if follow and follow.id == "anchor_detonate" then
+            start(follow, fresh)
+            advance(fresh)
+          end
+        end
+      end
     elseif snap.now - job.sent > job.timeout then
       cancel("Nova tentativa: " .. job.id, not job.repeatFast)
     end
@@ -323,7 +333,7 @@ local function sword(snap, forCombo)
   if not chosen or not native.canAct("attack") then
     return false
   end
-  if snap.now - (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or 0) < recharge then
+  if not forCombo and snap.now - (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or 0) < recharge then
     return false
   end
   if not forCombo and cfg("MCCrit") then
@@ -346,6 +356,7 @@ local function sword(snap, forCombo)
       native.prepareCritical()
     end
   end
+  explosives.release()
   if not native.equip(weapon) then
     return false
   end
@@ -525,8 +536,8 @@ function Coordinator.start()
       end
       if kind == Enum.UserInputType.Keyboard and key.Value >= Enum.KeyCode.One.Value and key.Value <= Enum.KeyCode.Nine.Value then
         cancel("Troca manual de slot", false, true)
-        explosives.release()
-        pauseUntil = os.clock()
+        explosives.clearCombo()
+        pauseUntil = os.clock() + 0.15
         return
       end
       local tool = native.equipped()

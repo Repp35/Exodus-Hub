@@ -7,6 +7,7 @@ local comboMode, comboAt = nil, -math.huge
 local original, held, lastPulse = nil, nil, -math.huge
 local blockSnapshot, blockCache
 local placed = {}
+local manualOverride = false
 local function blockKey(block) return block:GetAttribute("BlockKey") or string.lower(block.Name) end
 local function blocks(snap)
   if blockSnapshot == snap then
@@ -84,6 +85,7 @@ end
 function Explosives.reset()
   Explosives.release()
   opportunities, templates, placed = {}, {}, {}
+  manualOverride = false
   blockSnapshot, blockCache = nil, nil
   comboMode, comboAt, lastPulse = nil, -math.huge, -math.huge
 end
@@ -94,8 +96,14 @@ function Explosives.mark(object, time)
   end
 end
 function Explosives.mode() return os.clock() - comboAt < 2.5 and comboMode or nil end
-function Explosives.clearCombo() Explosives.reset() end
+function Explosives.clearCombo()
+  Explosives.reset()
+  manualOverride = true
+end
 function Explosives.observe(snap, targets, cfg)
+  if held and native.equipped() ~= held then
+    Explosives.clearCombo()
+  end
   local chosen
   for block in pairs(opportunities) do
     if not block.Parent then
@@ -107,6 +115,14 @@ function Explosives.observe(snap, targets, cfg)
     if (key == "obsidian" and (cfg("MCCrystal") or cfg("MCDTap"))) or (key == "respawn_anchor" and cfg("MCAnchor")) then
       local top = block.Position + Vector3.new(0, key == "obsidian" and 1.6 or 0, 0)
       local target = candidate(snap, targets, top, key == "obsidian" and 6 or 5)
+      if not target and key == "obsidian" and (placed[block] or -math.huge) > 0 and block:GetAttribute("Builder") == snap.player.UserId then
+        for _, other in ipairs(targets) do
+          if (other.root.Position - top).Magnitude <= 12.8 then
+            target = other
+            break
+          end
+        end
+      end
       if
         target
         and (placed[block] or -math.huge) > 0
@@ -114,7 +130,9 @@ function Explosives.observe(snap, targets, cfg)
         and snap.now - placed[block] < cfg("MCComboLifetime")
         and (target.root.Position - top).Magnitude <= 12.8
       then
-        state(block).manualUntil = placed[block] + cfg("MCComboLifetime")
+        manualOverride = false
+        local entry = state(block)
+        entry.manualUntil = math.max(entry.manualUntil or -math.huge, placed[block] + cfg("MCComboLifetime"))
         target.manualCombo = true
       end
       if target then
@@ -125,7 +143,7 @@ function Explosives.observe(snap, targets, cfg)
   return chosen
 end
 function Explosives.needsStrike(snap, target, cfg)
-  if not cfg("MCDTap") or not target or not native.find("EndCrystal", true) then
+  if manualOverride or not cfg("MCDTap") or not target or not native.find("EndCrystal", true) then
     return false, false
   end
   for _, block in ipairs(blocks(snap)) do
@@ -149,12 +167,23 @@ function Explosives.struck(snap, target, cfg)
         local entry = state(block)
         entry.strikeAt, entry.target = snap.now, target.character
         entry.spent = false
+        entry.manualUntil = snap.now + cfg("MCComboLifetime")
         comboMode, comboAt = "dtap", snap.now
       end
     end
   end
 end
 function Explosives.pulse(snap, targets, cfg)
+  if held and native.equipped() ~= held then
+    Explosives.clearCombo()
+    return false
+  end
+  if manualOverride then
+    if not snap.equipped or snap.equipped:GetAttribute("ClassItem") ~= "EndCrystal" then
+      return false
+    end
+    manualOverride = false
+  end
   if not cfg("MCCrystal") and not cfg("MCDTap") then
     Explosives.release()
     return false
@@ -194,6 +223,17 @@ function Explosives.pulse(snap, targets, cfg)
     if entry.spent and not continuous and not finishing then
       continue
     end
+    local hitPoint = (point or top) + Vector3.new(0, 3.2, 0)
+    local delta = hitPoint - snap.eye
+    local melee = native.data().geometry
+    local reach = native.stats(crystalItem.tool).reach
+    local inReach = melee
+      and melee.Box
+      and delta.Magnitude > 0.01
+      and melee.Box(snap.eye, delta.Unit, top - Vector3.new(3.2, 0, 3.2), top + Vector3.new(3.2, 6.4, 3.2), reach) ~= nil
+    if not inReach then
+      continue
+    end
     if not held then
       original = native.equipped()
     end
@@ -210,20 +250,12 @@ function Explosives.pulse(snap, targets, cfg)
       end
     end
     if (crystal or entry.untilAt > snap.now) and native.canAct("attack") then
-      local hitPoint = (point or top) + Vector3.new(0, 3.2, 0)
-      local delta = hitPoint - snap.eye
-      local melee = native.data().geometry
-      local reach = native.stats(held).reach
-      local inReach = melee
-        and melee.Box
-        and delta.Magnitude > 0.01
-        and melee.Box(snap.eye, delta.Unit, top - Vector3.new(3.2, 0, 3.2), top + Vector3.new(3.2, 6.4, 3.2), reach) ~= nil
       if inReach and native.strike(hitPoint) then
         entry.spent = true
         acted = true
       end
     end
-    if continuous or finishing or acted then
+    if (continuous and (crystal or entry.untilAt > snap.now)) or finishing or acted then
       lastPulse = snap.now
       return true, target
     end
@@ -277,7 +309,7 @@ function Explosives.propose(snap, _, cfg, targets)
       priority = charged and 82 or 80,
       tool = tool.tool,
       delay = 0,
-      timeout = 0.5,
+      timeout = 0.25,
       cooldown = charged and "anchor" or "use",
       point = function() return pos + Vector3.new(0, 1.4, 0) end,
       valid = function(s) return block.Parent ~= nil and candidate(s, targets, pos, 5) ~= nil end,
