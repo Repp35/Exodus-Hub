@@ -24,7 +24,7 @@ function Pearl.reset()
   if heldPearl then restoreSword() end
   outsideSince, pending, pursuit = nil, nil, nil
 end
-function Pearl.busy() return swapping end
+function Pearl.busy() return swapping or (pending ~= nil and pending.phase == "confirm") end
 local function filters(snap)
   local params = RaycastParams.new()
   params.FilterType = Enum.RaycastFilterType.Exclude
@@ -157,9 +157,9 @@ local function cancel(now)
   nextPlan = now + 0.6
 end
 function Pearl.step(snap, chosen)
-  restoreSword()
+  if not pending or pending.phase ~= "confirm" then restoreSword() end
   local nearby = target.nearThreat(snap)
-  if nearby and nearby.character ~= chosen.character then
+  if nearby and nearby.character ~= chosen.character and (not pending or pending.phase ~= "confirm") then
     Pearl.reset()
     return false
   end
@@ -200,14 +200,15 @@ function Pearl.step(snap, chosen)
     end
   end
   if pending then
-    if pending.character ~= snap.character or pending.target ~= chosen.character then cancel(snap.now) return false end
+    if pending.character ~= snap.character or (pending.phase ~= "confirm" and pending.target ~= chosen.character) then cancel(snap.now) return false end
     if pending.phase == "confirm" then
-      if not pending.tool.Parent or (tonumber(pending.tool:GetAttribute("Count")) or 0) < pending.count or not native.pearlReady() then
+      if (pursuit and pursuit.accepted) or not pending.tool.Parent or (tonumber(pending.tool:GetAttribute("Count")) or 0) < pending.count or not native.pearlReady() then
         if pursuit then pursuit.accepted = true end
+        restoreSword()
         pending = nil
         return true
       end
-      if snap.now >= pending.deadline then cancel(snap.now) end
+      if snap.now >= pending.deadline then pursuit = nil cancel(snap.now) end
       return false
     end
     if native.canHit(snap, chosen) or (not pending.recovery and not fleeing(snap, chosen))
@@ -233,21 +234,16 @@ function Pearl.step(snap, chosen)
       target.hold(chosen.character, pursuit.deadline + 2.5)
       return native.usePearl(fresh, tool, direction)
     end)
-    -- Restore before waiting for confirmation or returning control to the combat loop.
-    local restored, restoreError = pcall(restoreSword)
     swapping = false
-    if not ok or not restored then
+    if not ok or not sent then
       pursuit = nil
       cancel(snap.now)
-      error(not ok and sent or restoreError)
+      if not ok then error(sent) end
+      return false
     end
-    if sent then
-      pending.phase, pending.deadline = "confirm", snap.now + 0.6
-    else
-      pursuit = nil
-      cancel(snap.now)
-    end
-    return sent
+    -- Keep the pearl selected until the server confirms its launch.
+    pending.phase, pending.deadline = "confirm", snap.now + 0.9
+    return true
   end
   if native.canHit(snap, chosen) then outsideSince = nil return false end
   outsideSince = outsideSince or snap.now
