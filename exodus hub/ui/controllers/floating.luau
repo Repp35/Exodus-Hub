@@ -12,22 +12,6 @@ function Controller.setup() return true end
 
 -- controller
 function Controller.create(context)
-  if context.combatUI == false then
-    local function inactive() end
-    return {
-      setSpam = inactive,
-      showMini = inactive,
-      applyMiniScale = inactive,
-      showClashBall = inactive,
-      showParryBall = inactive,
-      showDarkBall = inactive,
-      showJumpBall = inactive,
-      showUpDashBall = inactive,
-      sync = inactive,
-      applyVisibility = inactive,
-      refreshAbilities = inactive,
-    }
-  end
   local Utils = context.deps.Utils
   local GameInfo = context.deps.Hub
   local Controls = context.deps.Controls
@@ -117,6 +101,96 @@ function Controller.create(context)
         twPlay(ball, "feedback", { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) })
       end
     end))
+  end
+  local config = Utils.getConfig()
+  local function createMovementBall(name, text, color, xKey, yKey, yOffset, onClick)
+    local x = config[xKey] or (CLASH_SIZE + 22)
+    local y = config[yKey] or (viewport().Y / 2 + yOffset)
+    local ball = inst("TextButton", {
+      Name = name,
+      Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
+      Position = UDim2.new(0, OFFSCREEN_X, 0, y),
+      BackgroundColor3 = color,
+      Text = text,
+      TextColor3 = Color3.new(1, 1, 1),
+      TextSize = 15,
+      Font = Enum.Font.GothamBold,
+      Active = true,
+      ZIndex = 8,
+      Parent = context.refs.screenGui,
+    })
+    corner(ball, 999)
+    stroke(ball, nil, 2)
+    local dragging = makeDraggable(ball, ball, function()
+      setConfigValue(xKey, ball.Position.X.Offset)
+      setConfigValue(yKey, ball.Position.Y.Offset)
+    end)
+    trackConn(ball.Activated:Connect(function()
+      if not dragging() then
+        onClick(ball)
+      end
+    end))
+    return ball, x, y
+  end
+  if context.combatUI == false then
+    local function inactive() end
+    local buttons = {}
+    context.miniBallRefs = {}
+    for index, definition in ipairs(context.miniBalls or {}) do
+      local prefix = definition.prefix
+      local visibleKey, xKey, yKey = prefix .. "Visible", prefix .. "X", prefix .. "Y"
+      local key, label = definition.key, definition.label
+      local onText, offText = label .. "\nON", label .. "\nOFF"
+      local value = config[key] == true
+      local ball = createMovementBall("Exodus" .. prefix, value and onText or offText, value and C.green or C.red, xKey, yKey, 0, function()
+        local enabled = Utils.getConfigValue(key) ~= true
+        if setConfigValue(key, enabled) and context.notifications.toast then
+          context.notifications.toast(definition.title .. (enabled and " On" or " Off"))
+        end
+      end)
+      ball.Visible = false
+      ball.TextTransparency, ball.BackgroundTransparency = 1, 1
+      context.refs[prefix] = ball
+      context.miniBallRefs[#context.miniBallRefs + 1] = prefix
+      local function show(visible)
+        local scale = math.max(context.refs.responsiveScale.Scale, 0.01)
+        local view = viewport() / scale
+        local gap = CLASH_SIZE + 8
+        local x = math.min(14 + ((index - 1) % 2) * gap, math.max(0, view.X - CLASH_SIZE))
+        local y = math.clamp((view.Y - 3 * gap) / 2 + math.floor((index - 1) / 2) * gap, 0, math.max(0, view.Y - CLASH_SIZE))
+        showBall(ball, visible, visibleKey, xKey, yKey, x, y)
+      end
+      buttons[#buttons + 1] = {
+        key = key,
+        visibleKey = visibleKey,
+        show = show,
+        paint = function(enabled) paintBall(ball, enabled, onText, offText, C.green, C.red, 14, 14) end,
+      }
+      paintBall(ball, value, onText, offText, C.green, C.red, 14, 14)
+      show(config[visibleKey] == true)
+    end
+    return {
+      setSpam = inactive,
+      showMini = inactive,
+      applyMiniScale = inactive,
+      showClashBall = inactive,
+      showParryBall = inactive,
+      showDarkBall = inactive,
+      showJumpBall = inactive,
+      showUpDashBall = inactive,
+      sync = function(changes)
+        for _, button in ipairs(buttons) do
+          if changes[button.key] ~= nil then
+            button.paint(changes[button.key] == true)
+          end
+          if changes[button.visibleKey] ~= nil then
+            button.show(changes[button.visibleKey] == true)
+          end
+        end
+      end,
+      applyVisibility = inactive,
+      refreshAbilities = inactive,
+    }
   end
   local function showParryBall(value)
     showBall(context.refs.parryBall, value, "ParryBallVisible", "ParryBallX", "ParryBallY", 14, viewport().Y / 2 - CLASH_SIZE - 40)
@@ -273,8 +347,6 @@ function Controller.create(context)
       end))
     end
   end
-  local config = Utils.getConfig()
-
   context.refs.clashBall = inst("TextButton", {
     Name = "ExodusClashBall",
     Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
@@ -362,35 +434,6 @@ function Controller.create(context)
     end
     setDarkBall(Utils.getConfigValue("AutoDark") ~= true)
   end))
-  local function createMovementBall(name, text, color, xKey, yKey, yOffset, onClick)
-    local x = config[xKey] or (CLASH_SIZE + 22)
-    local y = config[yKey] or (viewport().Y / 2 + yOffset)
-    local ball = inst("TextButton", {
-      Name = name,
-      Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
-      Position = UDim2.new(0, OFFSCREEN_X, 0, y),
-      BackgroundColor3 = color,
-      Text = text,
-      TextColor3 = Color3.new(1, 1, 1),
-      TextSize = 15,
-      Font = Enum.Font.GothamBold,
-      Active = true,
-      ZIndex = 8,
-      Parent = context.refs.screenGui,
-    })
-    corner(ball, 999)
-    stroke(ball, nil, 2)
-    local dragging = makeDraggable(ball, ball, function()
-      setConfigValue(xKey, ball.Position.X.Offset)
-      setConfigValue(yKey, ball.Position.Y.Offset)
-    end)
-    trackConn(ball.Activated:Connect(function()
-      if not dragging() then
-        onClick(ball)
-      end
-    end))
-    return ball, x, y
-  end
   context.refs.jumpBall = createMovementBall(
     "ExodusJumpBall",
     config.AutoJump and "JUMP\nON" or "JUMP\nOFF",

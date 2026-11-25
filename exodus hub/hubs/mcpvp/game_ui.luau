@@ -1,8 +1,17 @@
 -- [[ gameui ]]
 --!optimize 2
 local GameUI = {}
+local miniBalls = {
+  { title = "Sword", label = "SWORD", key = "MCAutoSword", prefix = "MCSwordBall" },
+  { title = "Auto Crit", label = "CRIT", key = "MCAutoCrit", prefix = "MCCritBall" },
+  { title = "Auto Força", label = "FORÇA", key = "MCAutoStrength", prefix = "MCStrengthBall" },
+  { title = "Auto Pearl", label = "PEARL", key = "MCAutoPearl", prefix = "MCPearlBall" },
+  { title = "Auto Totem", label = "TOTEM", key = "MCAutoTotem", prefix = "MCTotemBall" },
+  { title = "Reabastecer", label = "REFILL", key = "MCAutoRefill", prefix = "MCRefillBall" },
+}
 GameUI.definition = {
-  pageOrder = { "mcpvp" },
+  miniBalls = miniBalls,
+  pageOrder = { "mcpvp", "mcpvp-mini" },
   pages = {
     {
       id = "mcpvp",
@@ -62,6 +71,28 @@ GameUI.definition = {
       },
     },
   },
+}
+local miniComponents = {}
+GameUI.__config = { schema = {}, defaults = {} }
+for _, ball in ipairs(miniBalls) do
+  local visibleKey = ball.prefix .. "Visible"
+  GameUI.__config.schema[visibleKey] = "boolean"
+  GameUI.__config.schema[ball.prefix .. "X"] = "position"
+  GameUI.__config.schema[ball.prefix .. "Y"] = "position"
+  GameUI.__config.defaults[visibleKey] = false
+  miniComponents[#miniComponents + 1] = {
+    kind = "toggle",
+    title = "Mini " .. ball.title .. " UI",
+    key = visibleKey,
+    description = "Mostra o botão de " .. ball.title .. ".",
+    mobileOnly = true,
+  }
+end
+GameUI.definition.pages[#GameUI.definition.pages + 1] = {
+  id = "mcpvp-mini",
+  title = "Mini UI",
+  columns = 2,
+  sections = { { title = "Mini UI", components = miniComponents } },
 }
 function GameUI.setup() return true end
 GameUI.__contract = { provides = { "setup" }, data = { "definition" }, requires = {} }

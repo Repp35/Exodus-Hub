@@ -292,7 +292,11 @@ function Context.create(deps, deviceDesktop)
     local size = viewport()
     context.refs.responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
     local scale = context.refs.responsiveScale.Scale
-    for _, name in ipairs({ "configPanel", "floatingButton", "clashBall", "parryBall", "darkBall", "jumpBall", "upDashBall" }) do
+    local names = { "configPanel", "floatingButton", "clashBall", "parryBall", "darkBall", "jumpBall", "upDashBall" }
+    for _, name in ipairs(context.miniBallRefs or {}) do
+      names[#names + 1] = name
+    end
+    for _, name in ipairs(names) do
       local object = context.refs[name]
       if object and object.Parent and object.Visible then
         local pos, dimensions = object.AbsolutePosition, object.AbsoluteSize
