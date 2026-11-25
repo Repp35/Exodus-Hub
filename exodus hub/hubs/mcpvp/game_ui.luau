@@ -84,7 +84,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Totem",
               key = "MCAutoTotem",
-              description = "Equipa imediatamente pela hotbar. Reserva abre o inventário sem espera para equipar; fechamento respeita 400 ms.",
+              description = "Busca na reserva, coloca na hotbar e equipa o offhand imediatamente. Mantém um totem de reserva na hotbar; fechamento respeita 400 ms.",
             },
           },
         },

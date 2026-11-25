@@ -176,7 +176,7 @@ function Inventory.move(actor, snap, tool, from, destination, allowSpeed)
     return nil
   end
   local previous = values[destination]
-  if available(previous) and not (allowSpeed and previous:GetAttribute("ClassItem") == "SpeedPotion") then
+  if available(previous) and not (allowSpeed == "totem" or allowSpeed == true and previous:GetAttribute("ClassItem") == "SpeedPotion") then
     return nil
   end
   local operation = ticket(actor, snap, "move")
@@ -184,6 +184,7 @@ function Inventory.move(actor, snap, tool, from, destination, allowSpeed)
     return nil
   end
   operation.tool, operation.from, operation.destination = tool, from, destination
+  operation.urgent = actor == "totem"
   values[from], values[destination] = allowSpeed and previous or nil, tool
   operation.done = pcall(functions.refresh)
   return operation
@@ -295,7 +296,7 @@ function Inventory.confirm(operation, snap)
     return false
   end
   operation.stableAt = operation.stableAt or snap.now
-  operation.confirmed = operation.immediate or snap.now - operation.stableAt >= (operation.kind == "offhand" and 0 or MIN_DELAY)
+  operation.confirmed = operation.immediate or operation.urgent or snap.now - operation.stableAt >= (operation.kind == "offhand" and 0 or MIN_DELAY)
   return operation.confirmed
 end
 function Inventory.finish(actor, snap)
