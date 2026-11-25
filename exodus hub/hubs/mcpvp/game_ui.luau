@@ -1,17 +1,8 @@
 -- [[ gameui ]]
 --!optimize 2
 local GameUI = {}
-local miniControls = {
-  { title = "Sword", key = "MCAutoSword", visibleKey = "MCMiniSwordVisible" },
-  { title = "Auto Crit", key = "MCAutoCrit", visibleKey = "MCMiniCritVisible" },
-  { title = "Auto Força", key = "MCAutoStrength", visibleKey = "MCMiniStrengthVisible" },
-  { title = "Auto Pearl", key = "MCAutoPearl", visibleKey = "MCMiniPearlVisible" },
-  { title = "Auto Totem", key = "MCAutoTotem", visibleKey = "MCMiniTotemVisible" },
-  { title = "Reabastecer", key = "MCAutoRefill", visibleKey = "MCMiniRefillVisible" },
-}
 GameUI.definition = {
-  miniControls = { title = "MCPvP", controls = miniControls, xKey = "MCMiniX", yKey = "MCMiniY" },
-  pageOrder = { "mcpvp", "mcpvp-mini" },
+  pageOrder = { "mcpvp" },
   pages = {
     {
       id = "mcpvp",
@@ -71,27 +62,6 @@ GameUI.definition = {
       },
     },
   },
-}
-local miniComponents = {}
-GameUI.__config = {
-  schema = { MCMiniX = "position", MCMiniY = "position" },
-  defaults = {},
-}
-for _, control in ipairs(miniControls) do
-  GameUI.__config.schema[control.visibleKey] = "boolean"
-  GameUI.__config.defaults[control.visibleKey] = false
-  miniComponents[#miniComponents + 1] = {
-    kind = "toggle",
-    title = "Mini " .. control.title .. " UI",
-    key = control.visibleKey,
-    description = "Mostra ou oculta o botão flutuante sem alterar a função.",
-  }
-end
-GameUI.definition.pages[#GameUI.definition.pages + 1] = {
-  id = "mcpvp-mini",
-  title = "Mini UI",
-  columns = 1,
-  sections = { { title = "Botões flutuantes", components = miniComponents } },
 }
 function GameUI.setup() return true end
 GameUI.__contract = { provides = { "setup" }, data = { "definition" }, requires = {} }
