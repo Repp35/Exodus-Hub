@@ -1,138 +1,174 @@
 -- [[ mcpnative ]]
 --!optimize 2
 local Native = {}
-local player, world, storage, weapons, geometry, config
-local sequence = 0
+local player, world, storage, weapons, geometry, config, controller, utils
+local functions, nextScan, dispatching = {}, 0, false
 local function load(name)
   local source = storage:FindFirstChild(name)
-  if not source then
-    return nil
-  end
+  if not source then return nil end
   local ok, result = pcall(require, source)
   return ok and type(result) == "table" and result or nil
 end
+local function owned(tool)
+  return typeof(tool) == "Instance" and tool:IsA("Tool") and tool.Parent ~= nil
+    and (tool.Parent == player.Character or tool.Parent == player:FindFirstChild("Backpack"))
+end
+local function discover()
+  if os.clock() < nextScan then return end
+  nextScan = os.clock() + 5
+  local env = type(getgenv) == "function" and getgenv() or _G
+  if type(env.getgc) ~= "function" then return end
+  local ok, objects = pcall(env.getgc, false)
+  if not ok or type(objects) ~= "table" then return end
+  local scripts = player:FindFirstChild("PlayerScripts")
+  local wanted = { VoxelCombatClient = { performAttack = "attack" }, ItemClient = { use = "use" }, VoxelPackHUD = { selectSlot = "select" } }
+  for _, fn in pairs(objects) do
+    if type(fn) ~= "function" then continue end
+    local gotEnv, fnEnv = pcall(getfenv, fn)
+    local scriptObject = gotEnv and fnEnv and fnEnv.script
+    if typeof(scriptObject) ~= "Instance" or not scripts or scriptObject.Parent ~= scripts then continue end
+    local names = wanted[scriptObject.Name]
+    if not names then continue end
+    local gotName, name = pcall(debug.info, fn, "n")
+    if gotName and names[name] then functions[names[name]] = fn end
+  end
+end
 function Native.setup(deps)
-  player, world = deps.Utils.getLocalPlayer(), deps.Utils.getWorkspace()
+  utils = deps.Utils
+  player, world = utils.getLocalPlayer(), utils.getWorkspace()
   storage = game:GetService("ReplicatedStorage")
-  weapons, geometry, config = load("VoxelWeapons"), load("VoxelMeleeGeometry"), load("GameConfig")
+  weapons, geometry, config, controller = load("VoxelWeapons"), load("VoxelMeleeGeometry"), load("GameConfig"), load("ControllerInput")
+  functions, nextScan, dispatching = {}, 0, false
+  discover()
   return true
 end
+function Native.isDispatching() return dispatching end
 function Native.snapshot()
   local char = player.Character
   local root = char and char:FindFirstChild("HumanoidRootPart")
   local human = char and char:FindFirstChildOfClass("Humanoid")
   local camera = world.CurrentCamera
-  if not root or not human or human.Health <= 0 or not camera or player:GetAttribute("InArena") == false then
-    return nil
-  end
-  local head = char:FindFirstChild("Head")
-  return {
-    player = player,
-    character = char,
-    root = root,
-    humanoid = human,
-    camera = camera,
-    eye = head and head.Position or root.Position,
-    tool = char:FindFirstChildOfClass("Tool"),
-    now = os.clock(),
-  }
+  if not root or not human or human.Health <= 0 or not camera or player:GetAttribute("InArena") == false
+    or player:GetAttribute("ArenaProtected") == true then return nil end
+  local sneaking = char:GetAttribute("Sneaking") == true
+  local eye = geometry and geometry.Eye(root.Position, sneaking) or root.Position + Vector3.new(0, sneaking and 0.064 or 1.184, 0)
+  return { player = player, character = char, root = root, humanoid = human, camera = camera, eye = eye, tool = char:FindFirstChildOfClass("Tool"), now = os.clock() }
 end
 function Native.stats(tool)
-  if weapons and type(weapons.Stats) == "function" then
-    return weapons.Stats(tool)
-  end
+  if weapons and type(weapons.Stats) == "function" then return weapons.Stats(tool) end
   return { type = tool and tool:GetAttribute("WeaponType"), speed = 1.6, reach = 9.6 }
+end
+local function find(snap, predicate)
+  for _, parent in pairs({ snap.character, player:FindFirstChild("Backpack") }) do
+    for _, tool in ipairs(parent:GetChildren()) do
+      if tool:IsA("Tool") and predicate(tool) then return tool end
+    end
+  end
+  return nil
+end
+function Native.findSword(snap)
+  if owned(snap.tool) and Native.stats(snap.tool).type == "sword" then return snap.tool end
+  return find(snap, function(tool) return Native.stats(tool).type == "sword" end)
+end
+function Native.findPearl(snap)
+  return find(snap, function(tool)
+    return tool:GetAttribute("ClassItem") == "Pearl" and (tonumber(tool:GetAttribute("Count")) or 0) > 0
+  end)
 end
 function Native.visible(snap, point, target)
   local params = RaycastParams.new()
   params.RespectCanCollide = true
   params.FilterType = Enum.RaycastFilterType.Exclude
-  params.FilterDescendantsInstances = { snap.character }
+  params.FilterDescendantsInstances = { snap.character, snap.camera }
   local hit = world:Raycast(snap.eye, point - snap.eye, params)
   return not hit or (target ~= nil and hit.Instance:IsDescendantOf(target))
 end
-function Native.canHit(snap, target)
-  local stats = Native.stats(snap.tool)
-  if stats.type ~= "sword" then
-    return false
-  end
+function Native.canHit(snap, target, tool)
+  tool = tool or Native.findSword(snap)
+  if not tool or Native.stats(tool).type ~= "sword" then return false end
   local delta = target.root.Position - snap.eye
-  if delta.Magnitude < 0.01 then
-    return false
-  end
+  if delta.Magnitude < 0.01 then return false end
+  local direction = delta.Unit
+  local reach = Native.stats(tool).reach
+  local distance
   if geometry and type(geometry.Hit) == "function" then
-    if not geometry.Hit(snap.eye, delta.Unit, target.root.Position, target.character:GetAttribute("Sneaking"), stats.reach) then
-      return false
-    end
-  elseif delta.Magnitude > stats.reach then
-    return false
+    distance = geometry.Hit(snap.eye, direction, target.root.Position, target.character:GetAttribute("Sneaking"), reach)
+    if distance == nil then return false end
+  else
+    distance = delta.Magnitude
+    if distance > reach then return false end
   end
-  return Native.visible(snap, target.root.Position, target.character)
+  return Native.visible(snap, snap.eye + direction * distance, target.character)
+end
+function Native.blocked(snap)
+  return (controller and controller.IsBlocked()) or snap.character:GetAttribute("EatingApple") == true
+    or snap.character:GetAttribute("DrinkingPotion") == true or snap.character:GetAttribute("BowDrawStarted")
+    or player:GetAttribute("OffhandUsing") == true
+end
+local function invoke(action, direction)
+  discover()
+  local previous = player:GetAttribute("FrontCameraAimDirection")
+  dispatching = true
+  player:SetAttribute("FrontCameraAimDirection", direction)
+  local ok, result = pcall(function()
+    local fn = functions[action == "Attack" and "attack" or "use"]
+    if fn then fn(direction) return true end
+    if controller and type(controller.BeginTouch) == "function" and type(controller.EndTouch) == "function" then
+      if not controller.BeginTouch(action) then return false end
+      controller.EndTouch(action)
+      return true
+    end
+    return false
+  end)
+  if player:GetAttribute("FrontCameraAimDirection") == direction then player:SetAttribute("FrontCameraAimDirection", previous) end
+  dispatching = false
+  if not ok then utils.recordError("mcpvp.native." .. action, tostring(result)) end
+  return ok and result == true
 end
 function Native.attack(snap, target)
-  if not Native.canHit(snap, target) then
-    return false
-  end
-  local folder = storage:FindFirstChild("VoxelCombat")
-  local remote = folder and folder:FindFirstChild("Attack")
-  if not remote or not remote:IsA("RemoteEvent") then
-    return false
-  end
-  local direction = (target.root.Position - snap.eye).Unit
-  sequence += 1
-  remote:FireServer(
-    target.character,
-    snap.eye + direction * Native.stats(snap.tool).reach,
-    direction,
-    nil,
-    { version = 2, character = snap.character, seq = sequence, sentAt = world:GetServerTimeNow(), targetRoot = target.root.Position, eye = snap.eye }
-  )
-  snap.character:SetAttribute("LocalAttackSwing", snap.now)
-  return true
+  if Native.blocked(snap) or not snap.tool or Native.stats(snap.tool).type ~= "sword" or not Native.canHit(snap, target, snap.tool) then return false end
+  return invoke("Attack", (target.root.Position - snap.eye).Unit)
 end
-function Native.findPearl(snap)
-  local backpack = player:FindFirstChild("Backpack")
-  for _, parent in ipairs({ snap.character, backpack }) do
-    if not parent then
-      continue
-    end
-    for _, tool in ipairs(parent:GetChildren()) do
-      if tool:IsA("Tool") and tool:GetAttribute("ClassItem") == "Pearl" and (tonumber(tool:GetAttribute("Count")) or 1) > 0 then
-        return tool
+function Native.pearlCooldown()
+  return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1
+end
+function Native.pearlReady()
+  return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow()
+end
+function Native.usePearl(snap, tool, direction)
+  if Native.blocked(snap) or not owned(tool) or tool.Parent ~= snap.character or not Native.pearlReady() then return false end
+  return invoke("Use", direction)
+end
+function Native.equip(snap, tool)
+  if not owned(tool) then return false end
+  if tool.Parent == snap.character then return true end
+  discover()
+  local select = functions.select
+  if select then
+    local env = type(getgenv) == "function" and getgenv() or _G
+    local getter = env.getupvalues or (env.debug and env.debug.getupvalues)
+    if type(getter) == "function" then
+      local ok, values = pcall(getter, select)
+      if ok and type(values) == "table" then
+        for _, value in pairs(values) do
+          if type(value) ~= "table" then continue end
+          for slot = 1, 9 do
+            if rawget(value, slot) == tool then
+              local selected = pcall(select, slot)
+              return selected
+            end
+          end
+        end
       end
     end
   end
-  return nil
-end
-function Native.pearlCooldown() return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1 end
-function Native.usePearl(snap, tool, direction)
-  if not tool or tool.Parent ~= snap.character then
-    return false
-  end
-  local folder = storage:FindFirstChild("Remotes")
-  local remote = folder and folder:FindFirstChild("ItemAction")
-  if not remote or not remote:IsA("RemoteEvent") then
-    return false
-  end
-  if (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) > world:GetServerTimeNow() then
-    return false
-  end
-  remote:FireServer("Use", "Pearl", direction)
+  -- Same equip operation as selectSlot; no repeated selection when already held.
+  snap.humanoid:EquipTool(tool)
   return true
 end
-function Native.equip(snap, tool)
-  if not tool or not tool.Parent then
-    return false
-  end
-  if tool.Parent ~= snap.character and tool.Parent ~= player:FindFirstChild("Backpack") then
-    return false
-  end
-  snap.humanoid:EquipTool(tool)
-  return tool.Parent == snap.character
-end
 Native.__contract = {
-  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findPearl", "pearlCooldown", "usePearl", "equip" },
+  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching" },
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getLocalPlayer", "getWorkspace" } },
+  requiresMethods = { Utils = { "getLocalPlayer", "getWorkspace", "recordError" } },
 }
 return Native

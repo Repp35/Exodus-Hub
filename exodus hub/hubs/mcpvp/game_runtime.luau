@@ -30,7 +30,7 @@ function Runtime.bind(loaded)
     controller = nil
   end
   local function click(event, processed)
-    if processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") then
+    if loaded.mcpnative.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") then
       return
     end
     local matches = controller and type(controller.Matches) == "function" and controller.Matches(event, "Attack")
@@ -65,7 +65,8 @@ function Runtime.bind(loaded)
         loaded.autopearl.reset()
       end
       if not loaded.autopearl.busy() then
-        loaded.autoattacksword.step(snap, target)
+        local fresh = loaded.mcpnative.snapshot()
+        if fresh then loaded.autoattacksword.step(fresh, target) end
       end
     end)
     if not success then
