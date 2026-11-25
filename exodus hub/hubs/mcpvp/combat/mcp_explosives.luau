@@ -271,14 +271,24 @@ function Explosives.pulse(snap, targets, cfg)
     if entry.spent and not continuous and not finishing then
       continue
     end
-    local hitPoint = (point or top) + Vector3.new(0, 3.2, 0)
+    -- Match crystalPick in the game client: aim inside the native CrystalFeet box.
+    local feet = point or top
+    local low = feet - Vector3.new(3.2, 0, 3.2)
+    local high = feet + Vector3.new(3.2, 6.4, 3.2)
+    local inset = 0.05
+    local hitPoint = Vector3.new(
+      math.clamp(snap.eye.X, low.X + inset, high.X - inset),
+      math.clamp(snap.eye.Y, low.Y + inset, high.Y - inset),
+      math.clamp(snap.eye.Z, low.Z + inset, high.Z - inset)
+    )
     local delta = hitPoint - snap.eye
+    if delta.Magnitude < 0.01 then
+      hitPoint = feet + Vector3.new(0, 3.2, 0)
+      delta = hitPoint - snap.eye
+    end
     local melee = native.data().geometry
     local reach = native.stats(crystalItem.tool).reach
-    local inReach = melee
-      and melee.Box
-      and delta.Magnitude > 0.01
-      and melee.Box(snap.eye, delta.Unit, top - Vector3.new(3.2, 0, 3.2), top + Vector3.new(3.2, 6.4, 3.2), reach) ~= nil
+    local inReach = melee and melee.Box and delta.Magnitude > 0.01 and melee.Box(snap.eye, delta.Unit, low, high, reach) ~= nil
     if not inReach then
       continue
     end
