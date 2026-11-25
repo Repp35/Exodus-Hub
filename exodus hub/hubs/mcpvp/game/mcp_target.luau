@@ -5,6 +5,7 @@ local native, players
 local current, character, localHealth
 local records, nearby = {}, {}
 local pending, memory = nil, 3
+local lastAttempt
 function Target.setup(deps)
   native, players = deps.Native, game:GetService("Players")
   return true
@@ -12,6 +13,7 @@ end
 function Target.reset()
   current, character, localHealth, pending = nil, nil, nil, nil
   records, nearby = {}, {}
+  lastAttempt = nil
 end
 local function record(char)
   local entry = records[char]
@@ -26,6 +28,7 @@ local function record(char)
       manual = -math.huge,
       clicks = 0,
       authorized = -math.huge,
+      contact = -math.huge,
     }
     records[char] = entry
   end
@@ -105,6 +108,7 @@ function Target.noteAttack(snap, chosen, manual)
     return
   end
   local entry = record(chosen.character)
+  lastAttempt = { character = chosen.character, at = snap.now, health = chosen.humanoid.Health }
   if manual then
     entry.clicks = snap.now - entry.manual < 1 and entry.clicks + 1 or 1
     entry.manual = snap.now
@@ -139,8 +143,12 @@ function Target.noteVictim(char, now)
   -- ConfirmedMeleeFlash supplies the victim; an incoming hit is attributed only if a unique nearby recent swinger exists.
   if char == character then
     Target.receive(now)
-  elseif pending and pending.character == char and now - pending.at <= 0.7 then
-    Target.confirmHit(now)
+  elseif lastAttempt and lastAttempt.character == char and now - lastAttempt.at <= 0.7 then
+    record(char).contact = now
+    lastAttempt = nil
+    if pending and pending.character == char then
+      Target.confirmHit(now)
+    end
   end
 end
 function Target.receive(now)
@@ -199,6 +207,7 @@ function Target.resume(char, now, duration)
   record(char).authorized = now + duration
   current = char
 end
+function Target.lastContact(char) return record(char).contact end
 function Target.lastHit(char) return record(char).dealt end
 function Target.update(snap, cfg)
   if character ~= snap.character then
@@ -211,6 +220,18 @@ function Target.update(snap, cfg)
     Target.receive(snap.now)
   end
   localHealth = snap.humanoid.Health
+  if lastAttempt then
+    for _, candidate in ipairs(nearby) do
+      if candidate.character == lastAttempt.character and candidate.humanoid.Health < lastAttempt.health and snap.now - lastAttempt.at <= 0.7 then
+        record(candidate.character).contact = snap.now
+        lastAttempt = nil
+        break
+      end
+    end
+    if lastAttempt and snap.now - lastAttempt.at > 0.7 then
+      lastAttempt = nil
+    end
+  end
   if pending then
     for _, candidate in ipairs(nearby) do
       if candidate.character == pending.character and candidate.humanoid.Health < pending.health and snap.now - pending.at < 0.7 then
@@ -280,6 +301,7 @@ Target.__contract = {
     "hold",
     "nearby",
     "lastHit",
+    "lastContact",
     "active",
     "combatNearby",
     "resume",

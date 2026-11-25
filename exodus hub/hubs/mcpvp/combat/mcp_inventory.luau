@@ -27,7 +27,7 @@ local function emptySlot()
   end
   return nil
 end
-function Inventory.propose(snap, target, cfg)
+function Inventory.propose(snap, target, cfg, combatMode)
   if character ~= snap.character then
     Inventory.reset()
     character = snap.character
@@ -49,6 +49,8 @@ function Inventory.propose(snap, target, cfg)
     end
     return snap.now >= quietUntil and snap.now - lastCombat >= cfg("MCApplePostCombatDelay")
   end
+  local heldClass = snap.equipped and snap.equipped:GetAttribute("ClassItem")
+  local directTotem = combatMode == "crystal" or combatMode == "dtap" or heldClass == "EndCrystal"
   local pressure = target and target.engaged and math.clamp(1 - target.distance / 25, 0, 1) or 0
   pressure = math.max(pressure, 1 - snap.humanoid.Health / snap.humanoid.MaxHealth)
   if cfg("MCTotem") and snap.character:GetAttribute("OffhandItem") ~= "totem" then
@@ -69,8 +71,8 @@ function Inventory.propose(snap, target, cfg)
           tool = item.tool,
           timeout = 2,
           delay = 0,
-          needsEquip = inHotbar,
-          inventory = not inHotbar,
+          needsEquip = inHotbar and not directTotem,
+          inventory = not inHotbar and not directTotem,
         }
         job.perform = function()
           pending = job
@@ -79,12 +81,12 @@ function Inventory.propose(snap, target, cfg)
               pending = nil
             end
             job.result = ok and snap.player.Character == owner
-          end)
+          end, directTotem)
           return true
         end
         job.confirm = function(s) return s.character:GetAttribute("OffhandItem") == "totem" end
         job.success = function()
-          if inHotbar and job.original then
+          if inHotbar and not directTotem and job.original then
             native.equip(job.original)
           end
         end
@@ -101,7 +103,7 @@ function Inventory.propose(snap, target, cfg)
   if not slots then
     return nil
   end
-  if cfg("MCTotem") and cfg("MCTotemRefill") and snap.character:GetAttribute("OffhandItem") == "totem" then
+  if not directTotem and cfg("MCTotem") and cfg("MCTotemRefill") and snap.character:GetAttribute("OffhandItem") == "totem" then
     local count, inventory = 0, nil
     for _, item in ipairs(native.items()) do
       if item.class == "Totem" then

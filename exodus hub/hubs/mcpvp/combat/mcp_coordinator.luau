@@ -9,6 +9,7 @@ local auraHits = {}
 local lastPearl, nextAttack, pauseUntil, lastError = -math.huge, 0, 0, -math.huge
 local lastJump = -math.huge
 local enemyPearls = {}
+local pearlContacts = {}
 local focused = true
 local status = "Aguardando ativação"
 local statusDetails = ""
@@ -50,6 +51,7 @@ function Coordinator.reset()
   lastPearl, nextAttack, pauseUntil, lastJump = -math.huge, 0, 0, -math.huge
   backoff = {}
   enemyPearls = {}
+  pearlContacts = {}
   auraHits = {}
   targeting.reset()
   inventory.reset()
@@ -211,6 +213,14 @@ local function pearl(snap)
   if not target or not target.engaged or snap.now - lastPearl < cfg("MCPearlInterval") then
     return nil
   end
+  if target.player.Character ~= target.character or target.humanoid.Health <= 0 or not target.root.Parent
+    or target.player:GetAttribute("InArena") == false or target.player:GetAttribute("ArenaProtected") == true then
+    return nil
+  end
+  local contact = targeting.lastContact(target.character)
+  if snap.now - contact > 4 or (pearlContacts[target.character] or -math.huge) >= contact then
+    return nil
+  end
   local mode = explosives.mode() or (cfg("MCDTap") and "dtap" or cfg("MCCrystal") and "crystal" or cfg("MCAnchor") and "anchor" or nil)
   local permitted = mode == "dtap" and cfg("MCDTapPearl")
     or mode == "crystal" and cfg("MCCrystalPearl")
@@ -223,6 +233,9 @@ local function pearl(snap)
     enemyPearl = nil
   end
   if not permitted or (not enemyPearl and target.distance < gap) or target.distance > cfg("MCSwordPearlMax") * 3.2 then
+    return nil
+  end
+  if enemyPearl and (enemyPearl.landing - snap.root.Position).Magnitude < gap then
     return nil
   end
   local relative = target.root.AssemblyLinearVelocity - snap.root.AssemblyLinearVelocity
@@ -257,21 +270,27 @@ local function pearl(snap)
     timeout = 1,
     point = function() return planned end,
     valid = function(s, t)
-      if not t or t.character ~= opponent then
+      if not t or t.character ~= opponent or t.player.Character ~= opponent or t.humanoid.Health <= 0
+        or t.player:GetAttribute("ArenaProtected") == true or t.player:GetAttribute("InArena") == false
+        or s.now - contact > 4 or (pearlContacts[opponent] or -math.huge) >= contact then
         return false
       end
       if s.now - plannedAt >= 0.1 then
         planned, plannedAt = geometry.pearl(s, t, cfg, projectile, enemyPearl and enemyPearl.landing), s.now
       end
       local delta = t.root.Position - s.root.Position
-      local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= 2
+      local motion = t.root.AssemblyLinearVelocity - s.root.AssemblyLinearVelocity
+      local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= 2 and motion:Dot(delta.Unit) >= 1
       return t.engaged
         and (enemyPearl ~= nil or fleeing)
         and (enemyPearl ~= nil or t.distance >= gap)
         and t.distance <= cfg("MCSwordPearlMax") * 3.2
         and planned ~= nil
     end,
-    before = function(s) lastPearl = s.now end,
+    before = function(s)
+      lastPearl = s.now
+      pearlContacts[opponent] = contact
+    end,
     success = function(s)
       if explosives.follow(s, opponent, cfg) then
         targeting.resume(opponent, s.now, math.max(cfg("MCComboLifetime"), 12))
@@ -428,7 +447,7 @@ local function tick()
     explosives.release()
     return
   end
-  local survival = inventory.propose(snap, target, cfg)
+  local survival = inventory.propose(snap, target, cfg, explosives.mode())
   if active and active.id == "apple" and active.valid and not active.valid(snap, target) and not applePastHalf(snap) then
     cancel("Pausa das maçãs após combate")
   end

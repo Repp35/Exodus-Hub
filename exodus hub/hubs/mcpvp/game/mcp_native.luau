@@ -507,7 +507,7 @@ function Native.anchor(point)
   remote:FireServer(delta.Unit, hit.Position)
   return true
 end
-function Native.offhand(tool, done)
+function Native.offhand(tool, done, directTotem)
   local folder = storage:FindFirstChild("Remotes")
   local remote = folder and folder:FindFirstChild("InventoryAction")
   local inHotbar, knownSlot = false, false
@@ -521,8 +521,8 @@ function Native.offhand(tool, done)
     or not remote:IsA("RemoteFunction")
     or not owned(tool)
     or not knownSlot
-    or (inHotbar and Native.equipped() ~= tool)
-    or (not inHotbar and not Native.inventoryOpen())
+    or (not directTotem and inHotbar and Native.equipped() ~= tool)
+    or (not directTotem and not inHotbar and not Native.inventoryOpen())
   then
     done(false)
     return

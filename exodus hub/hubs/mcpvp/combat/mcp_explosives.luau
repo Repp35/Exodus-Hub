@@ -280,17 +280,19 @@ function Explosives.pulse(snap, targets, cfg)
     end
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
-    -- No confirmation stage: keep sending native use/attack attempts at their native rate.
-    if (continuous or not entry.spent) and native.canAct("use") then
-      if native.action("use", top - Vector3.new(0, 0.03, 0)) then
-        entry.spent, entry.untilAt = true, snap.now + 0.65
-        remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
+    -- Break the observed crystal first; empty swings waste the native attack interval.
+    local broke = false
+    if crystal and native.canAct("attack") then
+      if native.strike(hitPoint) then
+        entry.spent, broke = true, true
         acted = true
       end
     end
-    if (crystal or entry.untilAt > snap.now) and native.canAct("attack") then
-      if inReach and native.strike(hitPoint) then
-        entry.spent = true
+    -- Allow the next placement immediately after the break attempt, without an acknowledgement stage.
+    if (continuous or not entry.spent) and (not crystal or broke) and native.canAct("use") then
+      if native.action("use", top - Vector3.new(0, 0.03, 0)) then
+        entry.spent, entry.untilAt = true, snap.now + 0.65
+        remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
         acted = true
       end
     end
