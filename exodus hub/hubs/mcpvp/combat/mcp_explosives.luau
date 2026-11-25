@@ -3,6 +3,7 @@
 local Explosives = {}
 local native, geometry
 local seen, scripted, activity = {}, {}, {}
+local attempted, crystalSeen = {}, {}
 local templates = {}
 local dtapHit, dtapBase, comboMode, comboTarget = -math.huge, nil, nil, nil
 local comboAt = -math.huge
@@ -16,6 +17,7 @@ function Explosives.setup(deps)
 end
 function Explosives.reset()
   seen, scripted, templates, activity = {}, {}, {}, {}
+  attempted, crystalSeen = {}, {}
   intent, lastManual, comboAt = nil, -math.huge, -math.huge
   contexts = {}
   lastConfirmedCombo = -math.huge
@@ -80,6 +82,7 @@ local function buildJob(snap, placement, tool, id, feature, priority, cfg)
     native = "place",
     timeout = 0.9,
     delay = 0.08,
+    silentAim = id == "dtap_base" or id == "anchor_repeat" or id == "anchor_auto",
     point = function() return placement.point end,
     valid = function(s, t)
       if not geometry.cellFree(s, cell) or (cell - s.eye).Magnitude > 14.4 then
@@ -118,46 +121,77 @@ function Explosives.observe(snap, targets, cfg)
   if not cfg("MCDTap") and not cfg("MCCrystal") and not cfg("MCAnchor") then
     return nil
   end
-  local chosen, chosenBlock, stamp
+  local chosen, chosenBlock, stamp, best = nil, nil, nil, math.huge
   for _, block in ipairs(blocks(snap)) do
     local time = seen[block] or -math.huge
     local key = block:GetAttribute("BlockKey")
-    if
-      time <= lastManual
-      or snap.now - time > cfg("MCComboLifetime")
-      or block:GetAttribute("Builder") ~= snap.player.UserId
-      or math.abs(time - (scripted[cellKey(block.Position)] or -math.huge)) <= 2
-    then
+    if snap.now - time > cfg("MCComboLifetime") or block:GetAttribute("Builder") ~= snap.player.UserId
+      or math.abs(time - (scripted[cellKey(block.Position)] or -math.huge)) <= 2 then
       continue
     end
-    if key ~= "obsidian" and key ~= "respawn_anchor" then
+    if key == "respawn_anchor" and cfg("MCAnchor") then
+      local cell = cellKey(block.Position)
+      if not templates[cell] then
+        templates[cell] = { cell = block.Position, time = time }
+      end
+    end
+    if time <= lastManual or not (key == "obsidian" and cfg("MCDTap") or key == "respawn_anchor" and cfg("MCAnchor")) then
       continue
     end
-    if key == "respawn_anchor" and not cfg("MCAnchor") then
-      continue
-    end
-    local distance = math.huge
+    local radius = (key == "respawn_anchor" and cfg("MCAnchorRadius") or cfg("MCCrystalRadius")) * 3.2
     for _, candidate in ipairs(targets) do
       local gap = (candidate.root.Position - block.Position).Magnitude
-      if gap < cfg("MCCrystalRadius") * 3.2 and gap < distance then
-        chosen, chosenBlock, stamp, distance = candidate, block, time, gap
+      if gap <= radius and gap < best then
+        chosen, chosenBlock, stamp, best = candidate, block, time, gap
       end
     end
   end
   if chosen then
     switchTarget(chosen.character)
     lastManual = stamp
-    if chosenBlock:GetAttribute("BlockKey") == "obsidian" and cfg("MCDTap") then
+    if chosenBlock:GetAttribute("BlockKey") == "obsidian" then
       dtapBase = chosenBlock.Position
+      dtapHit = chosen.lastHit
       intent = { target = chosen.character, untilAt = snap.now + cfg("MCComboLifetime") }
     end
+    return chosen
+  end
+  -- A new crystal may appear while the player is looking down at its support rather than at the opponent.
+  local crystals = snap.world:FindFirstChild("EndCrystals")
+  local holdingCrystal = snap.equipped and snap.equipped:GetAttribute("ClassItem") == "EndCrystal"
+  if crystals and cfg("MCCrystal") and holdingCrystal then
+    for _, crystal in ipairs(crystals:GetChildren()) do
+      local point = geometry.blastPosition(crystal)
+      if point and not crystalSeen[crystal] and (point - snap.eye).Magnitude <= 14.4 then
+        crystalSeen[crystal] = true
+        for _, candidate in ipairs(targets) do
+          local gap = (candidate.root.Position - point).Magnitude
+          if gap <= cfg("MCCrystalRadius") * 3.2 and gap < best then
+            chosen, best = candidate, gap
+          end
+        end
+      end
+    end
+  end
+  for object in pairs(attempted) do
+    if not object.Parent then attempted[object] = nil end
+  end
+  for object in pairs(crystalSeen) do
+    if not object.Parent then crystalSeen[object] = nil end
   end
   return chosen
 end
 function Explosives.needsStrike(snap, target, cfg)
-  local wanted = cfg("MCDTap") and target and intent and intent.target == target.character and snap.now < intent.untilAt and dtapBase ~= nil
-  local prepared = wanted and intent and intent.target == target.character and dtapBase and existing(snap, dtapBase, "obsidian") ~= nil
+  local wanted = cfg("MCDTap") and target and intent and intent.target == target.character
+    and snap.now < intent.untilAt and dtapBase ~= nil and not intent.struckAt
+  local prepared = wanted and existing(snap, dtapBase, "obsidian") ~= nil
   return wanted, prepared
+end
+function Explosives.noteStrike(snap, target)
+  if target and intent and intent.target == target.character and snap.now < intent.untilAt then
+    intent.struckAt = snap.now
+    dtapHit = math.max(dtapHit, target.lastHit or -math.huge)
+  end
 end
 function Explosives.defense(snap, cfg)
   if not cfg("MCDefense") then
@@ -191,146 +225,138 @@ function Explosives.defense(snap, cfg)
 end
 function Explosives.propose(snap, target, cfg)
   switchTarget(target.character)
-  if cfg("MCDTap") and not intent and target.lastHit > dtapHit and snap.now - target.lastHit < cfg("MCDTapWindow") then
+  if intent and snap.now >= intent.untilAt then
+    intent, dtapBase = nil, nil
+  end
+  if cfg("MCDTap") and target.lastHit > dtapHit and snap.now - target.lastHit < cfg("MCDTapWindow") then
     dtapHit = target.lastHit
-    intent = { target = target.character, untilAt = snap.now + cfg("MCDTapWindow") }
+    intent = intent or { target = target.character, untilAt = snap.now + cfg("MCDTapWindow") }
+    intent.struckAt = target.lastHit
   end
   local nearby = blocks(snap)
   local crystals = snap.world:FindFirstChild("EndCrystals")
-  local activeCrystal
-  if crystals then
-    local closest = math.huge
-    for _, crystal in ipairs(crystals:GetChildren()) do
-      local point = geometry.blastPosition(crystal)
-      if point and (point - target.root.Position).Magnitude < cfg("MCCrystalRadius") * 3.2 and (point - snap.eye).Magnitude < 9.6 then
-        local distance = (point - target.root.Position).Magnitude
-        if distance < closest then
-          activeCrystal, closest = crystal, distance
-        end
-      end
-    end
-  end
+  local crystalList = crystals and crystals:GetChildren() or {}
   local bases, anchors = {}, {}
+  local radius = cfg("MCCrystalRadius") * 3.2
+  local crystalItem = item("EndCrystal")
+  local function above(t, point)
+    return t.root.Position.Y >= point.Y + 0.5
+  end
+  local function damageCheck(s, t, point)
+    if not t or not t.root.Parent or (t.root.Position - point).Magnitude > radius then
+      return false, math.huge
+    end
+    return geometry.evaluate(s, t, point, 6, cfg, cfg("MCCrystalDamage"))
+  end
+  local function crystalBreak(crystal, point, base, dtap, repeatable)
+    if not crystalItem or attempted[crystal] and not repeatable then return nil end
+    local useful, selfDamage = damageCheck(snap, target, point)
+    if not useful or (point - snap.eye).Magnitude > 12.8 then return nil end
+    local fast = repeatable and selfDamage <= 0
+    comboMode, comboAt = dtap and "dtap" or "crystal", snap.now
+    return {
+      id = "crystal_break",
+      feature = dtap and "MCDTap" or "MCCrystal",
+      priority = 78,
+      tool = crystalItem.tool,
+      native = "attack",
+      delay = 0,
+      timeout = 0.35,
+      repeatFast = fast,
+      silentAim = true,
+      before = function() attempted[crystal] = true end,
+      perform = function() return native.strike(point + Vector3.new(0, 1.5, 0)) end,
+      valid = function(s, t)
+        return crystal.Parent ~= nil and damageCheck(s, t, point)
+          and (not repeatable or above(t, point))
+      end,
+      confirm = function() return crystal.Parent == nil end,
+      success = function(s)
+        if base and base.Parent then activity[base] = s.now end
+        lastConfirmedCombo = s.now
+        if dtap and intent then intent.untilAt = s.now + cfg("MCComboLifetime") end
+      end,
+    }
+  end
   for _, block in ipairs(nearby) do
     local key = block:GetAttribute("BlockKey")
     local time = seen[block] or -math.huge
     local own = block:GetAttribute("Builder") == snap.player.UserId
     local scriptTime = scripted[cellKey(block.Position)] or -math.huge
-    local manual = own
-      and time > -math.huge
-      and math.abs(time - scriptTime) > 2
+    local manual = own and time > -math.huge and math.abs(time - scriptTime) > 2
       and snap.now - math.max(time, activity[block] or -math.huge) < cfg("MCComboLifetime")
     if key == "obsidian" and (cfg("MCCrystal") or cfg("MCDTap")) then
-      local isDTap = cfg("MCDTap")
-        and intent
-        and intent.target == target.character
-        and snap.now < intent.untilAt
-        and (
-          (dtapBase and (dtapBase - block.Position).Magnitude < 0.2)
-          or (manual and (target.root.Position - block.Position).Magnitude < cfg("MCCrystalRadius") * 3.2)
-        )
-      if isDTap and not dtapBase then
-        dtapBase = block.Position
-      end
-      if (cfg("MCCrystal") and (manual or not cfg("MCCrystalManual"))) or isDTap then
-        bases[#bases + 1] = { block = block, dtap = isDTap }
+      local top = block.Position + Vector3.new(0, 1.6, 0)
+      local inRange = (target.root.Position - top).Magnitude <= radius and above(target, top)
+        and (top - snap.eye).Magnitude <= 14.4
+      local isDTap = cfg("MCDTap") and intent and intent.target == target.character
+        and snap.now < intent.untilAt and (not dtapBase or (dtapBase - block.Position).Magnitude < 0.2)
+      if isDTap and not dtapBase and inRange then dtapBase = block.Position end
+      if inRange and ((cfg("MCCrystal") and (manual or not cfg("MCCrystalManual"))) or isDTap) then
+        if not (isDTap and not intent.struckAt) then
+          bases[#bases + 1] = { block = block, dtap = isDTap == true, top = top }
+        end
       end
     elseif key == "respawn_anchor" and cfg("MCAnchor") then
-      if manual then
-        templates[cellKey(block.Position)] = { cell = block.Position, time = time }
-      end
-      if manual or templates[cellKey(block.Position)] then
+      local cell = cellKey(block.Position)
+      if manual and not templates[cell] then templates[cell] = { cell = block.Position, time = time } end
+      if templates[cell] and (manual or math.abs(time - scriptTime) <= 2) then
         anchors[#anchors + 1] = block
       end
     end
   end
+  -- Prefer an existing crystal on the active base, with the crystal item still selected for both actions.
   for _, base in ipairs(bases) do
-    local top = base.block.Position + Vector3.new(0, 1.6, 0)
-    if target.root.Position.Y < top.Y + 0.5 or top.Y < snap.root.Position.Y - 4.2 then
-      continue
-    end
-    local lead = math.clamp(0.12 + (snap.ping or 0), 0.12, 0.3)
-    local motion = target.root.AssemblyLinearVelocity * lead
-    if motion.Magnitude > 4 then
-      motion = motion.Unit * 4
-    end
-    local predicted = target.root.Position + motion
-    if math.min((target.root.Position - top).Magnitude, (predicted - top).Magnitude) > cfg("MCCrystalRadius") * 3.2 then
-      continue
-    end
-    local useful = geometry.evaluate(snap, target, top, 6, cfg, cfg("MCCrystalDamage"))
-    if not useful then
-      continue
-    end
-    comboMode = base.dtap and "dtap" or "crystal"
-    comboAt = snap.now
-    local feature = base.dtap and "MCDTap" or "MCCrystal"
-    if activeCrystal then
-      local crystalPoint = geometry.blastPosition(activeCrystal)
-      if (crystalPoint - top).Magnitude < 4 then
-        local crystal = activeCrystal
-        return {
-          id = "crystal_break",
-          feature = feature,
-          priority = 78,
-          tool = snap.equipped,
-          native = "attack",
-          needsEquip = false,
-          delay = 0.04,
-          timeout = 0.12,
-          repeatFast = true,
-          perform = function() return native.strike(crystalPoint + Vector3.new(0, 1.5, 0)) end,
-          valid = function(s, t)
-            return crystal.Parent ~= nil
-              and (t.root.Position - crystalPoint).Magnitude <= cfg("MCCrystalRadius") * 3.2
-              and geometry.evaluate(s, t, crystalPoint, 6, cfg, cfg("MCCrystalDamage"))
-          end,
-          confirm = function() return crystal.Parent == nil end,
-          success = function(s)
-            activity[base.block] = s.now
-            lastConfirmedCombo = s.now
-            if base.dtap then
-              if intent then
-                intent.untilAt = s.now + cfg("MCComboLifetime")
-              end
-            end
-          end,
-        }
+    local point = base.top
+    local useful, selfDamage = damageCheck(snap, target, point)
+    if not useful or not crystalItem then continue end
+    local present
+    for _, crystal in ipairs(crystalList) do
+      local feet = geometry.blastPosition(crystal)
+      if feet and (feet - point).Magnitude < 2 then
+        present = crystal
+        local job = crystalBreak(crystal, feet, base.block, base.dtap, true)
+        if job then return job end
       end
     end
-    if not activeCrystal or (geometry.blastPosition(activeCrystal) - top).Magnitude >= 4 then
-      local crystalItem = item("EndCrystal")
-      local clear = geometry.cellFree(snap, top + Vector3.new(0, 1.6, 0))
-      if crystalItem and clear and (top - snap.eye).Magnitude <= 14.4 then
-        return {
-          id = "crystal_place",
-          feature = feature,
-          priority = 75,
-          tool = crystalItem.tool,
-          native = "use",
-          delay = 0.04,
-          timeout = 0.21,
-          repeatFast = true,
-          success = function(s) activity[base.block] = s.now end,
-          point = function() return top - Vector3.new(0, 0.03, 0) end,
-          valid = function(s, t)
-            return base.block.Parent ~= nil
-              and (t.root.Position - top).Magnitude <= cfg("MCCrystalRadius") * 3.2
-              and geometry.evaluate(s, t, top, 6, cfg, cfg("MCCrystalDamage"))
-          end,
-          confirm = function(s)
-            local folder = s.world:FindFirstChild("EndCrystals")
-            if folder then
-              for _, obj in ipairs(folder:GetChildren()) do
-                local pos = geometry.blastPosition(obj)
-                if pos and (pos - top).Magnitude < 2 then
-                  return true
-                end
-              end
+    if not present then
+      comboMode, comboAt = base.dtap and "dtap" or "crystal", snap.now
+      return {
+        id = "crystal_place",
+        feature = base.dtap and "MCDTap" or "MCCrystal",
+        priority = 75,
+        tool = crystalItem.tool,
+        native = "use",
+        delay = 0,
+        timeout = 0.4,
+        repeatFast = selfDamage <= 0,
+        silentAim = true,
+        point = function() return point - Vector3.new(0, 0.03, 0) end,
+        valid = function(s, t)
+          return base.block.Parent ~= nil and above(t, point)
+            and (point - s.eye).Magnitude <= 14.4 and damageCheck(s, t, point)
+        end,
+        confirm = function(s)
+          local folder = s.world:FindFirstChild("EndCrystals")
+          if folder then
+            for _, object in ipairs(folder:GetChildren()) do
+              local feet = geometry.blastPosition(object)
+              if feet and (feet - point).Magnitude < 2 then return true end
             end
-            return false
-          end,
-        }
+          end
+          return false
+        end,
+        success = function(s) activity[base.block] = s.now end,
+      }
+    end
+  end
+  -- A crystal already placed by the user is a one-shot opportunity when there is no eligible base for a continuing combo.
+  if cfg("MCCrystal") and (target.engaged or snap.equipped and snap.equipped:GetAttribute("ClassItem") == "EndCrystal") then
+    for _, crystal in ipairs(crystalList) do
+      local point = geometry.blastPosition(crystal)
+      if point and not attempted[crystal] then
+        local job = crystalBreak(crystal, point, nil, false, false)
+        if job then return job end
       end
     end
   end
@@ -369,27 +395,11 @@ function Explosives.propose(snap, target, cfg)
       end
       local useful, selfDamage, targetDamage = geometry.evaluate(snap, target, pos, 5, cfg, cfg("MCAnchorDamage"))
       local charges = tonumber(anchor:GetAttribute("AnchorCharges")) or 0
-      if not useful and targetDamage < cfg("MCAnchorDamage") then
+      if not useful then
         continue
       end
       comboMode = "anchor"
       comboAt = snap.now
-      local required = cfg("MCAnchorAlwaysProtect") or not useful
-      if required then
-        if cfg("MCAnchorProtection") then
-          local job = protect(snap, pos, cfg, "anchor_protection", "MCAnchor")
-          if job then
-            return job
-          end
-        end
-        -- Refuse detonation when protection is unavailable or has not made the position safe.
-        if not useful then
-          continue
-        end
-        if cfg("MCAnchorAlwaysProtect") and selfDamage > cfg("MCMaxSelfDamage") / 2 then
-          continue
-        end
-      end
       if charges < 1 then
         local glow = item("Glowstone")
         if glow then
@@ -401,6 +411,7 @@ function Explosives.propose(snap, target, cfg)
             native = "use",
             delay = 0.04,
             timeout = 0.9,
+            silentAim = true,
             point = function() return pos + Vector3.new(0, 1.4, 0) end,
             valid = function(s, t)
               return anchor.Parent ~= nil
@@ -421,6 +432,7 @@ function Explosives.propose(snap, target, cfg)
             tool = sword.tool,
             delay = 0.04,
             timeout = 0.9,
+            silentAim = true,
             point = function() return pos + Vector3.new(0, 1.4, 0) end,
             perform = function() return native.anchor(pos + Vector3.new(0, 1.4, 0)) end,
             valid = function(s, t)
@@ -434,6 +446,7 @@ function Explosives.propose(snap, target, cfg)
               local template = templates[cellKey(pos)]
               if template then
                 template.time = s.now
+                template.confirmed = true
                 lastConfirmedCombo = s.now
               end
             end,
@@ -451,7 +464,7 @@ function Explosives.propose(snap, target, cfg)
         if (target.root.Position - template.cell).Magnitude > cfg("MCAnchorRadius") * 3.2 + 3.2 then
           continue
         end
-        if cfg("MCAnchorRepeat") and not existing(snap, template.cell, "respawn_anchor") then
+        if cfg("MCAnchorRepeat") and template.confirmed and not existing(snap, template.cell, "respawn_anchor") then
           local placement = geometry.placement(snap, template.cell)
           if placement and geometry.evaluate(snap, target, template.cell, 5, cfg, cfg("MCAnchorDamage")) then
             return buildJob(snap, placement, anchorItem, "anchor_repeat", "MCAnchor", 70, cfg)
@@ -465,6 +478,6 @@ function Explosives.propose(snap, target, cfg)
 end
 Explosives.__contract = {
   requires = { Native = "mcpnative", Geometry = "mcpgeometry" },
-  provides = { "setup", "reset", "mark", "mode", "clearCombo", "defense", "propose", "observe", "needsStrike" },
+  provides = { "setup", "reset", "mark", "mode", "clearCombo", "defense", "propose", "observe", "needsStrike", "noteStrike" },
 }
 return Explosives

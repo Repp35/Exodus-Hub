@@ -6,6 +6,7 @@ local functions = {}
 local nextScan = 0
 local dispatched = {}
 local slotTable
+local inventoryTransaction
 local function owned(tool)
   return typeof(tool) == "Instance" and tool:IsA("Tool") and (tool.Parent == player.Character or tool.Parent == player:FindFirstChild("Backpack"))
 end
@@ -33,7 +34,7 @@ function Native.setup(deps)
   return true
 end
 function Native.discover()
-  if functions.attack and functions.use and functions.place and functions.refresh then
+  if functions.attack and functions.use and functions.place and functions.refresh and functions.openInventory and functions.selectSlot and functions.quickMove then
     return
   end
   if os.clock() < nextScan then
@@ -53,7 +54,7 @@ function Native.discover()
     VoxelCombatClient = { performAttack = "attack" },
     ItemClient = { use = "use" },
     VoxelBuildingClient = { place = "place" },
-    VoxelPackHUD = { refreshTools = "refresh" },
+    VoxelPackHUD = { refreshTools = "refresh", setOpen = "openInventory", selectSlot = "selectSlot", quickMove = "quickMove" },
   }
   for _, fn in pairs(objects) do
     if type(fn) ~= "function" then
@@ -115,30 +116,92 @@ function Native.slots()
   slotTable = found
   return found
 end
-function Native.move(tool, destination)
-  local slots = Native.slots()
-  if not slots or not owned(tool) or destination < 1 or destination > 9 or slots[destination] then
-    return false
-  end
-  local index = table.find(slots, tool)
-  -- The native table is sparse; table.find alone does not traverse inventory holes.
-  if not index then
-    for key, value in pairs(slots) do
-      if value == tool then
-        index = key
-        break
-      end
+local function slotOf(tool)
+  for index, value in pairs(Native.slots() or {}) do
+    if value == tool then
+      return index
     end
   end
-  if not index then
+  return nil
+end
+local function beginInventory(open, done)
+  if inventoryTransaction or player:GetAttribute("MenuOpen") or (open and not functions.openInventory) then
+    return nil
+  end
+  local char = player.Character
+  local previous = Native.equipped()
+  local actions = game:GetService("ContextActionService")
+  local transaction = {}
+  inventoryTransaction = transaction
+  local function finish(ok)
+    if inventoryTransaction ~= transaction then
+      return
+    end
+    inventoryTransaction = nil
+    if open then
+      pcall(functions.openInventory, false)
+      actions:UnbindAction("ExodusMCPVPInventoryMovement")
+    end
+    if player.Character == char and previous and owned(previous) then
+      Native.equip(previous)
+    end
+    if done then
+      done(ok == true)
+    end
+  end
+  transaction.finish = finish
+  if open then
+    local ok = pcall(functions.openInventory, true)
+    if not ok or player:GetAttribute("MenuOpen") ~= true then
+      finish(false)
+      return nil
+    end
+    actions:BindActionAtPriority("ExodusMCPVPInventoryMovement", function()
+      return Enum.ContextActionResult.Sink
+    end, false, 4000, Enum.PlayerActions.CharacterForward, Enum.PlayerActions.CharacterBackward, Enum.PlayerActions.CharacterLeft, Enum.PlayerActions.CharacterRight, Enum.PlayerActions.CharacterJump)
+    local human = char and char:FindFirstChildOfClass("Humanoid")
+    if human then
+      human:Move(Vector3.zero, false)
+      human.Jump = false
+    end
+  end
+  task.delay(2, function() finish(false) end)
+  return transaction
+end
+function Native.inventoryBusy() return inventoryTransaction ~= nil end
+function Native.cancelInventory()
+  if inventoryTransaction then
+    inventoryTransaction.finish(false)
+  end
+end
+function Native.move(tool, destination)
+  local slots, index = Native.slots(), slotOf(tool)
+  if not slots or not index or index <= 9 or not owned(tool) or not functions.quickMove or destination < 1 or destination > 9 or slots[destination] then
     return false
   end
-  slots[index], slots[destination] = nil, tool
-  local ok = pcall(functions.refresh)
-  if not ok then
-    slots[index], slots[destination] = tool, nil
+  -- Native shift-click fills the first empty hotbar slot; never edit its private slot table.
+  for slot = 1, destination - 1 do
+    if not slots[slot] then
+      return false
+    end
   end
-  return ok
+  local transaction = beginInventory(true)
+  if not transaction then
+    return false
+  end
+  task.spawn(function()
+    local ok = pcall(functions.quickMove, index)
+    local untilAt = os.clock() + 0.8
+    while ok and inventoryTransaction == transaction and os.clock() < untilAt do
+      if (Native.slots() or {})[destination] == tool then
+        transaction.finish(true)
+        return
+      end
+      task.wait()
+    end
+    transaction.finish(false)
+  end)
+  return true
 end
 function Native.items()
   local items, slots = {}, Native.slots()
@@ -190,10 +253,15 @@ function Native.equip(tool)
   if not human or not owned(tool) then
     return false
   end
+  local slot = slotOf(tool)
+  if slot and slot <= 9 and functions.selectSlot then
+    local ok = pcall(functions.selectSlot, slot)
+    return ok and tool.Parent == character
+  end
   if tool.Parent ~= character then
     human:EquipTool(tool)
   end
-  return true
+  return tool.Parent == character
 end
 function Native.restore(tool, expected)
   if Native.equipped() ~= expected then
@@ -320,6 +388,7 @@ function Native.action(kind, point)
     return false
   end
   local camera = world.CurrentCamera
+  local view = camera.CFrame
   local oldCF, oldDir = player:GetAttribute("FrontCameraAimCFrame"), player:GetAttribute("FrontCameraAimDirection")
   if point then
     local cf = CFrame.lookAt(camera.CFrame.Position, point)
@@ -337,6 +406,9 @@ function Native.action(kind, point)
     dispatched[key] = os.clock()
   end
   local ok, err = pcall(fn)
+  if point and world.CurrentCamera == camera then
+    camera.CFrame = view
+  end
   if oldCF ~= nil then
     player:SetAttribute("FrontCameraAimCFrame", oldCF)
   end
@@ -406,13 +478,29 @@ end
 function Native.offhand(tool, done)
   local folder = storage:FindFirstChild("Remotes")
   local remote = folder and folder:FindFirstChild("InventoryAction")
-  if not remote or not remote:IsA("RemoteFunction") or not owned(tool) then
+  local slot = slotOf(tool)
+  if not remote or not remote:IsA("RemoteFunction") or not owned(tool) or not slot or (slot <= 9 and not functions.selectSlot) then
     done(false)
     return
   end
+  local transaction = beginInventory(slot > 9, done)
+  if not transaction then
+    done(false)
+    return
+  end
+  if slot <= 9 and not Native.equip(tool) then
+    transaction.finish(false)
+    return
+  end
   task.spawn(function()
+    -- Let the real inventory/selection render before using its existing offhand operation.
+    task.wait()
+    if inventoryTransaction ~= transaction or not owned(tool) then
+      transaction.finish(false)
+      return
+    end
     local ok, result = pcall(remote.InvokeServer, remote, "EquipOffhand", tool)
-    done(ok and result ~= nil and result ~= false)
+    transaction.finish(ok and result ~= nil and result ~= false)
   end)
 end
 function Native.prepareCritical()
@@ -441,6 +529,7 @@ function Native.capabilities()
   return { attack = functions.attack ~= nil, use = functions.use ~= nil, place = functions.place ~= nil, inventory = Native.slots() ~= nil }
 end
 function Native.teardown()
+  Native.cancelInventory()
   functions, slotTable, nextScan, dispatched = {}, nil, 0, {}
 end
 Native.__contract = {
@@ -452,6 +541,8 @@ Native.__contract = {
     "discover",
     "slots",
     "move",
+    "inventoryBusy",
+    "cancelInventory",
     "items",
     "find",
     "equipped",

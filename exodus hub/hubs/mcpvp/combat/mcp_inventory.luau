@@ -90,7 +90,7 @@ function Inventory.propose(snap, target, cfg)
         needsEquip = false,
         delay = 0.15 + (1 - pressure) * 0.15,
         perform = function() return native.move(inventory.tool, slot) end,
-        confirm = function() return slots[slot] == inventory.tool end,
+        confirm = function() return (native.slots() or {})[slot] == inventory.tool end,
       }
     end
   end
@@ -111,8 +111,8 @@ function Inventory.propose(snap, target, cfg)
       end
       if not item and remembered[class] and cfg("MCPotionRefill") and not slots[remembered[class]] then
         local spare = native.find(class, false)
-        if spare then
-          local destination = remembered[class]
+        if spare and emptySlot() then
+          local destination = emptySlot()
           return {
             id = "potion_refill",
             feature = "MCPotion",
@@ -121,7 +121,7 @@ function Inventory.propose(snap, target, cfg)
             needsEquip = false,
             delay = 0.18,
             perform = function() return native.move(spare.tool, destination) end,
-            confirm = function() return slots[destination] == spare.tool end,
+            confirm = function() return (native.slots() or {})[destination] == spare.tool end,
           }
         end
       end
