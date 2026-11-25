@@ -236,7 +236,9 @@ function Native.snapshot()
     return nil
   end
   local char = player.Character
+  local pingOK, ping = pcall(player.GetNetworkPing, player)
   return {
+    ping = pingOK and math.clamp(tonumber(ping) or 0, 0, 0.3) or 0,
     character = char,
     humanoid = char:FindFirstChildOfClass("Humanoid"),
     root = char.HumanoidRootPart,

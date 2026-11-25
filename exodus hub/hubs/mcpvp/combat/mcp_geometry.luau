@@ -22,12 +22,13 @@ function Geometry.blastPosition(crystal)
   local feet = crystal:GetAttribute("CrystalFeet")
   return typeof(feet) == "Vector3" and feet or Geometry.position(crystal)
 end
-function Geometry.damage(snap, char, point, power, plannedBlock)
+function Geometry.damage(snap, char, point, power, plannedBlock, predictedPosition)
   local root = char:FindFirstChild("HumanoidRootPart")
   if not root then
     return math.huge
   end
-  local distance = (root.Position - point).Magnitude / 3.2
+  local position = predictedPosition or root.Position
+  local distance = (position - point).Magnitude / 3.2
   local diameter = power * 2
   if distance > diameter then
     return 0
@@ -45,7 +46,7 @@ function Geometry.damage(snap, char, point, power, plannedBlock)
   for _, height in ipairs({ -3.6, -1, 1.8 }) do
     for _, offset in ipairs({ Vector3.new(-0.8, height, -0.8), Vector3.new(0, height, 0), Vector3.new(0.8, height, 0.8) }) do
       total += 1
-      local delta = root.Position + offset - point
+      local delta = position + offset - point
       local hit = native.raycast(point + Vector3.new(0, 0.05, 0), delta, excluded)
       local blocked = hit and hit.Distance < delta.Magnitude - 0.15
       local melee = native.data().geometry
@@ -96,7 +97,16 @@ end
 function Geometry.evaluate(snap, target, point, power, cfg, minDamage, plannedBlock)
   local factor = cfg("MCDamageUncertainty") / 100
   local selfDamage = Geometry.damage(snap, snap.character, point, power, plannedBlock) * (1 + factor)
-  local targetDamage = Geometry.damage(snap, target.character, point, power, plannedBlock) * math.max(0, 1 - factor)
+  local velocity = target.root.AssemblyLinearVelocity
+  local lead = math.clamp(0.12 + (snap.ping or 0), 0.12, 0.3)
+  local displacement = velocity * lead
+  if displacement.Magnitude > 4 then
+    displacement = displacement.Unit * 4
+  end
+  local predicted = target.root.Position + displacement
+  local currentDamage = Geometry.damage(snap, target.character, point, power, plannedBlock)
+  local futureDamage = Geometry.damage(snap, target.character, point, power, plannedBlock, predicted)
+  local targetDamage = math.max(currentDamage, futureDamage) * math.max(0, 1 - factor)
   local reserve = snap.humanoid.MaxHealth * cfg("MCHealthReserve") / 100
   local safe = selfDamage <= cfg("MCMaxSelfDamage") and snap.humanoid.Health - selfDamage >= reserve
   local useful = targetDamage >= minDamage and targetDamage - selfDamage >= cfg("MCDamageMargin")

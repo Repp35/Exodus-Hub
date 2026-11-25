@@ -111,13 +111,13 @@ local function advance(snap)
   if not valid(job, snap) then
     job.invalidSince = job.invalidSince or snap.now
     job.suspended = true
-    if snap.now - job.invalidSince > 0.6 then
+    if snap.now - job.invalidSince > 1.5 then
       cancel("Oportunidade temporariamente indisponível")
     end
     return
   end
   job.invalidSince, job.suspended = nil, false
-  if snap.now - job.started > 3.5 then
+  if snap.now - job.started > 5 then
     cancel("Preparação interrompida", true)
     return
   end
