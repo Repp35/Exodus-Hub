@@ -267,7 +267,8 @@ function Explosives.pulse(snap, targets, cfg)
       continue
     end
     local crystal, point = crystalAt(snap, top)
-    if not elevated then
+    -- Place immediately after the sword hit; wait for the airborne damage opportunity only when breaking.
+    if not elevated and (not launch or crystal) then
       continue
     end
     -- Match crystalPick in the game client: aim inside the native CrystalFeet box.
@@ -303,7 +304,7 @@ function Explosives.pulse(snap, targets, cfg)
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Keep alternating while the same damaging opportunity remains available.
     local broke = false
-    if crystal and native.canAct("attack") then
+    if crystal and elevated and native.canAct("attack") then
       if native.strike(hitPoint) then
         entry.spent, broke = true, true
         acted = true
