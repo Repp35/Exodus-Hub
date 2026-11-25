@@ -22,8 +22,8 @@ local function record(char)
   return entry
 end
 local function refreshDuel(entry, now)
-  if now - entry.dealt < memory and now - entry.received < memory then
-    entry.duelUntil = math.max(entry.duelUntil, math.max(entry.dealt, entry.received) + memory)
+  if entry.duelUntil > now or (now - entry.dealt < memory and now - entry.received < memory) then
+    entry.duelUntil = now + memory
   end
 end
 local function angle(snap, point)
@@ -49,11 +49,7 @@ local function candidates(snap, cfg)
       continue
     end
     local distance = (root.Position - snap.root.Position).Magnitude
-    local entry = records[char]
-    local recent = entry and math.max(entry.dealt, entry.received, entry.intent)
-    local tracked = recent and snap.now - recent < cfg("MCComboLifetime")
-    local range = tracked and math.max(cfg("MCTargetRange"), cfg("MCSwordPearlMax")) or cfg("MCTargetRange")
-    if distance > range * 3.2 then
+    if distance > cfg("MCTargetRange") * 3.2 then
       continue
     end
     result[#result + 1] = {
@@ -183,18 +179,9 @@ function Target.update(snap, cfg)
   for _, candidate in ipairs(nearby) do
     local entry = record(candidate.character)
     local recent = math.max(entry.dealt, entry.received, entry.intent)
-    if entry.position and entry.positionAt and snap.now > entry.positionAt then
-      local elapsed = snap.now - entry.positionAt
-      local delta = (candidate.root.Position - entry.position).Magnitude
-      if elapsed <= 0.35 and delta > math.max(20, elapsed * 120) and snap.now - recent < cfg("MCComboLifetime") then
-        entry.teleportUntil = snap.now + 2.5
-      end
-    end
-    entry.position, entry.positionAt = candidate.root.Position, snap.now
-    candidate.pearlEscape = (entry.teleportUntil or -math.huge) > snap.now
     candidate.lastHit, candidate.lastDamage = entry.dealt, entry.received
     candidate.duel = entry.duelUntil > snap.now
-    candidate.engaged = snap.now - recent < cfg("MCComboLifetime") or candidate.pearlEscape
+    candidate.engaged = snap.now - recent < cfg("MCComboLifetime")
     local retained = current == candidate.character and candidate.engaged
     -- FOV gates idle acquisition only. Actual combat and combo intent remain valid behind the camera or briefly behind a block.
     if not candidate.engaged and (candidate.angle > cfg("MCAcquireFov") or not candidate.visible) then

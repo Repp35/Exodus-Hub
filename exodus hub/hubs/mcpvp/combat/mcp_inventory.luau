@@ -4,14 +4,12 @@ local Inventory = {}
 local native
 local missingSince, remembered, pending = nil, {}, nil
 local character
-local lastCombat = -math.huge
 function Inventory.setup(deps)
   native = deps.Native
   return true
 end
 function Inventory.reset()
   missingSince, remembered, pending, character = nil, {}, nil, nil
-  lastCombat = -math.huge
 end
 local function emptySlot()
   local slots = native.slots()
@@ -29,9 +27,6 @@ function Inventory.propose(snap, target, cfg)
   if character ~= snap.character then
     Inventory.reset()
     character = snap.character
-  end
-  if target and (target.engaged or target.duel) then
-    lastCombat = snap.now
   end
   local pressure = target and target.engaged and math.clamp(1 - target.distance / 25, 0, 1) or 0
   pressure = math.max(pressure, 1 - snap.humanoid.Health / snap.humanoid.MaxHealth)
@@ -90,7 +85,7 @@ function Inventory.propose(snap, target, cfg)
         needsEquip = false,
         delay = 0.15 + (1 - pressure) * 0.15,
         perform = function() return native.move(inventory.tool, slot) end,
-        confirm = function() return (native.slots() or {})[slot] == inventory.tool end,
+        confirm = function() return slots[slot] == inventory.tool end,
       }
     end
   end
@@ -111,8 +106,8 @@ function Inventory.propose(snap, target, cfg)
       end
       if not item and remembered[class] and cfg("MCPotionRefill") and not slots[remembered[class]] then
         local spare = native.find(class, false)
-        if spare and emptySlot() then
-          local destination = emptySlot()
+        if spare then
+          local destination = remembered[class]
           return {
             id = "potion_refill",
             feature = "MCPotion",
@@ -121,7 +116,7 @@ function Inventory.propose(snap, target, cfg)
             needsEquip = false,
             delay = 0.18,
             perform = function() return native.move(spare.tool, destination) end,
-            confirm = function() return (native.slots() or {})[destination] == spare.tool end,
+            confirm = function() return slots[destination] == spare.tool end,
           }
         end
       end
@@ -156,7 +151,7 @@ function Inventory.propose(snap, target, cfg)
   if
     cfg("MCApple")
     and snap.humanoid.Health / snap.humanoid.MaxHealth < cfg("MCAppleHealth") / 100
-    and (cfg("MCAppleCombat") or (not (target and (target.engaged or target.duel)) and snap.now - lastCombat >= cfg("MCApplePostCombatDelay")))
+    and (not target or target.distance > 22 or cfg("MCAppleCombat"))
     and not snap.character:GetAttribute("EatingApple")
   then
     local item = native.find("GoldenApple", true)
@@ -178,9 +173,6 @@ function Inventory.propose(snap, target, cfg)
         delay = 0.2,
         timeout = 3,
         perform = function() return native.apple(true) end,
-        valid = function(s, t)
-          return cfg("MCAppleCombat") or (not (t and (t.engaged or t.duel)) and s.now - lastCombat >= cfg("MCApplePostCombatDelay"))
-        end,
         cancel = function() native.apple(false) end,
         confirm = function() return not item.tool.Parent or (tonumber(item.tool:GetAttribute("Count")) or 0) < before end,
       }
