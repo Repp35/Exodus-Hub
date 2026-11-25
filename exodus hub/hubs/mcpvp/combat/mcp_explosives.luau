@@ -347,7 +347,7 @@ function Explosives.resumeBase(snap, target, cfg)
   if not cfg("MCCrystal") and not cfg("MCDTap") then
     return nil
   end
-  if not target.character.Parent or target.humanoid.Health <= 0 or target.distance > 16 then
+  if not target.character.Parent or target.humanoid.Health <= 0 or target.distance > 19.2 then
     return nil
   end
   if not native.find("EndCrystal", true) then
@@ -385,7 +385,7 @@ function Explosives.resumeBase(snap, target, cfg)
   local side = Vector3.new(-toward.Z, 0, toward.X)
   local center = ground.Position + Vector3.new(0, 1.6, 0)
   local planned, score
-  for _, offset in ipairs({ toward, side, -side, -toward }) do
+  for _, offset in ipairs({ toward, toward * 2, side, -side, -toward }) do
     local placement = geometry.placement(snap, center + offset)
     if placement and useful(snap, placement.cell) then
       local predicted = target.root.Position + target.root.AssemblyLinearVelocity * math.min(0.2, snap.ping or 0)
