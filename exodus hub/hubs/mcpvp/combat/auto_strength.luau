@@ -18,7 +18,8 @@ local function finish()
   if not previous then return end
   if previous.opened then inventory.closeInventory() end
   local snap = native.snapshot()
-  if snap and snap.character == previous.character and (snap.tool == previous.tool or snap.tool == nil) then
+  if snap and snap.character == previous.character and (previous.stage ~= "confirm" or previous.confirmed)
+    and (snap.tool == previous.tool or snap.tool == nil) then
     local sword = native.findSword(snap)
     if sword then native.equip(snap, sword) end
   end
@@ -29,10 +30,11 @@ function Strength.reset() finish() end
 function Strength.busy() return job ~= nil end
 function Strength.step(snap)
   if not utils.isActive() or not utils.getConfigValue("MCAutoStrength") then finish() return end
-  if job and (job.character ~= snap.character or snap.now > job.deadline) then finish() return end
+  if job and job.character ~= snap.character then finish() return end
   if job then
     local current = job
     if current.stage == "inventory" then
+      if snap.now > current.deadline then finish() return end
       if not inventory.inventoryVisible() then finish() return end
       if snap.now < current.ready then return end
       inventory.swapSpeedForStrength(current.tool, current.from, current.to)
@@ -40,9 +42,16 @@ function Strength.step(snap)
       return
     end
     if current.stage == "confirm" then
-      if active(snap) or not current.tool.Parent or (tonumber(current.tool:GetAttribute("Count")) or 0) < current.count then finish() end
+      if active(snap) or not current.tool.Parent or (tonumber(current.tool:GetAttribute("Count")) or 0) < current.count then
+        current.confirmed = true
+        finish()
+      elseif snap.now > current.deadline then
+        job = nil
+        nextRun = snap.now + 1.2
+      end
       return
     end
+    if snap.now > current.deadline then finish() return end
     if active(snap) then finish() return end
     if snap.now < current.ready then return end
     if snap.tool ~= current.tool or native.blocked(snap) then finish() return end
@@ -50,7 +59,7 @@ function Strength.step(snap)
     if onGround == false or math.abs(snap.root.AssemblyLinearVelocity.Y) > 5 then finish() return end
     current.count = tonumber(current.tool:GetAttribute("Count")) or 1
     if native.useItem(snap, current.tool, Vector3.new(0, -1, 0)) then
-      current.stage, current.deadline = "confirm", snap.now + 0.9
+      current.stage, current.deadline = "confirm", snap.now + 2.5
     else finish() end
     return
   end
