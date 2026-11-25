@@ -27,7 +27,7 @@ local function refreshDuel(entry, now)
   end
 end
 local function angle(snap, point)
-  local view = snap.targetCFrame or snap.camera.CFrame
+  local view = snap.camera.CFrame
   local delta = point - view.Position
   return delta.Magnitude < 0.01 and 0 or math.deg(math.acos(math.clamp(view.LookVector:Dot(delta.Unit), -1, 1)))
 end
@@ -49,7 +49,9 @@ local function candidates(snap, cfg)
       continue
     end
     local distance = (root.Position - snap.root.Position).Magnitude
-    if distance > cfg("MCTargetRange") * 3.2 then
+    local entry = records[char]
+    local pursuing = entry and snap.now - math.max(entry.dealt, entry.received, entry.intent) < cfg("MCComboLifetime")
+    if distance > (pursuing and math.max(cfg("MCTargetRange"), cfg("MCSwordPearlMax")) or cfg("MCTargetRange")) * 3.2 then
       continue
     end
     result[#result + 1] = {
@@ -187,12 +189,12 @@ function Target.update(snap, cfg)
     if not candidate.engaged and (candidate.angle > cfg("MCAcquireFov") or not candidate.visible) then
       continue
     end
-    local value = candidate.distance / 50 + candidate.angle / 180
+    local value = candidate.distance / 50 + candidate.angle / (cfg("MCAim") and 90 or 360)
     if candidate.duel then
       value -= 3
     end
     if retained then
-      value -= 6
+      value -= 1.5
     end
     if not score or value < score then
       selected, score = candidate, value

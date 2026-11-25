@@ -27,11 +27,28 @@ function Geometry.damage(snap, char, point, power, plannedBlock, predictedPositi
   if not root then
     return math.huge
   end
+  local cached
+  if not plannedBlock and not predictedPosition then
+    snap.damageCache = snap.damageCache or {}
+    local chars = snap.damageCache
+    chars[char] = chars[char] or {}
+    chars[char][power] = chars[char][power] or {}
+    cached = chars[char][power]
+    if cached[point] ~= nil then
+      return cached[point]
+    end
+  end
+  local function result(value)
+    if cached then
+      cached[point] = value
+    end
+    return value
+  end
   local position = predictedPosition or root.Position
   local distance = (position - point).Magnitude / 3.2
   local diameter = power * 2
-  if distance > diameter then
-    return 0
+  if distance >= diameter then
+    return result(0)
   end
   local excluded = { char }
   local blocks = snap.world:FindFirstChild("PlayerBlocks")
@@ -65,7 +82,7 @@ function Geometry.damage(snap, char, point, power, plannedBlock, predictedPositi
   local impact = (1 - distance / diameter) * (exposed / total)
   local damage = math.floor((impact * impact + impact) / 2 * 7 * diameter + 1)
   if exposed == 0 then
-    return 0
+    return result(0)
   end
   local config = native.data().config
   local ladder = config and config.Ladder
@@ -92,25 +109,13 @@ function Geometry.damage(snap, char, point, power, plannedBlock, predictedPositi
   if resistUntil > snap.server then
     damage *= math.max(0, 1 - 0.2 * ((tonumber(char:GetAttribute("Effect_resistanceLevel")) or 0) + 1))
   end
-  return damage
+  return result(damage)
 end
 function Geometry.evaluate(snap, target, point, power, cfg, minDamage, plannedBlock)
-  local factor = cfg("MCDamageUncertainty") / 100
-  local selfDamage = Geometry.damage(snap, snap.character, point, power, plannedBlock) * (1 + factor)
-  local velocity = target.root.AssemblyLinearVelocity
-  local lead = math.clamp(0.12 + (snap.ping or 0), 0.12, 0.3)
-  local displacement = velocity * lead
-  if displacement.Magnitude > 4 then
-    displacement = displacement.Unit * 4
-  end
-  local predicted = target.root.Position + displacement
-  local currentDamage = Geometry.damage(snap, target.character, point, power, plannedBlock)
-  local futureDamage = Geometry.damage(snap, target.character, point, power, plannedBlock, predicted)
-  local targetDamage = math.max(currentDamage, futureDamage) * math.max(0, 1 - factor)
-  local reserve = snap.humanoid.MaxHealth * cfg("MCHealthReserve") / 100
-  local safe = selfDamage <= cfg("MCMaxSelfDamage") and snap.humanoid.Health - selfDamage >= reserve
-  local useful = targetDamage >= minDamage and targetDamage - selfDamage >= cfg("MCDamageMargin")
-  return safe and useful, selfDamage, targetDamage
+  local selfDamage = Geometry.damage(snap, snap.character, point, power, plannedBlock)
+  local targetDamage = Geometry.damage(snap, target.character, point, power, plannedBlock)
+  -- Anchor opportunities depend only on enemy exposure. Crystal spam checks self exposure in pulse.
+  return targetDamage > 0, selfDamage, targetDamage
 end
 function Geometry.cellFree(snap, position)
   local params = OverlapParams.new()
@@ -169,9 +174,22 @@ function Geometry.protection(snap, source)
   end
   return nil
 end
-function Geometry.pearl(snap, target, cfg, projectile)
+function Geometry.projectileLanding(snap, origin, velocity, projectile, ignore)
+  projectile = projectile or { gravity = 38.4, drag = 0.99 }
+  for _ = 1, 200 do
+    local nextPosition = origin + velocity * 0.05
+    local hit = native.raycast(origin, nextPosition - origin, ignore)
+    if hit then
+      return hit.Position
+    end
+    origin = nextPosition
+    velocity = velocity * (projectile.drag or 0.99) - Vector3.new(0, (projectile.gravity or 38.4) * 0.05, 0)
+  end
+  return nil
+end
+function Geometry.pearl(snap, target, cfg, projectile, destination)
   local selfDamage = (native.data().config and native.data().config.Items.Pearl.selfDamage) or 2
-  if snap.humanoid.Health - selfDamage <= snap.humanoid.MaxHealth * cfg("MCPearlMinHealth") / 100 then
+  if snap.humanoid.Health <= selfDamage then
     return nil
   end
   -- Vanilla launch speed in the game's 3.2-stud block scale; observed packets replace this baseline.
@@ -187,13 +205,15 @@ function Geometry.pearl(snap, target, cfg, projectile)
   if horizontal.Magnitude < 0.1 then
     return nil
   end
-  local landing = target.root.Position + target.root.AssemblyLinearVelocity * lead - horizontal.Unit * 4 - Vector3.new(0, 3.5, 0)
-  local ground = native.raycast(landing + Vector3.new(0, 5, 0), Vector3.new(0, -13, 0), { target.character })
-  if not ground or ground.Normal.Y < 0.7 then
+  local landing = destination or target.root.Position + target.root.AssemblyLinearVelocity * lead - Vector3.new(0, 3.5, 0)
+  local ground = not destination and native.raycast(landing + Vector3.new(0, 5, 0), Vector3.new(0, -13, 0), { target.character })
+  if not destination and (not ground or ground.Normal.Y < 0.7) then
     return nil
   end
-  landing = ground.Position + Vector3.new(0, 0.5, 0)
-  if (landing - snap.root.Position).Magnitude >= target.distance - 3.2 then
+  if not destination then
+    landing = ground.Position
+  end
+  if (landing - snap.root.Position).Magnitude < 3.2 then
     return nil
   end
   local flat = Vector3.new(landing.X - origin.X, 0, landing.Z - origin.Z)
@@ -203,7 +223,8 @@ function Geometry.pearl(snap, target, cfg, projectile)
   end
   -- Match the native fixed 50 ms projectile tick, including drag after each position step.
   local bestDirection, bestError, bestTime = nil, math.huge, nil
-  for degrees = -40, 65, 1 do
+  local bestAngle
+  local function sample(degrees)
     local theta = math.rad(degrees)
     local direction = flat.Unit * math.cos(theta) + Vector3.new(0, math.sin(theta), 0)
     local velocity, position = direction * speed, origin
@@ -216,7 +237,7 @@ function Geometry.pearl(snap, target, cfg, projectile)
         local atTarget = position:Lerp(nextPosition, alpha)
         local error = math.abs(atTarget.Y - landing.Y)
         if error < bestError then
-          bestDirection, bestError, bestTime = direction, error, (step - 1 + alpha) * 0.05
+          bestDirection, bestError, bestTime, bestAngle = direction, error, (step - 1 + alpha) * 0.05, degrees
         end
         break
       end
@@ -224,37 +245,26 @@ function Geometry.pearl(snap, target, cfg, projectile)
       velocity = velocity * (projectile.drag or 0.99) - Vector3.new(0, gravity * 0.05, 0)
     end
   end
-  if not bestDirection or bestError > 1.5 or not bestTime then
+  for degrees = -40, 65, 1 do
+    sample(degrees)
+  end
+  if bestAngle then
+    local coarse = bestAngle
+    for step = -20, 20 do
+      sample(coarse + step * 0.05)
+    end
+  end
+  if not bestDirection or bestError > 0.25 or not bestTime then
     return nil
   end
-  local velocity, previous = bestDirection * speed, origin
-  local steps = math.ceil(bestTime / 0.05)
-  for step = 1, steps do
-    local point = previous + velocity * 0.05
-    local hit = native.raycast(previous, point - previous, { target.character })
-    if hit and step < steps - 1 then
-      return nil
-    end
-    previous = point
-    velocity = velocity * (projectile.drag or 0.99) - Vector3.new(0, gravity * 0.05, 0)
-  end
-  -- Avoid landing next to an existing explosive rather than assuming every pursuit is advantageous.
-  for _, name in ipairs({ "EndCrystals", "PlayerBlocks" }) do
-    local folder = snap.world:FindFirstChild(name)
-    if folder then
-      for _, obj in ipairs(folder:GetChildren()) do
-        local dangerous = name == "EndCrystals" or (obj:GetAttribute("BlockKey") == "respawn_anchor" and (tonumber(obj:GetAttribute("AnchorCharges")) or 0) > 0)
-        local pos = dangerous and Geometry.position(obj)
-        if pos and (pos - landing).Magnitude < 8 then
-          return nil
-        end
-      end
-    end
+  local impact = Geometry.projectileLanding(snap, origin, bestDirection * speed, projectile, { target.character })
+  if not impact or (impact - landing).Magnitude > 1.6 then
+    return nil
   end
   return origin + bestDirection * 30
 end
 Geometry.__contract = {
   requires = { Native = "mcpnative" },
-  provides = { "setup", "snap", "position", "blastPosition", "damage", "evaluate", "cellFree", "placement", "protection", "pearl" },
+  provides = { "setup", "snap", "position", "blastPosition", "damage", "evaluate", "cellFree", "placement", "protection", "pearl", "projectileLanding" },
 }
 return Geometry

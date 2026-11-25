@@ -7,7 +7,8 @@ local active, target, latest, projectile
 local backoff = {}
 local auraHits = {}
 local lastPearl, nextAttack, pauseUntil, lastError = -math.huge, 0, 0, -math.huge
-local lastJump, lastTick = -math.huge, 0
+local lastJump = -math.huge
+local enemyPearls = {}
 local focused = true
 local status = "Aguardando ativação"
 local statusDetails = ""
@@ -18,7 +19,7 @@ local function cfg(key)
   end
   return utils.getConfigValue(key)
 end
-local function cancel(reason, failed, manual)
+local function cancel(reason, failed, _manual)
   local job = active
   active = nil
   if not job then
@@ -27,12 +28,11 @@ local function cancel(reason, failed, manual)
   if job.cancel then
     pcall(job.cancel)
   end
+  if job.inventory then
+    native.closeInventory()
+  end
   if job.needsEquip ~= false then
     native.restore(job.original, job.tool)
-  end
-  if job.point and not manual and latest and latest.character == job.character and job.view then
-    local camera = latest.camera
-    camera.CFrame = CFrame.lookAt(camera.CFrame.Position, camera.CFrame.Position + job.view.LookVector)
   end
   if failed then
     backoff[job.id] = os.clock() + 1
@@ -45,9 +45,11 @@ function Coordinator.reset()
     worldScope = nil
   end
   cancel("Aguardando combate")
+  native.closeInventory()
   target, latest, character, folder = nil, nil, nil, nil
   lastPearl, nextAttack, pauseUntil, lastJump = -math.huge, 0, 0, -math.huge
   backoff = {}
+  enemyPearls = {}
   auraHits = {}
   targeting.reset()
   inventory.reset()
@@ -64,8 +66,11 @@ local function valid(job, snap)
   if job.feature and not cfg(job.feature) then
     return false
   end
-  if job.target and (not target or target.character ~= job.target or target.humanoid.Health <= 0) then
-    return false
+  if job.target then
+    local human = job.target:FindFirstChildOfClass("Humanoid")
+    if not job.target.Parent or not human or human.Health <= 0 then
+      return false
+    end
   end
   return not job.valid or job.valid(snap, target)
 end
@@ -79,7 +84,7 @@ local function start(job, snap)
     backoff[job.id] = snap.now + 3
     return
   end
-  job.started, job.original, job.view = snap.now, snap.equipped, snap.camera.CFrame
+  job.started, job.original = snap.now, snap.equipped
   job.character, job.stage = snap.character, "equip"
   job.timeout = job.timeout or 0.8
   active = job
@@ -93,6 +98,14 @@ local function advance(snap)
     cancel("Condição do assistente mudou")
     return
   end
+  if job.result == false or (job.inventory and job.stage ~= "equip" and not native.inventoryOpen()) then
+    cancel("Transação de inventário interrompida", true)
+    return
+  end
+  if job.id == "apple" and job.valid and not job.valid(snap, target) then
+    cancel("Pausa das maçãs após combate")
+    return
+  end
   if job.stage == "confirm" then
     if job.confirm and job.confirm(snap, target) then
       if job.success then
@@ -101,7 +114,7 @@ local function advance(snap)
       if job.target and (job.feature == "MCDTap" or job.feature == "MCCrystal" or job.feature == "MCAnchor") then
         targeting.hold(job.target, snap.now)
       end
-      backoff[job.id] = snap.now + 0.05
+      backoff[job.id] = snap.now
       cancel("Concluído: " .. job.id)
     elseif snap.now - job.sent > job.timeout then
       cancel("Nova tentativa: " .. job.id, not job.repeatFast)
@@ -111,7 +124,7 @@ local function advance(snap)
   if not valid(job, snap) then
     job.invalidSince = job.invalidSince or snap.now
     job.suspended = true
-    if snap.now - job.invalidSince > 1.5 then
+    if snap.now - job.invalidSince > 0.25 then
       cancel("Oportunidade temporariamente indisponível")
     end
     return
@@ -122,29 +135,32 @@ local function advance(snap)
     return
   end
   if job.stage == "equip" then
+    if job.inventory then
+      if not native.openInventory() then
+        cancel("Inventário indisponível", true)
+        return
+      end
+      job.openedAt = snap.now
+    end
     if job.needsEquip ~= false then
       if not job.tool or not job.tool.Parent or not native.equip(job.tool) then
         cancel("Item indisponível", true)
         return
       end
     end
-    job.stage, job.equippedAt = "aim", snap.now
-    return
+    job.stage, job.equippedAt = "perform", snap.now
   end
   if job.needsEquip ~= false and native.equipped() ~= job.tool then
     cancel("Controle manual do item")
     return
   end
-  if snap.now - job.equippedAt < (job.delay or 0.1) then
+  if job.inventory and (not native.inventoryOpen() or snap.now <= job.openedAt) then
+    return
+  end
+  if snap.now - job.equippedAt < (job.delay or 0) then
     return
   end
   local point = job.point and job.point(snap, target)
-  if point then
-    local delta = point - snap.camera.CFrame.Position
-    if delta.Magnitude < 0.01 or snap.camera.CFrame.LookVector:Dot(delta.Unit) < math.cos(math.rad(2)) then
-      return
-    end
-  end
   if not valid(job, snap) then
     cancel("Oportunidade encerrada")
     return
@@ -175,17 +191,23 @@ local function pearl(snap)
   if not target or not target.engaged or snap.now - lastPearl < cfg("MCPearlInterval") then
     return nil
   end
-  local mode = explosives.mode()
+  local mode = explosives.mode() or (cfg("MCDTap") and "dtap" or cfg("MCCrystal") and "crystal" or cfg("MCAnchor") and "anchor" or nil)
   local permitted = mode == "dtap" and cfg("MCDTapPearl")
     or mode == "crystal" and cfg("MCCrystalPearl")
     or mode == "anchor" and cfg("MCAnchorPearl")
     or not mode and cfg("MCSwordPearl")
-  if not permitted or target.distance < cfg("MCSwordPearlGap") * 3.2 or target.distance > cfg("MCSwordPearlMax") * 3.2 then
+  local gap = (mode and cfg("MCExplosivePearlGap") or cfg("MCSwordPearlGap")) * 3.2
+  local enemyPearl = enemyPearls[target.character]
+  if enemyPearl and snap.now - enemyPearl.at > 5 then
+    enemyPearls[target.character] = nil
+    enemyPearl = nil
+  end
+  if not permitted or (not enemyPearl and target.distance < gap) or target.distance > cfg("MCSwordPearlMax") * 3.2 then
     return nil
   end
   local relative = target.root.AssemblyLinearVelocity - snap.root.AssemblyLinearVelocity
   local displacement = target.root.Position - snap.root.Position
-  if displacement.Magnitude < 0.1 or relative:Dot(displacement.Unit) < -2 then
+  if not enemyPearl and (displacement.Magnitude < 0.1 or relative:Dot(displacement.Unit) < -2) then
     return nil
   end
   local item = native.find("Pearl", true)
@@ -195,11 +217,12 @@ local function pearl(snap)
   if (tonumber(snap.player:GetAttribute("ItemCooldown_Pearl")) or 0) > snap.server then
     return nil
   end
-  local point = geometry.pearl(snap, target, cfg, projectile)
+  local point = geometry.pearl(snap, target, cfg, projectile, enemyPearl and enemyPearl.landing)
   if not point then
     return nil
   end
   local before = item.count
+  local opponent = target.character
   local planned, plannedAt = point, snap.now
   return {
     id = "pearl_follow",
@@ -216,11 +239,16 @@ local function pearl(snap)
         return false
       end
       if s.now - plannedAt >= 0.1 then
-        planned, plannedAt = geometry.pearl(s, t, cfg, projectile), s.now
+        planned, plannedAt = geometry.pearl(s, t, cfg, projectile, enemyPearl and enemyPearl.landing), s.now
       end
-      return t.engaged and t.distance >= cfg("MCSwordPearlGap") * 3.2 and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
+      return t.engaged and (enemyPearl ~= nil or t.distance >= gap) and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
     end,
     before = function(s) lastPearl = s.now end,
+    success = function()
+      if enemyPearls[opponent] == enemyPearl then
+        enemyPearls[opponent] = nil
+      end
+    end,
     confirm = function(s)
       return not item.tool.Parent
         or (tonumber(item.tool:GetAttribute("Count")) or 0) < before
@@ -228,123 +256,94 @@ local function pearl(snap)
     end,
   }
 end
-local function sword(snap)
-  if not cfg("MCAttack") or not target or not target.duel or not snap.equipped then
-    return
-  end
-  local stats = native.stats(snap.equipped)
-  if stats.type ~= "sword" or snap.now < nextAttack or snap.player:GetAttribute("OffhandUsing") == true then
-    return
-  end
-  if snap.character:GetAttribute("EatingApple") or snap.character:GetAttribute("DrinkingPotion") or snap.character:GetAttribute("BowDrawStarted") then
-    return
-  end
-  local swing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or 0
-  local recharge = cfg("MCAttackCharge") / 100 / math.max(0.05, stats.speed)
-  if snap.now - swing < recharge then
-    return
-  end
-  local reach = math.min(stats.reach, cfg("MCAttackRange") * 3.2)
-  if not targeting.canHit(snap, target, reach) then
-    return
-  end
-  local falling = snap.root.AssemblyLinearVelocity.Y < -0.2 and snap.humanoid.FloorMaterial == Enum.Material.Air
-  if
-    cfg("MCCrit")
-    and snap.humanoid.FloorMaterial ~= Enum.Material.Air
-    and snap.now - lastJump > 1
-    and not snap.humanoid.Sit
-    and not snap.character:GetAttribute("Sneaking")
-  then
-    local ceiling = native.raycast(snap.eye, Vector3.new(0, 5, 0))
-    if not ceiling then
-      snap.humanoid.Jump = true
-      lastJump = snap.now
-      nextAttack = snap.now + 0.1
-      return
+local function selectSwordTarget(snap, reach, forCombo)
+  local chosen, oldest = nil, math.huge
+  for _, candidate in ipairs(targeting.nearby()) do
+    if forCombo and not explosives.needsStrike(snap, candidate, cfg) then
+      continue
+    end
+    local delta = candidate.root.Position - snap.eye
+    if delta.Magnitude > 0.01 and targeting.canHit(snap, candidate, reach, delta.Unit) then
+      local last = auraHits[candidate.character] or -math.huge
+      if last < oldest then
+        chosen, oldest = candidate, last
+      end
     end
   end
-  if cfg("MCCrit") and not falling and snap.now - lastJump < 0.65 then
-    return
-  end
-  if cfg("MCCrit") and falling then
-    native.prepareCritical()
-  end
-  targeting.noteAttack(snap, target)
-  if native.action("attack") then
-    nextAttack = snap.now + recharge
-  end
+  return chosen
 end
-local function comboStrike(snap)
-  local wanted, prepared = explosives.needsStrike(snap, target, cfg)
-  if not wanted or snap.now < nextAttack or native.usingHeld() then
+local function sword(snap, forCombo)
+  if (not forCombo and not cfg("MCAttack")) or snap.now < nextAttack then
     return false
   end
-  local weapon = snap.equipped
+  if
+    snap.player:GetAttribute("OffhandUsing") == true
+    or snap.character:GetAttribute("EatingApple")
+    or snap.character:GetAttribute("DrinkingPotion")
+    or snap.character:GetAttribute("BowDrawStarted")
+  then
+    return false
+  end
+  local weapon = native.equipped()
   if native.stats(weapon).type ~= "sword" then
-    local swordItem = prepared and native.find("sword", true)
-    weapon = swordItem and swordItem.tool
+    if not forCombo and not explosives.mode() then
+      return false
+    end
+    local item = native.find("sword", true)
+    weapon = item and item.tool
   end
   if not weapon then
     return false
   end
   local stats = native.stats(weapon)
-  if stats.type ~= "sword" or not native.canAct("attack") then
+  local recharge = cfg("MCAttackCharge") / 100 / math.max(0.05, stats.speed)
+  local reach = math.min(stats.reach, cfg("MCAttackRange") * 3.2)
+  local chosen = selectSwordTarget(snap, reach, forCombo)
+  if not chosen or not native.canAct("attack") then
     return false
-  end
-  local recharge = 1 / math.max(0.05, stats.speed)
-  local chosen, oldest = nil, math.huge
-  for _, candidate in ipairs(targeting.nearby()) do
-    local delta = candidate.root.Position - snap.eye
-    if delta.Magnitude < 0.01 or not targeting.canHit(snap, candidate, stats.reach, delta.Unit) then
-      continue
-    end
-    local last = auraHits[candidate.character] or -math.huge
-    if last < oldest then
-      chosen, oldest = candidate, last
-    end
-  end
-  if not chosen then
-    return false
-  end
-  local function strike(s)
-    targeting.noteAttack(s, chosen)
-    if not native.strike(chosen.root.Position) then
-      return false
-    end
-    auraHits[chosen.character] = s.now
-    targeting.hold(chosen.character, s.now)
-    nextAttack = s.now + recharge
-    status = "Golpe de combo: " .. chosen.player.DisplayName
-    return true
-  end
-  if weapon ~= snap.equipped then
-    local before = targeting.lastHit(chosen.character)
-    targeting.hold(chosen.character, snap.now)
-    target = targeting.update(snap, cfg)
-    start({
-      id = "dtap_strike",
-      feature = "MCDTap",
-      target = chosen.character,
-      priority = 68,
-      tool = weapon,
-      native = "attack",
-      delay = 0.06,
-      timeout = 0.8,
-      valid = function(s)
-        local delta = chosen.root.Position - s.eye
-        return not native.usingHeld() and chosen.humanoid.Health > 0 and delta.Magnitude > 0.01 and targeting.canHit(s, chosen, stats.reach, delta.Unit)
-      end,
-      ready = function(s) return s.now - (tonumber(s.character:GetAttribute("LocalAttackSwing")) or 0) >= recharge end,
-      perform = strike,
-      confirm = function() return targeting.lastHit(chosen.character) > before end,
-    }, snap)
-    return active ~= nil
   end
   if snap.now - (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or 0) < recharge then
     return false
   end
-  return strike(snap)
+  if not forCombo and cfg("MCCrit") then
+    local falling = snap.root.AssemblyLinearVelocity.Y < -0.2 and snap.humanoid.FloorMaterial == Enum.Material.Air
+    if
+      snap.humanoid.FloorMaterial ~= Enum.Material.Air
+      and snap.now - lastJump > 1
+      and not snap.humanoid.Sit
+      and not snap.character:GetAttribute("Sneaking")
+      and not native.raycast(snap.eye, Vector3.new(0, 5, 0))
+    then
+      snap.humanoid.Jump = true
+      lastJump = snap.now
+      return false
+    end
+    if not falling and snap.now - lastJump < 0.65 then
+      return false
+    end
+    if falling then
+      native.prepareCritical()
+    end
+  end
+  if not native.equip(weapon) then
+    return false
+  end
+  local current = native.snapshot()
+  if not current then
+    return false
+  end
+  targeting.noteAttack(current, chosen)
+  if not native.strike(chosen.root.Position) then
+    return false
+  end
+  auraHits[chosen.character] = snap.now
+  targeting.hold(chosen.character, snap.now)
+  nextAttack = snap.now + recharge
+  explosives.struck(snap, chosen, cfg)
+  -- Start placement in the same heartbeat as the sword hit, including before knockback replicates.
+  explosives.pulse(snap, targeting.nearby(), cfg)
+  status = "Ataque: " .. chosen.player.DisplayName
+  return true
 end
 local function observeWorld(snap)
   local blocks = snap.world:FindFirstChild("PlayerBlocks")
@@ -352,12 +351,13 @@ local function observeWorld(snap)
     return
   end
   folder = blocks
+  if worldScope then
+    worldScope.destroy()
+    worldScope = nil
+  end
   if blocks then
     for _, block in ipairs(blocks:GetChildren()) do
       explosives.mark(block, -math.huge)
-    end
-    if worldScope then
-      worldScope.destroy()
     end
     worldScope = scope.child()
     worldScope.connect(blocks.ChildAdded, function(block) explosives.mark(block, os.clock()) end)
@@ -374,6 +374,7 @@ local function tick()
     if latest then
       Coordinator.reset()
     end
+    explosives.release()
     status = cfg("MCEnabled") and "Aguardando arena" or "Assistentes desligados"
     return
   end
@@ -383,19 +384,19 @@ local function tick()
   end
   latest = snap
   observeWorld(snap)
-  if active then
-    snap.targetCFrame = active.view
-  end
   target = targeting.update(snap, cfg)
   local manualTarget = explosives.observe(snap, targeting.nearby(), cfg)
-  if manualTarget then
-    targeting.hold(manualTarget.character, snap.now)
-    target = targeting.update(snap, cfg)
+  if not target and manualTarget then
+    target = manualTarget
   end
   if snap.now < pauseUntil then
+    explosives.release()
     return
   end
   local survival = inventory.propose(snap, target, cfg)
+  if active and active.id == "apple" and active.valid and not active.valid(snap, target) then
+    cancel("Pausa das maçãs após combate")
+  end
   local emergency = choose(survival, explosives.defense(snap, cfg))
   local manuallyUsing = snap.player:GetAttribute("OffhandUsing") == true
     or snap.character:GetAttribute("EatingApple")
@@ -418,28 +419,48 @@ local function tick()
     advance(snap)
     return
   end
-  local proposal = emergency
-  if target then
-    local explosive = explosives.propose(snap, target, cfg)
-    if explosive then
-      explosive.target = target.character
+  if allowed(emergency) and emergency.priority >= 90 then
+    explosives.release()
+    start(emergency, snap)
+    advance(snap)
+    return
+  end
+  if sword(snap, true) then
+    return
+  end
+  local explosive = explosives.propose(snap, target, cfg, targeting.nearby())
+  if allowed(explosive) and explosive.priority >= 80 then
+    explosives.release()
+    start(explosive, snap)
+    advance(snap)
+    return
+  end
+  if sword(snap, false) then
+    return
+  end
+  local pursuit = pearl(snap)
+  if allowed(pursuit) then
+    explosives.release()
+    start(pursuit, snap)
+    advance(snap)
+    return
+  end
+  local pulsing, victim = explosives.pulse(snap, targeting.nearby(), cfg)
+  if pulsing then
+    if victim then
+      targeting.hold(victim.character, snap.now)
     end
-    proposal = choose(proposal, explosive)
-    proposal = choose(proposal, pearl(snap))
+    status = "Combo de cristais"
+    return
   end
+  local proposal = choose(emergency, explosive)
   if proposal then
+    explosives.release()
     start(proposal, snap)
+    advance(snap)
     return
   end
-  if snap.player:GetAttribute("OffhandUsing") == true or snap.character:GetAttribute("EatingApple") or snap.character:GetAttribute("DrinkingPotion") then
-    status = "Respeitando uso manual"
-    return
-  end
-  if not native.usingHeld() and comboStrike(snap) then
-    return
-  end
-  sword(snap)
-  status = target and (target.engaged and "Combate: " or "Alvo: ") .. target.player.DisplayName or "Aguardando alvo próximo da mira"
+  status = target and (target.engaged and "Combate: " or "Alvo: ") .. target.player.DisplayName or "Aguardando oponente"
 end
 function Coordinator.start()
   if scope then
@@ -451,6 +472,7 @@ function Coordinator.start()
   scope.connect(input.WindowFocusReleased, function()
     focused = false
     cancel("Janela sem foco", false, true)
+    explosives.release()
   end)
   if input.WindowFocused then
     scope.connect(input.WindowFocused, function() focused = true end)
@@ -472,11 +494,25 @@ function Coordinator.start()
       if key == Enum.KeyCode.W or key == Enum.KeyCode.A or key == Enum.KeyCode.S or key == Enum.KeyCode.D or key == Enum.KeyCode.Space then
         return
       end
-      if kind == Enum.UserInputType.MouseButton1 and native.stats(native.equipped()).type == "sword" then
+      if kind == Enum.UserInputType.Keyboard and key.Value >= Enum.KeyCode.One.Value and key.Value <= Enum.KeyCode.Nine.Value then
+        cancel("Troca manual de slot", false, true)
+        explosives.release()
+        pauseUntil = os.clock()
+        return
+      end
+      local tool = native.equipped()
+      local class = tool and tool:GetAttribute("ClassItem")
+      local combatInput = native.stats(tool).type == "sword"
+        or class == "EndCrystal"
+        or class == "RespawnAnchor"
+        or class == "Glowstone"
+        or (tool and tool:GetAttribute("BlockKey") == "obsidian")
+      if combatInput and (kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.MouseButton2 or kind == Enum.UserInputType.Touch) then
         return
       end
       pauseUntil = os.clock() + cfg("MCManualPause")
       cancel("Controle manual", false, true)
+      explosives.release()
     end
   end)
   scope.add(native.observeAttacks(function()
@@ -485,60 +521,63 @@ function Coordinator.start()
     end
     targeting.noteAttack(native.snapshot())
   end))
-  scope.connect(input.InputChanged, function(event)
-    if event.UserInputType == Enum.UserInputType.MouseMovement and event.Delta.Magnitude > 35 then
-      pauseUntil = os.clock() + cfg("MCManualPause")
-      cancel("Movimento manual da câmera", false, true)
-    end
-  end)
   scope.connect(utils.getRunService().Heartbeat, function()
-    if os.clock() - lastTick < 1 / 30 then
-      return
-    end
-    lastTick = os.clock()
     local ok, err = pcall(tick)
     if not ok then
       cancel("Falha no assistente", true)
+      explosives.release()
+      native.closeInventory()
       if os.clock() - lastError > 2 then
         lastError = os.clock()
         utils.recordError("MCPVP", tostring(err))
       end
     end
   end)
-  scope.connect(utils.getRunService().RenderStepped, function(dt)
-    if not latest or not native.ready() or not cfg("MCEnabled") or not focused or os.clock() < pauseUntil then
-      return
-    end
-    if active and not active.suspended and active.stage == "aim" and active.point then
-      local point = active.point(latest, target)
-      if point then
-        native.aim(point, dt, 540)
-      end
-    elseif
-      not active
-      and cfg("MCAim")
-      and target
-      and target.duel
-      and not explosives.mode()
-      and not explosives.needsStrike(latest, target, cfg)
-      and not native.usingHeld()
-      and target.visible
-      and target.distance <= cfg("MCSwordLockRange") * 3.2
-      and native.equipped()
-      and native.stats(native.equipped()).type == "sword"
-      and not latest.character:GetAttribute("EatingApple")
-      and not latest.character:GetAttribute("DrinkingPotion")
-    then
-      native.aim(targeting.point(latest, target, cfg("MCAimTolerance")), dt, cfg("MCAimSpeed"))
-    end
-  end)
   local storage = game:GetService("ReplicatedStorage")
   local remotes = storage:FindFirstChild("Remotes")
   local event = remotes and remotes:FindFirstChild("ItemAction")
   if event and event:IsA("RemoteEvent") then
-    scope.connect(event.OnClientEvent, function(action, _, kind, _, velocity, gravity, drag)
+    scope.connect(event.OnClientEvent, function(action, id, kind, position, velocity, gravity, drag)
       if action == "Projectile" and kind == "Pearl" and typeof(velocity) == "Vector3" and velocity.Magnitude > 0 then
         projectile = { speed = velocity.Magnitude, gravity = tonumber(gravity) or 38.4, drag = tonumber(drag) or 0.99 }
+        local snap = native.snapshot()
+        if not snap or typeof(position) ~= "Vector3" then
+          return
+        end
+        -- This packet has no owner ID. Attribute only a uniquely close launch, never our own.
+        local owner, nearest, runnerUp = nil, math.huge, math.huge
+        for _, candidate in ipairs(targeting.nearby()) do
+          local distance = (position - (candidate.root.Position + Vector3.new(0, 1.184, 0))).Magnitude
+          if distance < nearest then
+            owner, runnerUp, nearest = candidate, nearest, distance
+          else
+            runnerUp = math.min(runnerUp, distance)
+          end
+        end
+        if not owner or not owner.engaged or nearest > 5 or nearest + 1 >= math.min(runnerUp, (position - snap.eye).Magnitude) then
+          return
+        end
+        if owner then
+          local landing = geometry.projectileLanding(snap, position, velocity, projectile, { owner.character })
+          if landing then
+            enemyPearls[owner.character] = { id = id, landing = landing, at = snap.now }
+          end
+        end
+      elseif action == "ProjectileMove" and typeof(position) == "Vector3" and typeof(velocity) == "Vector3" then
+        local snap = native.snapshot()
+        if snap then
+          for char, entry in pairs(enemyPearls) do
+            if entry.id == id then
+              entry.landing = geometry.projectileLanding(snap, position, velocity, projectile, { char }) or entry.landing
+            end
+          end
+        end
+      elseif action == "ProjectileEnd" and typeof(kind) == "Vector3" then
+        for _, entry in pairs(enemyPearls) do
+          if entry.id == id then
+            entry.landing = kind
+          end
+        end
       end
     end)
   end
@@ -580,7 +619,7 @@ function Coordinator.teardown()
   end
   Coordinator.reset()
 end
-function Coordinator.busy() return active ~= nil end
+function Coordinator.busy() return active ~= nil or explosives.mode() ~= nil end
 function Coordinator.state()
   local caps = native.capabilities()
   local missing = {}

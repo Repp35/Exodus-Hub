@@ -4,12 +4,16 @@ local Inventory = {}
 local native
 local missingSince, remembered, pending = nil, {}, nil
 local character
+local wasCombat, lastCombat, quietUntil = false, -math.huge, -math.huge
+local previousHealth, threatenedUntil = nil, -math.huge
 function Inventory.setup(deps)
   native = deps.Native
   return true
 end
 function Inventory.reset()
   missingSince, remembered, pending, character = nil, {}, nil, nil
+  wasCombat, lastCombat, quietUntil = false, -math.huge, -math.huge
+  previousHealth, threatenedUntil = nil, -math.huge
 end
 local function emptySlot()
   local slots = native.slots()
@@ -28,6 +32,23 @@ function Inventory.propose(snap, target, cfg)
     Inventory.reset()
     character = snap.character
   end
+  if previousHealth and snap.humanoid.Health < previousHealth then
+    threatenedUntil = snap.now + 3
+  end
+  previousHealth = snap.humanoid.Health
+  local combat = (target ~= nil and target.engaged == true) or snap.now < threatenedUntil
+  if combat then
+    lastCombat = snap.now
+  elseif wasCombat then
+    quietUntil = snap.now + cfg("MCApplePostCombatDelay")
+  end
+  wasCombat = combat
+  local function appleAllowed()
+    if wasCombat then
+      return cfg("MCAppleCombat")
+    end
+    return snap.now >= quietUntil and snap.now - lastCombat >= cfg("MCApplePostCombatDelay")
+  end
   local pressure = target and target.engaged and math.clamp(1 - target.distance / 25, 0, 1) or 0
   pressure = math.max(pressure, 1 - snap.humanoid.Health / snap.humanoid.MaxHealth)
   if cfg("MCTotem") and snap.character:GetAttribute("OffhandItem") ~= "totem" then
@@ -37,9 +58,20 @@ function Inventory.propose(snap, target, cfg)
     end
     if snap.now >= missingSince and not pending then
       local item = native.find("Totem", true) or native.find("Totem", false)
-      if item then
+      if item and item.slot then
         local owner = snap.character
-        local job = { id = "totem", feature = "MCTotem", priority = 100, mode = "offhand", tool = item.tool, timeout = 2, delay = 0, needsEquip = false }
+        local inHotbar = item.slot ~= nil and item.slot <= 9
+        local job = {
+          id = "totem",
+          feature = "MCTotem",
+          priority = 100,
+          mode = "offhand",
+          tool = item.tool,
+          timeout = 2,
+          delay = 0,
+          needsEquip = inHotbar,
+          inventory = not inHotbar,
+        }
         job.perform = function()
           pending = job
           native.offhand(item.tool, function(ok)
@@ -51,6 +83,11 @@ function Inventory.propose(snap, target, cfg)
           return true
         end
         job.confirm = function(s) return s.character:GetAttribute("OffhandItem") == "totem" end
+        job.success = function()
+          if inHotbar and job.original then
+            native.equip(job.original)
+          end
+        end
         return job
       end
     end
@@ -82,6 +119,7 @@ function Inventory.propose(snap, target, cfg)
         feature = "MCTotem",
         priority = 30,
         mode = "inventory",
+        inventory = true,
         needsEquip = false,
         delay = 0.15 + (1 - pressure) * 0.15,
         perform = function() return native.move(inventory.tool, slot) end,
@@ -113,6 +151,7 @@ function Inventory.propose(snap, target, cfg)
             feature = "MCPotion",
             priority = 35,
             mode = "inventory",
+            inventory = true,
             needsEquip = false,
             delay = 0.18,
             perform = function() return native.move(spare.tool, destination) end,
@@ -151,7 +190,7 @@ function Inventory.propose(snap, target, cfg)
   if
     cfg("MCApple")
     and snap.humanoid.Health / snap.humanoid.MaxHealth < cfg("MCAppleHealth") / 100
-    and (not target or target.distance > 22 or cfg("MCAppleCombat"))
+    and appleAllowed()
     and not snap.character:GetAttribute("EatingApple")
   then
     local item = native.find("GoldenApple", true)
@@ -172,6 +211,9 @@ function Inventory.propose(snap, target, cfg)
         tool = item.tool,
         delay = 0.2,
         timeout = 3,
+        valid = function(s)
+          return (wasCombat and cfg("MCAppleCombat")) or (not wasCombat and s.now >= quietUntil and s.now - lastCombat >= cfg("MCApplePostCombatDelay"))
+        end,
         perform = function() return native.apple(true) end,
         cancel = function() native.apple(false) end,
         confirm = function() return not item.tool.Parent or (tonumber(item.tool:GetAttribute("Count")) or 0) < before end,
