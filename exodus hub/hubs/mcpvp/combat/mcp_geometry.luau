@@ -22,7 +22,7 @@ function Geometry.blastPosition(crystal)
   local feet = crystal:GetAttribute("CrystalFeet")
   return typeof(feet) == "Vector3" and feet or Geometry.position(crystal)
 end
-function Geometry.damage(snap, char, point, power)
+function Geometry.damage(snap, char, point, power, plannedBlock)
   local root = char:FindFirstChild("HumanoidRootPart")
   if not root then
     return math.huge
@@ -47,7 +47,16 @@ function Geometry.damage(snap, char, point, power)
       total += 1
       local delta = root.Position + offset - point
       local hit = native.raycast(point + Vector3.new(0, 0.05, 0), delta, excluded)
-      if not hit or hit.Distance >= delta.Magnitude - 0.15 then
+      local blocked = hit and hit.Distance < delta.Magnitude - 0.15
+      local melee = native.data().geometry
+      if plannedBlock and melee and type(melee.Box) == "function" and delta.Magnitude > 0.01 then
+        local size = Vector3.new(1.6, 1.6, 1.6)
+        local distance = melee.Box(point + Vector3.new(0, 0.05, 0), delta.Unit, plannedBlock - size, plannedBlock + size, delta.Magnitude)
+        if distance and distance < delta.Magnitude - 0.15 then
+          blocked = true
+        end
+      end
+      if not blocked then
         exposed += 1
       end
     end
@@ -84,10 +93,10 @@ function Geometry.damage(snap, char, point, power)
   end
   return damage
 end
-function Geometry.evaluate(snap, target, point, power, cfg, minDamage)
+function Geometry.evaluate(snap, target, point, power, cfg, minDamage, plannedBlock)
   local factor = cfg("MCDamageUncertainty") / 100
-  local selfDamage = Geometry.damage(snap, snap.character, point, power) * (1 + factor)
-  local targetDamage = Geometry.damage(snap, target.character, point, power) * math.max(0, 1 - factor)
+  local selfDamage = Geometry.damage(snap, snap.character, point, power, plannedBlock) * (1 + factor)
+  local targetDamage = Geometry.damage(snap, target.character, point, power, plannedBlock) * math.max(0, 1 - factor)
   local reserve = snap.humanoid.MaxHealth * cfg("MCHealthReserve") / 100
   local safe = selfDamage <= cfg("MCMaxSelfDamage") and snap.humanoid.Health - selfDamage >= reserve
   local useful = targetDamage >= minDamage and targetDamage - selfDamage >= cfg("MCDamageMargin")

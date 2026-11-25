@@ -5,6 +5,7 @@ local utils, native, geometry, targeting, inventory, explosives, options, lifeti
 local scope, worldScope, character, folder
 local active, target, latest, projectile
 local backoff = {}
+local auraHits = {}
 local lastPearl, nextAttack, pauseUntil, lastError = -math.huge, 0, 0, -math.huge
 local lastJump, lastTick = -math.huge, 0
 local focused = true
@@ -47,6 +48,7 @@ function Coordinator.reset()
   target, latest, character, folder = nil, nil, nil, nil
   lastPearl, nextAttack, pauseUntil, lastJump = -math.huge, 0, 0, -math.huge
   backoff = {}
+  auraHits = {}
   targeting.reset()
   inventory.reset()
   explosives.reset()
@@ -96,6 +98,9 @@ local function advance(snap)
       if job.success then
         job.success(snap, target)
       end
+      if job.target and (job.feature == "MCDTap" or job.feature == "MCCrystal" or job.feature == "MCAnchor") then
+        targeting.hold(job.target, snap.now)
+      end
       backoff[job.id] = snap.now + 0.05
       cancel("Concluído: " .. job.id)
     elseif snap.now - job.sent > job.timeout then
@@ -104,10 +109,15 @@ local function advance(snap)
     return
   end
   if not valid(job, snap) then
-    cancel("Condição do assistente mudou")
+    job.invalidSince = job.invalidSince or snap.now
+    job.suspended = true
+    if snap.now - job.invalidSince > 0.6 then
+      cancel("Oportunidade temporariamente indisponível")
+    end
     return
   end
-  if snap.now - job.started > 1.8 then
+  job.invalidSince, job.suspended = nil, false
+  if snap.now - job.started > 3.5 then
     cancel("Preparação interrompida", true)
     return
   end
@@ -139,13 +149,21 @@ local function advance(snap)
     cancel("Oportunidade encerrada")
     return
   end
+  if job.ready and not job.ready(snap, target) then
+    return
+  end
   if (job.native or job.cooldown) and not native.canAct(job.native or job.cooldown) then
     return
   end
   if job.before then
     job.before(snap, target)
   end
-  local ok = job.perform and job.perform(snap, target) or (job.native and native.action(job.native, point))
+  local ok
+  if job.perform then
+    ok = job.perform(snap, target)
+  else
+    ok = job.native and native.action(job.native, point)
+  end
   if not ok then
     cancel("Ação indisponível: " .. job.id, true)
     return
@@ -211,7 +229,7 @@ local function pearl(snap)
   }
 end
 local function sword(snap)
-  if not cfg("MCAttack") or not target or not target.engaged or not snap.equipped then
+  if not cfg("MCAttack") or not target or not target.duel or not snap.equipped then
     return
   end
   local stats = native.stats(snap.equipped)
@@ -252,9 +270,81 @@ local function sword(snap)
   if cfg("MCCrit") and falling then
     native.prepareCritical()
   end
+  targeting.noteAttack(snap, target)
   if native.action("attack") then
     nextAttack = snap.now + recharge
   end
+end
+local function comboStrike(snap)
+  local wanted, prepared = explosives.needsStrike(snap, target, cfg)
+  if not wanted or snap.now < nextAttack or native.usingHeld() then
+    return false
+  end
+  local weapon = snap.equipped
+  if native.stats(weapon).type ~= "sword" then
+    local swordItem = prepared and native.find("sword", true)
+    weapon = swordItem and swordItem.tool
+  end
+  if not weapon then
+    return false
+  end
+  local stats = native.stats(weapon)
+  if stats.type ~= "sword" or not native.canAct("attack") then
+    return false
+  end
+  local recharge = 1 / math.max(0.05, stats.speed)
+  local chosen, oldest = nil, math.huge
+  for _, candidate in ipairs(targeting.nearby()) do
+    local delta = candidate.root.Position - snap.eye
+    if delta.Magnitude < 0.01 or not targeting.canHit(snap, candidate, stats.reach, delta.Unit) then
+      continue
+    end
+    local last = auraHits[candidate.character] or -math.huge
+    if last < oldest then
+      chosen, oldest = candidate, last
+    end
+  end
+  if not chosen then
+    return false
+  end
+  local function strike(s)
+    targeting.noteAttack(s, chosen)
+    if not native.strike(chosen.root.Position) then
+      return false
+    end
+    auraHits[chosen.character] = s.now
+    targeting.hold(chosen.character, s.now)
+    nextAttack = s.now + recharge
+    status = "Golpe de combo: " .. chosen.player.DisplayName
+    return true
+  end
+  if weapon ~= snap.equipped then
+    local before = targeting.lastHit(chosen.character)
+    targeting.hold(chosen.character, snap.now)
+    target = targeting.update(snap, cfg)
+    start({
+      id = "dtap_strike",
+      feature = "MCDTap",
+      target = chosen.character,
+      priority = 68,
+      tool = weapon,
+      native = "attack",
+      delay = 0.06,
+      timeout = 0.8,
+      valid = function(s)
+        local delta = chosen.root.Position - s.eye
+        return not native.usingHeld() and chosen.humanoid.Health > 0 and delta.Magnitude > 0.01 and targeting.canHit(s, chosen, stats.reach, delta.Unit)
+      end,
+      ready = function(s) return s.now - (tonumber(s.character:GetAttribute("LocalAttackSwing")) or 0) >= recharge end,
+      perform = strike,
+      confirm = function() return targeting.lastHit(chosen.character) > before end,
+    }, snap)
+    return active ~= nil
+  end
+  if snap.now - (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or 0) < recharge then
+    return false
+  end
+  return strike(snap)
 end
 local function observeWorld(snap)
   local blocks = snap.world:FindFirstChild("PlayerBlocks")
@@ -297,6 +387,11 @@ local function tick()
     snap.targetCFrame = active.view
   end
   target = targeting.update(snap, cfg)
+  local manualTarget = explosives.observe(snap, targeting.nearby(), cfg)
+  if manualTarget then
+    targeting.hold(manualTarget.character, snap.now)
+    target = targeting.update(snap, cfg)
+  end
   if snap.now < pauseUntil then
     return
   end
@@ -340,6 +435,9 @@ local function tick()
     status = "Respeitando uso manual"
     return
   end
+  if comboStrike(snap) then
+    return
+  end
   sword(snap)
   status = target and (target.engaged and "Combate: " or "Alvo: ") .. target.player.DisplayName or "Aguardando alvo próximo da mira"
 end
@@ -378,6 +476,12 @@ function Coordinator.start()
       cancel("Controle manual", false, true)
     end
   end)
+  scope.add(native.observeAttacks(function()
+    if not cfg("MCEnabled") then
+      return
+    end
+    targeting.noteAttack(native.snapshot())
+  end))
   scope.connect(input.InputChanged, function(event)
     if event.UserInputType == Enum.UserInputType.MouseMovement and event.Delta.Magnitude > 35 then
       pauseUntil = os.clock() + cfg("MCManualPause")
@@ -402,12 +506,26 @@ function Coordinator.start()
     if not latest or not native.ready() or not cfg("MCEnabled") or not focused or os.clock() < pauseUntil then
       return
     end
-    if active and active.stage == "aim" and active.point then
+    if active and not active.suspended and active.stage == "aim" and active.point then
       local point = active.point(latest, target)
       if point then
         native.aim(point, dt, 540)
       end
-    elseif not active and cfg("MCAim") and target then
+    elseif
+      not active
+      and cfg("MCAim")
+      and target
+      and target.duel
+      and not explosives.mode()
+      and not explosives.needsStrike(latest, target, cfg)
+      and not native.usingHeld()
+      and target.visible
+      and target.distance <= cfg("MCSwordLockRange") * 3.2
+      and native.equipped()
+      and native.stats(native.equipped()).type == "sword"
+      and not latest.character:GetAttribute("EatingApple")
+      and not latest.character:GetAttribute("DrinkingPotion")
+    then
       native.aim(targeting.point(latest, target, cfg("MCAimTolerance")), dt, cfg("MCAimSpeed"))
     end
   end)
@@ -420,6 +538,29 @@ function Coordinator.start()
         projectile = { speed = velocity.Magnitude, gravity = tonumber(gravity) or 38.4, drag = tonumber(drag) or 0.99 }
       end
     end)
+  end
+  local combat = storage:FindFirstChild("VoxelCombat")
+  local feedback = combat and combat:FindFirstChild("Feedback")
+  local swing = combat and combat:FindFirstChild("Swing")
+  if feedback and feedback:IsA("RemoteEvent") then
+    scope.connect(feedback.OnClientEvent, function(kind, blocked)
+      if kind == "HitConfirm" and not blocked then
+        targeting.confirmHit(os.clock())
+      end
+    end)
+  end
+  if swing and swing:IsA("RemoteEvent") then
+    scope.connect(swing.OnClientEvent, function(object)
+      if typeof(object) ~= "Instance" then
+        return
+      end
+      local char = object:IsA("Player") and object.Character or object:IsA("Model") and object or nil
+      targeting.noteSwing(char, os.clock())
+    end)
+  end
+  local flash = storage:FindFirstChild("ConfirmedMeleeFlash")
+  if flash and flash:IsA("RemoteEvent") then
+    scope.connect(flash.OnClientEvent, function(victim) targeting.noteVictim(victim, os.clock()) end)
   end
   scope.connect(utils.getLocalPlayer().CharacterRemoving, function() Coordinator.reset() end)
   return true

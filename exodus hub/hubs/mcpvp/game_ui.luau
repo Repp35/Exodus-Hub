@@ -2,24 +2,16 @@
 --!optimize 2
 local GameUI = { definition = {} }
 function GameUI.setup(deps)
-  local pages, order = {}, {}
+  local sections = {}
+  local columns = { target = 1, sword = 1, crystal = 2, anchor = 2, survival = 1, safety = 2 }
   for _, group in ipairs(deps.Options.groups) do
     local components = {}
     for _, item in ipairs(group.items) do
-      local numeric = type(item.default) == "number"
-      components[#components + 1] = {
-        kind = numeric and "slider" or "toggle",
-        title = item.title,
-        key = item.key,
-        min = item.min,
-        max = item.max,
-        increment = numeric and (item.max <= 3 and 0.01 or (item.max <= 20 and 0.1 or 1)) or nil,
-      }
+      components[#components + 1] = { kind = "toggle", title = item.title, key = item.key, parentKey = item.parentKey, compact = true }
     end
-    order[#order + 1] = group.id
-    pages[#pages + 1] = { id = group.id, title = group.title, columns = 1, sections = { { title = group.title, column = 1, components = components } } }
+    sections[#sections + 1] = { title = group.title, column = columns[group.id] or 1, components = components }
   end
-  GameUI.definition = { pageOrder = order, pages = pages }
+  GameUI.definition = { pageOrder = { "mcpvp" }, pages = { { id = "mcpvp", title = "MCPVP", columns = 2, sections = sections } } }
   return true
 end
 GameUI.__contract = { provides = { "setup" }, data = { "definition" }, requires = { Options = "mcpoptions" }, requiresData = { Options = { "groups" } } }

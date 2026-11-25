@@ -7,7 +7,7 @@ Options.groups = {
     title = "Alvo e mira",
     items = {
       { key = "MCEnabled", title = "Assistentes ativos", default = false },
-      { key = "MCAim", title = "Aim Lock", default = false },
+      { key = "MCAim", title = "Aim Lock de espada", default = false },
     },
   },
   {
@@ -15,7 +15,7 @@ Options.groups = {
     title = "Espada",
     items = {
       { key = "MCAttack", title = "Auto Attack", default = false },
-      { key = "MCCrit", title = "Pular para crítico", default = false },
+      { key = "MCCrit", title = "Pular para crítico", default = false, parentKey = "MCAttack" },
       { key = "MCSwordPearl", title = "Auto Pearl na espada", default = false },
     },
   },
@@ -24,9 +24,9 @@ Options.groups = {
     title = "Cristais e D Tap",
     items = {
       { key = "MCCrystal", title = "Crystal Assist", default = false },
-      { key = "MCCrystalPearl", title = "Permitir Pearl Follow", default = false },
+      { key = "MCCrystalPearl", title = "Permitir Pearl Follow", default = false, parentKey = "MCCrystal" },
       { key = "MCDTap", title = "D Tap após golpe", default = false },
-      { key = "MCDTapPearl", title = "Permitir pérola no D Tap", default = false },
+      { key = "MCDTapPearl", title = "Permitir pérola no D Tap", default = false, parentKey = "MCDTap" },
     },
   },
   {
@@ -34,8 +34,8 @@ Options.groups = {
     title = "Âncoras",
     items = {
       { key = "MCAnchor", title = "Anchor Assist", default = false },
-      { key = "MCAnchorAuto", title = "Colocar âncoras automaticamente", default = false },
-      { key = "MCAnchorPearl", title = "Permitir Pearl Follow", default = false },
+      { key = "MCAnchorAuto", title = "Colocar âncoras automaticamente", default = false, parentKey = "MCAnchor" },
+      { key = "MCAnchorPearl", title = "Permitir Pearl Follow", default = false, parentKey = "MCAnchor" },
     },
   },
   {
@@ -44,7 +44,7 @@ Options.groups = {
     items = {
       { key = "MCTotem", title = "Auto Totem", default = false },
       { key = "MCPotion", title = "Auto Potion", default = false },
-      { key = "MCPotionSpeed", title = "Renovar velocidade", default = false },
+      { key = "MCPotionSpeed", title = "Renovar velocidade", default = false, parentKey = "MCPotion" },
       { key = "MCApple", title = "Auto Golden Apple", default = false },
     },
   },
@@ -59,7 +59,7 @@ Options.groups = {
 Options.tuning = {
   MCTeamCheck = true,
   MCAcquireFov = 24,
-  MCKeepFov = 70,
+  MCSwordLockRange = 5,
   MCTargetRange = 14,
   MCTargetMemory = 3,
   MCAimSpeed = 240,
@@ -76,7 +76,7 @@ Options.tuning = {
   MCCrystalManual = true,
   MCCrystalDamage = 8,
   MCCrystalRadius = 4,
-  MCDTapWindow = 0.65,
+  MCDTapWindow = 3.5,
   MCComboLifetime = 8,
   MCAnchorRepeat = true,
   MCAnchorDamage = 7,

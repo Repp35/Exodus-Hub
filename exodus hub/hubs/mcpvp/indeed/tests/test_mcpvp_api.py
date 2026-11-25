@@ -40,6 +40,15 @@ class MCPVPAPI(unittest.TestCase):
         spec.loader.exec_module(helper)
         helper.smoke(self.binary('LUAU_BIN', 'luau'), hub_id='mcpvp', assertions='''
 assert(loaded.gamecontext.getProfile().id == "mcpvp")
+for name, module in pairs(loaded) do
+  if name:sub(1, 3) == "mcp" then
+    for member, value in pairs(module) do
+      if type(value) == "function" then
+        assert(table.find(module.__contract.provides, member), name .. ": undeclared API export " .. member)
+      end
+    end
+  end
+end
 local config = loaded.config.getRegistry().mcpoptions
 for _, group in ipairs(loaded.mcpoptions.groups) do
   for _, option in ipairs(group.items) do

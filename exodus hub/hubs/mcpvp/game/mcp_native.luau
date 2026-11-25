@@ -346,6 +346,39 @@ function Native.action(kind, point)
   end
   return true
 end
+function Native.usingHeld()
+  local controller = modules.controller
+  return controller and type(controller.IsHeld) == "function" and controller.IsHeld("Use") or false
+end
+function Native.observeAttacks(callback)
+  local controller = modules.controller
+  if not controller or not controller.InputBegan or type(controller.Matches) ~= "function" then
+    return { Disconnect = function() end }
+  end
+  return controller.InputBegan:Connect(function(event, processed)
+    if not processed and controller.Matches(event, "Attack") then
+      callback()
+    end
+  end)
+end
+function Native.strike(point)
+  local snap = Native.snapshot()
+  local fn = functions.attack
+  if not snap or type(fn) ~= "function" or not Native.canAct("attack") then
+    return false
+  end
+  local delta = point - snap.eye
+  if delta.Magnitude < 0.01 then
+    return false
+  end
+  -- performAttack(direction) is an explicit native parameter in the dump; its geometry and server packet validation remain intact.
+  dispatched.attack = os.clock()
+  local ok, err = pcall(fn, delta.Unit)
+  if not ok then
+    error(err)
+  end
+  return true
+end
 function Native.anchor(point)
   if not Native.canAct("anchor") then
     return false
@@ -428,6 +461,9 @@ Native.__contract = {
     "visible",
     "aim",
     "action",
+    "strike",
+    "observeAttacks",
+    "usingHeld",
     "canAct",
     "anchor",
     "offhand",

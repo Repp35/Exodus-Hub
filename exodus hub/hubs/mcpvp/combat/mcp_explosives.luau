@@ -2,23 +2,48 @@
 --!optimize 2
 local Explosives = {}
 local native, geometry
-local seen, scripted = {}, {}
+local seen, scripted, activity = {}, {}, {}
 local templates = {}
 local dtapHit, dtapBase, comboMode, comboTarget = -math.huge, nil, nil, nil
 local comboAt = -math.huge
+local intent, lastManual = nil, -math.huge
+local contexts = {}
 local function cellKey(point) return string.format("%.1f:%.1f:%.1f", point.X, point.Y, point.Z) end
 function Explosives.setup(deps)
   native, geometry = deps.Native, deps.Geometry
   return true
 end
 function Explosives.reset()
-  seen, scripted, templates = {}, {}, {}
+  seen, scripted, templates, activity = {}, {}, {}, {}
+  intent, lastManual, comboAt = nil, -math.huge, -math.huge
+  contexts = {}
   dtapHit, dtapBase, comboMode, comboTarget = -math.huge, nil, nil, nil
 end
-function Explosives.mark(object, time) seen[object] = time end
+function Explosives.mark(object, time)
+  seen[object] = time
+  if time == nil then
+    activity[object] = nil
+  end
+end
 function Explosives.mode() return os.clock() - comboAt < 2.5 and comboMode or nil end
 function Explosives.clearCombo()
-  comboMode, dtapBase, templates = nil, nil, {}
+  comboMode, dtapBase, templates, intent = nil, nil, {}, nil
+end
+local function switchTarget(char)
+  if comboTarget == char then
+    return
+  end
+  if comboTarget then
+    contexts[comboTarget] = { intent = intent, base = dtapBase, hit = dtapHit, mode = comboMode, at = comboAt }
+  end
+  local saved = contexts[char] or {}
+  intent, dtapBase, dtapHit, comboMode, comboAt = saved.intent, saved.base, saved.hit or -math.huge, saved.mode, saved.at or -math.huge
+  comboTarget = char
+  for object in pairs(contexts) do
+    if not object.Parent then
+      contexts[object] = nil
+    end
+  end
 end
 local function item(class) return native.find(class, true) end
 local function blocks(snap)
@@ -58,7 +83,7 @@ local function buildJob(snap, placement, tool, id, feature, priority, cfg)
         return false
       end
       if id == "dtap_base" then
-        return t and geometry.evaluate(s, t, cell + Vector3.new(0, 1.6, 0), 6, cfg, cfg("MCCrystalDamage"))
+        return t and geometry.evaluate(s, t, cell + Vector3.new(0, 1.6, 0), 6, cfg, cfg("MCCrystalDamage"), cell)
       end
       if id == "anchor_repeat" or id == "anchor_auto" then
         return t and geometry.evaluate(s, t, cell, 5, cfg, cfg("MCAnchorDamage"))
@@ -85,6 +110,51 @@ local function protect(snap, point, cfg, id, feature)
     return buildJob(snap, placement, tool, id, feature, 90, cfg)
   end
   return nil
+end
+function Explosives.observe(snap, targets, cfg)
+  if not cfg("MCDTap") and not cfg("MCCrystal") and not cfg("MCAnchor") then
+    return nil
+  end
+  local chosen, chosenBlock, stamp
+  for _, block in ipairs(blocks(snap)) do
+    local time = seen[block] or -math.huge
+    local key = block:GetAttribute("BlockKey")
+    if
+      time <= lastManual
+      or snap.now - time > cfg("MCComboLifetime")
+      or block:GetAttribute("Builder") ~= snap.player.UserId
+      or math.abs(time - (scripted[cellKey(block.Position)] or -math.huge)) <= 2
+    then
+      continue
+    end
+    if key ~= "obsidian" and key ~= "respawn_anchor" then
+      continue
+    end
+    if key == "respawn_anchor" and not cfg("MCAnchor") then
+      continue
+    end
+    local distance = math.huge
+    for _, candidate in ipairs(targets) do
+      local gap = (candidate.root.Position - block.Position).Magnitude
+      if gap < cfg("MCCrystalRadius") * 3.2 and gap < distance then
+        chosen, chosenBlock, stamp, distance = candidate, block, time, gap
+      end
+    end
+  end
+  if chosen then
+    switchTarget(chosen.character)
+    lastManual = stamp
+    if chosenBlock:GetAttribute("BlockKey") == "obsidian" and cfg("MCDTap") then
+      dtapBase = chosenBlock.Position
+      intent = { target = chosen.character, untilAt = snap.now + cfg("MCComboLifetime") }
+    end
+  end
+  return chosen
+end
+function Explosives.needsStrike(snap, target, cfg)
+  local wanted = cfg("MCDTap") and target and target.engaged and (not intent or intent.target ~= target.character or snap.now < intent.untilAt)
+  local prepared = wanted and intent and intent.target == target.character and dtapBase and existing(snap, dtapBase, "obsidian") ~= nil
+  return wanted, prepared
 end
 function Explosives.defense(snap, cfg)
   if not cfg("MCDefense") then
@@ -117,10 +187,11 @@ function Explosives.defense(snap, cfg)
   return nil
 end
 function Explosives.propose(snap, target, cfg)
-  if comboTarget and comboTarget ~= target.character then
-    Explosives.clearCombo()
+  switchTarget(target.character)
+  if cfg("MCDTap") and target.lastHit > dtapHit and snap.now - target.lastHit < cfg("MCDTapWindow") then
+    dtapHit = target.lastHit
+    intent = { target = target.character, untilAt = snap.now + cfg("MCDTapWindow") }
   end
-  comboTarget = target.character
   local nearby = blocks(snap)
   local crystals = snap.world:FindFirstChild("EndCrystals")
   local activeCrystal
@@ -142,9 +213,22 @@ function Explosives.propose(snap, target, cfg)
     local time = seen[block] or -math.huge
     local own = block:GetAttribute("Builder") == snap.player.UserId
     local scriptTime = scripted[cellKey(block.Position)] or -math.huge
-    local manual = own and time > -math.huge and math.abs(time - scriptTime) > 2 and snap.now - time < cfg("MCComboLifetime")
+    local manual = own
+      and time > -math.huge
+      and math.abs(time - scriptTime) > 2
+      and snap.now - math.max(time, activity[block] or -math.huge) < cfg("MCComboLifetime")
     if key == "obsidian" and (cfg("MCCrystal") or cfg("MCDTap")) then
-      local isDTap = dtapBase and (dtapBase - block.Position).Magnitude < 0.2 and snap.now - dtapHit < cfg("MCComboLifetime")
+      local isDTap = cfg("MCDTap")
+        and intent
+        and intent.target == target.character
+        and snap.now < intent.untilAt
+        and (
+          (dtapBase and (dtapBase - block.Position).Magnitude < 0.2)
+          or (manual and (target.root.Position - block.Position).Magnitude < cfg("MCCrystalRadius") * 3.2)
+        )
+      if isDTap and not dtapBase then
+        dtapBase = block.Position
+      end
       if (cfg("MCCrystal") and (manual or not cfg("MCCrystalManual"))) or isDTap then
         bases[#bases + 1] = { block = block, dtap = isDTap }
       end
@@ -157,24 +241,35 @@ function Explosives.propose(snap, target, cfg)
       end
     end
   end
-  if cfg("MCDTap") and target.engaged and target.lastHit > dtapHit and snap.now - target.lastHit < cfg("MCDTapWindow") then
+  if
+    cfg("MCDTap")
+    and intent
+    and intent.target == target.character
+    and snap.now < intent.untilAt
+    and (not dtapBase or not existing(snap, dtapBase, "obsidian"))
+  then
     local obsidian = item("obsidian")
     -- Place toward the opponent only after observed sword damage, never on a mere attack attempt.
     local flat = target.root.Position - snap.root.Position
     flat = Vector3.new(flat.X, 0, flat.Z)
     if obsidian and flat.Magnitude > 1 and target.distance < 12 then
-      local desired = snap.root.Position + flat.Unit * 3.5 - Vector3.new(0, 2.4, 0)
-      local placement = geometry.placement(snap, desired)
-      if placement then
-        local point = placement.cell + Vector3.new(0, 1.6, 0)
-        local useful = geometry.evaluate(snap, target, point, 6, cfg, cfg("MCCrystalDamage"))
-        if useful then
-          local job = buildJob(snap, placement, obsidian, "dtap_base", "MCDTap", 72, cfg)
-          job.success = function(s)
-            dtapBase, dtapHit, comboMode = placement.cell, target.lastHit, "dtap"
-          end
-          return job
+      local forward = flat.Unit
+      local sideways = Vector3.new(-forward.Z, 0, forward.X)
+      for _, offset in ipairs({ forward * 3.5, forward * 5, forward * 3.5 + sideways * 3.2, forward * 3.5 - sideways * 3.2 }) do
+        local placement = geometry.placement(snap, snap.root.Position + offset - Vector3.new(0, 2.4, 0))
+        if not placement then
+          continue
         end
+        local point = placement.cell + Vector3.new(0, 1.6, 0)
+        if not geometry.evaluate(snap, target, point, 6, cfg, cfg("MCCrystalDamage"), placement.cell) then
+          continue
+        end
+        local job = buildJob(snap, placement, obsidian, "dtap_base", "MCDTap", 72, cfg)
+        job.success = function(s)
+          dtapBase, comboMode = placement.cell, "dtap"
+          intent = { target = target.character, untilAt = s.now + cfg("MCComboLifetime") }
+        end
+        return job
       end
     end
   end
@@ -206,7 +301,7 @@ function Explosives.propose(snap, target, cfg)
           needsEquip = false,
           delay = 0.04,
           timeout = 0.8,
-          point = function() return crystalPoint + Vector3.new(0, 1.5, 0) end,
+          perform = function() return native.strike(crystalPoint + Vector3.new(0, 1.5, 0)) end,
           valid = function(s, t)
             return crystal.Parent ~= nil
               and (t.root.Position - crystalPoint).Magnitude <= cfg("MCCrystalRadius") * 3.2
@@ -214,9 +309,11 @@ function Explosives.propose(snap, target, cfg)
           end,
           confirm = function() return crystal.Parent == nil end,
           success = function(s)
-            seen[base.block] = s.now
+            activity[base.block] = s.now
             if base.dtap then
-              dtapHit = s.now
+              if intent then
+                intent.untilAt = s.now + cfg("MCComboLifetime")
+              end
             end
           end,
         }
@@ -362,6 +459,8 @@ function Explosives.propose(snap, target, cfg)
   end
   return nil
 end
-Explosives.__contract =
-  { requires = { Native = "mcpnative", Geometry = "mcpgeometry" }, provides = { "setup", "reset", "mark", "mode", "clearCombo", "defense", "propose" } }
+Explosives.__contract = {
+  requires = { Native = "mcpnative", Geometry = "mcpgeometry" },
+  provides = { "setup", "reset", "mark", "mode", "clearCombo", "defense", "propose", "observe", "needsStrike" },
+}
 return Explosives
