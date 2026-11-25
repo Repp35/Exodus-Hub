@@ -89,6 +89,16 @@ local function start(job, snap)
   job.timeout = job.timeout or 0.8
   active = job
 end
+local function applePastHalf(snap)
+  local tool = snap.character:FindFirstChild("Gold Apple")
+  if not tool or not snap.character:GetAttribute("EatingApple") then
+    return false
+  end
+  local started = tonumber(tool:GetAttribute("EatingStarted"))
+  local untilAt = tonumber(tool:GetAttribute("EatingUntil"))
+  local duration = tonumber(tool:GetAttribute("EatingDuration")) or (started and untilAt and untilAt - started)
+  return started ~= nil and untilAt ~= nil and duration ~= nil and duration > 0 and snap.server < untilAt and snap.server - started >= duration / 2
+end
 local function advance(snap)
   local job = active
   if not job then
@@ -102,7 +112,7 @@ local function advance(snap)
     cancel("Transação de inventário interrompida", true)
     return
   end
-  if job.id == "apple" and job.valid and not job.valid(snap, target) then
+  if job.id == "apple" and job.valid and not job.valid(snap, target) and not applePastHalf(snap) then
     cancel("Pausa das maçãs após combate")
     return
   end
@@ -394,7 +404,7 @@ local function tick()
     return
   end
   local survival = inventory.propose(snap, target, cfg)
-  if active and active.id == "apple" and active.valid and not active.valid(snap, target) then
+  if active and active.id == "apple" and active.valid and not active.valid(snap, target) and not applePastHalf(snap) then
     cancel("Pausa das maçãs após combate")
   end
   local emergency = choose(survival, explosives.defense(snap, cfg))
@@ -402,6 +412,10 @@ local function tick()
     or snap.character:GetAttribute("EatingApple")
     or snap.character:GetAttribute("DrinkingPotion")
   if manuallyUsing and not active then
+    if applePastHalf(snap) then
+      status = "Terminando maçã"
+      return
+    end
     if allowed(survival) and survival.priority == 100 then
       start(survival, snap)
     end
@@ -409,6 +423,10 @@ local function tick()
     return
   end
   if active then
+    if active.id == "apple" and applePastHalf(snap) then
+      advance(snap)
+      return
+    end
     if allowed(emergency) and emergency.priority > active.priority and (active.stage ~= "confirm" or emergency.priority >= 90) then
       cancel("Prioridade de sobrevivência")
       start(emergency, snap)
