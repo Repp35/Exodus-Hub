@@ -2,6 +2,14 @@
 --!optimize 2
 local Pearl = {}
 local native, target, ballistics, tuning
+local publicTarget, publicToken, publicThrows = nil, nil, 0
+local function longChaseAllowed()
+  return game.PrivateServerId ~= "" and #game:GetService("Players"):GetPlayers() <= 4
+end
+local function focusRadius(snap)
+  local sword = native.findSword(snap)
+  return (sword and native.stats(sword).reach or 9.6) * 3
+end
 local swapping, heldPearl = false, nil
 local function restoreSword()
   local snap = native and native.snapshot()
@@ -92,6 +100,7 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, gravity, 
       return
     end
   end
+  if not longChaseAllowed() then return end
   if action == "ProjectileEnd" and enemyPearl and enemyPearl.id == id and typeof(kind) == "Vector3" then
     enemyPearl.landing, enemyPearl.at, enemyPearl.arrived = kind, snap.now, true
     return
@@ -137,6 +146,7 @@ local function solve(snap, chosen)
     if math.abs(duration - flight) * math.max(1, horizontal.Magnitude) < 0.5 then return aim, floor.Position, duration end
     flight = duration
   end
+  if not longChaseAllowed() then return nil, nil, nil, hadRoute and "moving" or "blocked" end
   local delta = chosen.root.Position - snap.root.Position
   for _, distance in ipairs({ 160, 128, 96, 64, 40, 24 }) do
     if delta.Magnitude <= distance then continue end
@@ -173,8 +183,24 @@ function Pearl.step(snap, chosen)
     Pearl.reset()
     sessionCharacter, spent, nextPlan = snap.character, {}, 0
   end
-  target.hold(chosen.character, math.huge)
-  local token = target.hitToken()
+  local longChase = longChaseAllowed()
+  local token, _, hitTarget = target.hitToken()
+  if publicTarget ~= chosen.character or (hitTarget == chosen.character and publicToken ~= token) then
+    publicTarget, publicToken, publicThrows = chosen.character, token, 0
+  end
+  if not longChase then
+    enemyPearl = nil
+    target.release(chosen.character)
+    if (chosen.root.Position - snap.root.Position).Magnitude > focusRadius(snap) * 2 or publicThrows >= 2 then
+      if not pending or pending.phase ~= "confirm" then
+        cancel(snap.now)
+        pursuit = nil
+        return false
+      end
+    end
+  else
+    target.hold(chosen.character, math.huge)
+  end
   local enemyStatus = enemyState(snap, chosen)
   if pursuit and pursuit.target ~= chosen.character then pursuit = nil end
   if pursuit and pursuit.phase == "flight" then
@@ -207,7 +233,7 @@ function Pearl.step(snap, chosen)
       cancel(snap.now)
       if reason ~= "blocked" then return false end
       Pearl.reset()
-      target.abandon(snap)
+      if (chosen.root.Position - snap.root.Position).Magnitude > focusRadius(snap) then target.abandon(snap) end
       return false
     end
     local nearbyNow = target.nearThreat(snap)
@@ -224,8 +250,10 @@ function Pearl.step(snap, chosen)
       pursuit = { target = chosen.character, token = pending.token, phase = "flight", landing = landing,
         launch = fresh.root.Position, launchEye = fresh.eye, sentAt = fresh.now,
         corrections = pending.recovery and 1 or 0, deadline = fresh.now + math.max(1.5, flight + 0.9) }
-      target.hold(chosen.character, math.huge)
-      return native.usePearl(fresh, tool, direction)
+      if longChaseAllowed() then target.hold(chosen.character, math.huge) end
+      local launched = native.usePearl(fresh, tool, direction)
+      if launched and not longChaseAllowed() then publicThrows += 1 end
+      return launched
     end)
     swapping = false
     if not ok or not sent then

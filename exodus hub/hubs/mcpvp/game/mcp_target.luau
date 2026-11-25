@@ -127,6 +127,12 @@ function Target.nearThreat(snap)
   return best
 end
 function Target.finishPriority(snap, chosen)
+  if chosen then
+    local sword = native.findSword(snap)
+    local focus = (sword and native.stats(sword).reach or 9.6) * 3
+    local privateDuel = game.PrivateServerId ~= "" and #players:GetPlayers() <= 4
+    if not privateDuel and (chosen.root.Position - snap.root.Position).Magnitude > focus then return false end
+  end
   return chosen ~= nil and chosen.humanoid.Health > 0
     and chosen.humanoid.Health / math.max(1, chosen.humanoid.MaxHealth) <= 0.25
 end
@@ -170,7 +176,10 @@ function Target.get(snap)
     pending, clicks = nil, 0
     return current
   end
-  if snap.now - contact > tuning.targetMemory and not (heldCharacter == fresh.character and snap.now < heldUntil) then Target.reset() return nil end
+  local sword = native.findSword(snap)
+  local focusRange = (sword and native.stats(sword).reach or 9.6) * 3
+  local nearby = (fresh.root.Position - snap.root.Position).Magnitude <= focusRange
+  if not nearby and snap.now - contact > tuning.targetMemory and not (heldCharacter == fresh.character and snap.now < heldUntil) then Target.reset() return nil end
   current = fresh
   return current
 end
@@ -187,7 +196,7 @@ function Target.touch(now) contact = now end
 Target.__contract = {
   provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold", "nearThreat", "release", "finishPriority", "abandon" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
-  requiresMethods = { Native = { "stats", "canHit", "visible", "incomingHit" } },
+  requiresMethods = { Native = { "stats", "findSword", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
 }
 return Target

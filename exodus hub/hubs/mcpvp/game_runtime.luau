@@ -113,7 +113,7 @@ function Runtime.bind(loaded)
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
-    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autopearl.busy() or loaded.autototem.busy() or loaded.autorefill.busy() then
+    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autototem.busy() or loaded.autorefill.busy() then
       return
     end
     local snap = loaded.mcpnative.snapshot()

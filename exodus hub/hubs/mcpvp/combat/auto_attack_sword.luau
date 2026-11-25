@@ -9,9 +9,11 @@ function Sword.setup(deps)
 end
 function Sword.reset() nextAttack, selected, equipAt = 0, nil, 0 if crit then crit.reset() end end
 function Sword.aim(snap, chosen, dt)
-  if native.blocked(snap) then return end
+  if game:GetService("UserInputService"):GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then return end
   local close = native.canHit(snap, chosen)
-  if not close and (chosen.root.Position - snap.root.Position).Magnitude > 96 then return end
+  local weapon = native.findSword(snap)
+  local reach = weapon and native.stats(weapon).reach or 9.6
+  if (chosen.root.Position - snap.root.Position).Magnitude > reach * 3 then return end
   local camera = snap.camera
   local eye = camera.CFrame.Position
   local root = chosen.root.Position
