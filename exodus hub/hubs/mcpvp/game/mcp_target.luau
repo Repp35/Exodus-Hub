@@ -130,7 +130,7 @@ function Target.finishPriority(snap, chosen)
   if chosen then
     local sword = native.findSword(snap)
     local focus = (sword and native.stats(sword).reach or 9.6) * 3
-    local privateDuel = game.PrivateServerId ~= "" and #players:GetPlayers() <= 4
+    local privateDuel = #players:GetPlayers() <= 4
     if not privateDuel and (chosen.root.Position - snap.root.Position).Magnitude > focus then return false end
   end
   return chosen ~= nil and chosen.humanoid.Health > 0

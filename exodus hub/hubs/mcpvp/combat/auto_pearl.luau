@@ -4,7 +4,7 @@ local Pearl = {}
 local native, target, ballistics, tuning
 local publicTarget, publicToken, publicThrows = nil, nil, 0
 local function longChaseAllowed()
-  return game.PrivateServerId ~= "" and #game:GetService("Players"):GetPlayers() <= 4
+  return #game:GetService("Players"):GetPlayers() <= 4
 end
 local function focusRadius(snap)
   local sword = native.findSword(snap)
