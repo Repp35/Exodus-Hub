@@ -268,7 +268,7 @@ function Explosives.pulse(snap, targets, cfg)
     end
     local crystal, point = crystalAt(snap, top)
     local finishing = snap.now < entry.untilAt
-    if entry.spent and not continuous and not finishing then
+    if entry.spent and not continuous and not finishing and not crystal then
       continue
     end
     -- Match crystalPick in the game client: aim inside the native CrystalFeet box.
@@ -302,7 +302,7 @@ function Explosives.pulse(snap, targets, cfg)
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Break the observed crystal first; empty swings waste the native attack interval.
     local broke = false
-    if crystal and elevated and native.canAct("attack") then
+    if crystal and (elevated or not launch) and native.canAct("attack") then
       if native.strike(hitPoint) then
         entry.spent, broke = true, true
         acted = true
@@ -316,7 +316,7 @@ function Explosives.pulse(snap, targets, cfg)
         acted = true
       end
     end
-    if acted or (continuous and crystal) then
+    if acted or crystal and (continuous or launch) then
       lastPulse = snap.now
       return true, target
     end
