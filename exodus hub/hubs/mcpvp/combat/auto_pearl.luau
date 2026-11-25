@@ -5,6 +5,9 @@ local native, target, ballistics, tuning
 local publicTarget, publicToken, publicThrows = nil, nil, 0
 local noRouteSince
 local PUBLIC_FOLLOW_RANGE = 64 * 3.2
+local function visibleOpponent(snap, chosen)
+  return not native.aerialMace(snap, chosen) and native.visible(snap, chosen.root.Position, chosen.character)
+end
 local function longChaseAllowed()
   return #game:GetService("Players"):GetPlayers() <= 4
 end
@@ -124,7 +127,7 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, gravity, 
   end
   local landing, flight = ballistics.landing(position, velocity, projectile.gravity, projectile.drag, filters(snap))
   if not landing then return end
-  if not longChaseAllowed() and (landing - snap.root.Position).Magnitude > PUBLIC_FOLLOW_RANGE then return end
+  if not longChaseAllowed() and not visibleOpponent(snap, chosen) and (landing - snap.root.Position).Magnitude > PUBLIC_FOLLOW_RANGE then return end
   publicTarget, publicThrows, noRouteSince = chosen.character, 0, nil
   enemyPearl = { target = chosen.character, id = id, landing = landing, at = snap.now, launchPosition = chosen.root.Position, lastPosition = chosen.root.Position, lastSample = snap.now }
   target.hold(chosen.character, math.huge)
@@ -143,7 +146,7 @@ local function solve(snap, chosen)
     local predicted = chosen.root.Position + horizontal * (flight + ping)
     local floor = workspace:Raycast(predicted + Vector3.new(0, 0.5, 0), Vector3.new(0, -128, 0), params)
     if not floor then break end
-    local aim, duration = ballistics.solve(snap.eye, floor.Position, projectile.speed, projectile.gravity, params, longChaseAllowed() and 6 or 1.6, projectile.drag)
+    local aim, duration = ballistics.solve(snap.eye, floor.Position, projectile.speed, projectile.gravity, params, (longChaseAllowed() or visibleOpponent(snap, chosen)) and 6 or 1.6, projectile.drag)
     if not aim then break end
     hadRoute = true
     if math.abs(duration - flight) * math.max(1, horizontal.Magnitude) < 0.5 then return aim, floor.Position, duration end
@@ -183,6 +186,7 @@ local function blockedRoute(snap, chosen)
   end
 end
 function Pearl.step(snap, chosen)
+  if native.aerialMace(snap, chosen) then Pearl.reset() return false end
   if not pending or pending.phase ~= "confirm" then restoreSword() end
   local nearby = target.nearThreat(snap)
   if nearby and nearby.character ~= chosen.character and (not pending or pending.phase ~= "confirm") then
@@ -200,8 +204,8 @@ function Pearl.step(snap, chosen)
   end
   if not longChase then
     local gap = (chosen.root.Position - snap.root.Position).Magnitude
-    if gap <= PUBLIC_FOLLOW_RANGE and publicThrows < 4 then target.hold(chosen.character, math.huge) else target.release(chosen.character) end
-    if gap > PUBLIC_FOLLOW_RANGE or publicThrows >= 4 then
+    if (gap <= PUBLIC_FOLLOW_RANGE or visibleOpponent(snap, chosen)) and publicThrows < 4 then target.hold(chosen.character, math.huge) else target.release(chosen.character) end
+    if (gap > PUBLIC_FOLLOW_RANGE and not visibleOpponent(snap, chosen)) or publicThrows >= 4 then
       if not pending or pending.phase ~= "confirm" then
         cancel(snap.now)
         pursuit = nil
@@ -246,6 +250,7 @@ function Pearl.step(snap, chosen)
       blockedRoute(snap, chosen)
       return false
     end
+    if native.aerialMace(snap, chosen) then cancel(snap.now) return false end
     local nearbyNow = target.nearThreat(snap)
     if nearbyNow and nearbyNow.character ~= chosen.character then cancel(snap.now) pursuit = nil return false end
     local tool = pending.tool
@@ -300,7 +305,7 @@ end
 Pearl.__contract = {
   provides = { "setup", "reset", "busy", "step", "observeProjectile" },
   requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics", Options = "mcpoptions" },
-  requiresMethods = { Native = { "snapshot", "findSword", "equip", "canHit", "findPearl", "usePearl", "pearlReady", "blocked" }, Target = { "hitToken", "reset", "hold", "locked", "nearThreat", "release", "finishPriority", "abandon" }, Ballistics = { "solve", "landing" } },
+  requiresMethods = { Native = { "aerialMace", "visible", "snapshot", "findSword", "equip", "canHit", "findPearl", "usePearl", "pearlReady", "blocked" }, Target = { "hitToken", "reset", "hold", "locked", "nearThreat", "release", "finishPriority", "abandon" }, Ballistics = { "solve", "landing" } },
   requiresData = { Options = { "tuning" } },
 }
 return Pearl

@@ -208,8 +208,29 @@ function Native.useItem(snap, tool, direction)
   if (tonumber(player:GetAttribute("ItemCooldown_" .. class)) or 0) > world:GetServerTimeNow() then return false end
   return invoke("Use", direction)
 end
+local recentMaces = setmetatable({}, { __mode = "k" })
+function Native.aerialMace(snap, target)
+  if not target or not target.character.Parent or not target.root.Parent then return false end
+  local tool = target.character:FindFirstChildOfClass("Tool")
+  local stats = Native.stats(tool)
+  local now = os.clock()
+  if stats.type == "mace" then recentMaces[target.character] = now + 1 end
+  if (recentMaces[target.character] or 0) < now then return false end
+  local grounded = target.character:GetAttribute("VoxelGrounded")
+  if grounded == true then return false end
+  if grounded == nil and target.humanoid.FloorMaterial ~= Enum.Material.Air then return false end
+  local params = RaycastParams.new()
+  params.FilterType = Enum.RaycastFilterType.Exclude
+  params.RespectCanCollide = true
+  params.FilterDescendantsInstances = { snap.character, target.character, snap.camera }
+  -- A normal jump rises about four studs. Require much more clearance for aerial mace mode.
+  local support = world:Raycast(target.root.Position, Vector3.new(0, -12, 0), params)
+  local above = target.root.Position.Y - snap.root.Position.Y
+  local fall = tonumber(target.character:GetAttribute("LocalFallDistance")) or 0
+  return not support or above > 8 or fall > 8
+end
 Native.__contract = {
-  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit", "prepareCritical", "useItem" },
+  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit", "prepareCritical", "useItem", "aerialMace" },
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getLocalPlayer", "getWorkspace", "recordError" } },
 }

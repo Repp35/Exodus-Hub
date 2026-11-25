@@ -96,6 +96,7 @@ function Runtime.bind(loaded)
     loaded.mcptarget.observe(snap)
     local target = loaded.mcptarget.get(snap)
     if not target then
+      loaded.autoattacksword.reset()
       loaded.autopearl.reset()
       return
     end

@@ -117,7 +117,7 @@ function Target.nearThreat(snap)
   for _, other in ipairs(players:GetPlayers()) do
     local challenger = candidate(other, snap)
     local entry = challenger and threats[challenger.character]
-    if challenger and entry and snap.now - entry.time <= tuning.threatWindow
+    if challenger and not native.aerialMace(snap, challenger) and entry and snap.now - entry.time <= tuning.threatWindow
       and (challenger.root.Position - snap.root.Position).Magnitude <= 16
       and native.visible(snap, challenger.root.Position, challenger.character) then
       local value = entry.time + (entry.hurt and 0.4 or 0) - (challenger.root.Position - snap.root.Position).Magnitude * 0.02
@@ -150,20 +150,22 @@ function Target.get(snap)
   local fresh = candidate(current.player, snap)
   if fresh and fresh.character ~= current.character then fresh = nil end
   local immediate = Target.nearThreat(snap)
-  local currentClose = fresh and closeVisible(snap, fresh)
+  local aerialMace = fresh and native.aerialMace(snap, fresh)
+  local currentClose = fresh and not aerialMace and closeVisible(snap, fresh)
   if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character)) then
     current, contact, switchedAt = immediate, snap.now, snap.now
     heldCharacter, heldUntil, pending, clicks = nil, 0, nil, 0
     return current
   end
   if not fresh then Target.reset() return nil end
+  if aerialMace then return nil end
   if Target.finishPriority(snap, fresh) then current = fresh return current end
   local currentThreat = threats[fresh.character]
   local best, bestScore
   for _, other in ipairs(players:GetPlayers()) do
     local challenger = candidate(other, snap)
     local entry = challenger and threats[challenger.character]
-    if not challenger or challenger.character == fresh.character or not entry
+    if not challenger or native.aerialMace(snap, challenger) or challenger.character == fresh.character or not entry
       or snap.now - entry.time > tuning.threatWindow or not closeVisible(snap, challenger) then continue end
     local newer = not currentThreat or entry.time > currentThreat.time + 0.18
     local hurtPriority = entry.hurt and (not currentThreat or not currentThreat.hurt)
@@ -196,7 +198,7 @@ function Target.touch(now) contact = now end
 Target.__contract = {
   provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold", "nearThreat", "release", "finishPriority", "abandon" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
-  requiresMethods = { Native = { "stats", "findSword", "canHit", "visible", "incomingHit" } },
+  requiresMethods = { Native = { "aerialMace", "stats", "findSword", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
 }
 return Target

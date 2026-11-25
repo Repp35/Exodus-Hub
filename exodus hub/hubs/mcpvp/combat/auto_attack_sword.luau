@@ -9,6 +9,7 @@ function Sword.setup(deps)
 end
 function Sword.reset() nextAttack, selected, equipAt = 0, nil, 0 if crit then crit.reset() end end
 function Sword.aim(snap, chosen, dt)
+  if native.aerialMace(snap, chosen) then return end
   if game:GetService("UserInputService"):GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then return end
   local close = native.canHit(snap, chosen)
   local weapon = native.findSword(snap)
@@ -34,6 +35,7 @@ function Sword.aim(snap, chosen, dt)
   camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, point), alpha)
 end
 function Sword.step(snap, chosen)
+  if native.aerialMace(snap, chosen) then crit.reset() return false end
   crit.observe(snap)
   if native.blocked(snap) then return false end
   local tool = native.findSword(snap)
@@ -66,7 +68,7 @@ end
 Sword.__contract = {
   provides = { "setup", "reset", "aim", "step" },
   requires = { Native = "mcpnative", Target = "mcptarget", Options = "mcpoptions", Crit = "autocrit" },
-  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" }, Crit = { "reset", "observe", "plan", "ready" } },
+  requiresMethods = { Native = { "aerialMace", "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" }, Crit = { "reset", "observe", "plan", "ready" } },
   requiresData = { Options = { "tuning" } },
 }
 return Sword
