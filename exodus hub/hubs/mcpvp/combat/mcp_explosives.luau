@@ -5,7 +5,6 @@ local native, geometry
 local opportunities, templates = {}, {}
 local comboMode, comboAt = nil, -math.huge
 local original, held, lastPulse = nil, nil, -math.huge
-local heldAuto = false
 local blockSnapshot, blockCache
 local placed = {}
 local manualOverride = false
@@ -93,15 +92,8 @@ function Explosives.setup(deps)
   return true
 end
 function Explosives.release()
-  if held then
-    local obsidian = native.find("obsidian", true)
-    if heldAuto and obsidian and native.equipped() == held then
-      native.restore(obsidian.tool, held)
-    else
-      native.restore(original, held)
-    end
-  end
-  original, held, heldAuto = nil, nil, false
+  -- Finish the crystal transaction without switching back to a block.
+  original, held = nil, nil
 end
 function Explosives.reset()
   Explosives.release()
@@ -203,7 +195,7 @@ function Explosives.struck(snap, target, cfg)
       if (top - snap.eye).Magnitude <= 14.4 and (target.root.Position - top).Magnitude <= 12.8 then
         local entry = state(block)
         entry.strikeAt, entry.target = snap.now, target.character
-        entry.spent = false
+        entry.spent, entry.finished = false, false
         entry.manualUntil = snap.now + cfg("MCComboLifetime")
         comboMode, comboAt = "dtap", snap.now
         remember(target.character, "dtap", entry.manualUntil)
@@ -313,30 +305,31 @@ function Explosives.pulse(snap, targets, cfg)
         end
       end
       local canBreak = crystal and elevated and selfSafe and native.canAct("attack")
-      local canPlace = not crystal and (not entry.spent or selfSafe) and (selfSafe or launch) and native.canAct("use", crystalItem.tool)
+      local canPlace = not crystal and not entry.finished and (not entry.spent or selfSafe) and (selfSafe or launch) and native.canAct("use", crystalItem.tool)
       if not canBreak and not canPlace then
         continue
       end
     end
     if not held then
       original = native.equipped()
-      heldAuto = original ~= crystalItem.tool
     end
     if not native.equip(crystalItem.tool) then
-      original, heldAuto = nil, false
+      original = nil
       continue
     end
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Self exposure must block detonation itself, not only replacement placement.
-    local broke = false
     if crystal and elevated and selfSafe and native.canAct("attack") then
       if native.strike(hitPoint) then
-        entry.spent, broke = true, true
+        entry.spent = true
+        if cfg("MCDTap") or (encounter and encounter.mode == "dtap") then
+          entry.finished = true
+        end
         acted = true
       end
     end
-    if (not entry.spent or selfSafe) and (not crystal or broke) and native.canAct("use") then
+    if not crystal and not entry.finished and (not entry.spent or selfSafe) and native.canAct("use") then
       if native.action("use", top - Vector3.new(0, 0.03, 0)) then
         entry.spent, entry.untilAt = true, snap.now + 0.65
         remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
@@ -348,7 +341,8 @@ function Explosives.pulse(snap, targets, cfg)
       return true, target
     end
     if switching then
-      -- A rejected action must not leave the player's slot changed.
+      -- A rejected action may restore the previous non-block item only.
+      native.restore(original, held)
       Explosives.release()
     elseif crystal and elevated and selfSafe and snap.now - lastPulse <= 0.1 then
       return true, target
@@ -360,16 +354,6 @@ function Explosives.pulse(snap, targets, cfg)
   return acted
 end
 function Explosives.resumeBase(snap, target, cfg)
-  if
-    not manualOverride
-    and (cfg("MCDTap") or (cfg("MCCrystal") and cfg("MCCrystalAutoCombo")))
-    and target
-    and target.engaged
-    and target.character.Parent
-    and target.humanoid.Health > 0
-  then
-    remember(target.character, cfg("MCDTap") and "dtap" or "crystal", snap.now + cfg("MCComboLifetime"))
-  end
   if manualOverride or not encounter or snap.now >= encounter.untilAt or not target or target.character ~= encounter.character then
     return nil
   end

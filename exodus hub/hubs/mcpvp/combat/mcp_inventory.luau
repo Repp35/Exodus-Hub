@@ -86,7 +86,7 @@ function Inventory.propose(snap, target, cfg, combatMode)
         end
         job.confirm = function(s) return s.character:GetAttribute("OffhandItem") == "totem" end
         job.success = function()
-          if inHotbar and not directTotem and job.original then
+          if inHotbar and not directTotem and job.original and job.original:GetAttribute("BlockKey") ~= "obsidian" then
             native.equip(job.original)
           end
         end

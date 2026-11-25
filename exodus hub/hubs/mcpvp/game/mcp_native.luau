@@ -299,6 +299,10 @@ function Native.openInventory()
   return true
 end
 function Native.restore(tool, expected)
+  -- Obsidian is equipped only by an explicit block-placement job or player input.
+  if tool and tool:GetAttribute("BlockKey") == "obsidian" then
+    return
+  end
   local current = Native.equipped()
   if current ~= expected and not (current == nil and expected and not owned(expected)) then
     return
