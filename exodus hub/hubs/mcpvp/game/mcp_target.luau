@@ -22,8 +22,8 @@ local function record(char)
   return entry
 end
 local function refreshDuel(entry, now)
-  if entry.duelUntil > now or (now - entry.dealt < memory and now - entry.received < memory) then
-    entry.duelUntil = now + memory
+  if now - entry.dealt < memory and now - entry.received < memory then
+    entry.duelUntil = math.max(entry.duelUntil, math.max(entry.dealt, entry.received) + memory)
   end
 end
 local function angle(snap, point)
