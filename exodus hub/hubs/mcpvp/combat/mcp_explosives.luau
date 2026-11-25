@@ -241,8 +241,8 @@ function Explosives.pulse(snap, targets, cfg)
     for _, other in ipairs(targets) do
       if
         other.humanoid.Health > 0
+        and other.humanoid.FloorMaterial == Enum.Material.Air
         and above(other, top)
-        and other.root.Position.Y > snap.root.Position.Y
         and geometry.damage(snap, other.character, top, 6) > 0
       then
         target, elevated = other, true
@@ -250,7 +250,9 @@ function Explosives.pulse(snap, targets, cfg)
       end
     end
     local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
-    local continuous = elevated and geometry.damage(snap, snap.character, top, 6) <= 0
+    if target and target.humanoid.FloorMaterial ~= Enum.Material.Air then
+      entry.airPlaced = false
+    end
     if target and (target.root.Position - top).Magnitude > 12.8 then
       target = nil
     end
@@ -267,8 +269,10 @@ function Explosives.pulse(snap, targets, cfg)
       continue
     end
     local crystal, point = crystalAt(snap, top)
-    local finishing = snap.now < entry.untilAt
-    if entry.spent and not continuous and not finishing and not crystal then
+    if not elevated then
+      continue
+    end
+    if entry.airPlaced and not crystal then
       continue
     end
     -- Match crystalPick in the game client: aim inside the native CrystalFeet box.
@@ -301,22 +305,21 @@ function Explosives.pulse(snap, targets, cfg)
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Break the observed crystal first; empty swings waste the native attack interval.
-    local broke = false
-    if crystal and (elevated or not launch) and native.canAct("attack") then
+    if crystal and native.canAct("attack") then
       if native.strike(hitPoint) then
-        entry.spent, broke = true, true
+        entry.spent, entry.airPlaced = true, true
         acted = true
       end
     end
-    -- Allow the next placement immediately after the break attempt, without an acknowledgement stage.
-    if (continuous or not entry.spent) and (not crystal or broke) and native.canAct("use") then
+    -- Place once per airborne opportunity; wait for the next landing before placing again.
+    if not entry.airPlaced and not crystal and native.canAct("use") then
       if native.action("use", top - Vector3.new(0, 0.03, 0)) then
-        entry.spent, entry.untilAt = true, snap.now + 0.65
+        entry.spent, entry.airPlaced, entry.untilAt = true, true, snap.now + 0.65
         remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
         acted = true
       end
     end
-    if acted or crystal and (continuous or launch) then
+    if acted or crystal then
       lastPulse = snap.now
       return true, target
     end
