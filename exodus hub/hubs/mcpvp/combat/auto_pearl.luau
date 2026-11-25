@@ -118,7 +118,7 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, gravity, 
   target.hold(chosen.character, math.huge)
 end
 local function solve(snap, chosen)
-  if enemyState(snap, chosen) == "waiting" then return nil end
+  if enemyState(snap, chosen) == "waiting" then return nil, nil, nil, "waiting" end
   local params = filters(snap)
   local velocity = chosen.root.AssemblyLinearVelocity
   local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
@@ -126,13 +126,14 @@ local function solve(snap, chosen)
   local ping = 0.05
   local ok, value = pcall(snap.player.GetNetworkPing, snap.player)
   if ok and type(value) == "number" then ping = math.clamp(value, 0, 0.25) end
-  local flight = 0.3
+  local flight, hadRoute = 0.3, false
   for _ = 1, 16 do
     local predicted = chosen.root.Position + horizontal * (flight + ping)
-    local floor = workspace:Raycast(predicted + Vector3.new(0, 8, 0), Vector3.new(0, -128, 0), params)
+    local floor = workspace:Raycast(predicted + Vector3.new(0, 0.5, 0), Vector3.new(0, -128, 0), params)
     if not floor then break end
     local aim, duration = ballistics.solve(snap.eye, floor.Position, projectile.speed, projectile.gravity, params, 6, projectile.drag)
     if not aim then break end
+    hadRoute = true
     if math.abs(duration - flight) * math.max(1, horizontal.Magnitude) < 0.5 then return aim, floor.Position, duration end
     flight = duration
   end
@@ -146,7 +147,7 @@ local function solve(snap, chosen)
       if aim then return aim, floor.Position, time end
     end
   end
-  return nil
+  return nil, nil, nil, hadRoute and "moving" or "blocked"
 end
 local function fleeing(snap, chosen)
   if enemyState(snap, chosen) == "ready" then return true end
@@ -164,7 +165,7 @@ end
 function Pearl.step(snap, chosen)
   if not pending or pending.phase ~= "confirm" then restoreSword() end
   local nearby = target.nearThreat(snap)
-  if nearby and nearby.character ~= chosen.character and (not pending or pending.phase ~= "confirm") then
+  if nearby and nearby.character ~= chosen.character and not target.finishPriority(snap, chosen) and (not pending or pending.phase ~= "confirm") then
     Pearl.reset()
     return false
   end
@@ -201,10 +202,16 @@ function Pearl.step(snap, chosen)
       or snap.now > pending.deadline or native.blocked(snap) or not native.pearlReady() then cancel(snap.now) return false end
     if snap.now < pending.ready then return false end
     -- Preparation and the final trajectory calculation happen with the sword still selected.
-    local direction, landing, flight = solve(snap, chosen, pending.recovery)
-    if not direction then cancel(snap.now) return false end
+    local direction, landing, flight, reason = solve(snap, chosen, pending.recovery)
+    if not direction then
+      cancel(snap.now)
+      if reason ~= "blocked" then return false end
+      Pearl.reset()
+      target.abandon(snap)
+      return false
+    end
     local nearbyNow = target.nearThreat(snap)
-    if nearbyNow and nearbyNow.character ~= chosen.character then cancel(snap.now) pursuit = nil return false end
+    if nearbyNow and nearbyNow.character ~= chosen.character and not target.finishPriority(snap, chosen) then cancel(snap.now) pursuit = nil return false end
     local tool = pending.tool
     if not tool or not tool.Parent then cancel(snap.now) return false end
     pending.count = tonumber(tool:GetAttribute("Count")) or 0
@@ -239,15 +246,20 @@ function Pearl.step(snap, chosen)
   nextPlan = snap.now + 0.6
   local tool = native.findPearl(snap)
   if not tool then return false end
-  local direction = solve(snap, chosen, recovery)
-  if not direction then return false end
+  local direction, _, _, reason = solve(snap, chosen, recovery)
+  if not direction then
+    if reason ~= "blocked" then return false end
+    Pearl.reset()
+    target.abandon(snap)
+    return false
+  end
   pending = { tool = tool, target = chosen.character, character = snap.character, token = token, recovery = recovery, ready = snap.now + 0.16, deadline = snap.now + 0.6, phase = "plan" }
   return true
 end
 Pearl.__contract = {
   provides = { "setup", "reset", "busy", "step", "observeProjectile" },
   requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics", Options = "mcpoptions" },
-  requiresMethods = { Native = { "snapshot", "findSword", "equip", "canHit", "findPearl", "usePearl", "pearlReady", "blocked" }, Target = { "hitToken", "reset", "hold", "locked", "nearThreat", "release" }, Ballistics = { "solve", "landing" } },
+  requiresMethods = { Native = { "snapshot", "findSword", "equip", "canHit", "findPearl", "usePearl", "pearlReady", "blocked" }, Target = { "hitToken", "reset", "hold", "locked", "nearThreat", "release", "finishPriority", "abandon" }, Ballistics = { "solve", "landing" } },
   requiresData = { Options = { "tuning" } },
 }
 return Pearl

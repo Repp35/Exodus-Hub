@@ -47,14 +47,14 @@ function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight
   local distance, drag = horizontal.Magnitude, projectileDrag or 0.99
   if distance < 0.01 or speed <= 0 or gravity <= 0 then return nil end
   local previousPitch, previousError
-  for degrees = -85, 85 do
+  for degrees = -85, 85, 0.5 do
     local pitch = math.rad(degrees)
     local height = heightAt(distance, speed, gravity, drag, pitch)
     if height == nil then previousPitch, previousError = nil, nil continue end
     local error = height - delta.Y
     if previousError and previousError * error <= 0 then
       local lo, hi, lowError = previousPitch, pitch, previousError
-      for _ = 1, 14 do
+      for _ = 1, 18 do
         local mid = (lo + hi) / 2
         local midHeight = heightAt(distance, speed, gravity, drag, mid)
         if not midHeight then break end

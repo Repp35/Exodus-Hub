@@ -126,18 +126,32 @@ function Target.nearThreat(snap)
   end
   return best
 end
+function Target.finishPriority(snap, chosen)
+  return chosen ~= nil and chosen.humanoid.Health > 0
+    and chosen.humanoid.Health / math.max(1, chosen.humanoid.MaxHealth) <= 0.25
+end
+function Target.abandon(snap)
+  local nearby = Target.nearThreat(snap)
+  heldCharacter, heldUntil, pending, clicks, attempt = nil, 0, nil, 0, nil
+  if nearby then
+    current, contact, switchedAt = nearby, snap.now, snap.now
+  else
+    Target.reset()
+  end
+end
 function Target.get(snap)
   if not current then return nil end
   local fresh = candidate(current.player, snap)
   if fresh and fresh.character ~= current.character then fresh = nil end
   local immediate = Target.nearThreat(snap)
   local currentClose = fresh and closeVisible(snap, fresh)
-  if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character)) then
+  if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character and not Target.finishPriority(snap, fresh))) then
     current, contact, switchedAt = immediate, snap.now, snap.now
     heldCharacter, heldUntil, pending, clicks = nil, 0, nil, 0
     return current
   end
   if not fresh then Target.reset() return nil end
+  if Target.finishPriority(snap, fresh) then current = fresh return current end
   local currentThreat = threats[fresh.character]
   local best, bestScore
   for _, other in ipairs(players:GetPlayers()) do
@@ -171,7 +185,7 @@ function Target.release(char)
 end
 function Target.touch(now) contact = now end
 Target.__contract = {
-  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold", "nearThreat", "release" },
+  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold", "nearThreat", "release", "finishPriority", "abandon" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
   requiresMethods = { Native = { "stats", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
