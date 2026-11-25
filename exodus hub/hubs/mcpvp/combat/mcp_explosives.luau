@@ -116,10 +116,14 @@ function Explosives.mode()
   return os.clock() - comboAt < 2.5 and comboMode or nil
 end
 function Explosives.follow(snap, char, cfg)
-  if manualOverride or not encounter or encounter.character ~= char or snap.now >= encounter.untilAt then
+  if manualOverride or not char or not char.Parent then
     return false
   end
-  encounter.untilAt = snap.now + math.max(cfg("MCComboLifetime"), 12)
+  local mode = cfg("MCDTap") and "dtap" or (cfg("MCCrystal") and "crystal" or nil)
+  if not mode then
+    return false
+  end
+  remember(char, mode, snap.now + math.max(cfg("MCComboLifetime"), 12))
   return true
 end
 function Explosives.clearCombo()
@@ -354,6 +358,12 @@ function Explosives.pulse(snap, targets, cfg)
   return acted
 end
 function Explosives.resumeBase(snap, target, cfg)
+  -- In CPvP an established duel can start a placement session even without a previous base.
+  if not manualOverride and cfg("MCCrystal") and cfg("MCCrystalAutoCombo") and target
+    and target.engaged and target.character.Parent and target.humanoid.Health > 0
+    and (not encounter or encounter.character ~= target.character or snap.now >= encounter.untilAt) then
+    remember(target.character, cfg("MCDTap") and "dtap" or "crystal", snap.now + cfg("MCComboLifetime"))
+  end
   if manualOverride or not encounter or snap.now >= encounter.untilAt or not target or target.character ~= encounter.character then
     return nil
   end
@@ -363,10 +373,10 @@ function Explosives.resumeBase(snap, target, cfg)
   if not target.character.Parent or target.humanoid.Health <= 0 or target.distance > 19.2 then
     return nil
   end
-  if not native.find("EndCrystal", true) then
+  local crystalItem = native.find("EndCrystal", true)
+  if not crystalItem then
     return nil
   end
-  local crystalItem = native.find("EndCrystal", true)
   local function useful(s, position, planned)
     local top = position + Vector3.new(0, 1.6, 0)
     local current = target.root.Position
@@ -459,8 +469,8 @@ function Explosives.resumeBase(snap, target, cfg)
     native = "place",
     tool = item.tool,
     delay = 0,
-    timeout = 0.28,
-    repeatFast = true,
+    timeout = 0.65,
+    repeatFast = false,
     point = function() return planned.point end,
     valid = function(s)
       return encounter == session

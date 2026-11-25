@@ -11,6 +11,7 @@ local lastJump = -math.huge
 local swordPending
 local enemyPearls = {}
 local pearlContacts = {}
+local pearlHits = {}
 local focused = true
 local status = "Aguardando ativação"
 local statusDetails = ""
@@ -33,7 +34,7 @@ local function cancel(reason, failed, _manual)
   if job.inventory then
     native.closeInventory()
   end
-  if job.needsEquip ~= false then
+  if job.needsEquip ~= false and not (job.id == "crystal_follow_base" and job.completed) then
     native.restore(job.original, job.tool)
   end
   if failed then
@@ -54,6 +55,7 @@ function Coordinator.reset()
   backoff = {}
   enemyPearls = {}
   pearlContacts = {}
+  pearlHits = {}
   auraHits = {}
   targeting.reset()
   inventory.reset()
@@ -129,6 +131,7 @@ local function advance(snap)
         targeting.hold(job.target, snap.now)
       end
       backoff[job.id] = snap.now
+      job.completed = true
       cancel("Concluído: " .. job.id)
       if job.id == "crystal_follow_base" then
         local fresh = native.snapshot()
@@ -239,6 +242,10 @@ local function pearl(snap)
     or mode == "anchor" and cfg("MCAnchorPearl")
     or not mode and cfg("MCSwordPearl")
   local crystalMode = mode == "crystal" or mode == "dtap"
+  local hit = targeting.lastHit(target.character)
+  if crystalMode and (snap.now - lastPearl < 2.5 or (pearlHits[target.character] ~= nil and hit <= pearlHits[target.character])) then
+    return nil
+  end
   local swordItem = native.find("sword", true)
   local hitReach = swordItem and native.stats(swordItem.tool).reach or 9.6
   local gap = crystalMode and (hitReach + 0.32) or (mode and cfg("MCExplosivePearlGap") or cfg("MCSwordPearlGap")) * 3.2
@@ -262,7 +269,6 @@ local function pearl(snap)
   local relativeSpeed = crystalMode and 0.35 or 1
   if
     not enemyPearl
-    and not crystalMode
     and (
       displacement.Magnitude < 0.1
       or target.root.AssemblyLinearVelocity:Dot(displacement.Unit) < awaySpeed
@@ -317,11 +323,14 @@ local function pearl(snap)
       local delta = t.root.Position - s.root.Position
       local motion = t.root.AssemblyLinearVelocity - s.root.AssemblyLinearVelocity
       local fleeing = delta.Magnitude > 0.01 and t.root.AssemblyLinearVelocity:Dot(delta.Unit) >= awaySpeed and motion:Dot(delta.Unit) >= relativeSpeed
-      return t.engaged and (crystalMode or enemyPearl ~= nil or fleeing) and t.distance >= gap and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
+      return t.engaged and (enemyPearl ~= nil or fleeing) and t.distance >= gap and t.distance <= cfg("MCSwordPearlMax") * 3.2 and planned ~= nil
     end,
     before = function(s)
       lastPearl = s.now
       pearlContacts[opponent] = contact
+      if crystalMode then
+        pearlHits[opponent] = targeting.lastHit(opponent)
+      end
     end,
     success = function(s)
       if explosives.follow(s, opponent, cfg) then
