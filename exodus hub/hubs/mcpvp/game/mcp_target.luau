@@ -5,6 +5,7 @@ local native, tuning, players
 local current, pending, clicks, lastClick, contact, holdUntil = nil, nil, 0, -math.huge, -math.huge, 0
 local owner, health, hurtAt, scanAt, attempt = nil, nil, -math.huge, 0, nil
 local swings, threats = {}, {}
+local lastActivity = -math.huge
 function Target.setup(deps)
   native, tuning, players = deps.Native, deps.Options.tuning, game:GetService("Players")
   return true
@@ -13,6 +14,7 @@ function Target.reset()
   current, pending, clicks, lastClick, contact, holdUntil = nil, nil, 0, -math.huge, -math.huge, 0
   owner, health, hurtAt, scanAt, attempt = nil, nil, -math.huge, 0, nil
   swings, threats = {}, {}
+  lastActivity = -math.huge
 end
 local function candidate(player, snap)
   if player == snap.player or player.Parent ~= players or player:GetAttribute("ArenaProtected") == true or player:GetAttribute("InArena") == false then
@@ -32,7 +34,7 @@ local function candidate(player, snap)
   then
     return nil
   end
-  if (root.Position - snap.root.Position).Magnitude > tuning.maxRange then
+  if (not current or current.player ~= player) and (root.Position - snap.root.Position).Magnitude > tuning.maxRange then
     return nil
   end
   return { player = player, character = character, root = root, humanoid = humanoid }
@@ -48,10 +50,14 @@ function Target.noteSwing(source)
     swings[source] = os.clock()
   end
 end
-function Target.noteAttack(snap, chosen) attempt = { character = chosen.character, time = snap.now } end
+function Target.noteAttack(snap, chosen)
+  attempt = { character = chosen.character, time = snap.now }
+  lastActivity = snap.now
+end
+function Target.quiet(snap, duration) return snap.now - lastActivity >= (duration or 4) end
 function Target.confirmHit(now)
   if attempt and now - attempt.time <= 0.7 and current and current.character == attempt.character then
-    contact = now
+    contact, lastActivity = now, now
   end
   attempt = nil
 end
@@ -61,9 +67,12 @@ function Target.observe(snap)
     owner, health = snap.character, snap.humanoid.Health
   end
   if snap.humanoid.Health < health then
-    hurtAt = snap.now
+    hurtAt, lastActivity = snap.now, snap.now
   end
   health = snap.humanoid.Health
+  if (tonumber(snap.character:GetAttribute("VoxelHurtUntil")) or 0) > workspace:GetServerTimeNow() then
+    lastActivity = snap.now
+  end
   if attempt and snap.now - attempt.time > 0.7 then
     attempt = nil
   end
@@ -84,6 +93,7 @@ function Target.observe(snap)
         and native.visible(snap, chosen.root.Position, chosen.character)
       then
         threats[character] = { player = player, time = time, hurt = math.abs(hurtAt - time) <= 0.4 }
+        lastActivity = snap.now
       end
     end
   end
@@ -94,7 +104,10 @@ function Target.observe(snap)
   end
 end
 function Target.manual(snap)
-  if native.stats(snap.tool).type ~= "sword" then
+  if owner ~= snap.character then
+    Target.observe(snap)
+  end
+  if not native.isWeapon(snap.tool) then
     return
   end
   local best, angle = nil, tuning.acquireAngle
@@ -117,7 +130,9 @@ function Target.manual(snap)
     end
   end
   if not best then
-    pending, clicks = nil, 0
+    if current then
+      lastActivity = snap.now
+    end
     return
   end
   clicks = pending == best.character and snap.now - lastClick <= tuning.clickWindow and clicks + 1 or 1
@@ -132,20 +147,28 @@ function Target.get(snap)
   if fresh and fresh.character ~= current.character then
     fresh = nil
   end
-  if fresh and not native.aerialMace(snap, fresh) then
+  if fresh then
     if native.canHit(snap, fresh) then
       contact = snap.now
     end
-    if snap.now <= holdUntil or snap.now - contact <= tuning.targetMemory then
-      current = fresh
-      return current
-    end
+    current = fresh
+    return current
+  end
+  if
+    current
+    and current.player.Parent == players
+    and current.player.Character == current.character
+    and current.character.Parent
+    and current.humanoid.Health > 0
+  then
+    current.suspended = true
+    return nil
   end
   current, holdUntil = nil, 0
   local best, bestTime, bestDistance
   for _, entry in pairs(threats) do
     local chosen = candidate(entry.player, snap)
-    if not chosen or native.aerialMace(snap, chosen) or not native.canHit(snap, chosen) then
+    if not chosen or not native.canHit(snap, chosen) then
       continue
     end
     local time = entry.time + (entry.hurt and 0.4 or 0)
@@ -163,16 +186,16 @@ function Target.get(snap)
   end
   return current
 end
-function Target.locked() return current end
+function Target.locked() return current and not current.suspended and current or nil end
 function Target.hold(character, untilTime)
   if current and current.character == character then
     holdUntil = math.max(holdUntil, math.min(untilTime, os.clock() + 5))
   end
 end
 Target.__contract = {
-  provides = { "setup", "reset", "manual", "get", "locked", "noteSwing", "noteAttack", "confirmHit", "observe", "hold" },
+  provides = { "setup", "reset", "manual", "get", "locked", "noteSwing", "noteAttack", "confirmHit", "observe", "hold", "quiet" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
-  requiresMethods = { Native = { "aerialMace", "stats", "canHit", "visible", "incomingHit" } },
+  requiresMethods = { Native = { "isWeapon", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
 }
 return Target

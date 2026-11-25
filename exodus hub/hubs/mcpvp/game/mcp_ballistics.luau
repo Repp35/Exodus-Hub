@@ -71,7 +71,7 @@ function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight
   local delta = destination - origin
   local horizontal = Vector3.new(delta.X, 0, delta.Z)
   local distance, drag = horizontal.Magnitude, projectileDrag or 0.99
-  if distance < 0.01 or speed <= 0 or gravity <= 0 then
+  if distance < 0.01 or speed <= 0 or gravity <= 0 or drag <= 0 or drag > 1 then
     return nil
   end
   local previousPitch, previousError

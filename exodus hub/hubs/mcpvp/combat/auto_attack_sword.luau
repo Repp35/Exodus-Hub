@@ -1,28 +1,20 @@
 -- [[ autoattacksword ]]
 --!optimize 2
 local Sword = {}
-local native, target, crit
+local native, target
 local nextAttack, selected, equipAt = 0, nil, 0
 function Sword.setup(deps)
-  native, target, crit = deps.Native, deps.Target, deps.Crit
+  native, target = deps.Native, deps.Target
   return true
 end
 function Sword.reset()
   nextAttack, selected, equipAt = 0, nil, 0
-  if crit then
-    crit.reset()
-  end
 end
 function Sword.step(snap, chosen)
-  if native.aerialMace(snap, chosen) then
-    crit.reset()
-    return false
-  end
-  crit.observe(snap)
   if native.blocked(snap) then
     return false
   end
-  local tool = native.findSword(snap)
+  local tool = native.findWeapon(snap)
   if not tool then
     return false
   end
@@ -44,11 +36,10 @@ function Sword.step(snap, chosen)
   end
   local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
   local readyAt = math.max(nextAttack, lastSwing + 1 / speed)
-  crit.plan(snap, chosen, tool, readyAt)
   if not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then
     return false
   end
-  if not crit.ready(snap, chosen, tool, readyAt) then
+  if snap.now < readyAt then
     return false
   end
   target.noteAttack(snap, chosen)
@@ -61,11 +52,10 @@ function Sword.step(snap, chosen)
 end
 Sword.__contract = {
   provides = { "setup", "reset", "step" },
-  requires = { Native = "mcpnative", Target = "mcptarget", Crit = "autocrit" },
+  requires = { Native = "mcpnative", Target = "mcptarget" },
   requiresMethods = {
-    Native = { "aerialMace", "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" },
+    Native = { "blocked", "findWeapon", "equip", "canHit", "stats", "attack" },
     Target = { "noteAttack" },
-    Crit = { "reset", "observe", "plan", "ready" },
   },
 }
 return Sword

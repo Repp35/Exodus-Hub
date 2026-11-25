@@ -2,17 +2,9 @@
 --!optimize 2
 local Refill = {}
 local inventory, native, utils
-local character, class, remembered, job, nextRun, failed = nil, nil, {}, nil, 0, nil
+local character, class, remembered, job, nextRun = nil, nil, {}, nil, 0
 local function available(tool) return tool and tool.Parent and (tonumber(tool:GetAttribute("Count")) or 1) > 0 end
 local function key(tool) return tostring(tool:GetAttribute("ClassItem")) .. "|" .. tostring(tool:GetAttribute("BlockKey")) .. "|" .. tool.Name end
-local function signature(values)
-  local parts = {}
-  for slot = 1, 36 do
-    local tool = values[slot]
-    parts[slot] = available(tool) and tostring(tool) .. key(tool) .. tostring(tool:GetAttribute("Count")) or "_"
-  end
-  return table.concat(parts, ";")
-end
 local function enabled() return utils.isActive() and utils.getConfigValue("MCAutoRefill") == true end
 local function missing(values)
   for destination = 1, 9 do
@@ -32,9 +24,7 @@ function Refill.setup(deps)
   return true
 end
 function Refill.reset()
-  if job and job.opened then
-    inventory.closeInventory()
-  end
+  inventory.cancel("refill")
   job = nil
 end
 function Refill.busy() return job ~= nil end
@@ -43,12 +33,12 @@ function Refill.observe(snap)
   local equippedClass = snap.character:GetAttribute("EquippedClass")
   if character ~= snap.character or class ~= equippedClass then
     Refill.reset()
-    character, class, remembered, failed, nextRun = snap.character, equippedClass, {}, nil, 0
+    character, class, remembered, nextRun = snap.character, equippedClass, {}, 0
   end
   if job then
     return
   end
-  local values = inventory.inventorySlots()
+  local values = inventory.slots()
   if not values then
     return
   end
@@ -60,74 +50,59 @@ function Refill.observe(snap)
 end
 function Refill.step(snap)
   if not enabled() then
-    failed = nil
+    Refill.reset()
+    return
+  end
+  if job and job.character ~= snap.character then
     Refill.reset()
     return
   end
   if not job and snap.now < nextRun then
     return
   end
-  local values = inventory.inventorySlots()
+  local values = inventory.slots()
   if not values then
-    Refill.reset()
-    nextRun = snap.now + 0.5
     return
   end
-  if job then
-    if job.character ~= snap.character or snap.now > job.deadline or not inventory.inventoryVisible() then
-      failed = signature(values)
-      Refill.reset()
-      nextRun = snap.now + 0.5
+  if not job then
+    nextRun = snap.now + 0.3
+    if native.blocked(snap) or not missing(values) or not inventory.begin("refill", snap) then
       return
     end
-    if snap.now < job.ready then
+    job = { character = snap.character }
+  end
+  if job.stage == "close" then
+    if inventory.finish("refill", snap) then
+      job = nil
+      nextRun = snap.now + 0.4
+    end
+    return
+  end
+  if not inventory.ready("refill", snap) then
+    return
+  end
+  if job.pending then
+    if not inventory.confirm(job.pending, snap) then
       return
     end
-    if job.pending then
-      if values[job.to] == job.tool and available(job.tool) then
-        job.pending = false
-      else
-        if snap.now >= job.confirmAt then
-          failed = signature(values)
-          Refill.reset()
-        end
-        return
-      end
-    end
-    local tool, source, destination = missing(values)
-    if not tool then
-      Refill.reset()
-      nextRun = snap.now + 0.3
-      return
-    end
-    job.tool, job.from, job.to = tool, source, destination
-    if not inventory.moveReserve(tool, source, destination) then
-      failed = signature(values)
-      Refill.reset()
-      return
-    end
-    job.pending, job.ready, job.confirmAt = true, snap.now + 0.1, snap.now + 0.8
+    job.pending = nil
+  end
+  local tool, from, destination = missing(values)
+  if tool then
+    job.pending = inventory.move("refill", snap, tool, from, destination)
     return
   end
-  nextRun = snap.now + 0.25
-  if native.blocked(snap) or failed == signature(values) then
-    return
+  job.stage = "close"
+  if inventory.finish("refill", snap) then
+    job = nil
+    nextRun = snap.now + 0.4
   end
-  if not missing(values) then
-    return
-  end
-  local opened = not inventory.inventoryVisible()
-  if not inventory.openInventory() then
-    failed = signature(values)
-    return
-  end
-  job = { character = snap.character, opened = opened, ready = snap.now + 0.18, deadline = snap.now + 5 }
 end
 Refill.__contract = {
   provides = { "setup", "reset", "busy", "observe", "step", "isReserved" },
-  requires = { Inventory = "autototem", Native = "mcpnative", Utils = "utils" },
+  requires = { Inventory = "mcpinventory", Native = "mcpnative", Utils = "utils" },
   requiresMethods = {
-    Inventory = { "inventorySlots", "inventoryVisible", "openInventory", "closeInventory", "moveReserve" },
+    Inventory = { "slots", "begin", "ready", "move", "confirm", "finish", "cancel" },
     Native = { "blocked" },
     Utils = { "isActive", "getConfigValue" },
   },

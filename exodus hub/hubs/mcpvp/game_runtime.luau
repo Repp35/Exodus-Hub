@@ -12,6 +12,8 @@ function Runtime.reset()
   modules.autototem.reset()
   modules.autopearl.reset()
   modules.autoattacksword.reset()
+  modules.autocrit.reset()
+  modules.mcpinventory.cancel()
   modules.aimcontrol.reset()
   modules.mcptarget.reset()
 end
@@ -39,6 +41,7 @@ function Runtime.bind(loaded)
       or loaded.utils.getConfigValue("MCAimLock")
       or loaded.utils.getConfigValue("MCAimAssist")
       or loaded.utils.getConfigValue("MCAutoPearl")
+      or loaded.utils.getConfigValue("MCAutoCrit")
   end
   local function click(event, processed)
     if loaded.mcpnative.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not combatEnabled() then
@@ -83,66 +86,124 @@ function Runtime.bind(loaded)
       end
     end)
   end
-  local function tick()
-    if not loaded.utils.isActive() then
-      Runtime.reset()
+  local watchedCharacter
+  local pauseUntil, lastError = 0, nil
+  local function watchManual(snap)
+    if watchedCharacter == snap.character then
       return
     end
-    if input:GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then
+    watchedCharacter = snap.character
+    scope.connect(snap.character:GetAttributeChangedSignal("LocalAttackSwing"), function()
+      if loaded.mcpnative.isDispatching() or not loaded.utils.isActive() then
+        return
+      end
+      local fresh = loaded.mcpnative.snapshot()
+      if fresh and combatEnabled() and loaded.mcpnative.isWeapon(fresh.tool) then
+        loaded.mcptarget.manual(fresh)
+      end
+    end)
+  end
+  local function tick()
+    loaded.mcpinventory.step()
+    if not loaded.utils.isActive() then
       Runtime.reset()
       return
     end
     local snap = loaded.mcpnative.snapshot()
     if not snap then
-      Runtime.reset()
+      local character = loaded.utils.getLocalPlayer().Character
+      local human = character and character:FindFirstChildOfClass("Humanoid")
+      if not human or human.Health <= 0 or character ~= watchedCharacter then
+        Runtime.reset()
+      end
+      return
+    end
+    watchManual(snap)
+    loaded.mcptarget.observe(snap)
+    loaded.autostrength.observe(snap)
+    loaded.autorefill.observe(snap)
+    if input:GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then
+      loaded.autocrit.reset()
+      return
+    end
+    if snap.now < pauseUntil then
       return
     end
     if not loaded.utils.getConfigValue("MCAutoSword") then
       loaded.autoattacksword.reset()
     end
-    loaded.autorefill.observe(snap)
-    -- Finish the owning transaction before another module can select a tool or open inventory.
+    -- A pending confirmation owns tool selection; no second sender may start.
     for _, transaction in ipairs({ loaded.autototem, loaded.autostrength, loaded.autorefill, loaded.autopearl }) do
       if transaction.busy() then
+        loaded.autocrit.reset()
         transaction.step(snap)
         return
       end
     end
-    for _, transaction in ipairs({ loaded.autototem, loaded.autostrength, loaded.autorefill }) do
-      transaction.step(snap)
-      if transaction.busy() then
-        return
-      end
+    if loaded.mcpinventory.busy() then
+      loaded.autocrit.reset()
+      return
+    end
+    loaded.autototem.step(snap)
+    if loaded.autototem.busy() then
+      loaded.autocrit.reset()
+      return
     end
     if not combatEnabled() then
       loaded.autopearl.reset()
       loaded.autoattacksword.reset()
+      loaded.autocrit.reset()
       loaded.aimcontrol.reset()
       loaded.mcptarget.reset()
-      return
     end
     bindSwing()
-    loaded.mcptarget.observe(snap)
-    local target = loaded.mcptarget.get(snap)
+    local target = combatEnabled() and loaded.mcptarget.get(snap) or nil
     if loaded.utils.getConfigValue("MCAutoPearl") then
       loaded.autopearl.step(snap, target)
     else
       loaded.autopearl.reset()
     end
+    if loaded.autopearl.busy() then
+      loaded.autocrit.reset()
+      return
+    end
+    loaded.autostrength.step(snap)
+    if loaded.autostrength.busy() then
+      loaded.autocrit.reset()
+      return
+    end
+    -- Nonurgent refill waits for a small opening instead of interrupting a swing/combo.
+    if loaded.mcptarget.quiet(snap, 0.8) then
+      loaded.autorefill.step(snap)
+    end
+    if loaded.autorefill.busy() then
+      loaded.autocrit.reset()
+      return
+    end
+    local automatic = loaded.utils.getConfigValue("MCAutoSword") == true
+    loaded.autocrit.step(snap, target, automatic or not loaded.mcptarget.quiet(snap, 1.5))
     if not target then
       loaded.autoattacksword.reset()
       loaded.aimcontrol.reset()
       return
     end
-    if loaded.utils.getConfigValue("MCAutoSword") and not loaded.autopearl.busy() then
-      loaded.autoattacksword.step(snap, target)
+    if automatic then
+      local tool = snap.tool
+      local stats = loaded.mcpnative.stats(tool)
+      local readyAt = (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge) + 1 / stats.speed
+      if stats.type == "mace" or loaded.autocrit.ready(snap, target, tool, readyAt) then
+        loaded.autoattacksword.step(snap, target)
+      end
     end
   end
   scope.connect(game:GetService("RunService").Heartbeat, function()
     local success, reason = pcall(tick)
     if not success then
-      Runtime.reset()
-      loaded.utils.recordError("mcpvp.tick", tostring(reason))
+      pauseUntil = os.clock() + 0.5
+      if lastError ~= tostring(reason) then
+        loaded.utils.recordError("mcpvp.tick", tostring(reason))
+        lastError = tostring(reason)
+      end
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
@@ -170,6 +231,7 @@ end
 function Runtime.createAPI(loaded)
   return {
     getUIConfig = function() return loaded.gameui.definition end,
+    getCombatStatus = function() return loaded.mcpinventory.status() end,
     resetState = Runtime.reset,
     updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy, loaded.autorefill.busy, loaded.autostrength.busy },
   }

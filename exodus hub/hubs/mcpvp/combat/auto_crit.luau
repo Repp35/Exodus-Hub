@@ -141,6 +141,24 @@ function Crit.plan(snap, chosen, tool, readyAt)
     humanoid.Jump = true
   end)
 end
+function Crit.step(snap, chosen, engaged)
+  Crit.observe(snap)
+  if not utils.getConfigValue("MCAutoCrit") or not engaged or not chosen or not native.isWeapon(snap.tool) then
+    stopJump()
+    return
+  end
+  local stats = native.stats(snap.tool)
+  -- Mace smash follows its natural fall; regular jump crits apply to other melee weapons.
+  if stats.type == "mace" then
+    stopJump()
+    return
+  end
+  if (chosen.root.Position - snap.root.Position).Magnitude > stats.reach + 2 then
+    return
+  end
+  local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or snap.now
+  Crit.plan(snap, chosen, snap.tool, lastSwing + 1 / stats.speed)
+end
 function Crit.ready(snap, chosen, tool, readyAt)
   if snap.now < readyAt then
     return false
@@ -159,8 +177,8 @@ function Crit.ready(snap, chosen, tool, readyAt)
   return grounded(snap) or snap.now < fallbackUntil
 end
 Crit.__contract = {
-  provides = { "setup", "reset", "observe", "plan", "ready" },
+  provides = { "setup", "reset", "observe", "plan", "ready", "step" },
   requires = { Native = "mcpnative", Utils = "utils" },
-  requiresMethods = { Native = { "prepareCritical", "stats", "blocked" }, Utils = { "getConfigValue", "isActive", "getLocalPlayer" } },
+  requiresMethods = { Native = { "prepareCritical", "stats", "blocked", "isWeapon" }, Utils = { "getConfigValue", "isActive", "getLocalPlayer" } },
 }
 return Crit

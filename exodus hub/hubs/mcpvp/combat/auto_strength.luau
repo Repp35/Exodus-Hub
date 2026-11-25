@@ -1,225 +1,161 @@
 -- [[ autostrength ]]
 --!optimize 2
 local Strength = {}
-local native, inventory, utils
-local job, nextRun, failedTool, failedFrom, failedTo, owner = nil, 0, nil, nil, nil, nil
+local native, inventory, utils, target
+local owner, popAt, job, nextAttempt, used, quietUntil = nil, nil, nil, 0, false, 0
 local function alive(tool) return tool and tool.Parent and (tonumber(tool:GetAttribute("Count")) or 1) > 0 end
-local function find(values, class, first, last)
+local function active(snap) return (tonumber(snap.character:GetAttribute("Effect_strength")) or 0) > workspace:GetServerTimeNow() end
+local function find(values, first, last)
   for slot = first, last do
-    if alive(values[slot]) and values[slot]:GetAttribute("ClassItem") == class then
-      return values[slot], slot
+    local tool = values[slot]
+    if alive(tool) and tool:GetAttribute("ClassItem") == "StrengthPotion" then
+      return tool, slot
     end
   end
   return nil
 end
-local function active(snap) return (tonumber(snap.character:GetAttribute("Effect_strength")) or 0) > workspace:GetServerTimeNow() end
-local function finish()
-  local previous = job
-  job = nil
-  if not previous then
-    return
-  end
-  if previous.opened then
-    inventory.closeInventory()
-  end
-  local snap = native.snapshot()
-  if
-    snap
-    and snap.character == previous.character
-    and (previous.stage ~= "confirm" or previous.confirmed)
-    and (snap.tool == previous.tool or snap.tool == nil)
-  then
-    local tool = previous.previousTool
-    if tool and tool.Parent then
-      native.equip(snap, tool)
-    elseif utils.getConfigValue("MCAutoSword") then
-      local sword = native.findSword(snap)
-      if sword then
-        native.equip(snap, sword)
-      end
+local function restore(snap)
+  if job and snap.character == job.character and (snap.tool == job.tool or snap.tool == nil) then
+    if job.previousTool and job.previousTool.Parent then
+      native.equip(snap, job.previousTool)
     end
   end
-  nextRun = os.clock() + 0.35
 end
 function Strength.setup(deps)
-  native, inventory, utils = deps.Native, deps.Inventory, deps.Utils
+  native, inventory, utils, target = deps.Native, deps.Inventory, deps.Utils, deps.Target
   return true
 end
-function Strength.reset() finish() end
+function Strength.reset()
+  inventory.cancel("strength")
+  local snap = native.snapshot()
+  if snap and job and not job.sent then
+    restore(snap)
+  end
+  job = nil
+  -- Cooldown and the life/totem latch deliberately survive Stop, toggles and runtime resets.
+end
+function Strength.observe(snap)
+  local popped = snap.character:GetAttribute("TotemPoppedAt")
+  if owner ~= snap.character then
+    Strength.reset()
+    local previous = tonumber(snap.character:GetAttribute("ExodusStrengthAttemptAt"))
+    local sameEpoch = snap.character:GetAttribute("ExodusStrengthAttemptPop") == (popped or 0)
+    owner, popAt, used, quietUntil = snap.character, popped, previous ~= nil and sameEpoch, snap.now + 4
+    nextAttempt = previous and snap.now + math.max(0, native.strengthDuration() - (workspace:GetServerTimeNow() - previous)) or 0
+  elseif popped ~= nil and popped ~= popAt then
+    Strength.reset()
+    popAt, nextAttempt, used, quietUntil = popped, snap.now + 4, false, snap.now + 4
+  end
+end
 function Strength.busy() return job ~= nil end
 function Strength.step(snap)
-  if owner ~= snap.character then
-    finish()
-    owner, failedTool = snap.character, nil
-  end
   if not utils.isActive() or not utils.getConfigValue("MCAutoStrength") then
-    failedTool = nil
-    finish()
+    Strength.reset()
     return
   end
-  if job and job.character ~= snap.character then
-    finish()
-    return
-  end
+  Strength.observe(snap)
   if job then
-    local current = job
-    if current.stage == "inventory" then
-      if snap.now > current.deadline then
-        failedTool, failedFrom, failedTo = current.tool, current.from, current.to
-        finish()
+    if job.stage == "inventory" then
+      if not inventory.ready("strength", snap) then
         return
       end
-      if not inventory.inventoryVisible() then
-        failedTool, failedFrom, failedTo = current.tool, current.from, current.to
-        finish()
+      if not job.pending then
+        job.pending = inventory.move("strength", snap, job.tool, job.from, job.to, true)
         return
       end
-      if snap.now < current.ready then
+      if not inventory.confirm(job.pending, snap) then
         return
       end
-      local values = inventory.inventorySlots()
-      if not values then
+      job.stage = "close"
+    end
+    if job.stage == "close" then
+      if not inventory.finish("strength", snap) then
         return
       end
-      if current.moved then
-        if values[current.to] == current.tool and alive(current.tool) then
-          finish()
-        end
+      job.stage = "equip"
+    end
+    if job.stage == "equip" then
+      if not target.quiet(snap, 4) or snap.now < quietUntil then
         return
       end
-      if values[current.from] ~= current.tool then
-        finish()
+      if not job.equipped then
+        job.equipped = native.equip(snap, job.tool)
         return
       end
-      if inventory.swapSpeedForStrength(current.tool, current.from, current.to) then
-        current.moved, current.ready = true, snap.now + 0.1
-      else
-        failedTool, failedFrom, failedTo = current.tool, current.from, current.to
-        finish()
+      if snap.tool ~= job.tool or native.blocked(snap) then
+        return
+      end
+      if snap.character:GetAttribute("VoxelGrounded") == false or math.abs(snap.root.AssemblyLinearVelocity.Y) > 5 then
+        return
+      end
+      job.count = tonumber(job.tool:GetAttribute("Count")) or 1
+      -- Set the latch BEFORE dispatch, including a failed attempt. Never send a second Use.
+      used, nextAttempt, job.sent = true, snap.now + native.strengthDuration(), true
+      snap.character:SetAttribute("ExodusStrengthAttemptAt", workspace:GetServerTimeNow())
+      snap.character:SetAttribute("ExodusStrengthAttemptPop", popAt or 0)
+      job.sentAt, job.stage = snap.now, "confirm"
+      job.dispatched = native.useItem(snap, job.tool, Vector3.new(0, -1, 0))
+      if not job.dispatched then
+        restore(snap)
+        job = nil
       end
       return
     end
-    if current.stage == "confirm" then
-      local consumed = not current.tool.Parent or (tonumber(current.tool:GetAttribute("Count")) or current.count) < current.count
-      if consumed and not current.consumedAt then
-        current.consumedAt = snap.now
-      end
-      if active(snap) or current.consumedAt and snap.now - current.consumedAt >= 0.35 then
-        current.confirmed = true
-        finish()
-      elseif snap.now > current.deadline then
-        current.confirmed = true
-        finish()
-        nextRun = snap.now + 2
+    if job.stage == "confirm" then
+      local consumed = not job.tool.Parent or (tonumber(job.tool:GetAttribute("Count")) or job.count) < job.count
+      if consumed then
+        restore(snap)
+        job = nil
+      elseif snap.now - job.sentAt > 5 and not job.reported then
+        job.reported = true
+        utils.recordError("mcpvp.strength", "Poção enviada uma vez; aguardando consumo replicado. Sem reenvio automático.")
       end
       return
-    end
-    if snap.now > current.deadline then
-      finish()
-      return
-    end
-    if active(snap) then
-      finish()
-      return
-    end
-    if snap.now < current.ready then
-      return
-    end
-    if snap.tool ~= current.tool then
-      return
-    end
-    if native.blocked(snap) then
-      finish()
-      return
-    end
-    local onGround = snap.character:GetAttribute("VoxelGrounded")
-    if onGround == false or math.abs(snap.root.AssemblyLinearVelocity.Y) > 5 then
-      finish()
-      return
-    end
-    current.count = tonumber(current.tool:GetAttribute("Count")) or 1
-    if native.useItem(snap, current.tool, Vector3.new(0, -1, 0)) then
-      current.stage, current.deadline = "confirm", snap.now + 2.5
-    else
-      finish()
     end
     return
   end
-  if snap.now < nextRun or native.blocked(snap) then
+  if used or snap.now < nextAttempt or snap.now < quietUntil or active(snap) or not target.quiet(snap, 4) or native.blocked(snap) then
     return
   end
-  local values = inventory.inventorySlots()
+  local values = inventory.slots()
   if not values then
-    nextRun = snap.now + 0.5
     return
   end
-  local hotbar = find(values, "StrengthPotion", 1, 9)
-  local reserve, from = find(values, "StrengthPotion", 10, 36)
-  local _, speedSlot = find(values, "SpeedPotion", 1, 9)
-  local destination = speedSlot
-  if not destination and not hotbar then
+  local tool = find(values, 1, 9)
+  local from, destination
+  if not tool then
+    tool, from = find(values, 10, 36)
+    if not tool then
+      return
+    end
     for slot = 1, 9 do
       if not alive(values[slot]) then
         destination = slot
         break
       end
     end
-  end
-  if active(snap) then
-    nextRun = snap.now + 0.5
-    return
-  end
-  if reserve and destination and not hotbar then
-    if reserve == failedTool and from == failedFrom and destination == failedTo then
+    if not destination then
+      for slot = 1, 9 do
+        if values[slot]:GetAttribute("ClassItem") == "SpeedPotion" then
+          destination = slot
+          break
+        end
+      end
+    end
+    if not destination or not inventory.begin("strength", snap) then
       return
     end
-    local opened = not inventory.inventoryVisible()
-    if not inventory.openInventory() then
-      failedTool, failedFrom, failedTo = reserve, from, destination
-      nextRun = snap.now + 0.5
-      return
-    end
-    job = {
-      character = snap.character,
-      tool = reserve,
-      previousTool = snap.tool,
-      from = from,
-      to = destination,
-      opened = opened,
-      stage = "inventory",
-      ready = snap.now + 0.18,
-      deadline = snap.now + 1.5,
-    }
-    return
   end
-  if active(snap) or not hotbar then
-    nextRun = snap.now + 0.25
-    return
-  end
-  if snap.character:GetAttribute("VoxelGrounded") == false or math.abs(snap.root.AssemblyLinearVelocity.Y) > 5 then
-    return
-  end
-  local params = RaycastParams.new()
-  params.FilterType = Enum.RaycastFilterType.Exclude
-  params.RespectCanCollide = true
-  params.FilterDescendantsInstances = { snap.character, snap.camera }
-  if not workspace:Raycast(snap.eye, Vector3.new(0, -10, 0), params) then
-    nextRun = snap.now + 0.25
-    return
-  end
-  if not native.equip(snap, hotbar) then
-    nextRun = snap.now + 0.35
-    return
-  end
-  job = { character = snap.character, previousTool = snap.tool, tool = hotbar, stage = "use", ready = snap.now + 0.12, deadline = snap.now + 1.3 }
+  job = { character = snap.character, previousTool = snap.tool, tool = tool, from = from, to = destination, stage = from and "inventory" or "equip" }
 end
 Strength.__contract = {
-  provides = { "setup", "reset", "step", "busy" },
-  requires = { Native = "mcpnative", Inventory = "autototem", Utils = "utils" },
+  provides = { "setup", "reset", "observe", "step", "busy" },
+  requires = { Native = "mcpnative", Inventory = "mcpinventory", Utils = "utils", Target = "mcptarget" },
   requiresMethods = {
-    Native = { "snapshot", "findSword", "equip", "blocked", "useItem" },
-    Inventory = { "inventorySlots", "inventoryVisible", "openInventory", "closeInventory", "swapSpeedForStrength" },
-    Utils = { "isActive", "getConfigValue" },
+    Native = { "snapshot", "equip", "blocked", "useItem", "strengthDuration" },
+    Inventory = { "slots", "begin", "ready", "move", "confirm", "finish", "cancel" },
+    Utils = { "isActive", "getConfigValue", "recordError" },
+    Target = { "quiet" },
   },
 }
 return Strength

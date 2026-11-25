@@ -113,11 +113,43 @@ local function find(snap, predicate)
   end
   return nil
 end
-function Native.findSword(snap)
-  if owned(snap.tool) and Native.stats(snap.tool).type == "sword" then
+function Native.isWeapon(tool)
+  if not owned(tool) then
+    return false
+  end
+  local stats = Native.stats(tool)
+  if not stats.type then
+    return false
+  end
+  return stats.type ~= "mace" or (tonumber(tool:GetAttribute("Breach")) or 0) > 0
+end
+function Native.findWeapon(snap)
+  -- Respect the weapon the player chose; never replace a held axe/mace with a sword.
+  if Native.isWeapon(snap.tool) then
     return snap.tool
   end
-  return find(snap, function(tool) return Native.stats(tool).type == "sword" end)
+  local best, bestScore
+  for _, parent in pairs({ snap.character, player:FindFirstChild("Backpack") }) do
+    if not parent then
+      continue
+    end
+    for _, tool in ipairs(parent:GetChildren()) do
+      if not tool:IsA("Tool") or not Native.isWeapon(tool) then
+        continue
+      end
+      local stats = Native.stats(tool)
+      local score = (stats.damage or 0) * (stats.speed or 0)
+      if not best or score > bestScore or score == bestScore and tool.Name < best.Name then
+        best, bestScore = tool, score
+      end
+    end
+  end
+  return best
+end
+function Native.findSword(snap) return Native.findWeapon(snap) end
+function Native.strengthDuration()
+  local item = config and config.Items and config.Items.StrengthPotion
+  return item and tonumber(item.seconds) or 90
 end
 function Native.findPearl(snap)
   return find(snap, function(tool) return tool:GetAttribute("ClassItem") == "Pearl" and (tonumber(tool:GetAttribute("Count")) or 0) > 0 end)
@@ -134,8 +166,8 @@ function Native.canHit(snap, target, tool, direction)
   if rules and not rules.CanMelee(snap.character, target.character) then
     return false
   end
-  tool = tool or Native.findSword(snap)
-  if not tool or Native.stats(tool).type ~= "sword" then
+  tool = tool or Native.findWeapon(snap)
+  if not Native.isWeapon(tool) then
     return false
   end
   local delta = target.root.Position - snap.eye
@@ -162,7 +194,7 @@ end
 function Native.incomingHit(snap, opponent)
   local tool = opponent.character:FindFirstChildOfClass("Tool")
   local stats = Native.stats(tool)
-  if stats.type ~= "sword" and stats.type ~= "axe" and stats.type ~= "mace" then
+  if not stats.type then
     return false
   end
   local sneak = opponent.character:GetAttribute("Sneaking") == true
@@ -231,12 +263,7 @@ local function invoke(action, direction)
   return ok and result == true
 end
 function Native.attack(snap, target)
-  if
-    Native.blocked(snap)
-    or not snap.tool
-    or Native.stats(snap.tool).type ~= "sword"
-    or not Native.canHit(snap, target, snap.tool, snap.camera.CFrame.LookVector)
-  then
+  if Native.blocked(snap) or not snap.tool or not Native.isWeapon(snap.tool) or not Native.canHit(snap, target, snap.tool, snap.camera.CFrame.LookVector) then
     return false
   end
   local before = snap.character:GetAttribute("LocalAttackSwing")
@@ -353,6 +380,9 @@ Native.__contract = {
     "canHit",
     "attack",
     "findSword",
+    "findWeapon",
+    "isWeapon",
+    "strengthDuration",
     "findPearl",
     "pearlCooldown",
     "pearlReady",

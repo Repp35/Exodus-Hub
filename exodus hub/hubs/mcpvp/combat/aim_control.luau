@@ -19,12 +19,12 @@ function Aim.step(snap, chosen, dt)
     Aim.reset()
     return
   end
-  if not chosen or not chosen.root.Parent or chosen.humanoid.Health <= 0 or native.aerialMace(snap, chosen) then
+  if not chosen or not chosen.root.Parent or chosen.humanoid.Health <= 0 then
     Aim.reset()
     return
   end
   local legit = utils.getConfigValue("MCAimLegit") == true
-  local strength = math.clamp(tonumber(utils.getConfigValue("MCAimStrength")) or 45, 0, 100) / 100
+  local strength = math.clamp(tonumber(utils.getConfigValue("MCAimStrength")) or 100, 0, 100) / 100
   if strength == 0 then
     Aim.reset()
     return
@@ -41,7 +41,7 @@ function Aim.step(snap, chosen, dt)
     return
   end
   local angle = math.acos(math.clamp(camera.CFrame.LookVector:Dot(delta.Unit), -1, 1))
-  if (legit or not lock) and (not onScreen or projected.Z <= 0 or not lock and angle > math.rad(tuning.acquireAngle)) then
+  if (legit or not lock) and (not onScreen or projected.Z <= 0 or not lock and angle > math.rad(tuning.acquireAngle * 1.5)) then
     readyAt, angularSpeed, lastSeen = snap.now + (legit and 0.25 or 0), 0, -math.huge
     return
   end
@@ -62,8 +62,17 @@ function Aim.step(snap, chosen, dt)
     return
   end
   local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 20)
-  local maxSpeed = math.rad((lock and 360 or 160) * strength * (legit and 0.6 or 1))
-  local desired = math.min(maxSpeed, angle * (lock and 18 or 7) * strength)
+  -- Both modes share one camera writer. Assist supplies lead, lock keeps the combat focus.
+  if assist then
+    local velocity = chosen.root.AssemblyLinearVelocity
+    local lead = math.clamp(delta.Magnitude / 1600, 0, 0.06)
+    local predicted = position + velocity * lead
+    if native.visible(snap, predicted, chosen.character) then
+      position = predicted
+    end
+  end
+  local maxSpeed = math.rad((lock and assist and 1080 or 900) * strength * (legit and 0.35 or 1))
+  local desired = math.min(maxSpeed, angle * (lock and assist and 48 or 40) * strength)
   angularSpeed = legit and math.min(desired, angularSpeed + math.rad(540) * strength * elapsed) or desired
   camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, position), math.min(1, angularSpeed * elapsed / angle))
 end
