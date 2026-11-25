@@ -1,88 +1,50 @@
 -- [[ mcpinventory ]]
 --!optimize 2
 local Inventory = {}
-local utils
-local functions, scanAt, slotTable, session, nextTransition = {}, 0, nil, nil, 0
-local panel, hud, outstandingOffhand
-local MIN_DELAY = 0.4
+local utils, bridge
+local refresh, slots, hud, panel, session, offhand
+local transitionAt = 0
+local DELAY = 0.4
 local function owned(tool)
   local player = utils.getLocalPlayer()
-  return typeof(tool) == "Instance" and tool:IsA("Tool") and (tool.Parent == player.Character or tool.Parent == player:FindFirstChild("Backpack"))
+  return typeof(tool) == "Instance"
+    and tool:IsA("Tool")
+    and tool.Parent ~= nil
+    and (tool.Parent == player.Character or tool.Parent == player:FindFirstChild("Backpack"))
 end
 local function available(tool) return owned(tool) and (tonumber(tool:GetAttribute("Count")) or 1) > 0 end
-local function discover()
-  if functions.refresh and functions.open then
-    return
-  end
-  if os.clock() < scanAt then
-    return
-  end
-  scanAt = os.clock() + 5
-  local env = type(getgenv) == "function" and getgenv() or _G
-  if type(env.getgc) ~= "function" then
-    return
-  end
-  local ok, objects = pcall(env.getgc, false)
-  if not ok or type(objects) ~= "table" then
-    return
-  end
-  local scripts = utils.getLocalPlayer():FindFirstChild("PlayerScripts")
-  for _, fn in pairs(objects) do
-    if type(fn) ~= "function" then
-      continue
-    end
-    local got, environment = pcall(getfenv, fn)
-    local source = got and environment and environment.script
-    if typeof(source) ~= "Instance" or source.Parent ~= scripts or source.Name ~= "VoxelPackHUD" then
-      continue
-    end
-    local named, name = pcall(debug.info, fn, "n")
-    if named and name == "refreshTools" then
-      functions.refresh = fn
-    end
-    if named and name == "setOpen" then
-      functions.open = fn
-    end
-  end
-end
 function Inventory.setup(deps)
-  utils = deps.Utils
+  utils, bridge = deps.Utils, deps.Bridge
   return true
 end
 function Inventory.visible()
   local gui = utils.getLocalPlayer():FindFirstChildOfClass("PlayerGui")
-  local currentHud = gui and gui:FindFirstChild("VoxelPackHUD")
-  if not currentHud then
-    panel, hud = nil, nil
+  local current = gui and gui:FindFirstChild("VoxelPackHUD")
+  if current ~= hud or not panel or not panel:IsDescendantOf(current) then
+    hud, panel = current, current and current:FindFirstChild("Inventory", true)
+  end
+  if not panel or not panel:IsA("GuiObject") then
     return false
   end
-  if currentHud ~= hud or not panel or not panel:IsDescendantOf(currentHud) then
-    panel, hud = currentHud:FindFirstChild("Inventory", true), currentHud
-  end
-  local parent = panel
-  if not parent or not parent:IsA("GuiObject") then
-    return false
-  end
-  while parent and parent ~= gui do
-    if parent:IsA("GuiObject") and not parent.Visible or parent:IsA("ScreenGui") and not parent.Enabled then
+  local ancestor = panel
+  while ancestor and ancestor ~= gui do
+    if ancestor:IsA("GuiObject") and not ancestor.Visible or ancestor:IsA("ScreenGui") and not ancestor.Enabled then
       return false
     end
-    parent = parent.Parent
+    ancestor = ancestor.Parent
   end
-  return parent == gui
+  return ancestor == gui
 end
 function Inventory.slots()
-  discover()
-  if slotTable then
-    return slotTable
+  local fn = bridge.get("refresh")
+  if fn ~= refresh then
+    refresh, slots = fn, nil
   end
-  local env = type(getgenv) == "function" and getgenv() or _G
-  local getter = env.getupvalues or (env.debug and env.debug.getupvalues)
-  if not functions.refresh or type(getter) ~= "function" then
-    return nil
+  if slots then
+    return slots
   end
-  local ok, values = pcall(getter, functions.refresh)
-  if not ok or type(values) ~= "table" then
+  local values = bridge.upvalues(refresh)
+  if not values then
     return nil
   end
   local found
@@ -99,84 +61,92 @@ function Inventory.slots()
       count += 1
     end
     if valid and count > 0 then
-      if found and found ~= value then
+      if found then
         return nil
       end
       found = value
     end
   end
-  slotTable = found
-  return found
+  slots = found
+  return slots
 end
 function Inventory.begin(actor, snap)
   if session then
     return session.actor == actor and not session.cancelled
   end
+  if not bridge.get("open") or not Inventory.slots() then
+    return false
+  end
+  local visible = Inventory.visible()
   if
-    not Inventory.visible()
+    not visible
     and (
-      snap.player:GetAttribute("MenuOpen") == true
-      or snap.character:GetAttribute("EatingApple") == true
-      or snap.character:GetAttribute("DrinkingPotion") == true
+      snap.player:GetAttribute("MenuOpen")
+      or snap.character:GetAttribute("EatingApple")
+      or snap.character:GetAttribute("DrinkingPotion")
       or snap.character:GetAttribute("BowDrawStarted")
-      or snap.player:GetAttribute("OffhandUsing") == true
+      or snap.player:GetAttribute("OffhandUsing")
     )
   then
     return false
   end
-  discover()
-  if not functions.open or not Inventory.slots() then
-    return false
-  end
-  session = { actor = actor, character = snap.character, started = snap.now, lastAction = snap.now, owned = not Inventory.visible(), tickets = {} }
+  session = { actor = actor, character = snap.character, owned = not visible, at = snap.now, actionAt = snap.now }
   return true
 end
 function Inventory.ready(actor, snap, urgent)
   local current = session
-  if not current or current.actor ~= actor or current.cancelled or current.character ~= snap.character then
+  if not current or current.actor ~= actor or current.character ~= snap.character or current.cancelled or current.closing then
     return false
   end
-  if not current.requested then
-    if snap.now < nextTransition then
+  if not current.opened then
+    if snap.now < transitionAt then
       return false
     end
-    current.requested, current.lastAction = true, snap.now
+    current.opened = true
     if current.owned then
-      nextTransition = snap.now + MIN_DELAY
-      local ok = pcall(functions.open, true)
-      if not ok then
-        current.failed = true
+      transitionAt = snap.now + DELAY
+      local fn = bridge.get("open")
+      if not fn or not pcall(fn, true) then
+        current.cancelled = true
+        return false
       end
     end
   end
-  if current.failed or not Inventory.visible() or utils.getLocalPlayer():GetAttribute("MenuOpen") ~= true then
+  if not Inventory.visible() or snap.player:GetAttribute("MenuOpen") ~= true then
     current.visibleAt = nil
     return false
   end
   current.visibleAt = current.visibleAt or snap.now
-  return urgent or snap.now - current.visibleAt >= MIN_DELAY
+  return urgent or snap.now - current.visibleAt >= DELAY
 end
 local function ticket(actor, snap, kind)
-  if not Inventory.ready(actor, snap, actor == "totem") or session.closing then
+  if not Inventory.ready(actor, snap, actor == "totem") then
     return nil
   end
-  for _, pending in ipairs(session.tickets) do
-    if not pending.confirmed then
-      return nil
-    end
+  if session.pending and not Inventory.confirm(session.pending, snap) then
+    return nil
   end
-  local value = { kind = kind, character = snap.character, at = snap.now }
-  session.tickets[#session.tickets + 1] = value
-  session.lastAction = snap.now
-  return value
+  local operation = { kind = kind, character = snap.character, at = snap.now, urgent = actor == "totem" }
+  session.pending, session.actionAt = operation, snap.now
+  return operation
 end
-function Inventory.move(actor, snap, tool, from, destination, allowSpeed)
+function Inventory.move(actor, snap, tool, from, destination, swap)
   local values = Inventory.slots()
-  if not values or from < 10 or from > 36 or destination < 1 or destination > 9 or values[from] ~= tool or not available(tool) then
+  if
+    not values
+    or type(from) ~= "number"
+    or type(destination) ~= "number"
+    or from < 10
+    or from > 36
+    or destination < 1
+    or destination > 9
+    or values[from] ~= tool
+    or not available(tool)
+  then
     return nil
   end
   local previous = values[destination]
-  if available(previous) and not (allowSpeed == "totem" or allowSpeed == true and previous:GetAttribute("ClassItem") == "SpeedPotion") then
+  if available(previous) and not (swap == "totem" or swap == true and previous:GetAttribute("ClassItem") == "SpeedPotion") then
     return nil
   end
   local operation = ticket(actor, snap, "move")
@@ -184,64 +154,57 @@ function Inventory.move(actor, snap, tool, from, destination, allowSpeed)
     return nil
   end
   operation.tool, operation.from, operation.destination = tool, from, destination
-  operation.urgent = actor == "totem"
-  values[from], values[destination] = allowSpeed and previous or nil, tool
-  operation.done = pcall(functions.refresh)
+  values[from], values[destination] = swap and previous or nil, tool
+  operation.done = pcall(refresh)
+  if not operation.done then
+    values[from], values[destination] = tool, previous
+    session.cancelled = true
+  end
   return operation
 end
 function Inventory.offhand(actor, snap, tool, immediate)
-  if outstandingOffhand and not outstandingOffhand.confirmed then
-    if not outstandingOffhand.done then
+  if offhand and not offhand.confirmed then
+    if not offhand.done or offhand.accepted and offhand.character == snap.character then
       return nil
     end
-    if outstandingOffhand.accepted and outstandingOffhand.character == snap.character then
-      return nil
-    end
-    outstandingOffhand = nil
-  end
-  if not available(tool) or tool:GetAttribute("ClassItem") ~= "Totem" then
-    return nil
+    offhand = nil
   end
   local values = Inventory.slots()
-  if not values then
+  if not values or not available(tool) or tool:GetAttribute("ClassItem") ~= "Totem" then
     return nil
   end
   local from
-  for index = 1, 36 do
-    if values[index] == tool then
-      from = index
+  for slot = 1, 36 do
+    if values[slot] == tool then
+      from = slot
       break
     end
   end
-  if not from then
+  if not from or immediate and from > 9 and not Inventory.visible() then
     return nil
   end
-  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-  local remote = remotes and remotes:FindFirstChild("InventoryAction")
+  local remoteFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+  local remote = remoteFolder and remoteFolder:FindFirstChild("InventoryAction")
   if not remote or not remote:IsA("RemoteFunction") then
     return nil
   end
-  if immediate and from > 9 and not Inventory.visible() then return nil end
-  local operation = immediate and { kind = "offhand", character = snap.character, at = snap.now, immediate = true }
-    or ticket(actor, snap, "offhand")
+  local previous = session and session.pending
+  local operation = immediate and { kind = "offhand", character = snap.character, at = snap.now, urgent = true } or ticket(actor, snap, "offhand")
   if not operation then
     return nil
   end
   operation.tool, operation.from, operation.count = tool, from, tonumber(tool:GetAttribute("Count")) or 1
   operation.popAt = snap.character:GetAttribute("TotemPoppedAt")
-  if session then
-    for _, previous in ipairs(session.tickets) do
-      if previous.kind == "move" and previous.tool == tool and previous.destination == from then previous.usedBy = operation end
-    end
+  if previous and previous.kind == "move" and previous.tool == tool then
+    previous.usedBy = operation
   end
-  outstandingOffhand = operation
+  offhand = operation
   task.spawn(function()
     local ok, result = pcall(remote.InvokeServer, remote, "EquipOffhand", tool)
     operation.done, operation.accepted = true, ok and result ~= nil and result ~= false
-    if not operation.accepted or operation.character ~= utils.getLocalPlayer().Character then
+    if not operation.accepted or utils.getLocalPlayer().Character ~= operation.character then
       return
     end
-    -- Mirror VoxelPackHUD.swapHovered: consume source and keep any returned shield in its slot.
     if values[from] == tool and not tool.Parent then
       values[from] = nil
     end
@@ -253,7 +216,9 @@ function Inventory.offhand(actor, snap, tool, immediate)
       end
       values[from] = result
     end
-    pcall(functions.refresh)
+    if refresh then
+      pcall(refresh)
+    end
   end)
   return operation
 end
@@ -264,74 +229,65 @@ function Inventory.confirm(operation, snap)
   if operation.confirmed then
     return true
   end
-  local values = Inventory.slots()
-  local valid = false
+  local valid
   if operation.kind == "move" then
+    local values = Inventory.slots()
     valid = operation.done
       and values
       and values[operation.destination] == operation.tool
       and values[operation.from] ~= operation.tool
       and available(operation.tool)
-    if not valid and operation.done and operation.usedBy then valid = Inventory.confirm(operation.usedBy, snap) end
+    if not valid and operation.usedBy then
+      valid = Inventory.confirm(operation.usedBy, snap)
+    end
   else
     local consumed = not owned(operation.tool) or (tonumber(operation.tool:GetAttribute("Count")) or operation.count) < operation.count
-        local popped = snap.character:GetAttribute("TotemPoppedAt")
-    local equipped = snap.character:GetAttribute("OffhandItem") == "totem" or popped ~= nil and popped ~= operation.popAt
-    valid = operation.done and operation.accepted and consumed and equipped
-    if valid and values then
-      if not owned(operation.tool) and values[operation.from] == operation.tool then
-        values[operation.from] = nil
-        pcall(functions.refresh)
-      end
-      for _, tool in pairs(values) do
-        if tool == operation.tool and not available(tool) then
-          valid = false
-          break
-        end
-      end
-    end
+    local popped = snap.character:GetAttribute("TotemPoppedAt")
+    valid = operation.done
+      and operation.accepted
+      and consumed
+      and (snap.character:GetAttribute("OffhandItem") == "totem" or popped ~= nil and popped ~= operation.popAt)
   end
   if not valid then
     operation.stableAt = nil
     return false
   end
   operation.stableAt = operation.stableAt or snap.now
-  operation.confirmed = operation.immediate or operation.urgent or snap.now - operation.stableAt >= (operation.kind == "offhand" and 0 or MIN_DELAY)
+  operation.confirmed = operation.urgent or snap.now - operation.stableAt >= DELAY
   return operation.confirmed
 end
 function Inventory.finish(actor, snap)
-  local current = session
-  if not current then
+  if not session then
     return true
   end
+  local current = session
   if current.actor ~= actor or current.cancelled then
     return false
   end
-  for _, pending in ipairs(current.tickets) do
-    if not Inventory.confirm(pending, snap) then
-      return false
-    end
+  if current.pending and not Inventory.confirm(current.pending, snap) then
+    return false
   end
-  if snap.now - current.lastAction < MIN_DELAY or snap.now < nextTransition then
+  if snap.now < math.max(transitionAt, current.actionAt + DELAY) then
     return false
   end
   if current.owned and Inventory.visible() then
-    if current.closing then
-      return false
+    if not current.closing then
+      current.closing, transitionAt = true, snap.now + DELAY
+      local fn = bridge.get("open")
+      if not fn or not pcall(fn, false) then
+        current.cancelled = true
+      end
     end
-    current.closing = true
-    nextTransition = snap.now + MIN_DELAY
-    pcall(functions.open, false)
     return false
   end
-  if current.owned and utils.getLocalPlayer():GetAttribute("MenuOpen") == true then
+  if current.owned and snap.player:GetAttribute("MenuOpen") then
     return false
   end
   session = nil
   return true
 end
 function Inventory.cancel(actor)
-  if session and (not actor or session.actor == actor) then
+  if session and (not actor or actor == session.actor) then
     session.cancelled = true
   end
 end
@@ -341,32 +297,29 @@ function Inventory.step()
     return
   end
   local now = os.clock()
-  if current.cancelled then
-    if now < math.max(nextTransition, current.lastAction + MIN_DELAY) then
-      return
-    end
-    if current.owned and Inventory.visible() and functions.open then
-      pcall(functions.open, false)
-      nextTransition = now + MIN_DELAY
-    end
-    session = nil
-  elseif now - current.started > 5 and not current.reported then
-    current.reported = true
-    utils.recordError(
-      "mcpvp.inventory",
-      "Aguardando confirmação: " .. current.actor .. ". Nenhuma nova tentativa será enviada enquanto houver ação pendente."
-    )
+  if now - current.at > 5 and not current.cancelled then
+    current.cancelled = true
+    utils.recordError("mcpvp.inventory", "Operação sem confirmação; sessão cancelada sem repetir a ação pendente.")
   end
+  if not current.cancelled or now < math.max(transitionAt, current.actionAt + DELAY) then
+    return
+  end
+  if current.owned and Inventory.visible() then
+    local fn = bridge.get("open")
+    if fn then
+      pcall(fn, false)
+    end
+    transitionAt = now + DELAY
+  end
+  session = nil
 end
 function Inventory.busy() return session ~= nil end
-function Inventory.status() return session and { actor = session.actor, pending = true, reported = session.reported == true } or { pending = false } end
 function Inventory.teardown()
-  local current = session
   Inventory.cancel()
+  local current = session
   Inventory.step()
   if current and session == current then
-    local delay = math.max(nextTransition, current.lastAction + MIN_DELAY) - os.clock()
-    task.delay(math.max(0, delay), function()
+    task.delay(math.max(0, math.max(transitionAt, current.actionAt + DELAY) - os.clock()), function()
       if session == current then
         Inventory.step()
       end
@@ -374,8 +327,8 @@ function Inventory.teardown()
   end
 end
 Inventory.__contract = {
-  provides = { "setup", "visible", "slots", "begin", "ready", "move", "offhand", "confirm", "finish", "cancel", "step", "busy", "status", "teardown" },
-  requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getLocalPlayer", "recordError" } },
+  provides = { "setup", "visible", "slots", "begin", "ready", "move", "offhand", "confirm", "finish", "cancel", "step", "busy", "teardown" },
+  requires = { Utils = "utils", Bridge = "mcpbridge" },
+  requiresMethods = { Utils = { "getLocalPlayer", "recordError" }, Bridge = { "get", "upvalues" } },
 }
 return Inventory

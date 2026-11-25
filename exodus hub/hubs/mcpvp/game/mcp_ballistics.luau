@@ -1,72 +1,91 @@
 -- [[ mcpballistics ]]
+--!native
 --!optimize 2
 local Ballistics = {}
+local STEP = 0.05
 function Ballistics.setup() return true end
--- ItemClient.advance: move for 0.05 s, then drag, then gravity.
-local function heightAt(distance, speed, gravity, drag, pitch)
-  local horizontal, vertical = speed * math.cos(pitch), speed * math.sin(pitch)
-  local x, y, time = 0, 0, 0
-  for _ = 1, 160 do
-    local dx, dy = horizontal * 0.05, vertical * 0.05
-    if dx <= 0.0001 then return nil end
-    if x + dx >= distance then
-      local fraction = (distance - x) / dx
-      return y + dy * fraction, time + 0.05 * fraction
-    end
-    x, y, time = x + dx, y + dy, time + 0.05
-    horizontal, vertical = horizontal * drag, vertical * drag - gravity * 0.05
+-- Exact sums for move -> drag -> gravity, including the fractional final tick.
+local function coefficients(time, drag)
+  local n = math.floor(time / STEP)
+  local fraction = time - n * STEP
+  if math.abs(1 - drag) < 1e-7 then
+    return n * STEP + fraction, STEP * STEP * n * (n - 1) / 2 + fraction * STEP * n
   end
-  return nil
+  local power = drag ^ n
+  local sum = (1 - power) / (1 - drag)
+  return STEP * sum + fraction * power, STEP / (1 - drag) * (STEP * (n - sum) + fraction * (1 - power))
 end
-local function clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight)
-  local position, velocity, elapsed = origin, direction * speed, 0
-  -- A valid plan must end in a real floor collision, not just cross a point in mid-air.
-  while elapsed < math.min(duration + 0.2, maxFlight + 0.2) do
-    local step = math.min(0.05, math.min(duration + 0.2, maxFlight + 0.2) - elapsed)
-    local offset = velocity * step
+local function safeFloor(hit, destination, params)
+  if hit.Normal.Y < 0.65 or hit.Material == Enum.Material.Water or (hit.Position - destination).Magnitude > 1.5 then
+    return false
+  end
+  local block = hit.Instance:GetAttribute("BlockKey")
+  if block == "lava" or block == "water" then
+    return false
+  end
+  local feet = hit.Position + Vector3.new(0, 0.15, 0)
+  for _, offset in ipairs({ Vector3.zero, Vector3.new(0.65, 0, 0), Vector3.new(-0.65, 0, 0), Vector3.new(0, 0, 0.65), Vector3.new(0, 0, -0.65) }) do
+    if workspace:Raycast(feet + offset, Vector3.new(0, 6.4, 0), params) then
+      return false
+    end
+    local floor = workspace:Raycast(feet + offset, Vector3.new(0, -0.8, 0), params)
+    if not floor or floor.Normal.Y < 0.65 or floor.Material == Enum.Material.Water then
+      return false
+    end
+    local key = floor.Instance:GetAttribute("BlockKey")
+    if key == "lava" or key == "water" then
+      return false
+    end
+  end
+  return true
+end
+local function clear(origin, velocity, gravity, drag, duration, destination, params)
+  local position = origin
+  for _ = 1, math.ceil((duration + STEP) / STEP) do
+    local offset = velocity * STEP
     local hit = workspace:Raycast(position, offset, params)
     if hit then
-      if hit.Normal.Y < 0.65 or (hit.Position - destination).Magnitude > 1.2 then return false end
-      local feet = hit.Position + Vector3.new(0, 0.1, 0)
-      if workspace:Raycast(feet, Vector3.new(0, 6.4, 0), params) then return false end
-      for _, offset2 in ipairs({ Vector3.new(0.65, 0, 0), Vector3.new(-0.65, 0, 0), Vector3.new(0, 0, 0.65), Vector3.new(0, 0, -0.65) }) do
-        local floor = workspace:Raycast(feet + offset2 + Vector3.new(0, 0.3, 0), Vector3.new(0, -0.8, 0), params)
-        if not floor or floor.Normal.Y < 0.65 then return false end
-      end
-      return true
+      return safeFloor(hit, destination, params)
     end
-    position, elapsed = position + offset, elapsed + step
-    velocity = velocity * drag - Vector3.new(0, gravity * 0.05, 0)
+    position += offset
+    velocity = velocity * drag - Vector3.new(0, gravity * STEP, 0)
   end
   return false
 end
-function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, projectileDrag)
-  maxFlight = maxFlight or 0.75
+function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, drag)
+  drag, maxFlight = drag or 0.99, maxFlight or 6
+  if speed <= 0 or gravity <= 0 or drag <= 0 or drag > 1 or maxFlight <= STEP then
+    return nil
+  end
   local delta = destination - origin
-  local horizontal = Vector3.new(delta.X, 0, delta.Z)
-  local distance, drag = horizontal.Magnitude, projectileDrag or 0.99
-  if distance < 0.01 or speed <= 0 or gravity <= 0 then return nil end
-  local previousPitch, previousError
-  for degrees = -85, 85, 0.5 do
-    local pitch = math.rad(degrees)
-    local height = heightAt(distance, speed, gravity, drag, pitch)
-    if height == nil then previousPitch, previousError = nil, nil continue end
-    local error = height - delta.Y
-    if previousError and previousError * error <= 0 then
-      local lo, hi, lowError = previousPitch, pitch, previousError
-      for _ = 1, 18 do
-        local mid = (lo + hi) / 2
-        local midHeight = heightAt(distance, speed, gravity, drag, mid)
-        if not midHeight then break end
-        local midError = midHeight - delta.Y
-        if lowError * midError <= 0 then hi = mid else lo, lowError = mid, midError end
+  local function required(time)
+    local travel, drop = coefficients(time, drag)
+    local velocity = (delta + Vector3.new(0, gravity * drop, 0)) / travel
+    return velocity:Dot(velocity) - speed * speed, velocity
+  end
+  local low, lowError = 0.001, required(0.001)
+  for tick = 1, math.ceil(maxFlight / STEP) do
+    local high = math.min(tick * STEP, maxFlight)
+    local highError = required(high)
+    if lowError * highError <= 0 then
+      local left, right, error = low, high, lowError
+      for _ = 1, 20 do
+        local mid = (left + right) * 0.5
+        local value = required(mid)
+        if error * value <= 0 then
+          right = mid
+        else
+          left, error = mid, value
+        end
       end
-      local angle = (lo + hi) / 2
-      local _, duration = heightAt(distance, speed, gravity, drag, angle)
-      local direction = horizontal.Unit * math.cos(angle) + Vector3.new(0, math.sin(angle), 0)
-      if duration and duration <= maxFlight and clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight) then return direction, duration end
+      local duration = (left + right) * 0.5
+      local _, velocity = required(duration)
+      local direction = velocity.Unit
+      if clear(origin, direction * speed, gravity, drag, duration, destination, params) then
+        return direction, duration
+      end
     end
-    previousPitch, previousError = pitch, error
+    low, lowError = high, highError
   end
   return nil
 end

@@ -29,7 +29,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie com dois ataques no alvo. Controla os golpes com a lógica antiga, sem ligar a mira.",
+              description = "Inicie com dois ataques no alvo. Sincroniza os golpes com o cooldown real da arma.",
             },
             {
               kind = "toggle",
@@ -43,8 +43,18 @@ GameUI.definition = {
           title = "Mira",
           column = 2,
           components = {
-            { kind = "toggle", title = "Aim Lock", key = "MCAimLock", description = "Lógica de mira antiga em módulo próprio. Funciona sem Auto Attack." },
-            { kind = "toggle", title = "Aim Assist", key = "MCAimAssist", description = "Assistência leve do jogo em módulo próprio, até 16 studs." },
+            {
+              kind = "toggle",
+              title = "Aim Lock",
+              key = "MCAimLock",
+              description = "Acompanha o alvo com suavização por tempo e verificação de obstáculos.",
+            },
+            {
+              kind = "toggle",
+              title = "Aim Assist",
+              key = "MCAimAssist",
+              description = "Correção leve até 16 studs; Aim Lock tem prioridade quando ambos estão ativos.",
+            },
             { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
           },
         },
@@ -52,12 +62,17 @@ GameUI.definition = {
           title = "Assistência",
           column = 2,
           components = {
-            { kind = "toggle", title = "Auto Força", key = "MCAutoStrength", description = "Prioriza poções de força na hotbar e joga no pé quando o efeito termina." },
+            {
+              kind = "toggle",
+              title = "Auto Força",
+              key = "MCAutoStrength",
+              description = "Usa força em segurança, após uma pausa no combate, uma vez por vida ou totem.",
+            },
             {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Usa pérola para voltar ao alcance quando houver linha livre até o alvo.",
+              description = "Prevê o movimento e verifica a trajetória e o espaço de chegada da pérola.",
             },
             {
               kind = "toggle",
@@ -95,7 +110,8 @@ for _, ball in ipairs(miniBalls) do
     kind = "toggle",
     title = "Mini " .. ball.title .. " UI",
     key = visibleKey,
-    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções." or "Mostra o botão de " .. ball.title .. ".",
+    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções."
+      or "Mostra o botão de " .. ball.title .. ".",
     mobileOnly = true,
   }
 end

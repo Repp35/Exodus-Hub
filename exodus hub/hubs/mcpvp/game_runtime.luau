@@ -1,19 +1,17 @@
 -- [[ gameruntime ]]
 --!optimize 2
 local Runtime = {}
-local scope, modules
+local modules, scope, owner, renderTarget
 function Runtime.setup() return true end
 function Runtime.reset()
   if not modules then
     return
   end
-  modules.autostrength.reset()
-  modules.autorefill.reset()
-  modules.autototem.reset()
   modules.autopearl.reset()
-  modules.autoattacksword.reset()
-  modules.autocrit.reset()
+  modules.mcpmelee.reset()
+  modules.mcpsupplies.reset()
   modules.mcptarget.reset()
+  renderTarget = nil
 end
 function Runtime.teardown()
   if scope then
@@ -21,131 +19,151 @@ function Runtime.teardown()
     scope = nil
   end
   Runtime.reset()
-  modules = nil
+  modules, owner = nil, nil
 end
 function Runtime.bind(loaded)
   Runtime.teardown()
-  modules = loaded
-  loaded.autototem.setReservations(loaded.autorefill.isReserved)
-  scope = loaded.lifetime.scope()
-  local input = game:GetService("UserInputService")
-  local controllerSource = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
-  local ok, controller = pcall(function() return controllerSource and require(controllerSource) end)
-  if not ok then
+  modules, scope = loaded, loaded.lifetime.scope()
+  local native, target, supplies = loaded.mcpnative, loaded.mcptarget, loaded.mcpsupplies
+  local input, storage, run = game:GetService("UserInputService"), game:GetService("ReplicatedStorage"), game:GetService("RunService")
+  local source = storage:FindFirstChild("ControllerInput")
+  local ok, controller = pcall(function() return source and require(source) end)
+  if not ok or type(controller) ~= "table" then
     controller = nil
   end
+  local function enabled(key) return loaded.utils.getConfigValue(key) == true end
   local function combatEnabled()
-    return loaded.utils.getConfigValue("MCAutoSword") or loaded.utils.getConfigValue("MCAimLock")
-      or loaded.utils.getConfigValue("MCAimAssist") or loaded.utils.getConfigValue("MCAutoPearl")
-      or loaded.utils.getConfigValue("MCAutoCrit")
+    return enabled("MCAutoSword") or enabled("MCAutoCrit") or enabled("MCAutoPearl") or enabled("MCAimLock") or enabled("MCAimAssist")
   end
-  local function click(event, processed)
-    if loaded.mcpnative.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not combatEnabled() then
-      return
-    end
-    local matches = controller and type(controller.Matches) == "function" and controller.Matches(event, "Attack")
-    if not matches and (controller or event.UserInputType ~= Enum.UserInputType.MouseButton1) then
-      return
-    end
-    local snap = loaded.mcpnative.snapshot()
-    if snap then
-      loaded.mcptarget.manual(snap)
-    end
-  end
-  scope.connect(controller and controller.InputBegan or input.InputBegan, click)
-  local swingConnection, feedbackConnection
-  local function bindSwing()
-    if swingConnection and feedbackConnection then return end
-    local combat = game:GetService("ReplicatedStorage"):FindFirstChild("VoxelCombat")
-    local swing = combat and combat:FindFirstChild("Swing")
-    if not swingConnection and swing and swing:IsA("RemoteEvent") then
-      swingConnection = scope.connect(swing.OnClientEvent, loaded.mcptarget.noteSwing)
-    end
-    local feedback = combat and combat:FindFirstChild("Feedback")
-    if not feedbackConnection and feedback and feedback:IsA("RemoteEvent") then
-      feedbackConnection = scope.connect(feedback.OnClientEvent, function(kind, blocked)
-        if kind == "HitConfirm" and not blocked then loaded.mcptarget.confirmHit(os.clock()) end
-      end)
-    end
-  end
-  bindSwing()
-  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-  local item = remotes and remotes:FindFirstChild("ItemAction")
-  if item and item:IsA("RemoteEvent") then
-    scope.connect(item.OnClientEvent, function(...)
-      if loaded.utils.isActive() and loaded.utils.getConfigValue("MCAutoPearl") then loaded.autopearl.observeProjectile(...) end
-    end)
-  end
-  scope.connect(game:GetService("RunService").Heartbeat, function()
-    loaded.mcpinventory.step()
-    if not loaded.utils.isActive() then Runtime.reset() return end
-    local snap = loaded.mcpnative.snapshot()
-    if not snap then
-      Runtime.reset()
-      return
-    end
-    loaded.mcptarget.observe(snap)
-    loaded.autostrength.observe(snap)
-    loaded.autorefill.observe(snap)
-    if loaded.autostrength.busy() then loaded.autostrength.step(snap) return end
-    if loaded.autorefill.busy() then loaded.autorefill.step(snap) return end
-    if not loaded.autopearl.busy() then loaded.autototem.step(snap) end
-    if loaded.autototem.busy() then return end
-    if not loaded.autopearl.busy() then loaded.autostrength.step(snap) end
-    if loaded.autostrength.busy() then return end
-    if not loaded.autopearl.busy() then loaded.autorefill.step(snap) end
-    if loaded.autorefill.busy() then return end
-    if not combatEnabled() then
-      loaded.autopearl.reset()
-      loaded.autoattacksword.reset()
-      loaded.mcptarget.reset()
-      return
-    end
-    bindSwing()
-    local target = loaded.mcptarget.get(snap)
-    if not target then
-      loaded.autoattacksword.reset()
-      loaded.autopearl.reset()
-      return
-    end
-    local success, reason = pcall(function()
-      if loaded.utils.getConfigValue("MCAutoPearl") then
-        loaded.autopearl.step(snap, target)
-      else
-        loaded.autopearl.reset()
-      end
-      if not loaded.autopearl.busy() then
-        local fresh = loaded.mcpnative.snapshot()
-        local activeTarget = fresh and loaded.mcptarget.get(fresh)
-        if fresh and activeTarget then
-          if loaded.utils.getConfigValue("MCAutoSword") then loaded.autoattacksword.step(fresh, activeTarget)
-          else loaded.autoattacksword.reset() loaded.autocrit.step(fresh, activeTarget) end
-        end
-      end
-    end)
+  local function guarded(name, fn, ...)
+    local success, reason = pcall(fn, ...)
     if not success then
       Runtime.reset()
-      loaded.utils.recordError("mcpvp.combat", tostring(reason))
+      loaded.utils.recordError("mcpvp." .. name, tostring(reason))
     end
+  end
+  scope.connect(controller and controller.InputBegan or input.InputBegan, function(event, processed)
+    guarded("input", function()
+      if native.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not combatEnabled() then
+        return
+      end
+      local matches = controller and type(controller.Matches) == "function" and controller.Matches(event, "Attack")
+      if not matches and (controller or event.UserInputType ~= Enum.UserInputType.MouseButton1) then
+        return
+      end
+      local snap = native.snapshot()
+      if snap then
+        target.manual(snap)
+      end
+    end)
   end)
-  scope.connect(game:GetService("RunService").RenderStepped, function(dt)
-    if not loaded.utils.isActive() or not (loaded.utils.getConfigValue("MCAimLock") or loaded.utils.getConfigValue("MCAimAssist")) or loaded.autototem.busy() or loaded.autorefill.busy() or loaded.autostrength.busy() then
+  local bound, scanAt = {}, 0
+  local function bindRemote(folderName, name, callback)
+    local folder = storage:FindFirstChild(folderName)
+    local remote = folder and folder:FindFirstChild(name)
+    local previous = bound[name]
+    if previous and previous.remote ~= remote then
+      previous.connection:Disconnect()
+      bound[name] = nil
+    end
+    if not remote or not remote:IsA("RemoteEvent") or bound[name] then
       return
     end
-    local snap = loaded.mcpnative.snapshot()
-    local target = snap and loaded.mcptarget.get(snap)
-    if target then
-      if loaded.utils.getConfigValue("MCAimLock") then loaded.aimlock.step(snap, target, dt) end
-      if loaded.utils.getConfigValue("MCAimAssist") then loaded.aimassist.step(snap, target, dt) end
+    bound[name] = { remote = remote, connection = scope.connect(remote.OnClientEvent, function(...) guarded(name, callback, ...) end) }
+  end
+  local function heartbeat()
+    loaded.mcpinventory.step()
+    if not loaded.utils.isActive() then
+      if owner then
+        Runtime.reset()
+        owner = nil
+      end
+      return
     end
+    local snap = native.snapshot()
+    if not snap then
+      if owner then
+        Runtime.reset()
+        owner = nil
+      end
+      return
+    end
+    if owner ~= snap.character then
+      Runtime.reset()
+      owner = snap.character
+    end
+    if snap.now >= scanAt then
+      scanAt = snap.now + 1
+      bindRemote("VoxelCombat", "Swing", target.noteSwing)
+      bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
+        if kind == "HitConfirm" and not blocked then
+          target.confirmHit(os.clock())
+        end
+      end)
+      bindRemote("Remotes", "ItemAction", loaded.autopearl.observeProjectile)
+    end
+    target.observe(snap)
+    supplies.observe(snap)
+    supplies.step(snap, not loaded.autopearl.busy())
+    renderTarget = nil
+    if supplies.busy() then
+      loaded.mcpmelee.reset()
+      return
+    end
+    if not combatEnabled() then
+      loaded.autopearl.reset()
+      loaded.mcpmelee.reset()
+      target.reset()
+      return
+    end
+    snap = native.snapshot()
+    if not snap then
+      return
+    end
+    local chosen = target.get(snap)
+    if enabled("MCAutoPearl") then
+      loaded.autopearl.step(snap, chosen)
+    else
+      loaded.autopearl.reset()
+    end
+    if loaded.autopearl.busy() then
+      loaded.mcpmelee.reset()
+      return
+    end
+    renderTarget = chosen
+    if chosen then
+      loaded.mcpmelee.step(snap, chosen)
+    else
+      loaded.mcpmelee.reset()
+    end
+  end
+  scope.connect(run.Heartbeat, function() guarded("heartbeat", heartbeat) end)
+  scope.connect(run.RenderStepped, function(dt)
+    guarded("aim", function()
+      if
+        not renderTarget
+        or not renderTarget.root.Parent
+        or renderTarget.humanoid.Health <= 0
+        or not loaded.utils.isActive()
+        or supplies.busy()
+        or loaded.autopearl.busy()
+      then
+        return
+      end
+      local snap = native.snapshot()
+      if snap then
+        loaded.mcpaim.step(snap, renderTarget, dt)
+      end
+    end)
   end)
   return { mode = "mcpvp" }
 end
 function Runtime.createAPI(loaded)
-  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy, loaded.autorefill.busy, loaded.autostrength.busy } }
+  return {
+    getUIConfig = function() return loaded.gameui.definition end,
+    resetState = Runtime.reset,
+    updateBlockers = { loaded.autopearl.busy, loaded.mcpsupplies.busy, loaded.mcpinventory.busy },
+  }
 end
-Runtime.__contract = {
-  provides = { "setup", "reset", "teardown", "bind", "createAPI" },
-  requires = {},
-}
+Runtime.__contract = { provides = { "setup", "reset", "teardown", "bind", "createAPI" }, requires = {} }
 return Runtime
