@@ -100,6 +100,30 @@ function Native.canHit(snap, target, tool)
   end
   return Native.visible(snap, snap.eye + direction * distance, target.character)
 end
+function Native.incomingHit(snap, opponent)
+  local tool = opponent.character:FindFirstChildOfClass("Tool")
+  local stats = Native.stats(tool)
+  if stats.type ~= "sword" and stats.type ~= "axe" and stats.type ~= "mace" then return false end
+  local sneak = opponent.character:GetAttribute("Sneaking") == true
+  local eye = geometry and geometry.Eye(opponent.root.Position, sneak)
+    or opponent.root.Position + Vector3.new(0, sneak and 0.064 or 1.184, 0)
+  local aim = opponent.player:GetAttribute("FrontCameraAimDirection")
+  local direction = typeof(aim) == "Vector3" and aim.Magnitude > 0.001 and aim.Unit or opponent.root.CFrame.LookVector
+  if geometry and type(geometry.Hit) == "function" then
+    local distance = geometry.Hit(eye, direction, snap.root.Position, snap.character:GetAttribute("Sneaking"), stats.reach)
+    if distance == nil then return false end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.RespectCanCollide = true
+    params.FilterDescendantsInstances = { opponent.character }
+    local hit = world:Raycast(eye, direction * distance, params)
+    return not hit or hit.Instance:IsDescendantOf(snap.character)
+  end
+  local delta = snap.root.Position - eye
+  return delta.Magnitude <= stats.reach and delta.Magnitude > 0.01
+    and direction:Dot(delta.Unit) >= 0.95
+    and Native.visible(snap, eye, opponent.character)
+end
 function Native.blocked(snap)
   return (controller and controller.IsBlocked()) or snap.character:GetAttribute("EatingApple") == true
     or snap.character:GetAttribute("DrinkingPotion") == true or snap.character:GetAttribute("BowDrawStarted")
@@ -167,7 +191,7 @@ function Native.equip(snap, tool)
   return true
 end
 Native.__contract = {
-  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching" },
+  provides = { "setup", "snapshot", "stats", "visible", "canHit", "attack", "findSword", "findPearl", "pearlCooldown", "pearlReady", "usePearl", "equip", "blocked", "isDispatching", "incomingHit" },
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getLocalPlayer", "getWorkspace", "recordError" } },
 }

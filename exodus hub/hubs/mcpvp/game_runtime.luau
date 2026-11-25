@@ -43,6 +43,16 @@ function Runtime.bind(loaded)
     end
   end
   scope.connect(controller and controller.InputBegan or input.InputBegan, click)
+  local swingConnection
+  local function bindSwing()
+    if swingConnection then return end
+    local combat = game:GetService("ReplicatedStorage"):FindFirstChild("VoxelCombat")
+    local swing = combat and combat:FindFirstChild("Swing")
+    if swing and swing:IsA("RemoteEvent") then
+      swingConnection = scope.connect(swing.OnClientEvent, loaded.mcptarget.noteSwing)
+    end
+  end
+  bindSwing()
   scope.connect(game:GetService("RunService").Heartbeat, function()
     if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") then
       Runtime.reset()
@@ -53,6 +63,8 @@ function Runtime.bind(loaded)
       Runtime.reset()
       return
     end
+    bindSwing()
+    loaded.mcptarget.observe(snap)
     local target = loaded.mcptarget.get(snap)
     if not target then
       loaded.autopearl.reset()
@@ -74,14 +86,14 @@ function Runtime.bind(loaded)
       loaded.utils.recordError("mcpvp.combat", tostring(reason))
     end
   end)
-  scope.connect(game:GetService("RunService").RenderStepped, function()
+  scope.connect(game:GetService("RunService").RenderStepped, function(dt)
     if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autopearl.busy() then
       return
     end
     local snap = loaded.mcpnative.snapshot()
     local target = snap and loaded.mcptarget.get(snap)
     if target then
-      loaded.autoattacksword.aim(snap, target)
+      loaded.autoattacksword.aim(snap, target, dt)
     end
   end)
   return { mode = "mcpvp" }
