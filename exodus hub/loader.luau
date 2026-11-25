@@ -952,6 +952,10 @@ local function selectHub(revision)
   end
   local catalog = execute("hub catalog", catalogChunk)
   selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
+  local player = game:GetService("Players").LocalPlayer
+  if selectedHub.id == "mcpvp" and (not player or player.Name ~= "renannnhh") then
+    selectedHub = registry.select({}, game.PlaceId, game.GameId)
+  end
   local manifestChunk, manifestError = loadModule("shared manifest", CONFIG.MANIFEST_PATH, root .. CONFIG.MANIFEST_PATH)
   if not manifestChunk then
     return false, manifestError
