@@ -47,7 +47,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Lock",
               key = "MCAimLock",
-              description = "Acompanha suavemente o alvo visível até 24 studs, com limite de ângulo e velocidade.",
+              description = "Acompanha o alvo próximo com resposta rápida e giro contínuo, sem a espera do antigo modo legit.",
             },
             {
               kind = "toggle",
@@ -56,12 +56,6 @@ GameUI.definition = {
               description = "Assistência leve até 16 studs, apenas perto da mira e durante seu movimento. Não centraliza automaticamente.",
             },
             { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
-            {
-              kind = "toggle",
-              title = "Modo legit",
-              key = "MCAimLegit",
-              description = "Limita velocidade e aceleração, exige alvo na tela e aguarda reação ao recuperar a visão.",
-            },
           },
         },
         {

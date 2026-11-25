@@ -112,63 +112,30 @@ local function plan(snap, chosen)
     end
     return best, duration, destination
   end
-  local flight = math.clamp(gap.Magnitude / speed, 0.15, 4)
-  local best, bestFlight, bestScore, bestPoint
-  local function try(point)
-    local floor = workspace:Raycast(point + Vector3.new(0, 12.8, 0), Vector3.new(0, -160, 0), params)
-    if not floor or floor.Normal.Y < 0.6 or floor.Material == Enum.Material.Water then
-      return
-    end
-    local block = floor.Instance:GetAttribute("BlockKey")
-    if block == "lava" or block == "water" then
-      return
-    end
-    local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 4.5, drag)
-    if not aim then
-      return
-    end
-    local future = chosen.root.Position + motion * math.min(duration + 0.08, 2.5)
-    local error = ((future - floor.Position) * Vector3.new(1, 0, 1)).Magnitude
-    local withoutPearl = ((future - snap.root.Position) * Vector3.new(1, 0, 1)).Magnitude
-    local gain = withoutPearl - error
-    -- A useful partial interception is valid too; exact convergence is never required.
-    if gain < math.min(3.2, gap.Magnitude * 0.2) then
-      return
-    end
-    local score = error + duration * 3
-    if not bestScore or score < bestScore then
-      best, bestFlight, bestScore, bestPoint = aim, duration, score, floor.Position
-    end
-    return duration
+  -- Original interception flow: refine flight time, then use a nearer landing if needed.
+  local flight, best, bestFlight = 0.3, nil, nil
+  for _ = 1, 8 do
+    local point = chosen.root.Position + motion * flight
+    local floor = workspace:Raycast(point + Vector3.new(0, 0.5, 0), Vector3.new(0, -128, 0), params)
+    if not floor then break end
+    local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
+    if not aim then break end
+    best, bestFlight = aim, duration
+    if math.abs(duration - flight) * math.max(1, motion.Magnitude) < 0.5 then return aim, duration end
+    flight = duration
   end
-  for _ = 1, 3 do
-    local future = chosen.root.Position + motion * math.min(flight + 0.08, 2.5)
-    local approach = (future - snap.root.Position) * Vector3.new(1, 0, 1)
-    if approach.Magnitude > 0.01 then
-      local duration = try(future - approach.Unit * math.min(2, reach * 0.2))
-      if duration then
-        flight = duration
-      else
-        break
-      end
+  if best then return best, bestFlight end
+  local delta = chosen.root.Position - snap.root.Position
+  for _, distance in ipairs({ 160, 128, 96, 64, 32 }) do
+    if delta.Magnitude <= distance then continue end
+    local point = snap.root.Position + delta.Unit * distance
+    local floor = workspace:Raycast(point + Vector3.new(0, 32, 0), Vector3.new(0, -256, 0), params)
+    if floor and (floor.Position - chosen.root.Position).Magnitude + 8 < delta.Magnitude then
+      local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
+      if aim then return aim, duration end
     end
   end
-  if not best then
-    -- Far teleports and obstacles use successive safe landings towards the same opponent.
-    local side = Vector3.new(-gap.Unit.Z, 0, gap.Unit.X)
-    for _, distance in ipairs({ 128, 96, 64, 32 }) do
-      if gap.Magnitude < distance then
-        continue
-      end
-      for _, offset in ipairs({ 0, 3.2, -3.2 }) do
-        try(snap.root.Position + gap.Unit * distance + side * offset)
-      end
-      if best then
-        break
-      end
-    end
-  end
-  return best, bestFlight, bestPoint
+  return nil
 end
 function Pearl.step(snap, chosen)
   if not utils.getConfigValue("MCAutoPearl") then
@@ -198,7 +165,7 @@ function Pearl.step(snap, chosen)
       end
       if snap.tool ~= shot.tool or native.blocked(snap) then shot.heldAt = nil return false end
       shot.heldAt = shot.heldAt or snap.now
-      if snap.now - shot.heldAt < 0.08 then return false end
+      if snap.now - shot.heldAt < 0.05 then return false end
       if snap.now < (shot.planAt or 0) then
         return false
       end
@@ -211,9 +178,12 @@ function Pearl.step(snap, chosen)
       shot.count = tonumber(shot.tool:GetAttribute("Count")) or 1
       shot.cooldown = snap.player:GetAttribute("ItemCooldown_Pearl")
       shot.sentAt, shot.phase = snap.now, "confirm"
+      shot.arrivalAt = snap.now + duration + 0.4
       if not native.usePearl(snap, shot.tool, direction) then
+        -- A locally refused use was never sent. Do not leave it stuck in confirmation.
+        shot.sentAt = nil
         Pearl.reset()
-        retryAt = snap.now
+        retryAt = snap.now + 0.15
         return false
       end
       return true
@@ -224,7 +194,7 @@ function Pearl.step(snap, chosen)
       local acknowledged = type(cooldown) == "number" and cooldown ~= shot.cooldown and not native.pearlReady()
       local arrived = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
       local projectile = shot.id ~= nil
-      local launched = consumed and (projectile or arrived or acknowledged and snap.now - shot.sentAt >= 0.25)
+      local launched = consumed and (projectile or arrived or acknowledged and snap.now - shot.sentAt >= 0.1)
       if not launched then
         if snap.now - shot.sentAt > 5 and not shot.reported then
           shot.reported = true
@@ -238,7 +208,7 @@ function Pearl.step(snap, chosen)
     end
     local teleported = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
     local ended = shot.endedAt ~= nil
-    if not teleported and not ended then
+    if not teleported and not ended and snap.now < shot.arrivalAt then
       return false
     end
     restore(snap)
@@ -284,7 +254,7 @@ Pearl.__contract = {
   requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics", Utils = "utils" },
   requiresMethods = {
     Native = { "snapshot", "findWeapon", "stats", "equip", "findPearl", "usePearl", "pearlReady", "blocked", "canHit" },
-    Target = { "hold" },
+    Target = { "hold", "get" },
     Ballistics = { "solve" },
     Utils = { "getConfigValue", "recordError" },
   },

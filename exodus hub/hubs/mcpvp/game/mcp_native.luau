@@ -288,7 +288,10 @@ function Native.attack(snap, target)
   return dispatched and snap.character:GetAttribute("LocalAttackSwing") ~= before
 end
 function Native.pearlCooldown() return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1 end
-function Native.pearlReady() return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow() end
+function Native.pearlReady()
+  return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow()
+    and os.clock() - lastPearlUse >= math.max(0.36, Native.pearlCooldown())
+end
 function Native.usePearl(snap, tool, direction)
   if anchor and anchor.Claims() then return false end
   if typeof(direction) ~= "Vector3" or direction.Magnitude < 0.001 then return false end
