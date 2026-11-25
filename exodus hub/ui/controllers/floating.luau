@@ -11,19 +11,115 @@ local Controller = {}
 function Controller.setup() return true end
 
 -- controller
+local function createQuickControls(context, definition)
+  local Utils, C = context.deps.Utils, context.theme.COLORS
+  local inst, corner, stroke = context.inst, context.corner, context.stroke
+  local panel = inst("Frame", {
+    Name = "ExodusQuickMini",
+    Size = UDim2.fromOffset(160, 38),
+    BackgroundColor3 = C.header,
+    BorderSizePixel = 0,
+    Visible = false,
+    ZIndex = 15,
+    Parent = context.refs.screenGui,
+  })
+  context.refs.miniGui = panel
+  corner(panel, 14)
+  stroke(panel, nil, 1.5)
+  local header = inst("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundColor3 = C.card,
+    BorderSizePixel = 0,
+    Text = definition.title,
+    TextColor3 = C.subtext,
+    TextSize = 14,
+    Font = Enum.Font.GothamBold,
+    Active = true,
+    ZIndex = 16,
+    Parent = panel,
+  })
+  corner(header, 12)
+  local buttons = {}
+  for _, control in ipairs(definition.controls) do
+    local button = inst("TextButton", {
+      Name = control.key,
+      Size = UDim2.new(1, -12, 0, 30),
+      BackgroundColor3 = C.red,
+      BorderSizePixel = 0,
+      TextColor3 = Color3.new(1, 1, 1),
+      TextSize = 14,
+      Font = Enum.Font.GothamBold,
+      Visible = false,
+      ZIndex = 16,
+      Parent = panel,
+    })
+    corner(button, 8)
+    buttons[#buttons + 1] = { control = control, button = button }
+    context.trackConn(button.Activated:Connect(function()
+      context.setConfigValue(control.key, Utils.getConfigValue(control.key) ~= true)
+    end))
+  end
+  local function screenScale() return context.refs.responsiveScale and context.refs.responsiveScale.Scale or 1 end
+  local function layout()
+    local count = 0
+    for _, entry in ipairs(buttons) do
+      local visible = Utils.getConfigValue(entry.control.visibleKey) == true
+      entry.button.Visible = visible
+      if visible then
+        entry.button.Position = UDim2.fromOffset(6, 34 + count * 34)
+        count += 1
+      end
+    end
+    local width, height = 160, 38 + count * 34
+    local view, scale = context.viewport(), math.max(screenScale(), 0.01)
+    local viewWidth, viewHeight = view.X / scale, view.Y / scale
+    local x = math.clamp(Utils.getConfigValue(definition.xKey) or (viewWidth - width - 14), 0, math.max(0, viewWidth - width))
+    local y = math.clamp(Utils.getConfigValue(definition.yKey) or ((viewHeight - height) / 2), 0, math.max(0, viewHeight - height))
+    panel.Size = UDim2.fromOffset(width, height)
+    panel.Position = UDim2.fromOffset(x, y)
+    panel.Visible = count > 0
+  end
+  local function sync(changes)
+    local relayout = changes == nil or changes[definition.xKey] ~= nil or changes[definition.yKey] ~= nil
+    for _, entry in ipairs(buttons) do
+      local control, button = entry.control, entry.button
+      if not changes or changes[control.key] ~= nil then
+        local on = Utils.getConfigValue(control.key) == true
+        button.Text = control.title .. (on and "  ON" or "  OFF")
+        button.BackgroundColor3 = on and C.green or C.red
+      end
+      if changes and changes[control.visibleKey] ~= nil then
+        relayout = true
+      end
+    end
+    if relayout then
+      layout()
+    end
+  end
+  context.makeDraggable(header, panel, function()
+    Utils.setConfig({
+      [definition.xKey] = panel.Position.X.Offset,
+      [definition.yKey] = panel.Position.Y.Offset,
+    })
+  end, false, screenScale)
+  sync()
+  return { sync = sync, layout = layout }
+end
+
 function Controller.create(context)
   if context.combatUI == false then
     local function inactive() end
+    local quick = context.miniControls and createQuickControls(context, context.miniControls)
     return {
       setSpam = inactive,
       showMini = inactive,
-      applyMiniScale = inactive,
+      applyMiniScale = quick and quick.layout or inactive,
       showClashBall = inactive,
       showParryBall = inactive,
       showDarkBall = inactive,
       showJumpBall = inactive,
       showUpDashBall = inactive,
-      sync = inactive,
+      sync = quick and quick.sync or inactive,
       applyVisibility = inactive,
       refreshAbilities = inactive,
     }

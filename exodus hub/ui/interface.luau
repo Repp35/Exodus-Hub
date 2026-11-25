@@ -67,6 +67,7 @@ function ExodusUI.setup(deps, preview)
   local hubUI = deps.Hub.getUIConfig()
   context.combatUI = hubUI.combatUI == true
   context.abilityKeys = hubUI.abilityKeys or {}
+  context.miniControls = hubUI.miniControls
   context.notifications = deps.Notifications.create(context)
   context.notifications.layer()
   context.floating = deps.Floating.create(context)
