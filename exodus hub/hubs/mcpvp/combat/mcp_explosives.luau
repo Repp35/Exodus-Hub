@@ -25,7 +25,12 @@ local function blocks(snap)
     return blockCache
   end
   local list, seen = {}, {}
+  local predicted = snap.world:FindFirstChild("PredictedBlocks")
+  local visuals = snap.world:FindFirstChild("LocalItemVisuals")
   local function add(block)
+    if (predicted and block:IsDescendantOf(predicted)) or (visuals and block:IsDescendantOf(visuals)) then
+      return
+    end
     if block:IsA("BasePart") and not seen[block] and (block.Position - snap.root.Position).Magnitude <= 22 then
       local key = blockKey(block)
       if key == "obsidian" or key == "respawn_anchor" then
@@ -228,7 +233,7 @@ function Explosives.pulse(snap, targets, cfg)
   end
   local acted = false
   for _, block in ipairs(blocks(snap)) do
-    if blockKey(block) ~= "obsidian" then
+    if not block.Parent or blockKey(block) ~= "obsidian" then
       continue
     end
     local top = block.Position + Vector3.new(0, 1.6, 0)
@@ -245,14 +250,19 @@ function Explosives.pulse(snap, targets, cfg)
         break
       end
     end
-    local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
+    local launch = false
     if target and not elevated and (target.root.Position - top).Magnitude > 12.8 then
       target = nil
     end
-    if not target and launch then
+    -- A dispatched swing is not a confirmed hit. Wait for the target record to acknowledge it.
+    if (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow") then
       for _, other in ipairs(targets) do
-        if other.humanoid.Health > 0 and (other.root.Position - top).Magnitude <= 12.8 then
-          target = other
+        if other.character == entry.target and other.humanoid.Health > 0 and (other.lastHit or -math.huge) >= entry.strikeAt
+          and (other.root.Position - top).Magnitude <= 12.8 then
+          launch = true
+          if not elevated then
+            target = other
+          end
           break
         end
       end
@@ -287,6 +297,27 @@ function Explosives.pulse(snap, targets, cfg)
     if not inReach then
       continue
     end
+    local equipped = native.equipped()
+    local switching = equipped ~= crystalItem.tool
+    local selfSafe = geometry.damage(snap, snap.character, point or top, 6) <= 0
+    -- Do not take over the hotbar merely because a player is airborne near a block.
+    -- Manual crystal use still works without a preceding sword hit.
+    if switching then
+      local confirmed = target.lastHit or -math.huge
+      if snap.now - confirmed >= cfg("MCComboLifetime") then
+        continue
+      end
+      if equipped and equipped:GetAttribute("BlockKey") == "obsidian" then
+        if snap.now >= (entry.manualUntil or -math.huge) or native.usingHeld() then
+          continue
+        end
+      end
+      local canBreak = crystal and elevated and selfSafe and native.canAct("attack")
+      local canPlace = not crystal and (not entry.spent or selfSafe) and (selfSafe or launch) and native.canAct("use", crystalItem.tool)
+      if not canBreak and not canPlace then
+        continue
+      end
+    end
     if not held then
       original = native.equipped()
       heldAuto = original ~= crystalItem.tool
@@ -298,7 +329,6 @@ function Explosives.pulse(snap, targets, cfg)
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Self exposure must block detonation itself, not only replacement placement.
-    local selfSafe = geometry.damage(snap, snap.character, point or top, 6) <= 0
     local broke = false
     if crystal and elevated and selfSafe and native.canAct("attack") then
       if native.strike(hitPoint) then
@@ -317,7 +347,10 @@ function Explosives.pulse(snap, targets, cfg)
       lastPulse = snap.now
       return true, target
     end
-    if crystal and elevated and selfSafe and snap.now - lastPulse <= 0.1 then
+    if switching then
+      -- A rejected action must not leave the player's slot changed.
+      Explosives.release()
+    elseif crystal and elevated and selfSafe and snap.now - lastPulse <= 0.1 then
       return true, target
     end
   end

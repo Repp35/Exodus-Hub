@@ -395,7 +395,7 @@ function Native.aim(point, dt, speed)
 end
 -- Native closures retain their sequence counters, cooldowns and placement validation.
 -- No fabricated attack packets or server acknowledgements are generated here.
-function Native.canAct(kind)
+function Native.canAct(kind, item)
   local now = os.clock()
   if kind == "anchor" then
     return now - math.max(dispatched.anchor or -math.huge, dispatched.Glowstone or -math.huge) >= 0.2
@@ -404,7 +404,7 @@ function Native.canAct(kind)
     return now - (dispatched.attack or -math.huge) >= 1 / 15
   end
   if kind == "use" then
-    local tool = Native.equipped()
+    local tool = item or Native.equipped()
     local class = tool and tool:GetAttribute("ClassItem")
     if not class then
       return false
