@@ -8,6 +8,7 @@ local miniBalls = {
   { title = "Auto Pearl", label = "PEARL", key = "MCAutoPearl", prefix = "MCPearlBall" },
   { title = "Auto Totem", label = "TOTEM", key = "MCAutoTotem", prefix = "MCTotemBall" },
   { title = "Reabastecer", label = "REFILL", key = "MCAutoRefill", prefix = "MCRefillBall" },
+  { title = "Stop PvP", label = "STOP\nPVP", action = "resetState", prefix = "MCStopPvPBall" },
 }
 GameUI.definition = {
   miniBalls = miniBalls,
@@ -84,7 +85,7 @@ for _, ball in ipairs(miniBalls) do
     kind = "toggle",
     title = "Mini " .. ball.title .. " UI",
     key = visibleKey,
-    description = "Mostra o botão de " .. ball.title .. ".",
+    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções." or "Mostra o botão de " .. ball.title .. ".",
     mobileOnly = true,
   }
 end

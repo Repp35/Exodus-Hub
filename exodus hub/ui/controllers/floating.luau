@@ -140,9 +140,20 @@ function Controller.create(context)
       local prefix = definition.prefix
       local visibleKey, xKey, yKey = prefix .. "Visible", prefix .. "X", prefix .. "Y"
       local key, label = definition.key, definition.label
+      local reset = definition.action == "resetState"
       local onText, offText = label .. "\nON", label .. "\nOFF"
-      local value = config[key] == true
+      if reset then
+        onText, offText = label, label
+      end
+      local value = key ~= nil and config[key] == true
       local ball = createMovementBall("Exodus" .. prefix, value and onText or offText, value and C.green or C.red, xKey, yKey, 0, function()
+        if reset then
+          GameInfo.resetState()
+          if context.notifications.toast then
+            context.notifications.toast("PvP encerrado.")
+          end
+          return
+        end
         local enabled = Utils.getConfigValue(key) ~= true
         if setConfigValue(key, enabled) and context.notifications.toast then
           context.notifications.toast(definition.title .. (enabled and " On" or " Off"))
@@ -157,7 +168,8 @@ function Controller.create(context)
         local view = viewport() / scale
         local gap = CLASH_SIZE + 8
         local x = math.min(14 + ((index - 1) % 2) * gap, math.max(0, view.X - CLASH_SIZE))
-        local y = math.clamp((view.Y - 3 * gap) / 2 + math.floor((index - 1) / 2) * gap, 0, math.max(0, view.Y - CLASH_SIZE))
+        local rows = math.ceil(#context.miniBalls / 2)
+        local y = math.clamp((view.Y - rows * gap) / 2 + math.floor((index - 1) / 2) * gap, 0, math.max(0, view.Y - CLASH_SIZE))
         showBall(ball, visible, visibleKey, xKey, yKey, x, y)
       end
       buttons[#buttons + 1] = {
@@ -180,7 +192,7 @@ function Controller.create(context)
       showUpDashBall = inactive,
       sync = function(changes)
         for _, button in ipairs(buttons) do
-          if changes[button.key] ~= nil then
+          if button.key and changes[button.key] ~= nil then
             button.paint(changes[button.key] == true)
           end
           if changes[button.visibleKey] ~= nil then
