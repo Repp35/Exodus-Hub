@@ -8,6 +8,16 @@ local original, held, lastPulse = nil, nil, -math.huge
 local blockSnapshot, blockCache
 local placed = {}
 local manualOverride = false
+local encounter
+local lastBase = -math.huge
+local function remember(char, mode, untilAt)
+  if not encounter or encounter.character ~= char then
+    encounter = { character = char, mode = mode, untilAt = untilAt }
+  else
+    encounter.mode = mode
+    encounter.untilAt = math.max(encounter.untilAt, untilAt)
+  end
+end
 local function blockKey(block) return block:GetAttribute("BlockKey") or string.lower(block.Name) end
 local function blocks(snap)
   if blockSnapshot == snap then
@@ -86,6 +96,7 @@ function Explosives.reset()
   Explosives.release()
   opportunities, templates, placed = {}, {}, {}
   manualOverride = false
+  encounter, lastBase = nil, -math.huge
   blockSnapshot, blockCache = nil, nil
   comboMode, comboAt, lastPulse = nil, -math.huge, -math.huge
 end
@@ -95,7 +106,19 @@ function Explosives.mark(object, time)
     opportunities[object] = nil
   end
 end
-function Explosives.mode() return os.clock() - comboAt < 2.5 and comboMode or nil end
+function Explosives.mode()
+  if encounter and os.clock() < encounter.untilAt and encounter.character.Parent and not manualOverride then
+    return encounter.mode
+  end
+  return os.clock() - comboAt < 2.5 and comboMode or nil
+end
+function Explosives.follow(snap, char, cfg)
+  if manualOverride or not encounter or encounter.character ~= char or snap.now >= encounter.untilAt then
+    return false
+  end
+  encounter.untilAt = snap.now + math.max(cfg("MCComboLifetime"), 12)
+  return true
+end
 function Explosives.clearCombo()
   Explosives.reset()
   manualOverride = true
@@ -134,6 +157,9 @@ function Explosives.observe(snap, targets, cfg)
         local entry = state(block)
         entry.manualUntil = math.max(entry.manualUntil or -math.huge, placed[block] + cfg("MCComboLifetime"))
         target.manualCombo = true
+        if key == "obsidian" then
+          remember(target.character, cfg("MCDTap") and "dtap" or "crystal", entry.manualUntil)
+        end
       end
       if target then
         chosen = chosen or target
@@ -169,6 +195,7 @@ function Explosives.struck(snap, target, cfg)
         entry.spent = false
         entry.manualUntil = snap.now + cfg("MCComboLifetime")
         comboMode, comboAt = "dtap", snap.now
+        remember(target.character, "dtap", entry.manualUntil)
       end
     end
   end
@@ -214,7 +241,18 @@ function Explosives.pulse(snap, targets, cfg)
     end
     local launch = cfg("MCDTap") and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
     local continuous = (elevated or launch) and geometry.damage(snap, snap.character, top, 6) <= 0
-    if not target and not launch then
+    if target and (target.root.Position - top).Magnitude > 12.8 then
+      target = nil
+    end
+    if not target and launch then
+      for _, other in ipairs(targets) do
+        if other.humanoid.Health > 0 and (other.root.Position - top).Magnitude <= 12.8 then
+          target = other
+          break
+        end
+      end
+    end
+    if not target then
       entry.spent = false
       continue
     end
@@ -246,6 +284,7 @@ function Explosives.pulse(snap, targets, cfg)
     if (continuous or not entry.spent) and native.canAct("use") then
       if native.action("use", top - Vector3.new(0, 0.03, 0)) then
         entry.spent, entry.untilAt = true, snap.now + 0.65
+        remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
         acted = true
       end
     end
@@ -264,6 +303,98 @@ function Explosives.pulse(snap, targets, cfg)
     Explosives.release()
   end
   return acted
+end
+function Explosives.resumeBase(snap, target, cfg)
+  if manualOverride or not encounter or snap.now >= encounter.untilAt or not target or target.character ~= encounter.character then
+    return nil
+  end
+  if not cfg("MCCrystal") and not cfg("MCDTap") then
+    return nil
+  end
+  if not target.character.Parent or target.humanoid.Health <= 0 or target.distance > 16 then
+    return nil
+  end
+  if not native.find("EndCrystal", true) then
+    return nil
+  end
+  local function useful(s, position)
+    local top = position + Vector3.new(0, 1.6, 0)
+    local delta = target.root.Position - top
+    local flat = Vector3.new(delta.X, 0, delta.Z)
+    return (top - s.eye).Magnitude <= 14.4 and flat.Magnitude <= 6.4 and delta.Y >= -0.32 and delta.Y <= 10.4
+  end
+  for _, block in ipairs(blocks(snap)) do
+    if blockKey(block) == "obsidian" and useful(snap, block.Position) then
+      state(block).manualUntil = encounter.untilAt
+      return nil
+    end
+  end
+  if snap.now - lastBase < 0.35 then
+    return nil
+  end
+  local item = native.find("obsidian", true)
+  if not item then
+    return nil
+  end
+  local ground = native.raycast(target.root.Position + Vector3.new(0, 1, 0), Vector3.new(0, -16, 0), { target.character })
+  if not ground or ground.Normal.Y < 0.99 then
+    return nil
+  end
+  local delta = snap.root.Position - target.root.Position
+  local flat = Vector3.new(delta.X, 0, delta.Z)
+  if flat.Magnitude < 0.01 then
+    return nil
+  end
+  local toward = flat.Unit * 3.2
+  local side = Vector3.new(-toward.Z, 0, toward.X)
+  local center = ground.Position + Vector3.new(0, 1.6, 0)
+  local planned, score
+  for _, offset in ipairs({ toward, side, -side, -toward }) do
+    local placement = geometry.placement(snap, center + offset)
+    if placement and useful(snap, placement.cell) then
+      local predicted = target.root.Position + target.root.AssemblyLinearVelocity * math.min(0.2, snap.ping or 0)
+      local value = (predicted - placement.cell).Magnitude + (snap.eye - placement.cell).Magnitude * 0.25
+      if not score or value < score then
+        planned, score = placement, value
+      end
+    end
+  end
+  if not planned then
+    return nil
+  end
+  local session = encounter
+  local function placedBase(s)
+    for _, block in ipairs(blocks(s)) do
+      if blockKey(block) == "obsidian" and (block.Position - planned.cell).Magnitude < 0.2 then
+        return block
+      end
+    end
+    return nil
+  end
+  return {
+    id = "crystal_follow_base",
+    feature = cfg("MCDTap") and "MCDTap" or "MCCrystal",
+    target = target.character,
+    priority = 76,
+    native = "place",
+    tool = item.tool,
+    delay = 0,
+    timeout = 0.5,
+    point = function() return planned.point end,
+    valid = function(s)
+      return encounter == session and not manualOverride and s.now < session.untilAt and target.humanoid.Health > 0
+        and useful(s, planned.cell) and geometry.cellFree(s, planned.cell)
+    end,
+    before = function(s) lastBase = s.now end,
+    confirm = function(s) return placedBase(s) ~= nil end,
+    success = function(s)
+      local block = placedBase(s)
+      if block and encounter == session then
+        state(block).manualUntil = session.untilAt
+        target.manualCombo = true
+      end
+    end,
+  }
 end
 function Explosives.defense() return nil end
 function Explosives.propose(snap, _, cfg, targets)
@@ -349,6 +480,21 @@ function Explosives.propose(snap, _, cfg, targets)
 end
 Explosives.__contract = {
   requires = { Native = "mcpnative", Geometry = "mcpgeometry" },
-  provides = { "setup", "reset", "mark", "mode", "clearCombo", "defense", "propose", "observe", "needsStrike", "struck", "pulse", "release" },
+  provides = {
+    "setup",
+    "reset",
+    "mark",
+    "mode",
+    "clearCombo",
+    "defense",
+    "propose",
+    "observe",
+    "needsStrike",
+    "struck",
+    "pulse",
+    "release",
+    "follow",
+    "resumeBase",
+  },
 }
 return Explosives

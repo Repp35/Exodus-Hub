@@ -272,7 +272,10 @@ local function pearl(snap)
         and planned ~= nil
     end,
     before = function(s) lastPearl = s.now end,
-    success = function()
+    success = function(s)
+      if explosives.follow(s, opponent, cfg) then
+        targeting.resume(opponent, s.now, math.max(cfg("MCComboLifetime"), 12))
+      end
       if enemyPearls[opponent] == enemyPearl then
         enemyPearls[opponent] = nil
       end
@@ -466,6 +469,13 @@ local function tick()
     return
   end
   if sword(snap, true) then
+    return
+  end
+  local base = explosives.resumeBase(snap, target, cfg)
+  if allowed(base) then
+    explosives.release()
+    start(base, snap)
+    advance(snap)
     return
   end
   local explosive = explosives.propose(snap, target, cfg, targeting.combatNearby(snap.now))

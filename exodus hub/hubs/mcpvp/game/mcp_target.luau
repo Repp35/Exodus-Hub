@@ -191,6 +191,14 @@ function Target.combatNearby(now)
   end
   return result
 end
+function Target.resume(char, now, duration)
+  local human = char.Parent and char:FindFirstChildOfClass("Humanoid")
+  if not human or human.Health <= 0 then
+    return
+  end
+  record(char).authorized = now + duration
+  current = char
+end
 function Target.lastHit(char) return record(char).dealt end
 function Target.update(snap, cfg)
   if character ~= snap.character then
@@ -274,6 +282,7 @@ Target.__contract = {
     "lastHit",
     "active",
     "combatNearby",
+    "resume",
   },
 }
 return Target
