@@ -10,6 +10,7 @@ local blockSnapshot, blockCache
 local placed = {}
 local manualOverride = false
 local encounter
+local lastBase = -math.huge
 local function remember(char, mode, untilAt)
   if not encounter or encounter.character ~= char then
     encounter = { character = char, mode = mode, untilAt = untilAt }
@@ -101,7 +102,7 @@ function Explosives.reset()
   Explosives.release()
   opportunities, templates, placed = {}, {}, {}
   manualOverride = false
-  encounter = nil
+  encounter, lastBase = nil, -math.huge
   blockSnapshot, blockCache = nil, nil
   comboMode, comboAt, lastPulse = nil, -math.huge, -math.huge
 end
@@ -236,8 +237,18 @@ function Explosives.pulse(snap, targets, cfg)
     end
     local entry = state(block)
     local target = candidate(snap, targets, top, 6)
-    local direct = target ~= nil
+    local elevated = false
+    -- Any airborne opponent exposed to this blast is eligible.
+    for _, other in ipairs(targets) do
+      if other.humanoid.Health > 0 and other.humanoid.FloorMaterial == Enum.Material.Air and geometry.damage(snap, other.character, top, 6) > 0 then
+        target, elevated = other, true
+        break
+      end
+    end
     local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
+    if target and not elevated and (target.root.Position - top).Magnitude > 12.8 then
+      target = nil
+    end
     if not target and launch then
       for _, other in ipairs(targets) do
         if other.humanoid.Health > 0 and (other.root.Position - top).Magnitude <= 12.8 then
@@ -251,9 +262,8 @@ function Explosives.pulse(snap, targets, cfg)
       continue
     end
     local crystal, point = crystalAt(snap, top)
-    -- Use the actual damage at this height; a sword launch can prepare a base before exposure.
-    local selfSafe = geometry.damage(snap, snap.character, point or top, 6) <= 0
-    if not (direct and selfSafe) and (not launch or crystal) then
+    -- Place immediately after the sword hit; wait for the airborne damage opportunity only when breaking.
+    if not elevated and (not launch or crystal) then
       continue
     end
     -- Match crystalPick in the game client: aim inside the native CrystalFeet box.
@@ -287,8 +297,10 @@ function Explosives.pulse(snap, targets, cfg)
     end
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
+    -- Self exposure must block detonation itself, not only replacement placement.
+    local selfSafe = geometry.damage(snap, snap.character, point or top, 6) <= 0
     local broke = false
-    if crystal and direct and selfSafe and native.canAct("attack") then
+    if crystal and elevated and selfSafe and native.canAct("attack") then
       if native.strike(hitPoint) then
         entry.spent, broke = true, true
         acted = true
@@ -305,7 +317,7 @@ function Explosives.pulse(snap, targets, cfg)
       lastPulse = snap.now
       return true, target
     end
-    if crystal and direct and selfSafe and snap.now - lastPulse <= 0.1 then
+    if crystal and elevated and selfSafe and snap.now - lastPulse <= 0.1 then
       return true, target
     end
   end
@@ -334,17 +346,21 @@ function Explosives.resumeBase(snap, target, cfg)
   if not target.character.Parent or target.humanoid.Health <= 0 or target.distance > 19.2 then
     return nil
   end
-  local crystalItem = native.find("EndCrystal", true)
-  if not crystalItem then
+  if not native.find("EndCrystal", true) then
     return nil
   end
-  local reach = native.stats(crystalItem.tool).reach
+  local crystalItem = native.find("EndCrystal", true)
   local function useful(s, position, planned)
     local top = position + Vector3.new(0, 1.6, 0)
     local current = target.root.Position
     local predicted = current + target.root.AssemblyLinearVelocity * math.clamp(s.ping or 0.05, 0.03, 0.12)
     local airborne = target.humanoid.FloorMaterial == Enum.Material.Air
     local function opportunity(point)
+      local delta = point - top
+      local flat = Vector3.new(delta.X, 0, delta.Z)
+      if flat.Magnitude > 6.4 or delta.Y < (airborne and 3.68 or -0.32) or delta.Y > 13.6 then
+        return 0
+      end
       return geometry.damage(s, target.character, top, 6, planned and position or nil, point)
     end
     if (top - s.eye).Magnitude > 14.4 then
@@ -354,13 +370,10 @@ function Explosives.resumeBase(snap, target, cfg)
     local aim = Vector3.new(math.clamp(s.eye.X, low.X + 0.05, high.X - 0.05), math.clamp(s.eye.Y, low.Y + 0.05, high.Y - 0.05), math.clamp(s.eye.Z, low.Z + 0.05, high.Z - 0.05))
     local direction = aim - s.eye
     local melee = native.data().geometry
-    if direction.Magnitude < 0.01 or not melee or not melee.Box or not melee.Box(s.eye, direction.Unit, low, high, reach) then
+    if direction.Magnitude < 0.01 or not melee or not melee.Box or not melee.Box(s.eye, direction.Unit, low, high, native.stats(crystalItem.tool).reach) then
       return nil
     end
-    local damage = opportunity(current)
-    if damage <= 0 and (predicted - current).Magnitude > 0.05 then
-      damage = opportunity(predicted)
-    end
+    local damage = math.max(opportunity(current), opportunity(predicted))
     if damage <= 0 then
       return nil
     end
@@ -371,12 +384,22 @@ function Explosives.resumeBase(snap, target, cfg)
     return damage - selfDamage * 0.25 - (predicted - top).Magnitude * 0.1
   end
   -- Reuse one viable base; select only one new cell when no existing base works.
+  local bestBlock, bestScore
   for _, block in ipairs(blocks(snap)) do
-    if blockKey(block) == "obsidian" and useful(snap, block.Position, false) then
-      state(block).manualUntil = encounter.untilAt
-      target.manualCombo = true
-      return nil
+    if blockKey(block) == "obsidian" then
+      local value = useful(snap, block.Position, false)
+      if value and (not bestScore or value > bestScore) then
+        bestBlock, bestScore = block, value
+      end
     end
+  end
+  if bestBlock then
+    state(bestBlock).manualUntil = encounter.untilAt
+    target.manualCombo = true
+    return nil
+  end
+  if snap.now - lastBase < 0.08 then
+    return nil
   end
   local item = native.find("obsidian", true)
   if not item then
@@ -403,14 +426,6 @@ function Explosives.resumeBase(snap, target, cfg)
     return nil
   end
   local session = encounter
-  local checkedSnapshot, checkedValid = snap, true
-  local function plannedValid(s)
-    if checkedSnapshot ~= s then
-      checkedSnapshot = s
-      checkedValid = geometry.cellFree(s, planned.cell) and useful(s, planned.cell, true) ~= nil
-    end
-    return checkedValid
-  end
   local function placedBase(s)
     for _, block in ipairs(blocks(s)) do
       if blockKey(block) == "obsidian" and (block.Position - planned.cell).Magnitude < 0.2 then
@@ -435,8 +450,10 @@ function Explosives.resumeBase(snap, target, cfg)
         and not manualOverride
         and s.now < session.untilAt
         and target.humanoid.Health > 0
-        and plannedValid(s)
+        and useful(s, planned.cell, true) ~= nil
+        and geometry.cellFree(s, planned.cell)
     end,
+    before = function(s) lastBase = s.now end,
     confirm = function(s) return placedBase(s) ~= nil end,
     success = function(s)
       local block = placedBase(s)
