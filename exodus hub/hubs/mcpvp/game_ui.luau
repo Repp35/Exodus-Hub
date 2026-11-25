@@ -9,16 +9,8 @@ GameUI.definition = {
       title = "MCPvP",
       columns = 2,
       sections = {
-        { title = "Inventário", column = 2, components = {
-          { kind = "toggle", title = "Reabastecer hotbar", key = "MCAutoRefill", description = "Abre o inventário e repõe cada item esgotado no mesmo slot." },
-        } },
         {
-          title = "Totem",
-          column = 1,
-          components = { { kind = "toggle", title = "Auto Totem", key = "MCAutoTotem", description = "Prioriza a hotbar, abre o inventário para acessar reservas e preenche espaços vazios." } },
-        },
-        {
-          title = "Espada",
+          title = "Combate",
           column = 1,
           components = {
             {
@@ -27,13 +19,44 @@ GameUI.definition = {
               key = "MCAutoSword",
               description = "Inicie com dois ataques no alvo. Mantém mira e ritmo dos golpes.",
             },
-            { kind = "toggle", title = "Auto Crit", key = "MCAutoCrit", parentKey = "MCAutoSword", description = "Sincroniza o pulo com o cooldown e prioriza golpes durante a descida." },
+            {
+              kind = "toggle",
+              title = "Auto Crit",
+              key = "MCAutoCrit",
+              parentKey = "MCAutoSword",
+              description = "Sincroniza o pulo com o cooldown e prioriza golpes durante a descida.",
+            },
           },
         },
         {
-          title = "Pérola",
+          title = "Assistência",
           column = 2,
-          components = { { kind = "toggle", title = "Auto Pearl", key = "MCAutoPearl", description = "Acompanha o alvo da luta quando ele sai do alcance." } },
+          components = {
+            {
+              kind = "toggle",
+              title = "Auto Pearl",
+              key = "MCAutoPearl",
+              description = "Ajuda a alcançar o alvo. Perseguição longa apenas em servidor privado com poucos jogadores.",
+            },
+            {
+              kind = "toggle",
+              title = "Auto Totem",
+              key = "MCAutoTotem",
+              description = "Prioriza a hotbar, abre o inventário para acessar reservas e preenche espaços vazios.",
+            },
+          },
+        },
+        {
+          title = "Inventário",
+          column = 1,
+          components = {
+            {
+              kind = "toggle",
+              title = "Reabastecer hotbar",
+              key = "MCAutoRefill",
+              description = "Abre o inventário e repõe cada item esgotado no mesmo slot.",
+            },
+          },
         },
       },
     },
