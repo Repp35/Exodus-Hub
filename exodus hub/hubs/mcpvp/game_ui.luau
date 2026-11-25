@@ -36,7 +36,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Ajuda a alcançar o alvo. Perseguição longa apenas com até quatro jogadores no servidor.",
+              description = "Segue fugas próximas e médias; reserva distâncias maiores para servidores com até quatro jogadores.",
             },
             {
               kind = "toggle",

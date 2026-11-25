@@ -24,7 +24,7 @@ local function candidate(other, snap)
   local human = char and char:FindFirstChildOfClass("Humanoid")
   local root = char and char:FindFirstChild("HumanoidRootPart")
   if not root or not human or human.Health <= 0 or char:FindFirstChildOfClass("ForceField") then return nil end
-  if (root.Position - snap.root.Position).Magnitude > ((heldCharacter == char and snap.now < heldUntil) and math.huge or tuning.maxRange) then return nil end
+  if (root.Position - snap.root.Position).Magnitude > ((heldCharacter == char and snap.now < heldUntil) and math.huge or (char == (current and current.character) and 64 * 3.2 or tuning.maxRange)) then return nil end
   return { player = other, character = char, root = root, humanoid = human }
 end
 local function closeVisible(snap, other)
@@ -151,7 +151,7 @@ function Target.get(snap)
   if fresh and fresh.character ~= current.character then fresh = nil end
   local immediate = Target.nearThreat(snap)
   local currentClose = fresh and closeVisible(snap, fresh)
-  if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character and not Target.finishPriority(snap, fresh))) then
+  if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character)) then
     current, contact, switchedAt = immediate, snap.now, snap.now
     heldCharacter, heldUntil, pending, clicks = nil, 0, nil, 0
     return current
