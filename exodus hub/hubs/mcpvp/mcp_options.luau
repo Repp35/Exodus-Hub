@@ -6,7 +6,7 @@ Options.__config = {
   schema = { MCAutoStrength = "boolean", MCAutoCrit = "boolean", MCAutoSword = "boolean", MCAutoPearl = "boolean", MCAutoRefill = "boolean", MCAutoTotem = "boolean" },
 }
 Options.tuning =
-  { acquireAngle = 24, clickWindow = 0.65, clicksToStart = 2, targetMemory = 3, maxRange = 96, aimRange = 16, aimSpeed = 240, threatWindow = 3, }
+  { acquireAngle = 24, clickWindow = 0.65, clicksToStart = 2, targetMemory = 3, maxRange = 96, aimRange = 16, aimSpeed = 240, threatWindow = 10, }
 function Options.setup() return true end
 Options.__contract = { provides = { "setup" }, data = { "tuning" }, requires = {} }
 return Options

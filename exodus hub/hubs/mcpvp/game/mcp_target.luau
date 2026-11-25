@@ -96,7 +96,6 @@ function Target.observe(snap)
   local health = snap.humanoid.Health
   if lastHealth and health < lastHealth then hurtAt = snap.now end
   lastHealth = health
-  if not current then return end
   for char, time in pairs(swings) do
     if not char.Parent or snap.now - time > tuning.threatWindow then swings[char] = nil end
   end
@@ -106,7 +105,7 @@ function Target.observe(snap)
   for _, other in ipairs(players:GetPlayers()) do
     local threat = candidate(other, snap)
     local swing = threat and swings[threat.character]
-    if not threat or not swing or snap.now - swing > 0.5 or not closeVisible(snap, threat) then continue end
+    if not threat or not swing or snap.now - swing > 0.5 or (threat.root.Position - snap.root.Position).Magnitude > 16 or not native.visible(snap, threat.root.Position, threat.character) then continue end
     local tool = threat.character:FindFirstChildOfClass("Tool")
     local stats = native.stats(tool)
     if stats.type ~= "sword" and stats.type ~= "axe" and stats.type ~= "mace" then continue end
@@ -116,7 +115,7 @@ function Target.observe(snap)
     local forward = Vector3.new(facing.X, 0, facing.Z)
     if horizontal.Magnitude < 0.01 or forward.Magnitude < 0.01 then continue end
     if incoming.Magnitude > stats.reach + 1.6 or horizontal.Unit:Dot(forward.Unit) < 0.35 then continue end
-    if not native.incomingHit(snap, threat) then continue end
+    if not native.incomingHit(snap, threat) and math.abs(hurtAt - swing) > 0.4 then continue end
     -- Proximity alone is not evidence of an attacker. Require a recent swing facing us.
     threats[threat.character] = { time = swing, hurt = math.abs(hurtAt - swing) <= 0.5 }
   end
@@ -143,12 +142,12 @@ function Target.manual(snap)
     heldCharacter, heldUntil = chosen.character, math.huge
   end
 end
-function Target.nearThreat(snap)
+function Target.nearThreat(snap, excluded)
   local best, score
   for _, other in ipairs(players:GetPlayers()) do
     local challenger = candidate(other, snap)
     local entry = challenger and threats[challenger.character]
-    if challenger and not native.aerialMace(snap, challenger) and entry and snap.now - entry.time <= tuning.threatWindow
+    if challenger and challenger.character ~= excluded and not native.aerialMace(snap, challenger) and entry and snap.now - entry.time <= tuning.threatWindow
       and (challenger.root.Position - snap.root.Position).Magnitude <= 16
       and native.visible(snap, challenger.root.Position, challenger.character) then
       local value = entry.time + (entry.hurt and 0.4 or 0) - (challenger.root.Position - snap.root.Position).Magnitude * 0.02
@@ -181,10 +180,12 @@ function Target.get(snap)
   if not current then return nil end
   local fresh = candidate(current.player, snap)
   if fresh and fresh.character ~= current.character then fresh = nil end
-  local immediate = Target.nearThreat(snap)
   local aerialMace = fresh and native.aerialMace(snap, fresh)
   local currentClose = fresh and not aerialMace and closeVisible(snap, fresh)
+  local immediate = Target.nearThreat(snap, fresh and not currentClose and fresh.character or nil)
   if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character)) then
+    if fresh then threats[fresh.character], swings[fresh.character] = nil, nil end
+    escapes, attempt = nil, nil
     current, contact, switchedAt = immediate, snap.now, snap.now
     heldCharacter, heldUntil, pending, clicks = nil, 0, nil, 0
     return current
