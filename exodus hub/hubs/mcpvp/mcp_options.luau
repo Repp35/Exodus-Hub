@@ -7,7 +7,7 @@ Options.groups = {
     title = "Alvo e mira",
     items = {
       { key = "MCEnabled", title = "Assistentes ativos", default = false },
-      { key = "MCAim", title = "Priorizar alvo próximo da mira", default = false },
+      { key = "MCAim", title = "Aim Lock de espada", default = false },
     },
   },
   {

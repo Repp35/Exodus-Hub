@@ -379,6 +379,20 @@ function Native.visible(origin, point, target)
   local hit = Native.raycast(origin, delta)
   return not hit or hit.Distance >= delta.Magnitude - 0.15 or (target and (hit.Instance == target or hit.Instance:IsDescendantOf(target)))
 end
+function Native.aim(point, dt, speed)
+  local camera = world.CurrentCamera
+  if not camera then
+    return false
+  end
+  local delta = point - camera.CFrame.Position
+  if delta.Magnitude < 0.01 then
+    return false
+  end
+  local angle = math.acos(math.clamp(camera.CFrame.LookVector:Dot(delta.Unit), -1, 1))
+  local alpha = angle < 0.001 and 1 or math.min(1, math.rad(speed) * dt / angle)
+  camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(camera.CFrame.Position, point), alpha)
+  return angle <= math.rad(2)
+end
 -- Native closures retain their sequence counters, cooldowns and placement validation.
 -- No fabricated attack packets or server acknowledgements are generated here.
 function Native.canAct(kind)
@@ -573,6 +587,7 @@ Native.__contract = {
     "snapshot",
     "raycast",
     "visible",
+    "aim",
     "action",
     "strike",
     "observeAttacks",

@@ -533,6 +533,36 @@ function Coordinator.start()
       end
     end
   end)
+  scope.connect(utils.getRunService().RenderStepped, function(dt)
+    if not cfg("MCEnabled") or not cfg("MCAim") or not focused or active or os.clock() < pauseUntil then
+      return
+    end
+    if not target or not target.engaged or not target.character.Parent or target.humanoid.Health <= 0 or explosives.mode() then
+      return
+    end
+    local snap = native.snapshot()
+    if not snap or not latest or snap.character ~= latest.character or native.stats(snap.equipped).type ~= "sword" then
+      return
+    end
+    if
+      native.usingHeld()
+      or snap.player:GetAttribute("OffhandUsing") == true
+      or snap.character:GetAttribute("EatingApple")
+      or snap.character:GetAttribute("DrinkingPotion")
+      or snap.character:GetAttribute("BowDrawStarted")
+    then
+      return
+    end
+    if
+      (target.root.Position - snap.root.Position).Magnitude > cfg("MCSwordLockRange") * 3.2
+      or not native.visible(snap.eye, target.root.Position, target.character)
+      or explosives.needsStrike(snap, target, cfg)
+    then
+      return
+    end
+    -- Only the optional sword lock changes the view; explosive actions keep their silent directions.
+    native.aim(targeting.point(snap, target, cfg("MCAimTolerance")), dt, cfg("MCAimSpeed"))
+  end)
   local storage = game:GetService("ReplicatedStorage")
   local remotes = storage:FindFirstChild("Remotes")
   local event = remotes and remotes:FindFirstChild("ItemAction")

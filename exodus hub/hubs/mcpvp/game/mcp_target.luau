@@ -189,7 +189,7 @@ function Target.update(snap, cfg)
     if not candidate.engaged and (candidate.angle > cfg("MCAcquireFov") or not candidate.visible) then
       continue
     end
-    local value = candidate.distance / 50 + candidate.angle / (cfg("MCAim") and 90 or 360)
+    local value = candidate.distance / 50 + candidate.angle / 180
     if candidate.duel then
       value -= 3
     end
