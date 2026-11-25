@@ -72,7 +72,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Só lança com alvo visível, trajetória de interceptação validada e mira alinhada. Desiste se a previsão ficar incerta.",
+              description = "Ao sair do alcance de dano, alinha e lança no mesmo frame disponível, com alvo visível e previsão direta do movimento.",
             },
             {
               kind = "toggle",

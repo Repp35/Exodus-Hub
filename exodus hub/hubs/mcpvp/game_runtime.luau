@@ -126,7 +126,6 @@ function Runtime.bind(loaded)
     end
     watchManual(snap)
     loaded.mcptarget.observe(snap)
-    loaded.autopearl.observe(snap)
     loaded.autostrength.observe(snap)
     loaded.autorefill.observe(snap)
     loaded.autototem.protect(snap)
@@ -152,11 +151,6 @@ function Runtime.bind(loaded)
       loaded.autocrit.reset()
       return
     end
-    loaded.autototem.step(snap)
-    if loaded.autototem.busy() then
-      loaded.autocrit.reset()
-      return
-    end
     if not combatEnabled() then
       loaded.autopearl.reset()
       loaded.autoattacksword.reset()
@@ -172,6 +166,11 @@ function Runtime.bind(loaded)
       loaded.autopearl.reset()
     end
     if loaded.autopearl.busy() then
+      loaded.autocrit.reset()
+      return
+    end
+    loaded.autototem.step(snap)
+    if loaded.autototem.busy() then
       loaded.autocrit.reset()
       return
     end
