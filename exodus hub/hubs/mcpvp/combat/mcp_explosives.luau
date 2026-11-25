@@ -251,9 +251,6 @@ function Explosives.pulse(snap, targets, cfg)
       end
     end
     local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
-    if target and target.humanoid.FloorMaterial ~= Enum.Material.Air then
-      entry.airPlaced = false
-    end
     if target and (target.root.Position - top).Magnitude > 12.8 then
       target = nil
     end
@@ -271,9 +268,6 @@ function Explosives.pulse(snap, targets, cfg)
     end
     local crystal, point = crystalAt(snap, top)
     if not elevated then
-      continue
-    end
-    if entry.airPlaced and not crystal then
       continue
     end
     -- Match crystalPick in the game client: aim inside the native CrystalFeet box.
@@ -307,17 +301,18 @@ function Explosives.pulse(snap, targets, cfg)
     end
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
-    -- Break the observed crystal first; empty swings waste the native attack interval.
+    -- Keep alternating while the same damaging opportunity remains available.
+    local broke = false
     if crystal and native.canAct("attack") then
       if native.strike(hitPoint) then
-        entry.spent, entry.airPlaced = true, true
+        entry.spent, broke = true, true
         acted = true
       end
     end
-    -- Place once per airborne opportunity; wait for the next landing before placing again.
-    if not entry.airPlaced and not crystal and native.canAct("use") then
+    local selfSafe = geometry.damage(snap, snap.character, top, 6) <= 0
+    if (not entry.spent or selfSafe) and (not crystal or broke) and native.canAct("use") then
       if native.action("use", top - Vector3.new(0, 0.03, 0)) then
-        entry.spent, entry.airPlaced, entry.untilAt = true, true, snap.now + 0.65
+        entry.spent, entry.untilAt = true, snap.now + 0.65
         remember(target.character, comboMode, snap.now + cfg("MCComboLifetime"))
         acted = true
       end
