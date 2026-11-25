@@ -2,8 +2,8 @@
 --!optimize 2
 local Options = {}
 Options.__config = {
-  defaults = { MCAutoStrength = true, MCAutoCrit = true, MCAutoSword = true, MCAutoPearl = true, MCAutoRefill = true, MCAutoTotem = true },
-  schema = { MCAutoStrength = "boolean", MCAutoCrit = "boolean", MCAutoSword = "boolean", MCAutoPearl = "boolean", MCAutoRefill = "boolean", MCAutoTotem = "boolean" },
+  defaults = { MCAimLock = true, MCAimAssist = true, MCAimStrength = 100, MCAutoStrength = true, MCAutoCrit = true, MCAutoSword = true, MCAutoPearl = true, MCAutoRefill = true, MCAutoTotem = true },
+  schema = { MCAimLock = "boolean", MCAimAssist = "boolean", MCAimStrength = "rate", MCAutoStrength = "boolean", MCAutoCrit = "boolean", MCAutoSword = "boolean", MCAutoPearl = "boolean", MCAutoRefill = "boolean", MCAutoTotem = "boolean" },
 }
 Options.tuning =
   { acquireAngle = 24, clickWindow = 0.65, clicksToStart = 2, targetMemory = 3, maxRange = 96, aimRange = 16, aimSpeed = 240, threatWindow = 10, }

@@ -2,7 +2,9 @@
 --!optimize 2
 local GameUI = {}
 local miniBalls = {
-  { title = "Sword", label = "SWORD", key = "MCAutoSword", prefix = "MCSwordBall" },
+  { title = "Aim Lock", label = "LOCK", key = "MCAimLock", prefix = "MCAimLockBall" },
+  { title = "Aim Assist", label = "ASSIST", key = "MCAimAssist", prefix = "MCAimAssistBall" },
+  { title = "Auto Attack", label = "ATTACK", key = "MCAutoSword", prefix = "MCSwordBall" },
   { title = "Auto Crit", label = "CRIT", key = "MCAutoCrit", prefix = "MCCritBall" },
   { title = "Auto Força", label = "FORÇA", key = "MCAutoStrength", prefix = "MCStrengthBall" },
   { title = "Auto Pearl", label = "PEARL", key = "MCAutoPearl", prefix = "MCPearlBall" },
@@ -25,17 +27,25 @@ GameUI.definition = {
           components = {
             {
               kind = "toggle",
-              title = "Sword + Aim Assist / Aim Lock",
+              title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie com dois ataques no alvo. Mantém mira e ritmo dos golpes.",
+              description = "Inicie com dois ataques no alvo. Controla os golpes com a lógica antiga, sem ligar a mira.",
             },
             {
               kind = "toggle",
               title = "Auto Crit",
               key = "MCAutoCrit",
-              parentKey = "MCAutoSword",
               description = "Sincroniza o pulo com o cooldown e prioriza golpes durante a descida.",
             },
+          },
+        },
+        {
+          title = "Mira",
+          column = 2,
+          components = {
+            { kind = "toggle", title = "Aim Lock", key = "MCAimLock", description = "Lógica de mira antiga em módulo próprio. Funciona sem Auto Attack." },
+            { kind = "toggle", title = "Aim Assist", key = "MCAimAssist", description = "Assistência leve do jogo em módulo próprio, até 16 studs." },
+            { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
           },
         },
         {

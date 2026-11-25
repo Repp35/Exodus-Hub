@@ -12,6 +12,7 @@ function Runtime.reset()
   modules.autototem.reset()
   modules.autopearl.reset()
   modules.autoattacksword.reset()
+  modules.autocrit.reset()
   modules.mcptarget.reset()
 end
 function Runtime.teardown()
@@ -33,8 +34,13 @@ function Runtime.bind(loaded)
   if not ok then
     controller = nil
   end
+  local function combatEnabled()
+    return loaded.utils.getConfigValue("MCAutoSword") or loaded.utils.getConfigValue("MCAimLock")
+      or loaded.utils.getConfigValue("MCAimAssist") or loaded.utils.getConfigValue("MCAutoPearl")
+      or loaded.utils.getConfigValue("MCAutoCrit")
+  end
   local function click(event, processed)
-    if loaded.mcpnative.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") then
+    if loaded.mcpnative.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not combatEnabled() then
       return
     end
     local matches = controller and type(controller.Matches) == "function" and controller.Matches(event, "Attack")
@@ -78,6 +84,8 @@ function Runtime.bind(loaded)
       Runtime.reset()
       return
     end
+    loaded.mcptarget.observe(snap)
+    loaded.autostrength.observe(snap)
     loaded.autorefill.observe(snap)
     if loaded.autostrength.busy() then loaded.autostrength.step(snap) return end
     if loaded.autorefill.busy() then loaded.autorefill.step(snap) return end
@@ -87,14 +95,13 @@ function Runtime.bind(loaded)
     if loaded.autostrength.busy() then return end
     if not loaded.autopearl.busy() then loaded.autorefill.step(snap) end
     if loaded.autorefill.busy() then return end
-    if not loaded.utils.getConfigValue("MCAutoSword") then
+    if not combatEnabled() then
       loaded.autopearl.reset()
       loaded.autoattacksword.reset()
       loaded.mcptarget.reset()
       return
     end
     bindSwing()
-    loaded.mcptarget.observe(snap)
     local target = loaded.mcptarget.get(snap)
     if not target then
       loaded.autoattacksword.reset()
@@ -110,7 +117,10 @@ function Runtime.bind(loaded)
       if not loaded.autopearl.busy() then
         local fresh = loaded.mcpnative.snapshot()
         local activeTarget = fresh and loaded.mcptarget.get(fresh)
-        if fresh and activeTarget then loaded.autoattacksword.step(fresh, activeTarget) end
+        if fresh and activeTarget then
+          if loaded.utils.getConfigValue("MCAutoSword") then loaded.autoattacksword.step(fresh, activeTarget)
+          else loaded.autoattacksword.reset() loaded.autocrit.step(fresh, activeTarget) end
+        end
       end
     end)
     if not success then
@@ -119,13 +129,14 @@ function Runtime.bind(loaded)
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
-    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autototem.busy() or loaded.autorefill.busy() or loaded.autostrength.busy() then
+    if not loaded.utils.isActive() or not (loaded.utils.getConfigValue("MCAimLock") or loaded.utils.getConfigValue("MCAimAssist")) or loaded.autototem.busy() or loaded.autorefill.busy() or loaded.autostrength.busy() then
       return
     end
     local snap = loaded.mcpnative.snapshot()
     local target = snap and loaded.mcptarget.get(snap)
     if target then
-      loaded.autoattacksword.aim(snap, target, dt)
+      if loaded.utils.getConfigValue("MCAimLock") then loaded.aimlock.step(snap, target, dt) end
+      if loaded.utils.getConfigValue("MCAimAssist") then loaded.aimassist.step(snap, target, dt) end
     end
   end)
   return { mode = "mcpvp" }

@@ -100,8 +100,18 @@ function Crit.ready(snap, chosen, tool, readyAt)
   -- If a jump cannot start, do not stall normal combat.
   return grounded(snap) or snap.now < fallbackUntil
 end
+function Crit.step(snap, chosen)
+  Crit.observe(snap)
+  if not chosen or not utils.getConfigValue("MCAutoCrit") then return end
+  local tool = snap.tool
+  local stats = native.stats(tool)
+  if stats.type ~= "sword" or not stats.speed or stats.speed <= 0 then return end
+  local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or snap.now
+  if snap.now - lastSwing > 1.5 then return end
+  Crit.plan(snap, chosen, tool, lastSwing + 1 / stats.speed)
+end
 Crit.__contract = {
-  provides = { "setup", "reset", "observe", "plan", "ready" },
+  provides = { "setup", "reset", "observe", "plan", "ready", "step" },
   requires = { Native = "mcpnative", Utils = "utils" },
   requiresMethods = { Native = { "prepareCritical", "stats", "blocked" }, Utils = { "getConfigValue", "isActive", "getLocalPlayer" } },
 }
