@@ -92,6 +92,7 @@ Options.tuning = {
   MCPotionRetry = 1.2,
   MCAppleHealth = 55,
   MCAppleCombat = false,
+  MCApplePostCombatDelay = 3,
   MCMaxSelfDamage = 8,
   MCDamageMargin = 2,
   MCHealthReserve = 25,
