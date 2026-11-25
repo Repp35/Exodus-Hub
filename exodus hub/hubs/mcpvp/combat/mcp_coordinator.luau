@@ -130,7 +130,12 @@ local function advance(snap)
       end
       backoff[job.id] = snap.now
       cancel("Concluído: " .. job.id)
-      if job.id == "anchor_charge" then
+      if job.id == "crystal_follow_base" then
+        local fresh = native.snapshot()
+        if fresh then
+          explosives.pulse(fresh, targeting.combatNearby(fresh.now), cfg)
+        end
+      elseif job.id == "anchor_charge" then
         local fresh = native.snapshot()
         if fresh then
           local follow = explosives.propose(fresh, target, cfg, targeting.combatNearby(fresh.now))
@@ -450,7 +455,7 @@ local function sword(snap, forCombo)
     return false
   end
   if forCombo and previous ~= weapon and not swordPending then
-    swordPending = { previous = previous, weapon = weapon, character = chosen.character, ready = snap.now + 0.08 }
+    swordPending = { previous = previous, weapon = weapon, character = chosen.character, ready = snap.now + 0.02 }
     return true
   end
   swordPending = nil
@@ -569,14 +574,26 @@ local function tick()
     advance(snap)
     return
   end
-  if sword(snap, true) then
-    return
+  -- Resolve an airborne crystal window before starting another sword swing.
+  if not swordPending then
+    local pulsing, victim = explosives.pulse(snap, targeting.combatNearby(snap.now), cfg)
+    if pulsing then
+      if victim then targeting.hold(victim.character, snap.now) end
+      status = "Combo de cristais"
+      return
+    end
+    local base = explosives.resumeBase(snap, target, cfg)
+    if allowed(base) then
+      explosives.release()
+      local fresh = native.snapshot()
+      if fresh then
+        start(base, fresh)
+        advance(fresh)
+      end
+      return
+    end
   end
-  local base = explosives.resumeBase(snap, target, cfg)
-  if allowed(base) then
-    explosives.release()
-    start(base, snap)
-    advance(snap)
+  if sword(snap, true) then
     return
   end
   local explosive = explosives.propose(snap, target, cfg, targeting.combatNearby(snap.now))
@@ -594,14 +611,6 @@ local function tick()
     explosives.release()
     start(pursuit, snap)
     advance(snap)
-    return
-  end
-  local pulsing, victim = explosives.pulse(snap, targeting.combatNearby(snap.now), cfg)
-  if pulsing then
-    if victim then
-      targeting.hold(victim.character, snap.now)
-    end
-    status = "Combo de cristais"
     return
   end
   local proposal = choose(emergency, explosive)

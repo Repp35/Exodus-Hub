@@ -317,7 +317,7 @@ function Explosives.pulse(snap, targets, cfg)
       lastPulse = snap.now
       return true, target
     end
-    if crystal and snap.now - lastPulse <= 0.1 then
+    if crystal and elevated and selfSafe and snap.now - lastPulse <= 0.1 then
       return true, target
     end
   end
@@ -329,14 +329,13 @@ end
 function Explosives.resumeBase(snap, target, cfg)
   if
     not manualOverride
-    and cfg("MCCrystal")
-    and cfg("MCCrystalAutoCombo")
+    and (cfg("MCDTap") or (cfg("MCCrystal") and cfg("MCCrystalAutoCombo")))
     and target
     and target.engaged
     and target.character.Parent
     and target.humanoid.Health > 0
   then
-    remember(target.character, "crystal", snap.now + cfg("MCComboLifetime"))
+    remember(target.character, cfg("MCDTap") and "dtap" or "crystal", snap.now + cfg("MCComboLifetime"))
   end
   if manualOverride or not encounter or snap.now >= encounter.untilAt or not target or target.character ~= encounter.character then
     return nil
@@ -350,45 +349,76 @@ function Explosives.resumeBase(snap, target, cfg)
   if not native.find("EndCrystal", true) then
     return nil
   end
-  local function useful(s, position)
+  local crystalItem = native.find("EndCrystal", true)
+  local function useful(s, position, planned)
     local top = position + Vector3.new(0, 1.6, 0)
-    local delta = target.root.Position - top
-    local flat = Vector3.new(delta.X, 0, delta.Z)
-    return (top - s.eye).Magnitude <= 14.4 and flat.Magnitude <= 6.4 and delta.Y >= -0.32 and delta.Y <= 10.4
-  end
-  for _, block in ipairs(blocks(snap)) do
-    if blockKey(block) == "obsidian" and useful(snap, block.Position) then
-      state(block).manualUntil = encounter.untilAt
+    local current = target.root.Position
+    local predicted = current + target.root.AssemblyLinearVelocity * math.clamp(s.ping or 0.05, 0.03, 0.12)
+    local airborne = target.humanoid.FloorMaterial == Enum.Material.Air
+    local function opportunity(point)
+      local delta = point - top
+      local flat = Vector3.new(delta.X, 0, delta.Z)
+      if flat.Magnitude > 6.4 or delta.Y < (airborne and 3.68 or -0.32) or delta.Y > 13.6 then
+        return 0
+      end
+      return geometry.damage(s, target.character, top, 6, planned and position or nil, point)
+    end
+    if (top - s.eye).Magnitude > 14.4 then
       return nil
     end
+    local low, high = top - Vector3.new(3.2, 0, 3.2), top + Vector3.new(3.2, 6.4, 3.2)
+    local aim = Vector3.new(math.clamp(s.eye.X, low.X + 0.05, high.X - 0.05), math.clamp(s.eye.Y, low.Y + 0.05, high.Y - 0.05), math.clamp(s.eye.Z, low.Z + 0.05, high.Z - 0.05))
+    local direction = aim - s.eye
+    local melee = native.data().geometry
+    if direction.Magnitude < 0.01 or not melee or not melee.Box or not melee.Box(s.eye, direction.Unit, low, high, native.stats(crystalItem.tool).reach) then
+      return nil
+    end
+    local damage = math.max(opportunity(current), opportunity(predicted))
+    if damage <= 0 then
+      return nil
+    end
+    local selfDamage = geometry.damage(s, s.character, top, 6, planned and position or nil)
+    if airborne and selfDamage > 0 then
+      return nil
+    end
+    return damage - selfDamage * 0.25 - (predicted - top).Magnitude * 0.1
   end
-  if snap.now - lastBase < 0.35 then
+  -- Reuse one viable base; select only one new cell when no existing base works.
+  local bestBlock, bestScore
+  for _, block in ipairs(blocks(snap)) do
+    if blockKey(block) == "obsidian" then
+      local value = useful(snap, block.Position, false)
+      if value and (not bestScore or value > bestScore) then
+        bestBlock, bestScore = block, value
+      end
+    end
+  end
+  if bestBlock then
+    state(bestBlock).manualUntil = encounter.untilAt
+    target.manualCombo = true
+    return nil
+  end
+  if snap.now - lastBase < 0.08 then
     return nil
   end
   local item = native.find("obsidian", true)
   if not item then
     return nil
   end
-  local ground = native.raycast(target.root.Position + Vector3.new(0, 1, 0), Vector3.new(0, -16, 0), { target.character })
-  if not ground or ground.Normal.Y < 0.99 then
-    return nil
-  end
-  local delta = snap.root.Position - target.root.Position
-  local flat = Vector3.new(delta.X, 0, delta.Z)
-  if flat.Magnitude < 0.01 then
-    return nil
-  end
-  local toward = flat.Unit * 3.2
-  local side = Vector3.new(-toward.Z, 0, toward.X)
-  local center = ground.Position + Vector3.new(0, 1.6, 0)
+  local predicted = target.root.Position + target.root.AssemblyLinearVelocity * math.clamp(snap.ping or 0.05, 0.03, 0.12)
+  local center = geometry.snap(predicted)
   local planned, score
-  for _, offset in ipairs({ toward, toward * 2, side, -side, -toward }) do
-    local placement = geometry.placement(snap, center + offset)
-    if placement and useful(snap, placement.cell) then
-      local predicted = target.root.Position + target.root.AssemblyLinearVelocity * math.min(0.2, snap.ping or 0)
-      local value = (predicted - placement.cell).Magnitude + (snap.eye - placement.cell).Magnitude * 0.25
-      if not score or value < score then
-        planned, score = placement, value
+  -- Raycast each column independently so the target's height and ledges matter.
+  for x = -1, 1 do
+    for z = -1, 1 do
+      local column = Vector3.new(center.X + x * 3.2, predicted.Y + 1, center.Z + z * 3.2)
+      local ground = native.raycast(column, Vector3.new(0, -17, 0), { target.character })
+      if ground and ground.Normal.Y > 0.99 then
+        local placement = geometry.placement(snap, ground.Position + Vector3.new(0, 1.6, 0))
+        local value = placement and useful(snap, placement.cell, true)
+        if value and (not score or value > score) then
+          planned, score = placement, value
+        end
       end
     end
   end
@@ -412,14 +442,15 @@ function Explosives.resumeBase(snap, target, cfg)
     native = "place",
     tool = item.tool,
     delay = 0,
-    timeout = 0.5,
+    timeout = 0.28,
+    repeatFast = true,
     point = function() return planned.point end,
     valid = function(s)
       return encounter == session
         and not manualOverride
         and s.now < session.untilAt
         and target.humanoid.Health > 0
-        and useful(s, planned.cell)
+        and useful(s, planned.cell, true) ~= nil
         and geometry.cellFree(s, planned.cell)
     end,
     before = function(s) lastBase = s.now end,
