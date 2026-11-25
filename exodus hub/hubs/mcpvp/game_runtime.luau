@@ -59,6 +59,13 @@ function Runtime.bind(loaded)
     end
   end
   bindSwing()
+  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+  local item = remotes and remotes:FindFirstChild("ItemAction")
+  if item and item:IsA("RemoteEvent") then
+    scope.connect(item.OnClientEvent, function(...)
+      if loaded.utils.isActive() and loaded.utils.getConfigValue("MCAutoPearl") then loaded.autopearl.observeProjectile(...) end
+    end)
+  end
   scope.connect(game:GetService("RunService").Heartbeat, function()
     if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") then
       Runtime.reset()

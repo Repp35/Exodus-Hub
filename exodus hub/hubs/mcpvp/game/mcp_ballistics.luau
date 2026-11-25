@@ -18,11 +18,11 @@ local function heightAt(distance, speed, gravity, drag, pitch)
   end
   return nil
 end
-local function clear(origin, direction, speed, gravity, drag, duration, destination, params)
+local function clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight)
   local position, velocity, elapsed = origin, direction * speed, 0
   -- A valid plan must end in a real floor collision, not just cross a point in mid-air.
-  while elapsed < math.min(duration + 0.2, 0.9) do
-    local step = math.min(0.05, math.min(duration + 0.2, 0.9) - elapsed)
+  while elapsed < math.min(duration + 0.2, maxFlight + 0.2) do
+    local step = math.min(0.05, math.min(duration + 0.2, maxFlight + 0.2) - elapsed)
     local offset = velocity * step
     local hit = workspace:Raycast(position, offset, params)
     if hit then
@@ -40,7 +40,8 @@ local function clear(origin, direction, speed, gravity, drag, duration, destinat
   end
   return false
 end
-function Ballistics.solve(origin, destination, speed, gravity, params)
+function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight)
+  maxFlight = maxFlight or 0.75
   local delta = destination - origin
   local horizontal = Vector3.new(delta.X, 0, delta.Z)
   local distance, drag = horizontal.Magnitude, 0.99
@@ -63,11 +64,21 @@ function Ballistics.solve(origin, destination, speed, gravity, params)
       local angle = (lo + hi) / 2
       local _, duration = heightAt(distance, speed, gravity, drag, angle)
       local direction = horizontal.Unit * math.cos(angle) + Vector3.new(0, math.sin(angle), 0)
-      if duration and duration <= 0.75 and clear(origin, direction, speed, gravity, drag, duration, destination, params) then return direction, duration end
+      if duration and duration <= maxFlight and clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight) then return direction, duration end
     end
     previousPitch, previousError = pitch, error
   end
   return nil
 end
-Ballistics.__contract = { provides = { "setup", "solve" }, requires = {} }
+function Ballistics.landing(position, velocity, gravity, drag, params)
+  for tick = 1, 160 do
+    local delta = velocity * 0.05
+    local hit = workspace:Raycast(position, delta, params)
+    if hit then return hit.Position, tick * 0.05 end
+    position = position + delta
+    velocity = velocity * drag - Vector3.new(0, gravity * 0.05, 0)
+  end
+  return nil
+end
+Ballistics.__contract = { provides = { "setup", "solve", "landing" }, requires = {} }
 return Ballistics

@@ -2,6 +2,7 @@
 --!optimize 2
 local Target = {}
 local native, tuning, players
+local heldCharacter, heldUntil = nil, 0
 local hitSerial, hitAt, hitTarget, attempt = 0, -math.huge, nil, nil
 local current, pending, clicks, lastClick, contact = nil, nil, 0, -math.huge, -math.huge
 local swings, threats = {}, {}
@@ -11,6 +12,7 @@ function Target.setup(deps)
   return true
 end
 function Target.reset()
+  heldCharacter, heldUntil = nil, 0
   hitAt, hitTarget, attempt = -math.huge, nil, nil
   current, pending, clicks, lastClick, contact = nil, nil, 0, -math.huge, -math.huge
   swings, threats = {}, {}
@@ -22,7 +24,7 @@ local function candidate(other, snap)
   local human = char and char:FindFirstChildOfClass("Humanoid")
   local root = char and char:FindFirstChild("HumanoidRootPart")
   if not root or not human or human.Health <= 0 or char:FindFirstChildOfClass("ForceField") then return nil end
-  if (root.Position - snap.root.Position).Magnitude > tuning.maxRange then return nil end
+  if (root.Position - snap.root.Position).Magnitude > ((heldCharacter == char and snap.now < heldUntil) and 256 or tuning.maxRange) then return nil end
   return { player = other, character = char, root = root, humanoid = human }
 end
 local function closeVisible(snap, other)
@@ -130,13 +132,19 @@ function Target.get(snap)
     pending, clicks = nil, 0
     return current
   end
-  if snap.now - contact > tuning.targetMemory then Target.reset() return nil end
+  if snap.now - contact > tuning.targetMemory and not (heldCharacter == fresh.character and snap.now < heldUntil) then Target.reset() return nil end
   current = fresh
   return current
 end
+function Target.locked() return current end
+function Target.hold(char, untilTime)
+  if current and current.character == char then
+    heldCharacter, heldUntil = char, math.max(heldCharacter == char and heldUntil or 0, untilTime)
+  end
+end
 function Target.touch(now) contact = now end
 Target.__contract = {
-  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit" },
+  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
   requiresMethods = { Native = { "stats", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
