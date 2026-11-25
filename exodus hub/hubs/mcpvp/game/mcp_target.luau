@@ -109,11 +109,32 @@ function Target.manual(snap)
   Target.noteAttack(snap, chosen)
   if clicks >= tuning.clicksToStart then current, contact, switchedAt = chosen, snap.now, snap.now end
 end
+function Target.nearThreat(snap)
+  local best, score
+  for _, other in ipairs(players:GetPlayers()) do
+    local challenger = candidate(other, snap)
+    local entry = challenger and threats[challenger.character]
+    if challenger and entry and snap.now - entry.time <= tuning.threatWindow
+      and (challenger.root.Position - snap.root.Position).Magnitude <= 16
+      and native.visible(snap, challenger.root.Position, challenger.character) then
+      local value = entry.time + (entry.hurt and 0.4 or 0) - (challenger.root.Position - snap.root.Position).Magnitude * 0.02
+      if score == nil or value > score then best, score = challenger, value end
+    end
+  end
+  return best
+end
 function Target.get(snap)
   if not current then return nil end
   local fresh = candidate(current.player, snap)
-  if not fresh or fresh.character ~= current.character then Target.reset() return nil end
-  local currentClose = closeVisible(snap, fresh)
+  if fresh and fresh.character ~= current.character then fresh = nil end
+  local immediate = Target.nearThreat(snap)
+  local currentClose = fresh and closeVisible(snap, fresh)
+  if immediate and (not fresh or (not currentClose and immediate.character ~= fresh.character)) then
+    current, contact, switchedAt = immediate, snap.now, snap.now
+    heldCharacter, heldUntil, pending, clicks = nil, 0, nil, 0
+    return current
+  end
+  if not fresh then Target.reset() return nil end
   local currentThreat = threats[fresh.character]
   local best, bestScore
   for _, other in ipairs(players:GetPlayers()) do
@@ -144,7 +165,7 @@ function Target.hold(char, untilTime)
 end
 function Target.touch(now) contact = now end
 Target.__contract = {
-  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold" },
+  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit", "locked", "hold", "nearThreat" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
   requiresMethods = { Native = { "stats", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
