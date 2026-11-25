@@ -2,6 +2,7 @@
 --!optimize 2
 local Target = {}
 local native, tuning, players
+local escapes
 local heldCharacter, heldUntil = nil, 0
 local hitSerial, hitAt, hitTarget, attempt = 0, -math.huge, nil, nil
 local current, pending, clicks, lastClick, contact = nil, nil, 0, -math.huge, -math.huge
@@ -12,6 +13,7 @@ function Target.setup(deps)
   return true
 end
 function Target.reset()
+  escapes = nil
   heldCharacter, heldUntil = nil, 0
   hitAt, hitTarget, attempt = -math.huge, nil, nil
   current, pending, clicks, lastClick, contact = nil, nil, 0, -math.huge, -math.huge
@@ -48,7 +50,36 @@ function Target.confirmHit(now)
   attempt = nil
 end
 function Target.hitToken() return hitSerial, hitAt, hitTarget end
+local function escaped(snap)
+  if not current or not current.root.Parent then return false end
+  local position = current.root.Position
+  local epoch = current.character:GetAttribute("PearlTeleportAt")
+  if not escapes or escapes.character ~= current.character then
+    escapes = { character = current.character, position = position, at = snap.now, epoch = epoch, count = 0 }
+    return false
+  end
+  if epoch ~= nil and epoch ~= escapes.epoch then escapes.markAt = snap.now end
+  local moved = (position - escapes.position).Magnitude
+  local marked = escapes.markAt and snap.now - escapes.markAt <= 0.35
+  local teleported = moved > (marked and 4 or math.max(16, (snap.now - escapes.at) * 60))
+  local before = (escapes.position - snap.root.Position).Magnitude
+  local after = (position - snap.root.Position).Magnitude
+  local sword = native.findSword(snap)
+  local reach = sword and native.stats(sword).reach or 9.6
+  if #players:GetPlayers() <= 4 then escapes.count = 0
+  elseif teleported and after > reach and after > before + 3.2 then
+    escapes.count += 1
+    escapes.markAt = nil
+  end
+  escapes.position, escapes.at, escapes.epoch = position, snap.now, epoch
+  return escapes.count > 2
+end
 function Target.observe(snap)
+  if escaped(snap) then
+    threats[current.character], swings[current.character] = nil, nil
+    Target.abandon(snap)
+    return
+  end
   if attempt then
     if not attempt.character.Parent or snap.now - attempt.time > 0.6 then
       attempt = nil
@@ -137,6 +168,7 @@ function Target.finishPriority(snap, chosen)
     and chosen.humanoid.Health / math.max(1, chosen.humanoid.MaxHealth) <= 0.25
 end
 function Target.abandon(snap)
+  escapes = nil
   local nearby = Target.nearThreat(snap)
   heldCharacter, heldUntil, pending, clicks, attempt = nil, 0, nil, 0, nil
   if nearby then
