@@ -20,15 +20,25 @@ local function heightAt(distance, speed, gravity, drag, pitch)
 end
 local function clear(origin, direction, speed, gravity, drag, duration, destination, params)
   local position, velocity, elapsed = origin, direction * speed, 0
-  while elapsed < duration do
-    local step = math.min(0.05, duration - elapsed)
+  -- A valid plan must end in a real floor collision, not just cross a point in mid-air.
+  while elapsed < math.min(duration + 0.2, 0.9) do
+    local step = math.min(0.05, math.min(duration + 0.2, 0.9) - elapsed)
     local offset = velocity * step
     local hit = workspace:Raycast(position, offset, params)
-    if hit then return (hit.Position - destination).Magnitude <= 3.2 end
+    if hit then
+      if hit.Normal.Y < 0.65 or (hit.Position - destination).Magnitude > 1.2 then return false end
+      local feet = hit.Position + Vector3.new(0, 0.1, 0)
+      if workspace:Raycast(feet, Vector3.new(0, 6.4, 0), params) then return false end
+      for _, offset2 in ipairs({ Vector3.new(0.65, 0, 0), Vector3.new(-0.65, 0, 0), Vector3.new(0, 0, 0.65), Vector3.new(0, 0, -0.65) }) do
+        local floor = workspace:Raycast(feet + offset2 + Vector3.new(0, 0.3, 0), Vector3.new(0, -0.8, 0), params)
+        if not floor or floor.Normal.Y < 0.65 then return false end
+      end
+      return true
+    end
     position, elapsed = position + offset, elapsed + step
     velocity = velocity * drag - Vector3.new(0, gravity * 0.05, 0)
   end
-  return true
+  return false
 end
 function Ballistics.solve(origin, destination, speed, gravity, params)
   local delta = destination - origin
@@ -53,7 +63,7 @@ function Ballistics.solve(origin, destination, speed, gravity, params)
       local angle = (lo + hi) / 2
       local _, duration = heightAt(distance, speed, gravity, drag, angle)
       local direction = horizontal.Unit * math.cos(angle) + Vector3.new(0, math.sin(angle), 0)
-      if duration and clear(origin, direction, speed, gravity, drag, duration, destination, params) then return direction, duration end
+      if duration and duration <= 0.75 and clear(origin, direction, speed, gravity, drag, duration, destination, params) then return direction, duration end
     end
     previousPitch, previousError = pitch, error
   end

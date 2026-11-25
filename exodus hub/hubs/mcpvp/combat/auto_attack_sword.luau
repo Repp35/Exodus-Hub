@@ -9,10 +9,12 @@ function Sword.setup(deps)
 end
 function Sword.reset() nextAttack, selected, equipAt = 0, nil, 0 end
 function Sword.aim(snap, chosen, dt)
-  if native.blocked(snap) or (chosen.root.Position - snap.root.Position).Magnitude > tuning.aimRange then return end
+  if native.blocked(snap) or not native.canHit(snap, chosen) then return end
   local camera = snap.camera
   local eye = camera.CFrame.Position
-  local point = chosen.root.Position + Vector3.new(0, chosen.character:GetAttribute("Sneaking") and 0.15 or 0.5, 0)
+  local root = chosen.root.Position
+  local closest = eye + camera.CFrame.LookVector * math.max(0, (root - eye):Dot(camera.CFrame.LookVector))
+  local point = root + Vector3.new(math.clamp(closest.X - root.X, -0.26, 0.26), math.clamp(closest.Y - root.Y, -1.2, 1.6), math.clamp(closest.Z - root.Z, -0.26, 0.26))
   -- Check from the actual camera too: a wall must stop the camera pull immediately.
   local params = RaycastParams.new()
   params.FilterType = Enum.RaycastFilterType.Exclude
@@ -23,15 +25,9 @@ function Sword.aim(snap, chosen, dt)
   if not native.visible(snap, point, chosen.character) then return end
   local delta = point - eye
   if delta.Magnitude <= 0.01 then return end
-  local desired, forward = delta.Unit, camera.CFrame.LookVector
-  local angle = math.acos(math.clamp(forward:Dot(desired), -1, 1))
-  if angle < 0.006 then return end
-  local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 30)
-  local turn = math.min(angle * (1 - math.exp(-tuning.aimPull * elapsed)), tuning.aimMaxSpeed * elapsed)
-  local axis = forward:Cross(desired)
-  if axis.Magnitude < 0.00001 then axis = camera.CFrame.UpVector end
-  local direction = CFrame.fromAxisAngle(axis.Unit, turn):VectorToWorldSpace(forward)
-  camera.CFrame = CFrame.lookAt(eye, eye + direction)
+  local angle = math.acos(math.clamp(camera.CFrame.LookVector:Dot(delta.Unit), -1, 1))
+  local alpha = angle < 0.001 and 1 or math.min(1, math.rad(tuning.aimSpeed) * math.clamp(dt or 1 / 60, 0, 1 / 30) / angle)
+  camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, point), alpha)
 end
 function Sword.step(snap, chosen)
   if native.blocked(snap) then return false end
@@ -51,9 +47,10 @@ function Sword.step(snap, chosen)
   if snap.now < nextAttack then return false end
   local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
   if snap.now - lastSwing < 1 / speed then return false end
+  if not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then return false end
+  target.noteAttack(snap, chosen)
   if native.attack(snap, chosen) then
     nextAttack = snap.now + 1 / speed
-    target.touch(snap.now)
     return true
   end
   nextAttack = snap.now + 0.25
@@ -62,7 +59,7 @@ end
 Sword.__contract = {
   provides = { "setup", "reset", "aim", "step" },
   requires = { Native = "mcpnative", Target = "mcptarget", Options = "mcpoptions" },
-  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "touch" } },
+  requiresMethods = { Native = { "visible", "blocked", "findSword", "equip", "canHit", "stats", "attack" }, Target = { "noteAttack" } },
   requiresData = { Options = { "tuning" } },
 }
 return Sword

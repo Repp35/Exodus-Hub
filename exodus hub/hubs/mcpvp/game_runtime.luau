@@ -43,13 +43,19 @@ function Runtime.bind(loaded)
     end
   end
   scope.connect(controller and controller.InputBegan or input.InputBegan, click)
-  local swingConnection
+  local swingConnection, feedbackConnection
   local function bindSwing()
-    if swingConnection then return end
+    if swingConnection and feedbackConnection then return end
     local combat = game:GetService("ReplicatedStorage"):FindFirstChild("VoxelCombat")
     local swing = combat and combat:FindFirstChild("Swing")
-    if swing and swing:IsA("RemoteEvent") then
+    if not swingConnection and swing and swing:IsA("RemoteEvent") then
       swingConnection = scope.connect(swing.OnClientEvent, loaded.mcptarget.noteSwing)
+    end
+    local feedback = combat and combat:FindFirstChild("Feedback")
+    if not feedbackConnection and feedback and feedback:IsA("RemoteEvent") then
+      feedbackConnection = scope.connect(feedback.OnClientEvent, function(kind, blocked)
+        if kind == "HitConfirm" and not blocked then loaded.mcptarget.confirmHit(os.clock()) end
+      end)
     end
   end
   bindSwing()
@@ -78,7 +84,8 @@ function Runtime.bind(loaded)
       end
       if not loaded.autopearl.busy() then
         local fresh = loaded.mcpnative.snapshot()
-        if fresh then loaded.autoattacksword.step(fresh, target) end
+        local activeTarget = fresh and loaded.mcptarget.get(fresh)
+        if fresh and activeTarget then loaded.autoattacksword.step(fresh, activeTarget) end
       end
     end)
     if not success then

@@ -2,6 +2,7 @@
 --!optimize 2
 local Target = {}
 local native, tuning, players
+local hitSerial, hitAt, hitTarget, attempt = 0, -math.huge, nil, nil
 local current, pending, clicks, lastClick, contact = nil, nil, 0, -math.huge, -math.huge
 local swings, threats = {}, {}
 local watchedCharacter, lastHealth, hurtAt, switchedAt = nil, nil, -math.huge, -math.huge
@@ -10,6 +11,7 @@ function Target.setup(deps)
   return true
 end
 function Target.reset()
+  hitAt, hitTarget, attempt = -math.huge, nil, nil
   current, pending, clicks, lastClick, contact = nil, nil, 0, -math.huge, -math.huge
   swings, threats = {}, {}
   watchedCharacter, lastHealth, hurtAt, switchedAt = nil, nil, -math.huge, -math.huge
@@ -34,7 +36,26 @@ function Target.noteSwing(source)
   if not players:GetPlayerFromCharacter(source) then return end
   swings[source] = os.clock()
 end
+function Target.noteAttack(snap, chosen)
+  attempt = { character = chosen.character, human = chosen.humanoid, health = chosen.humanoid.Health, time = snap.now }
+end
+function Target.confirmHit(now)
+  if not attempt or now - attempt.time > 0.7 then return end
+  hitSerial, hitAt, hitTarget = hitSerial + 1, now, attempt.character
+  if current and current.character == hitTarget then contact = now end
+  attempt = nil
+end
+function Target.hitToken() return hitSerial, hitAt, hitTarget end
 function Target.observe(snap)
+  if attempt then
+    if not attempt.character.Parent or snap.now - attempt.time > 0.6 then
+      attempt = nil
+    elseif attempt.human.Health < attempt.health then
+      hitSerial, hitAt, hitTarget = hitSerial + 1, snap.now, attempt.character
+      if current and current.character == hitTarget then contact = snap.now end
+      attempt = nil
+    end
+  end
   if watchedCharacter ~= snap.character then
     swings, threats = {}, {}
     watchedCharacter, lastHealth, hurtAt = snap.character, snap.humanoid.Health, -math.huge
@@ -83,6 +104,7 @@ function Target.manual(snap)
   if not chosen then return end
   clicks = pending == chosen.character and snap.now - lastClick <= tuning.clickWindow and clicks + 1 or 1
   pending, lastClick = chosen.character, snap.now
+  Target.noteAttack(snap, chosen)
   if clicks >= tuning.clicksToStart then current, contact, switchedAt = chosen, snap.now, snap.now end
 end
 function Target.get(snap)
@@ -114,7 +136,7 @@ function Target.get(snap)
 end
 function Target.touch(now) contact = now end
 Target.__contract = {
-  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe" },
+  provides = { "setup", "reset", "manual", "get", "touch", "noteSwing", "observe", "noteAttack", "hitToken", "confirmHit" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
   requiresMethods = { Native = { "stats", "canHit", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },

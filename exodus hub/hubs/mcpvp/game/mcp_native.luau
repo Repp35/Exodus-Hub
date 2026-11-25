@@ -83,12 +83,12 @@ function Native.visible(snap, point, target)
   local hit = world:Raycast(snap.eye, point - snap.eye, params)
   return not hit or (target ~= nil and hit.Instance:IsDescendantOf(target))
 end
-function Native.canHit(snap, target, tool)
+function Native.canHit(snap, target, tool, direction)
   tool = tool or Native.findSword(snap)
   if not tool or Native.stats(tool).type ~= "sword" then return false end
   local delta = target.root.Position - snap.eye
   if delta.Magnitude < 0.01 then return false end
-  local direction = delta.Unit
+  direction = direction or delta.Unit
   local reach = Native.stats(tool).reach
   local distance
   if geometry and type(geometry.Hit) == "function" then
@@ -132,8 +132,13 @@ end
 local function invoke(action, direction)
   discover()
   local previous = player:GetAttribute("FrontCameraAimDirection")
+  local previousCF = player:GetAttribute("FrontCameraAimCFrame")
+  local snap = Native.snapshot()
+  if not snap then return false end
+  local aimCF = CFrame.lookAt(snap.eye, snap.eye + direction)
   dispatching = true
   player:SetAttribute("FrontCameraAimDirection", direction)
+  player:SetAttribute("FrontCameraAimCFrame", aimCF)
   local ok, result = pcall(function()
     local fn = functions[action == "Attack" and "attack" or "use"]
     if fn then fn(direction) return true end
@@ -145,13 +150,14 @@ local function invoke(action, direction)
     return false
   end)
   if player:GetAttribute("FrontCameraAimDirection") == direction then player:SetAttribute("FrontCameraAimDirection", previous) end
+  if player:GetAttribute("FrontCameraAimCFrame") == aimCF then player:SetAttribute("FrontCameraAimCFrame", previousCF) end
   dispatching = false
   if not ok then utils.recordError("mcpvp.native." .. action, tostring(result)) end
   return ok and result == true
 end
 function Native.attack(snap, target)
-  if Native.blocked(snap) or not snap.tool or Native.stats(snap.tool).type ~= "sword" or not Native.canHit(snap, target, snap.tool) then return false end
-  return invoke("Attack", (target.root.Position - snap.eye).Unit)
+  if Native.blocked(snap) or not snap.tool or Native.stats(snap.tool).type ~= "sword" or not Native.canHit(snap, target, snap.tool, snap.camera.CFrame.LookVector) then return false end
+  return invoke("Attack", snap.camera.CFrame.LookVector)
 end
 function Native.pearlCooldown()
   return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1
