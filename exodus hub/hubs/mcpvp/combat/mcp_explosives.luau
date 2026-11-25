@@ -297,15 +297,15 @@ function Explosives.pulse(snap, targets, cfg)
     end
     held = crystalItem.tool
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
-    -- Keep alternating while the same damaging opportunity remains available.
+    -- Self exposure must block detonation itself, not only replacement placement.
+    local selfSafe = geometry.damage(snap, snap.character, point or top, 6) <= 0
     local broke = false
-    if crystal and elevated and native.canAct("attack") then
+    if crystal and elevated and selfSafe and native.canAct("attack") then
       if native.strike(hitPoint) then
         entry.spent, broke = true, true
         acted = true
       end
     end
-    local selfSafe = geometry.damage(snap, snap.character, top, 6) <= 0
     if (not entry.spent or selfSafe) and (not crystal or broke) and native.canAct("use") then
       if native.action("use", top - Vector3.new(0, 0.03, 0)) then
         entry.spent, entry.untilAt = true, snap.now + 0.65
