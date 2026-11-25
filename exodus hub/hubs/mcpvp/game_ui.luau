@@ -2,9 +2,7 @@
 --!optimize 2
 local GameUI = {}
 local miniBalls = {
-  { title = "Aim Lock", label = "LOCK", key = "MCAimLock", prefix = "MCAimLockBall" },
-  { title = "Aim Assist", label = "ASSIST", key = "MCAimAssist", prefix = "MCAimAssistBall" },
-  { title = "Auto Attack", label = "ATTACK", key = "MCAutoSword", prefix = "MCSwordBall" },
+  { title = "Sword", label = "SWORD", key = "MCAutoSword", prefix = "MCSwordBall" },
   { title = "Auto Crit", label = "CRIT", key = "MCAutoCrit", prefix = "MCCritBall" },
   { title = "Auto Força", label = "FORÇA", key = "MCAutoStrength", prefix = "MCStrengthBall" },
   { title = "Auto Pearl", label = "PEARL", key = "MCAutoPearl", prefix = "MCPearlBall" },
@@ -27,58 +25,35 @@ GameUI.definition = {
           components = {
             {
               kind = "toggle",
-              title = "Auto Attack",
+              title = "Sword + Aim Assist / Aim Lock",
               key = "MCAutoSword",
-              description = "Ataca com a arma escolhida: espada, machado, lança e ferramentas. Mace somente com Breach (Ruptura).",
+              description = "Inicie com dois ataques no alvo. Mantém mira e ritmo dos golpes.",
             },
             {
               kind = "toggle",
               title = "Auto Crit",
               key = "MCAutoCrit",
-              description = "Reconhece ataques manuais ou automáticos e prepara o pulo para o próximo golpe.",
+              parentKey = "MCAutoSword",
+              description = "Sincroniza o pulo com o cooldown e prioriza golpes durante a descida.",
             },
-          },
-        },
-        {
-          title = "Mira",
-          column = 2,
-          components = {
-            {
-              kind = "toggle",
-              title = "Aim Lock",
-              key = "MCAimLock",
-              description = "Acompanha o alvo próximo com resposta rápida e giro contínuo, sem a espera do antigo modo legit.",
-            },
-            {
-              kind = "toggle",
-              title = "Aim Assist",
-              key = "MCAimAssist",
-              description = "Assistência leve até 16 studs, apenas perto da mira e durante seu movimento. Não centraliza automaticamente.",
-            },
-            { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
           },
         },
         {
           title = "Assistência",
           column = 2,
           components = {
-            {
-              kind = "toggle",
-              title = "Auto Força",
-              key = "MCAutoStrength",
-              description = "Uma tentativa por vida ou consumo de totem, com intervalo do dump (90 s). Após totem, aguarda 4 s sem combate.",
-            },
+            { kind = "toggle", title = "Auto Força", key = "MCAutoStrength", description = "Prioriza poções de força na hotbar e joga no pé quando o efeito termina." },
             {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Ao sair do alcance de dano, lança no chão aos pés do alvo visível, com previsão curta e colisão no destino.",
+              description = "Usa pérola para voltar ao alcance quando houver linha livre até o alvo.",
             },
             {
               kind = "toggle",
               title = "Auto Totem",
               key = "MCAutoTotem",
-              description = "Busca na reserva, coloca na hotbar e equipa o offhand imediatamente. Mantém um totem de reserva na hotbar; fechamento respeita 400 ms.",
+              description = "Prioriza a hotbar, abre o inventário para acessar reservas e preenche espaços vazios.",
             },
           },
         },
@@ -110,8 +85,7 @@ for _, ball in ipairs(miniBalls) do
     kind = "toggle",
     title = "Mini " .. ball.title .. " UI",
     key = visibleKey,
-    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções."
-      or "Mostra o botão de " .. ball.title .. ".",
+    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP atual sem desligar as funções." or "Mostra o botão de " .. ball.title .. ".",
     mobileOnly = true,
   }
 end

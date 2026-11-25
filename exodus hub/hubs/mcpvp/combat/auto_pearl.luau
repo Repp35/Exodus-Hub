@@ -1,267 +1,110 @@
 -- [[ autopearl ]]
 --!optimize 2
 local Pearl = {}
-local native, target, ballistics, utils
-local shot, retryAt = nil, 0
+local native, target, ballistics
+local shot, sending, retryAt = nil, false, 0
 local speed, gravity, drag = 96, 38.4, 0.99
-local function restore(snap)
-  if not shot or shot.restored or shot.character ~= snap.character then
-    return
-  end
+
+local function restore()
+  local snap = native.snapshot()
+  if not snap or not shot or snap.character ~= shot.character then return end
   if snap.tool == shot.tool or snap.tool == nil then
-    local previous = shot.previousTool
-    if previous and previous.Parent then
-      native.equip(snap, previous)
-    elseif utils.getConfigValue("MCAutoSword") then
-      local tool = native.findWeapon(snap)
-      if tool then
-        native.equip(snap, tool)
-      end
-    end
+    local sword = native.findSword(snap)
+    if sword then native.equip(snap, sword) end
   end
-  shot.restored = true
 end
 function Pearl.setup(deps)
-  native, target, ballistics, utils = deps.Native, deps.Target, deps.Ballistics, deps.Utils
+  native, target, ballistics = deps.Native, deps.Target, deps.Ballistics
   return true
 end
 function Pearl.reset()
-  if shot and shot.sentAt and not shot.launched then
-    local snap = native.snapshot()
-    local human = shot.character:FindFirstChildOfClass("Humanoid")
-    if human and human.Health > 0 and (not snap or snap.character == shot.character) then
-      shot.cancelAfterConfirm = true
-      return
-    end
-  end
-  if shot then
-    local snap = native.snapshot()
-    if snap then
-      restore(snap)
-    end
-    if shot.sentAt then
-      retryAt = math.max(retryAt, shot.sentAt + shot.flight + 1)
-    end
-  end
-  shot = nil
+  restore()
+  shot, sending = nil, false
 end
-function Pearl.busy() return shot ~= nil and shot.phase ~= "flight" end
-function Pearl.observeProjectile(action, id, kind, position, velocity, acceleration, resistance)
-  if action == "ProjectileEnd" then
-    if shot and shot.id ~= nil and shot.id == id then
-      shot.endedAt = os.clock()
-    end
-    return
-  end
-  if action ~= "Projectile" or kind ~= "Pearl" or typeof(velocity) ~= "Vector3" then
-    return
-  end
-  if velocity.Magnitude >= 20 and velocity.Magnitude <= 200 then
-    speed = velocity.Magnitude
-  end
-  if type(acceleration) == "number" and acceleration > 0 and acceleration < 1000 then
-    gravity = acceleration
-  end
-  if type(resistance) == "number" and resistance > 0 and resistance <= 1 then
-    drag = resistance
-  end
-  if
-    shot
-    and shot.sentAt
-    and os.clock() - shot.sentAt < 1.5
-    and typeof(position) == "Vector3"
-    and (position - shot.origin).Magnitude <= 10
-    and velocity.Magnitude > 0
-    and velocity.Unit:Dot(shot.direction) > 0.98
-  then
-    shot.id = id
-  end
+function Pearl.busy() return sending or (shot ~= nil and shot.phase == "confirm") end
+function Pearl.observeProjectile(action, _id, kind, _position, velocity, acceleration, resistance)
+  if action ~= "Projectile" or kind ~= "Pearl" or typeof(velocity) ~= "Vector3" then return end
+  if velocity.Magnitude > 0 and velocity.Magnitude < 1000 then speed = velocity.Magnitude end
+  if type(acceleration) == "number" and acceleration > 0 and acceleration < 1000 then gravity = acceleration end
+  if type(resistance) == "number" and resistance > 0 and resistance <= 1 then drag = resistance end
 end
-local function visible(snap, chosen)
-  if not chosen or not chosen.root.Parent or chosen.humanoid.Health <= 0
-    or chosen.character:GetAttribute("Invisible") == true then return false end
-  local point = chosen.root.Position - Vector3.new(0, 0.35, 0)
-  local projected, onScreen = snap.camera:WorldToViewportPoint(point)
-  if not onScreen or projected.Z <= 0 or not native.visible(snap, point, chosen.character) then return false end
-  local params = RaycastParams.new()
-  params.FilterType, params.RespectCanCollide = Enum.RaycastFilterType.Exclude, true
-  params.FilterDescendantsInstances = { snap.character, snap.camera }
-  local delta = point - snap.camera.CFrame.Position
-  local hit = workspace:Raycast(snap.camera.CFrame.Position, delta, params)
-  return not hit or hit.Instance:IsDescendantOf(chosen.character)
-end
+
 local function plan(snap, chosen)
-  if not visible(snap, chosen) then return nil end
-  local motion = chosen.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-  if motion.Magnitude > 60 then motion = motion.Unit * 60 end
-  local latency = 0
-  local ok, ping = pcall(snap.player.GetNetworkPing, snap.player)
-  if ok and type(ping) == "number" and ping == ping then latency = math.clamp(ping, 0, 0.1) end
   local params, ignored = RaycastParams.new(), { snap.camera }
   for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
     if player.Character then ignored[#ignored + 1] = player.Character end
   end
-  for _, name in ipairs({ "LocalItemVisuals", "LocalBowVisuals", "PredictedBlocks", "ArenaPvPBots" }) do
+  for _, name in ipairs({ "LocalItemVisuals", "PredictedBlocks", "ArenaPvPBots" }) do
     local folder = workspace:FindFirstChild(name)
     if folder then ignored[#ignored + 1] = folder end
   end
   params.FilterType, params.RespectCanCollide, params.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, true, ignored
-  local root = chosen.root.Position
-  local flight = (root - snap.eye).Magnitude / speed
-  local best, bestFlight, bestPoint
-  for _ = 1, 4 do
-    -- Target a real ground impact below the feet. A body-height crossing keeps flying.
-    local lead = motion * math.min(latency + flight, 0.35)
-    if lead.Magnitude > 3.2 then lead = lead.Unit * 3.2 end
-    local point = root + lead
-    local floor = workspace:Raycast(point + Vector3.new(0, 0.5, 0), Vector3.new(0, -64, 0), params)
-    if not floor or floor.Normal.Y < 0.65 or floor.Material == Enum.Material.Water then break end
-    local block = floor.Instance:GetAttribute("BlockKey")
-    if block == "lava" or block == "water" then break end
-    -- Floor mode verifies the first collision is at this destination, rather than accepting mid-air travel.
-    local direction, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 2, drag, false)
-    if not direction then break end
-    best, bestFlight, bestPoint = direction, duration, floor.Position
-    if math.abs(duration - flight) < 0.002 then break end
+  local motion = chosen.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+  if motion.Magnitude > 45 then motion = Vector3.zero end
+  local flight = 0.3
+  for _ = 1, 8 do
+    local point = chosen.root.Position + motion * flight
+    local floor = workspace:Raycast(point + Vector3.new(0, 0.5, 0), Vector3.new(0, -128, 0), params)
+    if not floor then break end
+    local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
+    if not aim then break end
+    if math.abs(duration - flight) * math.max(1, motion.Magnitude) < 0.5 then return aim, duration end
     flight = duration
   end
-  return best, bestFlight, bestPoint
-end
-function Pearl.aim(snap, dt)
-  if not shot or shot.phase ~= "equip" or not shot.direction or not visible(snap, shot.target) then return end
-  if snap.now - (shot.validAt or 0) > 0.08 then return end
-  local camera, direction = snap.camera, shot.direction
-  local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
-  local angle = math.acos(math.clamp(look:Dot(direction), -1, 1))
-  if angle > 0.00001 then
-    local alpha = math.min(1, math.rad(540) * math.clamp(dt or 1 / 60, 0, 1 / 30) / angle)
-    camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, eye + direction), alpha)
+  local delta = chosen.root.Position - snap.root.Position
+  for _, distance in ipairs({ 160, 128, 96, 64, 32 }) do
+    if delta.Magnitude <= distance then continue end
+    local point = snap.root.Position + delta.Unit * distance
+    local floor = workspace:Raycast(point + Vector3.new(0, 32, 0), Vector3.new(0, -256, 0), params)
+    if floor and (floor.Position - chosen.root.Position).Magnitude + 8 < delta.Magnitude then
+      local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
+      if aim then return aim, duration end
+    end
   end
 end
 
 function Pearl.step(snap, chosen)
-  if not utils.getConfigValue("MCAutoPearl") then
-    if shot and shot.sentAt then shot.cancelAfterConfirm = true
-    else Pearl.reset() return false end
-  end
-  if shot and shot.character ~= snap.character then
-    Pearl.reset()
-  end
+  if shot and shot.character ~= snap.character then Pearl.reset() end
   if shot then
-    if shot.phase == "equip" then
-      if snap.now >= shot.deadline then Pearl.reset() retryAt = snap.now + 0.25 return false end
-      local focused = target.get(snap)
-      if not focused or focused.character ~= shot.target.character then Pearl.reset() return false end
-      if
-        focused.player:GetAttribute("ArenaProtected") == true
-        or focused.player:GetAttribute("InArena") == false
-        or focused.player:GetAttribute("DuelCombatActive") == false
-        or focused.character:GetAttribute("ArenaProtected") == true
-        or focused.character:GetAttribute("DuelCombatActive") == false
-      then
-        Pearl.reset()
-        return false
-      end
-      if not focused.character.Parent or focused.humanoid.Health <= 0 then
-        Pearl.reset()
-        return false
-      end
-      if snap.tool ~= shot.tool or native.blocked(snap) then return false end
-      if snap.now < (shot.planAt or 0) then
-        return false
-      end
-      shot.planAt = snap.now
-      local direction, duration = plan(snap, focused)
-      if not direction then shot.aimedAt, shot.validAt = nil, nil return false end
-      shot.direction, shot.flight, shot.origin, shot.validAt = direction, duration, snap.eye, snap.now
-      if not visible(snap, focused) then return false end
-      -- Align and dispatch together instead of waiting for later render frames.
-      local camera = snap.camera
-      camera.CFrame = CFrame.lookAt(camera.CFrame.Position, camera.CFrame.Position + direction)
-      shot.count = tonumber(shot.tool:GetAttribute("Count")) or 1
-      shot.cooldown = snap.player:GetAttribute("ItemCooldown_Pearl")
-      shot.sentAt, shot.phase = snap.now, "confirm"
-      shot.arrivalAt = snap.now + duration + 0.4
-      if not native.usePearl(snap, shot.tool, direction) then
-        -- A locally refused use was never sent. Do not leave it stuck in confirmation.
-        shot.sentAt = nil
-        Pearl.reset()
-        retryAt = snap.now + 0.15
-        return false
-      end
-      return true
-    end
     if shot.phase == "confirm" then
-      local consumed = not shot.tool.Parent or (tonumber(shot.tool:GetAttribute("Count")) or shot.count) < shot.count
-      local cooldown = snap.player:GetAttribute("ItemCooldown_Pearl")
-      local acknowledged = type(cooldown) == "number" and cooldown ~= shot.cooldown and not native.pearlReady()
-      local arrived = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
-      local projectile = shot.id ~= nil
-      local launched = consumed and (projectile or arrived or acknowledged and snap.now - shot.sentAt >= 0.1)
-      if not launched then
-        if snap.now - shot.sentAt > 5 and not shot.reported then
-          shot.reported = true
-          utils.recordError("mcpvp.pearl", "Lançamento pendente sem confirmação de consumo/cooldown; reenvio bloqueado.")
-        end
+      local confirmed = not shot.tool.Parent or (tonumber(shot.tool:GetAttribute("Count")) or 0) < shot.count or not native.pearlReady()
+      if not confirmed then
+        if snap.now >= shot.timeout then Pearl.reset() retryAt = snap.now + 0.25 end
         return false
       end
-      shot.phase, shot.launched = "flight", true
-      restore(snap)
-      if shot.cancelAfterConfirm then shot = nil return false end
+      restore()
+      shot.phase = "flight"
     end
+    restore()
     local teleported = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
-    local ended = shot.endedAt ~= nil
-    if not teleported and not ended and snap.now < shot.arrivalAt then
-      return false
-    end
-    restore(snap)
+    if not teleported and snap.now < shot.arrivalAt then return false end
     shot = nil
-    retryAt = snap.now
   end
-  if not chosen or not chosen.character.Parent or chosen.humanoid.Health <= 0 then
-    return false
-  end
-  if snap.now < retryAt or native.blocked(snap) or not native.pearlReady() or native.canHit(snap, chosen) then
-    return false
-  end
-  retryAt = snap.now
+  if not chosen.character.Parent or chosen.humanoid.Health <= 0 then return false end
+  target.hold(chosen.character, math.huge)
+  if snap.now < retryAt or native.blocked(snap) or not native.pearlReady() or native.canHit(snap, chosen)
+    or native.aerialMace(snap, chosen) or not native.visible(snap, chosen.root.Position, chosen.character) then return false end
+  retryAt = snap.now + 0.15
   local tool = native.findPearl(snap)
-  if not tool then
-    return false
-  end
-  local direction, duration = plan(snap, chosen)
-  if not direction then
-    return false
-  end
-  shot = {
-    character = snap.character,
-    tool = tool,
-    target = chosen,
-    previousTool = snap.tool,
-    phase = "equip",
-    deadline = snap.now + 1.5,
-    validAt = snap.now,
-    direction = direction,
-    flight = duration,
-    teleportAt = snap.character:GetAttribute("PearlTeleportAt"),
-  }
-  target.hold(chosen.character, snap.now + duration + 1)
-  if not native.equip(snap, tool) then
-    Pearl.reset()
-    return false
-  end
-  local fresh = native.snapshot()
-  if fresh and fresh.tool == tool then return Pearl.step(fresh, chosen) end
+  if not tool then return false end
+  local direction, flight = plan(snap, chosen)
+  if not direction then return false end
+  shot = { character = snap.character, tool = tool, count = tonumber(tool:GetAttribute("Count")) or 1,
+    teleportAt = snap.character:GetAttribute("PearlTeleportAt"), phase = "confirm",
+    timeout = snap.now + 0.9, arrivalAt = snap.now + flight + 0.4 }
+  sending = true
+  local ok, sent = pcall(function()
+    if not native.equip(snap, tool) then return false end
+    local fresh = native.snapshot()
+    return fresh and fresh.tool == tool and native.usePearl(fresh, tool, direction)
+  end)
+  sending = false
+  if not ok or not sent then Pearl.reset() if not ok then error(sent) end return false end
   return true
 end
 Pearl.__contract = {
-  provides = { "setup", "reset", "busy", "step", "observeProjectile", "aim" },
-  requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics", Utils = "utils" },
-  requiresMethods = {
-    Native = { "snapshot", "findWeapon", "stats", "equip", "findPearl", "usePearl", "pearlReady", "blocked", "canHit", "visible" },
-    Target = { "hold", "get" },
-    Ballistics = { "solve" },
-    Utils = { "getConfigValue", "recordError" },
-  },
+  provides = { "setup", "reset", "busy", "step", "observeProjectile" },
+  requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics" },
+  requiresMethods = { Native = { "snapshot", "findSword", "equip", "findPearl", "usePearl", "pearlReady", "blocked", "canHit", "aerialMace", "visible" }, Target = { "hold" }, Ballistics = { "solve" } },
 }
 return Pearl
