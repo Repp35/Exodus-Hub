@@ -182,7 +182,12 @@ function Geometry.pearl(snap, target, cfg, projectile)
   local origin = snap.eye
   local speed, gravity = projectile.speed, projectile.gravity
   local lead = math.min(cfg("MCPearlLead"), target.distance / speed)
-  local landing = target.root.Position + target.root.AssemblyLinearVelocity * lead - Vector3.new(0, 3.5, 0)
+  local toward = target.root.Position - snap.root.Position
+  local horizontal = Vector3.new(toward.X, 0, toward.Z)
+  if horizontal.Magnitude < 0.1 then
+    return nil
+  end
+  local landing = target.root.Position + target.root.AssemblyLinearVelocity * lead - horizontal.Unit * 4 - Vector3.new(0, 3.5, 0)
   local ground = native.raycast(landing + Vector3.new(0, 5, 0), Vector3.new(0, -13, 0), { target.character })
   if not ground or ground.Normal.Y < 0.7 then
     return nil

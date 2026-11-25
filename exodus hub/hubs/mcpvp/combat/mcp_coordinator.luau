@@ -185,7 +185,7 @@ local function pearl(snap)
   end
   local relative = target.root.AssemblyLinearVelocity - snap.root.AssemblyLinearVelocity
   local displacement = target.root.Position - snap.root.Position
-  if displacement.Magnitude < 0.1 or relative:Dot(displacement.Unit) < 1.5 then
+  if displacement.Magnitude < 0.1 or relative:Dot(displacement.Unit) < -2 then
     return nil
   end
   local item = native.find("Pearl", true)
@@ -470,6 +470,9 @@ function Coordinator.start()
       -- Movement remains usable; explicit item/action input cancels an automatic transaction.
       local key = event.KeyCode
       if key == Enum.KeyCode.W or key == Enum.KeyCode.A or key == Enum.KeyCode.S or key == Enum.KeyCode.D or key == Enum.KeyCode.Space then
+        return
+      end
+      if kind == Enum.UserInputType.MouseButton1 and native.stats(native.equipped()).type == "sword" then
         return
       end
       pauseUntil = os.clock() + cfg("MCManualPause")

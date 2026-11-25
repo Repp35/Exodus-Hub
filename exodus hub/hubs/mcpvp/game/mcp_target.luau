@@ -16,7 +16,7 @@ end
 local function record(char)
   local entry = records[char]
   if not entry then
-    entry = { dealt = -math.huge, received = -math.huge, intent = -math.huge, swing = -math.huge, duelUntil = -math.huge }
+    entry = { dealt = -math.huge, received = -math.huge, intent = -math.huge, swing = -math.huge, duelUntil = -math.huge, hits = 0 }
     records[char] = entry
   end
   return entry
@@ -94,7 +94,9 @@ function Target.noteAttack(snap, chosen)
   end
   local entry = record(chosen.character)
   entry.intent = snap.now
-  pending = { character = chosen.character, at = snap.now, health = chosen.humanoid.Health }
+  if not pending or pending.character ~= chosen.character or snap.now - pending.at > 0.7 then
+    pending = { character = chosen.character, at = snap.now, health = chosen.humanoid.Health }
+  end
 end
 function Target.confirmHit(now)
   -- Feedback.HitConfirm is local to the attacker but has no victim ID. Correlate only with the pending geometric sword candidate.
@@ -102,7 +104,11 @@ function Target.confirmHit(now)
     return
   end
   local entry = record(pending.character)
+  entry.hits = now - entry.dealt <= memory and entry.hits + 1 or 1
   entry.dealt = now
+  if entry.hits >= 2 then
+    entry.duelUntil = now + memory
+  end
   refreshDuel(entry, now)
   pending = nil
 end
@@ -115,6 +121,8 @@ function Target.noteVictim(char, now)
   -- ConfirmedMeleeFlash supplies the victim; an incoming hit is attributed only if a unique nearby recent swinger exists.
   if char == character then
     Target.receive(now)
+  elseif pending and pending.character == char and now - pending.at <= 0.7 then
+    Target.confirmHit(now)
   end
 end
 function Target.receive(now)
