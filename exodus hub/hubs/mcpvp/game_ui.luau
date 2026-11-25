@@ -37,7 +37,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Segue fugas próximas e médias; reserva distâncias maiores para servidores com até quatro jogadores.",
+              description = "Usa pérola para voltar ao alcance quando houver linha livre até o alvo.",
             },
             {
               kind = "toggle",
