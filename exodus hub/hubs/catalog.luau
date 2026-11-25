@@ -22,7 +22,7 @@ return {
       { name = "mcptarget", path = "hubs/mcpvp/game/mcp_target.luau", hash = "b350013d235efdb98c77ab007b759476cad42c83bdf161b827ffb1ce260052f6" },
       { name = "gameruntime", path = "hubs/mcpvp/game_runtime.luau", hash = "27a423ac6b1438f0fbff2bdd4fcc6e9178d868f02c9eca850f0d109a68b7c7c3" },
       { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "49013813a417a32acce96d430ca38b7c49e8ec292eeeb43412ddffaae8912bbf" },
-      { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "b74d683c4fe852e715e52ee3f3f8396b823e761c9c484d178869ee9d6b1c6622" },
+      { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "101990cceb288fb991a7bbdf98f01137bc9ccd46bda52e64b56a6c7b0e41cd3a" },
     },
   },
   {
