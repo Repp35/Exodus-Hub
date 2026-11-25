@@ -72,7 +72,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Lança sem mover a câmera. Perseguição limitada pela distância e pelo tempo sem contato.",
+              description = "Só lança com alvo visível, trajetória de interceptação validada e mira alinhada. Desiste se a previsão ficar incerta.",
             },
             {
               kind = "toggle",

@@ -126,6 +126,7 @@ function Runtime.bind(loaded)
     end
     watchManual(snap)
     loaded.mcptarget.observe(snap)
+    loaded.autopearl.observe(snap)
     loaded.autostrength.observe(snap)
     loaded.autorefill.observe(snap)
     loaded.autototem.protect(snap)
@@ -214,6 +215,11 @@ function Runtime.bind(loaded)
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
+    if loaded.utils.isActive() and loaded.autopearl.busy() and not loaded.autototem.busy()
+      and not loaded.autorefill.busy() and not loaded.autostrength.busy() and not loaded.mcpinventory.busy() then
+      local snap = loaded.mcpnative.snapshot()
+      if snap then loaded.autopearl.aim(snap, dt) end
+    end
     if
       not loaded.utils.isActive()
       or not combatEnabled()

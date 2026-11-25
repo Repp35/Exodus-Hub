@@ -2,7 +2,7 @@
 --!optimize 2
 local Pearl = {}
 local native, target, ballistics, utils
-local shot, retryAt = nil, 0
+local shot, retryAt, sample = nil, 0, nil
 local speed, gravity, drag = 96, 38.4, 0.99
 local function restore(snap)
   if not shot or shot.restored or shot.character ~= snap.character then
@@ -77,66 +77,101 @@ function Pearl.observeProjectile(action, id, kind, position, velocity, accelerat
     shot.id = id
   end
 end
+local function visible(snap, chosen)
+  if not chosen or not chosen.root.Parent or chosen.humanoid.Health <= 0
+    or chosen.character:GetAttribute("Invisible") == true then return false end
+  local point = chosen.root.Position - Vector3.new(0, 0.35, 0)
+  local projected, onScreen = snap.camera:WorldToViewportPoint(point)
+  if not onScreen or projected.Z <= 0 or not native.visible(snap, point, chosen.character) then return false end
+  local params = RaycastParams.new()
+  params.FilterType, params.RespectCanCollide = Enum.RaycastFilterType.Exclude, true
+  params.FilterDescendantsInstances = { snap.character, snap.camera }
+  local delta = point - snap.camera.CFrame.Position
+  local hit = workspace:Raycast(snap.camera.CFrame.Position, delta, params)
+  return not hit or hit.Instance:IsDescendantOf(chosen.character)
+end
+function Pearl.observe(snap)
+  local chosen = target.locked()
+  if not chosen or not chosen.root.Parent then sample = nil return end
+  local position, velocity = chosen.root.Position, chosen.root.AssemblyLinearVelocity
+  local epoch = chosen.character:GetAttribute("PearlTeleportAt")
+  if not sample or sample.character ~= chosen.character or sample.epoch ~= epoch or snap.now - sample.at > 0.25 then
+    sample = { character = chosen.character, epoch = epoch, position = position, velocity = velocity,
+      at = snap.now, stableAt = snap.now, measuredAt = snap.now, measuredPosition = position, disagreement = 0, acceleration = 0 }
+    return
+  end
+  local elapsed = snap.now - sample.at
+  if elapsed < 1 / 120 then return end
+  local acceleration = (velocity - sample.velocity).Magnitude / elapsed
+  local displacement = (position - sample.position).Magnitude
+  if acceleration > 12 or displacement > math.max(8, velocity.Magnitude * elapsed * 2) then sample.stableAt = snap.now end
+  sample.acceleration = acceleration
+  if snap.now - sample.measuredAt >= 0.1 then
+    local measured = (position - sample.measuredPosition) / (snap.now - sample.measuredAt)
+    sample.disagreement = (measured - velocity).Magnitude
+    sample.measuredAt, sample.measuredPosition = snap.now, position
+    if sample.disagreement > 4 then sample.stableAt = snap.now end
+  end
+  sample.position, sample.velocity, sample.at = position, velocity, snap.now
+end
 local function plan(snap, chosen)
+  if not visible(snap, chosen) or not sample or sample.character ~= chosen.character
+    or snap.now - sample.at > 0.08 or snap.now - sample.stableAt < 0.15 then return nil end
+  local grounded = chosen.character:GetAttribute("VoxelGrounded")
+  if grounded == false or grounded == nil and chosen.humanoid.FloorMaterial == Enum.Material.Air
+    or math.abs(sample.velocity.Y) > 1 then return nil end
+  local motion = sample.velocity * Vector3.new(1, 0, 1)
+  if motion.Magnitude > 60 then return nil end
+  local latency = 0
+  local ok, ping = pcall(snap.player.GetNetworkPing, snap.player)
+  if not ok or type(ping) ~= "number" or ping ~= ping or ping < 0 or ping > 0.2 then return nil end
+  latency = ping
   local params, ignored = RaycastParams.new(), { snap.camera }
   for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
-    if player.Character then
-      ignored[#ignored + 1] = player.Character
-    end
+    if player.Character then ignored[#ignored + 1] = player.Character end
   end
   for _, name in ipairs({ "LocalItemVisuals", "LocalBowVisuals", "PredictedBlocks", "ArenaPvPBots" }) do
     local folder = workspace:FindFirstChild(name)
-    if folder then
-      ignored[#ignored + 1] = folder
-    end
+    if folder then ignored[#ignored + 1] = folder end
   end
   params.FilterType, params.RespectCanCollide, params.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, true, ignored
-  local motion = chosen.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-  if motion.Magnitude > 90 then
-    motion = motion.Unit * 90
-  end
-  local gap = (chosen.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)
-  if gap.Magnitude < 0.01 then
-    return nil
-  end
-  local reach = native.stats(native.findWeapon(snap)).reach or 9.6
-  if gap.Magnitude <= math.max(48, reach * 4) then
-    -- Nearby opponents are intercepted at body height; do not redirect the pearl to a floor.
-    local flight = gap.Magnitude / speed
-    local best, duration, destination
-    for _ = 1, 3 do
-      destination = chosen.root.Position + motion * (flight + 0.02)
-      local aim, time = ballistics.solve(snap.eye, destination, speed, gravity, params, 1.25, drag, true)
-      if not aim then break end
-      best, duration, flight = aim, time, time
-    end
-    return best, duration, destination
-  end
-  -- Original interception flow: refine flight time, then use a nearer landing if needed.
-  local flight, best, bestFlight = 0.3, nil, nil
-  for _ = 1, 8 do
-    local point = chosen.root.Position + motion * flight
-    local floor = workspace:Raycast(point + Vector3.new(0, 0.5, 0), Vector3.new(0, -128, 0), params)
-    if not floor then break end
-    local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
-    if not aim then break end
-    best, bestFlight = aim, duration
-    if math.abs(duration - flight) * math.max(1, motion.Magnitude) < 0.5 then return aim, duration end
+  local sneak = chosen.character:GetAttribute("Sneaking") == true and 0.96 or 0
+  local flight = (chosen.root.Position - snap.eye).Magnitude / speed
+  local direction, duration, destination, converged
+  for _ = 1, 10 do
+    destination = chosen.root.Position + motion * (latency + flight) - Vector3.new(0, 0.35 + sneak, 0)
+    direction, duration = ballistics.solve(snap.eye, destination, speed, gravity, params, 1.25, drag, true)
+    if not direction then return nil end
+    if math.abs(duration - flight) * math.max(1, motion.Magnitude) <= 0.025 then converged = true break end
     flight = duration
   end
-  if best then return best, bestFlight end
-  local delta = chosen.root.Position - snap.root.Position
-  for _, distance in ipairs({ 160, 128, 96, 64, 32 }) do
-    if delta.Magnitude <= distance then continue end
-    local point = snap.root.Position + delta.Unit * distance
-    local floor = workspace:Raycast(point + Vector3.new(0, 32, 0), Vector3.new(0, -256, 0), params)
-    if floor and (floor.Position - chosen.root.Position).Magnitude + 8 < delta.Magnitude then
-      local aim, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
-      if aim then return aim, duration end
-    end
-  end
-  return nil
+  if not converged then return nil end
+  local horizon = latency + duration
+  local uncertainty = 0.08 + sample.disagreement * horizon + 0.5 * sample.acceleration * horizon * horizon
+  if uncertainty >= 0.5 then return nil end
+  local futureRoot = chosen.root.Position + motion * horizon
+  if workspace:Raycast(chosen.root.Position, futureRoot - chosen.root.Position, params) then return nil end
+  local floor = workspace:Raycast(futureRoot, Vector3.new(0, -8, 0), params)
+  if not floor or floor.Material == Enum.Material.Water then return nil end
+  local block = floor.Instance:GetAttribute("BlockKey")
+  if block == "lava" or block == "water" then return nil end
+  local collision = ballistics.intersects(snap.eye, direction, speed, gravity, drag, duration,
+    chosen.root.Position, motion, latency, uncertainty, sneak, params)
+  if not collision then return nil end
+  return direction, collision, destination
 end
+function Pearl.aim(snap, dt)
+  if not shot or shot.phase ~= "equip" or not shot.direction or not visible(snap, shot.target) then return end
+  if snap.now - (shot.validAt or 0) > 0.08 then return end
+  local camera, direction = snap.camera, shot.direction
+  local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
+  local angle = math.acos(math.clamp(look:Dot(direction), -1, 1))
+  if angle > 0.00001 then
+    local alpha = math.min(1, math.rad(540) * math.clamp(dt or 1 / 60, 0, 1 / 30) / angle)
+    camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, eye + direction), alpha)
+  end
+end
+
 function Pearl.step(snap, chosen)
   if not utils.getConfigValue("MCAutoPearl") then
     if shot and shot.sentAt then shot.cancelAfterConfirm = true
@@ -147,6 +182,7 @@ function Pearl.step(snap, chosen)
   end
   if shot then
     if shot.phase == "equip" then
+      if snap.now >= shot.deadline then Pearl.reset() retryAt = snap.now + 0.25 return false end
       local focused = target.get(snap)
       if not focused or focused.character ~= shot.target.character then Pearl.reset() return false end
       if
@@ -171,10 +207,12 @@ function Pearl.step(snap, chosen)
       end
       shot.planAt = snap.now
       local direction, duration = plan(snap, focused)
-      if not direction then
-        return false
-      end
-      shot.direction, shot.flight, shot.origin = direction, duration, snap.eye
+      if not direction then shot.aimedAt, shot.validAt = nil, nil return false end
+      shot.direction, shot.flight, shot.origin, shot.validAt = direction, duration, snap.eye, snap.now
+      local alignment = snap.camera.CFrame.LookVector:Dot(direction)
+      if alignment < math.cos(math.rad(0.5)) then shot.aimedAt = nil return false end
+      shot.aimedAt = shot.aimedAt or snap.now
+      if snap.now - shot.aimedAt < 1 / 60 or not visible(snap, focused) then return false end
       shot.count = tonumber(shot.tool:GetAttribute("Count")) or 1
       shot.cooldown = snap.player:GetAttribute("ItemCooldown_Pearl")
       shot.sentAt, shot.phase = snap.now, "confirm"
@@ -236,6 +274,8 @@ function Pearl.step(snap, chosen)
     target = chosen,
     previousTool = snap.tool,
     phase = "equip",
+    deadline = snap.now + 1.5,
+    validAt = snap.now,
     direction = direction,
     flight = duration,
     teleportAt = snap.character:GetAttribute("PearlTeleportAt"),
@@ -250,12 +290,12 @@ function Pearl.step(snap, chosen)
   return true
 end
 Pearl.__contract = {
-  provides = { "setup", "reset", "busy", "step", "observeProjectile" },
+  provides = { "setup", "reset", "busy", "step", "observeProjectile", "observe", "aim" },
   requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics", Utils = "utils" },
   requiresMethods = {
-    Native = { "snapshot", "findWeapon", "stats", "equip", "findPearl", "usePearl", "pearlReady", "blocked", "canHit" },
-    Target = { "hold", "get" },
-    Ballistics = { "solve" },
+    Native = { "snapshot", "findWeapon", "stats", "equip", "findPearl", "usePearl", "pearlReady", "blocked", "canHit", "visible" },
+    Target = { "hold", "get", "locked" },
+    Ballistics = { "solve", "intersects" },
     Utils = { "getConfigValue", "recordError" },
   },
 }
