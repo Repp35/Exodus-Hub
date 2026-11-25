@@ -9,6 +9,9 @@ GameUI.definition = {
       title = "MCPvP",
       columns = 2,
       sections = {
+        { title = "Inventário", column = 2, components = {
+          { kind = "toggle", title = "Reabastecer hotbar", key = "MCAutoRefill", description = "Abre o inventário e repõe cada item esgotado no mesmo slot." },
+        } },
         {
           title = "Totem",
           column = 1,
@@ -20,7 +23,7 @@ GameUI.definition = {
           components = {
             {
               kind = "toggle",
-              title = "Auto Attack Sword",
+              title = "Sword + Aim Assist / Aim Lock",
               key = "MCAutoSword",
               description = "Inicie com dois ataques no alvo. Mantém mira e ritmo dos golpes.",
             },

@@ -7,6 +7,7 @@ function Runtime.reset()
   if not modules then
     return
   end
+  modules.autorefill.reset()
   modules.autototem.reset()
   modules.autopearl.reset()
   modules.autoattacksword.reset()
@@ -23,6 +24,7 @@ end
 function Runtime.bind(loaded)
   Runtime.teardown()
   modules = loaded
+  loaded.autototem.setReservations(loaded.autorefill.isReserved)
   scope = loaded.lifetime.scope()
   local input = game:GetService("UserInputService")
   local controllerSource = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
@@ -74,8 +76,12 @@ function Runtime.bind(loaded)
       Runtime.reset()
       return
     end
+    loaded.autorefill.observe(snap)
+    if loaded.autorefill.busy() then loaded.autorefill.step(snap) return end
     if not loaded.autopearl.busy() then loaded.autototem.step(snap) end
     if loaded.autototem.busy() then return end
+    if not loaded.autopearl.busy() then loaded.autorefill.step(snap) end
+    if loaded.autorefill.busy() then return end
     if not loaded.utils.getConfigValue("MCAutoSword") then
       loaded.autopearl.reset()
       loaded.autoattacksword.reset()
@@ -107,7 +113,7 @@ function Runtime.bind(loaded)
     end
   end)
   scope.connect(game:GetService("RunService").RenderStepped, function(dt)
-    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autopearl.busy() or loaded.autototem.busy() then
+    if not loaded.utils.isActive() or not loaded.utils.getConfigValue("MCAutoSword") or loaded.autopearl.busy() or loaded.autototem.busy() or loaded.autorefill.busy() then
       return
     end
     local snap = loaded.mcpnative.snapshot()
@@ -119,7 +125,7 @@ function Runtime.bind(loaded)
   return { mode = "mcpvp" }
 end
 function Runtime.createAPI(loaded)
-  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy } }
+  return { getUIConfig = function() return loaded.gameui.definition end, resetState = Runtime.reset, updateBlockers = { loaded.autopearl.busy, loaded.autototem.busy, loaded.autorefill.busy } }
 end
 Runtime.__contract = {
   provides = { "setup", "reset", "teardown", "bind", "createAPI" },

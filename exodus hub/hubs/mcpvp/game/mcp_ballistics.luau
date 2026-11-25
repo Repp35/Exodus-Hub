@@ -40,11 +40,11 @@ local function clear(origin, direction, speed, gravity, drag, duration, destinat
   end
   return false
 end
-function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight)
+function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, projectileDrag)
   maxFlight = maxFlight or 0.75
   local delta = destination - origin
   local horizontal = Vector3.new(delta.X, 0, delta.Z)
-  local distance, drag = horizontal.Magnitude, 0.99
+  local distance, drag = horizontal.Magnitude, projectileDrag or 0.99
   if distance < 0.01 or speed <= 0 or gravity <= 0 then return nil end
   local previousPitch, previousError
   for degrees = -85, 85 do

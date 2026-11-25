@@ -9,7 +9,9 @@ function Sword.setup(deps)
 end
 function Sword.reset() nextAttack, selected, equipAt = 0, nil, 0 end
 function Sword.aim(snap, chosen, dt)
-  if native.blocked(snap) or not native.canHit(snap, chosen) then return end
+  if native.blocked(snap) then return end
+  local close = native.canHit(snap, chosen)
+  if not close and (chosen.root.Position - snap.root.Position).Magnitude > 96 then return end
   local camera = snap.camera
   local eye = camera.CFrame.Position
   local root = chosen.root.Position
@@ -26,7 +28,7 @@ function Sword.aim(snap, chosen, dt)
   local delta = point - eye
   if delta.Magnitude <= 0.01 then return end
   local angle = math.acos(math.clamp(camera.CFrame.LookVector:Dot(delta.Unit), -1, 1))
-  local alpha = angle < 0.001 and 1 or math.min(1, math.rad(tuning.aimSpeed) * math.clamp(dt or 1 / 60, 0, 1 / 30) / angle)
+  local alpha = angle < 0.001 and 1 or math.min(1, math.rad(close and 720 or 100) * math.clamp(dt or 1 / 60, 0, 1 / 30) / angle)
   camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(eye, point), alpha)
 end
 function Sword.step(snap, chosen)

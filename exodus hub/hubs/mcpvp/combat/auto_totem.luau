@@ -2,6 +2,7 @@
 --!optimize 2
 local Totem = {}
 local native, utils
+local reserved
 local functions, scanAt, job, nextRun, rpcBusy = {}, 0, nil, 0, false
 local function visible()
   local gui = utils.getLocalPlayer():FindFirstChildOfClass("PlayerGui")
@@ -71,7 +72,7 @@ local function find(tableSlots, first, last)
   end
 end
 local function empty(tableSlots)
-  for slot = 1, 9 do if not tableSlots[slot] then return slot end end
+  for slot = 1, 9 do if not tableSlots[slot] and (not reserved or not reserved(slot)) then return slot end end
 end
 local function finish()
   local previous = job
@@ -174,8 +175,32 @@ function Totem.step(snap)
     current.ready = snap.now + 0.1
   end
 end
+function Totem.setReservations(callback) reserved = callback end
+function Totem.inventorySlots() return slots() end
+function Totem.inventoryVisible() return visible() end
+function Totem.openInventory()
+  discover()
+  if visible() then return true end
+  if not functions.open then return false end
+  local ok = pcall(functions.open, true)
+  return ok and visible()
+end
+function Totem.closeInventory()
+  if functions.open and visible() then pcall(functions.open, false) end
+end
+function Totem.moveReserve(tool, from, destination)
+  if not visible() then return false end
+  local values = slots()
+  if not values or values[from] ~= tool or from < 10 or destination < 1 or destination > 9 then return false end
+  local previous = values[destination]
+  if previous and previous.Parent and (tonumber(previous:GetAttribute("Count")) or 1) > 0 then return false end
+  values[from], values[destination] = nil, tool
+  local ok = pcall(functions.refresh)
+  if not ok then values[from], values[destination] = tool, previous end
+  return ok
+end
 Totem.__contract = {
-  provides = { "setup", "step", "busy", "reset", "teardown" },
+  provides = { "setup", "step", "busy", "reset", "teardown", "inventorySlots", "inventoryVisible", "openInventory", "closeInventory", "moveReserve", "setReservations" },
   requires = { Native = "mcpnative", Utils = "utils" },
   requiresMethods = { Native = { "snapshot", "findSword", "equip", "blocked" }, Utils = { "getLocalPlayer", "isActive", "getConfigValue" } },
 }
