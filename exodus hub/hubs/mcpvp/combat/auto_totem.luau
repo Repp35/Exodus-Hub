@@ -1,8 +1,8 @@
 -- [[ autototem ]]
 --!optimize 2
 local Totem = {}
-local inventory, utils
-local reserved, job, nextRun
+local inventory, utils, target
+local reserved, job, nextRun, immediate, rejected
 local function available(tool) return tool and tool.Parent and (tonumber(tool:GetAttribute("Count")) or 1) > 0 end
 local function find(values, first, last)
   for slot = first, last do
@@ -22,7 +22,7 @@ local function empty(values)
   return nil
 end
 function Totem.setup(deps)
-  inventory, utils = deps.Inventory, deps.Utils
+  inventory, utils, target = deps.Inventory, deps.Utils, deps.Target
   return true
 end
 function Totem.reset()
@@ -31,6 +31,19 @@ function Totem.reset()
 end
 function Totem.busy() return job ~= nil end
 function Totem.setReservations(callback) reserved = callback end
+function Totem.protect(snap)
+  if not utils.isActive() or not utils.getConfigValue("MCAutoTotem") then return end
+  if immediate then
+    if immediate.character ~= snap.character then immediate, rejected = nil, nil
+    elseif inventory.confirm(immediate, snap) then immediate = nil
+    elseif immediate.done and not immediate.accepted then rejected, immediate = immediate.tool, nil
+    else return end
+  end
+  if snap.character:GetAttribute("OffhandItem") == "totem" then rejected = nil return end
+  local values = inventory.slots()
+  local tool = values and find(values, 1, 9)
+  if tool and tool ~= rejected then immediate = inventory.offhand("totem", snap, tool, true) end
+end
 function Totem.step(snap)
   if not utils.isActive() or not utils.getConfigValue("MCAutoTotem") then
     Totem.reset()
@@ -40,16 +53,19 @@ function Totem.step(snap)
     Totem.reset()
     return
   end
+  Totem.protect(snap)
+  if immediate then return end
   local values = inventory.slots()
   if not values then
     return
   end
   if not job then
-    if snap.now < (nextRun or 0) then
+    if snap.character:GetAttribute("OffhandItem") == "totem" and snap.now < (nextRun or 0) then
       return
     end
-    nextRun = snap.now + 0.2
+    nextRun = snap.now
     local missing = snap.character:GetAttribute("OffhandItem") ~= "totem"
+    if not missing and not target.quiet(snap, 0.8) then return end
     if not (missing and find(values, 1, 36)) and not (find(values, 10, 36) and empty(values)) then
       return
     end
@@ -65,7 +81,7 @@ function Totem.step(snap)
     end
     return
   end
-  if not inventory.ready("totem", snap) then
+  if not inventory.ready("totem", snap, true) then
     return
   end
   if job.pending then
@@ -84,6 +100,11 @@ function Totem.step(snap)
       end
       return
     end
+  end
+  if snap.character:GetAttribute("OffhandItem") == "totem" and not target.quiet(snap, 0.8) then
+    job.stage = "close"
+    if inventory.finish("totem", snap) then job = nil end
+    return
   end
   local tool, destination = find(values, 10, 36), empty(values)
   if tool and destination then
@@ -108,11 +129,11 @@ function Totem.step(snap)
   end
 end
 Totem.__contract = {
-  provides = { "setup", "reset", "busy", "step", "setReservations" },
-  requires = { Inventory = "mcpinventory", Utils = "utils" },
+  provides = { "setup", "reset", "busy", "step", "setReservations", "protect" },
+  requires = { Inventory = "mcpinventory", Utils = "utils", Target = "mcptarget" },
   requiresMethods = {
     Inventory = { "slots", "begin", "ready", "move", "offhand", "confirm", "finish", "cancel" },
-    Utils = { "isActive", "getConfigValue" },
+    Utils = { "isActive", "getConfigValue" }, Target = { "quiet" },
   },
 }
 return Totem

@@ -34,14 +34,16 @@ local function heightAt(distance, speed, gravity, drag, pitch)
   local fraction = math.clamp((distance - travel) / (vx * step), 0, 1)
   return height + vy * step * fraction, (ticks + fraction) * step
 end
-local function clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight)
+local function clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight, intercept)
   local position, velocity, elapsed = origin, direction * speed, 0
   -- A valid plan must end in a real floor collision, not just cross a point in mid-air.
-  while elapsed < math.min(duration + 0.2, maxFlight + 0.2) do
-    local step = math.min(0.05, math.min(duration + 0.2, maxFlight + 0.2) - elapsed)
+  local limit = intercept and duration or math.min(duration + 0.2, maxFlight + 0.2)
+  while elapsed < limit do
+    local step = math.min(0.05, limit - elapsed)
     local offset = velocity * step
     local hit = workspace:Raycast(position, offset, params)
     if hit then
+      if intercept then return false end
       local block = hit.Instance:GetAttribute("BlockKey")
       if hit.Material == Enum.Material.Water or block == "lava" or block == "water" then
         return false
@@ -64,9 +66,9 @@ local function clear(origin, direction, speed, gravity, drag, duration, destinat
     position, elapsed = position + offset, elapsed + step
     velocity = velocity * drag - Vector3.new(0, gravity * 0.05, 0)
   end
-  return false
+  return intercept == true
 end
-function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, projectileDrag)
+function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, projectileDrag, intercept)
   maxFlight = maxFlight or 0.75
   local delta = destination - origin
   local horizontal = Vector3.new(delta.X, 0, delta.Z)
@@ -101,7 +103,7 @@ function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight
       local angle = (lo + hi) / 2
       local _, duration = heightAt(distance, speed, gravity, drag, angle)
       local direction = horizontal.Unit * math.cos(angle) + Vector3.new(0, math.sin(angle), 0)
-      if duration and duration <= maxFlight and clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight) then
+      if duration and duration <= maxFlight and clear(origin, direction, speed, gravity, drag, duration, destination, params, maxFlight, intercept) then
         return direction, duration
       end
     end

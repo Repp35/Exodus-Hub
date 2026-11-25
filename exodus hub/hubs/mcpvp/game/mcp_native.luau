@@ -162,6 +162,21 @@ function Native.visible(snap, point, target)
   local hit = world:Raycast(snap.eye, point - snap.eye, params)
   return not hit or (target ~= nil and hit.Instance:IsDescendantOf(target))
 end
+function Native.hitDirection(snap, target, tool)
+  if not target or not target.root.Parent then return nil end
+  tool = tool or Native.findWeapon(snap)
+  if not Native.isWeapon(tool) then return nil end
+  local root, eye = target.root.Position, snap.eye
+  local sneak = target.character:GetAttribute("Sneaking") == true and 0.96 or 0
+  -- VoxelMeleeGeometry.Hit uses separate body/head boxes, not the camera crosshair.
+  for _, bounds in ipairs({ { -4.32, 0.7 - sneak }, { 0.7 - sneak, 2.62 - sneak } }) do
+    local point = root + Vector3.new(math.clamp(eye.X - root.X, -1.23, 1.23),
+      math.clamp(eye.Y - root.Y, bounds[1] + 0.05, bounds[2] - 0.05), math.clamp(eye.Z - root.Z, -1.23, 1.23))
+    local delta = point - eye
+    if delta.Magnitude > 0.001 and Native.canHit(snap, target, tool, delta.Unit) then return delta.Unit end
+  end
+  return nil
+end
 function Native.canHit(snap, target, tool, direction)
   if rules and not rules.CanMelee(snap.character, target.character) then
     return false
@@ -174,7 +189,8 @@ function Native.canHit(snap, target, tool, direction)
   if delta.Magnitude < 0.01 then
     return false
   end
-  direction = direction or delta.Unit
+  direction = direction or Native.hitDirection(snap, target, tool)
+  if not direction then return false end
   local reach = Native.stats(tool).reach
   local distance
   if geometry and type(geometry.Hit) == "function" then
@@ -263,11 +279,11 @@ local function invoke(action, direction)
   return ok and result == true
 end
 function Native.attack(snap, target)
-  if Native.blocked(snap) or not snap.tool or not Native.isWeapon(snap.tool) or not Native.canHit(snap, target, snap.tool, snap.camera.CFrame.LookVector) then
-    return false
-  end
+  if Native.blocked(snap) or not Native.isWeapon(snap.tool) then return false end
+  local direction = Native.hitDirection(snap, target, snap.tool)
+  if not direction then return false end
   local before = snap.character:GetAttribute("LocalAttackSwing")
-  local dispatched = invoke("Attack", snap.camera.CFrame.LookVector)
+  local dispatched = invoke("Attack", direction)
   return dispatched and snap.character:GetAttribute("LocalAttackSwing") ~= before
 end
 function Native.pearlCooldown() return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1 end
@@ -377,7 +393,7 @@ Native.__contract = {
     "snapshot",
     "stats",
     "visible",
-    "canHit",
+    "canHit", "hitDirection",
     "attack",
     "findSword",
     "findWeapon",

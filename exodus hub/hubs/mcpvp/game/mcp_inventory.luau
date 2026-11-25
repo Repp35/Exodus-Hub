@@ -131,7 +131,7 @@ function Inventory.begin(actor, snap)
   session = { actor = actor, character = snap.character, started = snap.now, lastAction = snap.now, owned = not Inventory.visible(), tickets = {} }
   return true
 end
-function Inventory.ready(actor, snap)
+function Inventory.ready(actor, snap, urgent)
   local current = session
   if not current or current.actor ~= actor or current.cancelled or current.character ~= snap.character then
     return false
@@ -154,10 +154,10 @@ function Inventory.ready(actor, snap)
     return false
   end
   current.visibleAt = current.visibleAt or snap.now
-  return snap.now - current.visibleAt >= MIN_DELAY
+  return urgent or snap.now - current.visibleAt >= MIN_DELAY
 end
 local function ticket(actor, snap, kind)
-  if not Inventory.ready(actor, snap) or session.closing then
+  if not Inventory.ready(actor, snap, actor == "totem") or session.closing then
     return nil
   end
   for _, pending in ipairs(session.tickets) do
@@ -188,7 +188,7 @@ function Inventory.move(actor, snap, tool, from, destination, allowSpeed)
   operation.done = pcall(functions.refresh)
   return operation
 end
-function Inventory.offhand(actor, snap, tool)
+function Inventory.offhand(actor, snap, tool, immediate)
   if outstandingOffhand and not outstandingOffhand.confirmed then
     if not outstandingOffhand.done then
       return nil
@@ -220,11 +220,19 @@ function Inventory.offhand(actor, snap, tool)
   if not remote or not remote:IsA("RemoteFunction") then
     return nil
   end
-  local operation = ticket(actor, snap, "offhand")
+  if immediate and from > 9 and not Inventory.visible() then return nil end
+  local operation = immediate and { kind = "offhand", character = snap.character, at = snap.now, immediate = true }
+    or ticket(actor, snap, "offhand")
   if not operation then
     return nil
   end
   operation.tool, operation.from, operation.count = tool, from, tonumber(tool:GetAttribute("Count")) or 1
+  operation.popAt = snap.character:GetAttribute("TotemPoppedAt")
+  if session then
+    for _, previous in ipairs(session.tickets) do
+      if previous.kind == "move" and previous.tool == tool and previous.destination == from then previous.usedBy = operation end
+    end
+  end
   outstandingOffhand = operation
   task.spawn(function()
     local ok, result = pcall(remote.InvokeServer, remote, "EquipOffhand", tool)
@@ -263,9 +271,12 @@ function Inventory.confirm(operation, snap)
       and values[operation.destination] == operation.tool
       and values[operation.from] ~= operation.tool
       and available(operation.tool)
+    if not valid and operation.done and operation.usedBy then valid = Inventory.confirm(operation.usedBy, snap) end
   else
     local consumed = not owned(operation.tool) or (tonumber(operation.tool:GetAttribute("Count")) or operation.count) < operation.count
-    valid = operation.done and operation.accepted and consumed and snap.character:GetAttribute("OffhandItem") == "totem"
+        local popped = snap.character:GetAttribute("TotemPoppedAt")
+    local equipped = snap.character:GetAttribute("OffhandItem") == "totem" or popped ~= nil and popped ~= operation.popAt
+    valid = operation.done and operation.accepted and consumed and equipped
     if valid and values then
       if not owned(operation.tool) and values[operation.from] == operation.tool then
         values[operation.from] = nil
@@ -284,7 +295,7 @@ function Inventory.confirm(operation, snap)
     return false
   end
   operation.stableAt = operation.stableAt or snap.now
-  operation.confirmed = snap.now - operation.stableAt >= MIN_DELAY
+  operation.confirmed = operation.immediate or snap.now - operation.stableAt >= (operation.kind == "offhand" and 0 or MIN_DELAY)
   return operation.confirmed
 end
 function Inventory.finish(actor, snap)

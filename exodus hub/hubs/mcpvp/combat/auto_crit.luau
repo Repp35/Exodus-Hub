@@ -156,8 +156,8 @@ function Crit.step(snap, chosen, engaged)
   if (chosen.root.Position - snap.root.Position).Magnitude > stats.reach + 2 then
     return
   end
-  local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or snap.now
-  Crit.plan(snap, chosen, snap.tool, lastSwing + 1 / stats.speed)
+  local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
+  Crit.plan(snap, chosen, snap.tool, lastSwing + math.max(1 / 15, 1 / stats.speed - 0.025))
 end
 function Crit.ready(snap, chosen, tool, readyAt)
   if snap.now < readyAt then
@@ -166,7 +166,9 @@ function Crit.ready(snap, chosen, tool, readyAt)
   if not utils.getConfigValue("MCAutoCrit") or not possible(snap) then
     return true
   end
-  if not grounded(snap) and snap.root.AssemblyLinearVelocity.Y < -0.2 then
+  -- VoxelCombatClient only sends a critical fall value when LocalFallDistance is positive.
+  if not grounded(snap) and snap.root.AssemblyLinearVelocity.Y < -0.2
+    and (tonumber(snap.character:GetAttribute("LocalFallDistance")) or 0) > 0 then
     native.prepareCritical()
     return true
   end
@@ -174,7 +176,7 @@ function Crit.ready(snap, chosen, tool, readyAt)
     return false
   end
   -- If a jump cannot start, do not stall normal combat.
-  return grounded(snap) or snap.now < fallbackUntil
+  return grounded(snap) and not jumpAt
 end
 Crit.__contract = {
   provides = { "setup", "reset", "observe", "plan", "ready", "step" },

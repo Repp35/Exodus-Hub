@@ -26,17 +26,17 @@ function Sword.step(snap, chosen)
     return false
   end
   if snap.tool ~= tool then
-    if selected ~= tool or snap.now - equipAt >= 0.75 then
+    if selected ~= tool or snap.now - equipAt >= 0.1 then
       if native.equip(snap, tool) then
         selected, equipAt = tool, snap.now
-        nextAttack = math.max(nextAttack, snap.now + 1 / speed)
+        nextAttack = math.max(nextAttack, snap.now + math.max(0, 1 / speed - 0.025))
       end
     end
     return false
   end
   local lastSwing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
-  local readyAt = math.max(nextAttack, lastSwing + 1 / speed)
-  if not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then
+  local readyAt = math.max(nextAttack, lastSwing + math.max(1 / 15, 1 / speed - 0.025))
+  if not native.canHit(snap, chosen, tool) then
     return false
   end
   if snap.now < readyAt then
@@ -44,10 +44,10 @@ function Sword.step(snap, chosen)
   end
   target.noteAttack(snap, chosen)
   if native.attack(snap, chosen) then
-    nextAttack = snap.now + 1 / speed
+    nextAttack = snap.now + math.max(1 / 15, 1 / speed - 0.025)
     return true
   end
-  nextAttack = snap.now + 0.25
+  nextAttack = snap.now + 1 / 60
   return false
 end
 Sword.__contract = {

@@ -92,6 +92,18 @@ local function plan(snap, chosen)
     return nil
   end
   local reach = native.stats(native.findWeapon(snap)).reach or 9.6
+  if gap.Magnitude <= math.max(48, reach * 4) then
+    -- Nearby opponents are intercepted at body height; do not redirect the pearl to a floor.
+    local flight = gap.Magnitude / speed
+    local best, duration, destination
+    for _ = 1, 3 do
+      destination = chosen.root.Position + motion * (flight + 0.02)
+      local aim, time = ballistics.solve(snap.eye, destination, speed, gravity, params, 1.25, drag, true)
+      if not aim then break end
+      best, duration, flight = aim, time, time
+    end
+    return best, duration, destination
+  end
   local flight = math.clamp(gap.Magnitude / speed, 0.15, 4)
   local best, bestFlight, bestScore, bestPoint
   local function try(point)
@@ -181,7 +193,7 @@ function Pearl.step(snap, chosen)
       if snap.now < (shot.planAt or 0) then
         return false
       end
-      shot.planAt = snap.now + 0.15
+      shot.planAt = snap.now
       local direction, duration = plan(snap, focused)
       if not direction then
         return false
@@ -192,7 +204,7 @@ function Pearl.step(snap, chosen)
       shot.sentAt, shot.phase = snap.now, "confirm"
       if not native.usePearl(snap, shot.tool, direction) then
         Pearl.reset()
-        retryAt = snap.now + 0.4
+        retryAt = snap.now
         return false
       end
       return true
@@ -212,13 +224,13 @@ function Pearl.step(snap, chosen)
       restore(snap)
     end
     local teleported = snap.character:GetAttribute("PearlTeleportAt") ~= shot.teleportAt
-    local ended = shot.endedAt and snap.now >= shot.sentAt + shot.flight + 0.25
+    local ended = shot.endedAt ~= nil
     if not teleported and not ended then
       return false
     end
     restore(snap)
     shot = nil
-    retryAt = snap.now + 0.08
+    retryAt = snap.now
   end
   if not chosen or not chosen.character.Parent or chosen.humanoid.Health <= 0 then
     return false
@@ -226,12 +238,7 @@ function Pearl.step(snap, chosen)
   if snap.now < retryAt or native.blocked(snap) or not native.pearlReady() or native.canHit(snap, chosen) then
     return false
   end
-  local distance = (chosen.root.Position - snap.root.Position).Magnitude
-  local reach = native.stats(native.findWeapon(snap)).reach or 9.6
-  if distance < reach + 1.2 then
-    return false
-  end
-  retryAt = snap.now + 0.15
+  retryAt = snap.now
   local tool = native.findPearl(snap)
   if not tool then
     return false
@@ -255,6 +262,8 @@ function Pearl.step(snap, chosen)
     Pearl.reset()
     return false
   end
+  local fresh = native.snapshot()
+  if fresh and fresh.tool == tool then return Pearl.step(fresh, chosen) end
   return true
 end
 Pearl.__contract = {

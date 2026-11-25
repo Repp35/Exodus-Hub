@@ -93,6 +93,12 @@ function Runtime.bind(loaded)
       return
     end
     watchedCharacter = snap.character
+    local function protectOffhand()
+      local fresh = loaded.mcpnative.snapshot()
+      if fresh then loaded.autototem.protect(fresh) end
+    end
+    scope.connect(snap.character:GetAttributeChangedSignal("OffhandItem"), protectOffhand)
+    scope.connect(snap.character:GetAttributeChangedSignal("TotemPoppedAt"), protectOffhand)
     scope.connect(snap.character:GetAttributeChangedSignal("LocalAttackSwing"), function()
       if loaded.mcpnative.isDispatching() or not loaded.utils.isActive() then
         return
@@ -122,6 +128,7 @@ function Runtime.bind(loaded)
     loaded.mcptarget.observe(snap)
     loaded.autostrength.observe(snap)
     loaded.autorefill.observe(snap)
+    loaded.autototem.protect(snap)
     if input:GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then
       loaded.autocrit.reset()
       return
@@ -190,7 +197,7 @@ function Runtime.bind(loaded)
     if automatic then
       local tool = snap.tool
       local stats = loaded.mcpnative.stats(tool)
-      local readyAt = (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge) + 1 / stats.speed
+      local readyAt = (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge) + math.max(1 / 15, 1 / stats.speed - 0.025)
       if stats.type == "mace" or loaded.autocrit.ready(snap, target, tool, readyAt) then
         loaded.autoattacksword.step(snap, target)
       end
