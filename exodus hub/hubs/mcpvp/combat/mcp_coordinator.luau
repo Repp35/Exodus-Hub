@@ -8,6 +8,7 @@ local backoff = {}
 local auraHits = {}
 local lastPearl, nextAttack, pauseUntil, lastError = -math.huge, 0, 0, -math.huge
 local lastJump = -math.huge
+local swordPending
 local enemyPearls = {}
 local pearlContacts = {}
 local focused = true
@@ -49,6 +50,7 @@ function Coordinator.reset()
   native.closeInventory()
   target, latest, character, folder = nil, nil, nil, nil
   lastPearl, nextAttack, pauseUntil, lastJump = -math.huge, 0, 0, -math.huge
+  swordPending = nil
   backoff = {}
   enemyPearls = {}
   pearlContacts = {}
@@ -351,13 +353,27 @@ local function sword(snap, forCombo)
   then
     return false
   end
+  local weapons = native.data().weapons
+  local function isSword(tool)
+    return tool ~= nil
+      and weapons ~= nil
+      and type(weapons.IsWeapon) == "function"
+      and weapons.IsWeapon(tool)
+      and (tool:GetAttribute("WeaponType") == "sword" or tool:GetAttribute("WeaponType") == nil)
+      and native.stats(tool).type == "sword"
+  end
   local weapon = native.equipped()
-  if native.stats(weapon).type ~= "sword" then
+  if not isSword(weapon) then
     if not forCombo and not explosives.mode() then
       return false
     end
-    local item = native.find("sword", true)
-    weapon = item and item.tool
+    weapon = nil
+    for _, item in ipairs(native.items()) do
+      if item.slot and item.slot <= 9 and isSword(item.tool) then
+        weapon = item.tool
+        break
+      end
+    end
   end
   if not weapon then
     return false
@@ -366,8 +382,15 @@ local function sword(snap, forCombo)
   local recharge = cfg("MCAttackCharge") / 100 / math.max(0.05, stats.speed)
   local reach = math.min(stats.reach, cfg("MCAttackRange") * 3.2)
   local chosen = selectSwordTarget(snap, reach, forCombo)
-  if not chosen or not native.canAct("attack") then
+  if not chosen then
+    if swordPending then
+      native.restore(swordPending.previous, swordPending.weapon)
+      swordPending = nil
+    end
     return false
+  end
+  if not native.canAct("attack") then
+    return swordPending ~= nil
   end
   if not forCombo and snap.now - (tonumber(snap.character:GetAttribute("LocalAttackSwing")) or 0) < recharge then
     return false
@@ -392,7 +415,15 @@ local function sword(snap, forCombo)
       native.prepareCritical()
     end
   end
-  local previous = native.equipped()
+  local previous = swordPending and swordPending.previous or native.equipped()
+  if swordPending and (not forCombo or swordPending.character ~= chosen.character or native.equipped() ~= swordPending.weapon) then
+    native.restore(swordPending.previous, swordPending.weapon)
+    swordPending = nil
+    return false
+  end
+  if swordPending and snap.now < swordPending.ready then
+    return true
+  end
   local previousClass = previous and previous:GetAttribute("ClassItem")
   local previousBlock = previous and previous:GetAttribute("BlockKey")
   local returnItem = previousClass == "EndCrystal" or previousClass == "RespawnAnchor" or previousBlock == "respawn_anchor" or previousBlock == "obsidian"
@@ -403,11 +434,19 @@ local function sword(snap, forCombo)
     end
     return false
   end
+  if forCombo and previous ~= weapon and not swordPending then
+    swordPending = { previous = previous, weapon = weapon, character = chosen.character, ready = snap.now + 0.08 }
+    return true
+  end
+  swordPending = nil
   local current = native.snapshot()
   if not current then
     if returnItem then
       native.restore(previous, weapon)
     end
+    return false
+  end
+  if current.equipped ~= weapon or not isSword(current.equipped) then
     return false
   end
   targeting.noteAttack(current, chosen, forCombo)
@@ -592,6 +631,7 @@ function Coordinator.start()
         return
       end
       if kind == Enum.UserInputType.Keyboard and key.Value >= Enum.KeyCode.One.Value and key.Value <= Enum.KeyCode.Nine.Value then
+        swordPending = nil
         cancel("Troca manual de slot", false, true)
         explosives.clearCombo()
         pauseUntil = os.clock() + 0.15
@@ -607,6 +647,7 @@ function Coordinator.start()
       if combatInput and (kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.MouseButton2 or kind == Enum.UserInputType.Touch) then
         return
       end
+      swordPending = nil
       pauseUntil = os.clock() + cfg("MCManualPause")
       cancel("Controle manual", false, true)
       explosives.release()

@@ -14,15 +14,15 @@ return {
     version = "0.3.1",
     author = "deltapolinha_2915",
     modules = {
-      { name = "mcpcoordinator", path = "hubs/mcpvp/combat/mcp_coordinator.luau", hash = "e80fc3b7f876933813ca8d7779cd28adc09e0a7d0c29018439b2400a069beca0" },
-      { name = "mcpexplosives", path = "hubs/mcpvp/combat/mcp_explosives.luau", hash = "88094aaf38086b17d648775b29b131cc5cde81f32bf5b37172186acc34e2e97e" },
+      { name = "mcpcoordinator", path = "hubs/mcpvp/combat/mcp_coordinator.luau", hash = "4ed2f33bb506279cb61528f6a4cb277dff786326e8bf115cef1ac1bcc2ee14da" },
+      { name = "mcpexplosives", path = "hubs/mcpvp/combat/mcp_explosives.luau", hash = "edccdab931528851ff147fbba8aff7e5555f011e8d8a856b109b9daa308b864a" },
       { name = "mcpgeometry", path = "hubs/mcpvp/combat/mcp_geometry.luau", hash = "cb0c69d4d20243bcc84dbe93a7efa229de6479e66f74e95f47412dc9d98af372" },
       { name = "mcpinventory", path = "hubs/mcpvp/combat/mcp_inventory.luau", hash = "e00231223b6a21c8fc2de1b7eb034d1a4c53b1ce04a2dfa3ccde015dc390620f" },
       { name = "mcpnative", path = "hubs/mcpvp/game/mcp_native.luau", hash = "b8968999018a726bb21d29408357a6733e899f4f8402142296a97a76dd34fff8" },
       { name = "mcptarget", path = "hubs/mcpvp/game/mcp_target.luau", hash = "dcba3fd1aa33e22fc8600afbc628e94ff96c06c7d3ce430f8e784a3cdf6c2f17" },
       { name = "gameruntime", path = "hubs/mcpvp/game_runtime.luau", hash = "27a423ac6b1438f0fbff2bdd4fcc6e9178d868f02c9eca850f0d109a68b7c7c3" },
       { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "49013813a417a32acce96d430ca38b7c49e8ec292eeeb43412ddffaae8912bbf" },
-      { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "67134019a66d10f9782dbbb54a56c7ef5dd93110da2ce3580419082d5a8d31b7" },
+      { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "8e670027b8134ec87c816e78e1016e6becfc8511c56a4cdaa1c5e68bacd9b42b" },
     },
   },
   {

@@ -88,7 +88,12 @@ function Explosives.setup(deps)
 end
 function Explosives.release()
   if held then
-    native.restore(original, held)
+    local obsidian = native.find("obsidian", true)
+    if obsidian and native.equipped() == held then
+      native.restore(obsidian.tool, held)
+    else
+      native.restore(original, held)
+    end
   end
   original, held = nil, nil
 end
@@ -232,15 +237,20 @@ function Explosives.pulse(snap, targets, cfg)
     local entry = state(block)
     local target = candidate(snap, targets, top, 6)
     local elevated = false
-    -- Any exposed player above this base keeps the opportunity open.
+    -- Detonate only while an opponent is above the user and the crystal base.
     for _, other in ipairs(targets) do
-      if other.humanoid.Health > 0 and above(other, top) and geometry.damage(snap, other.character, top, 6) > 0 then
+      if
+        other.humanoid.Health > 0
+        and above(other, top)
+        and other.root.Position.Y > snap.root.Position.Y
+        and geometry.damage(snap, other.character, top, 6) > 0
+      then
         target, elevated = other, true
         break
       end
     end
     local launch = (cfg("MCDTap") or cfg("MCCrystal") and cfg("MCCrystalAutoCombo")) and snap.now - entry.strikeAt < cfg("MCDTapLaunchWindow")
-    local continuous = (elevated or launch) and geometry.damage(snap, snap.character, top, 6) <= 0
+    local continuous = elevated and geometry.damage(snap, snap.character, top, 6) <= 0
     if target and (target.root.Position - top).Magnitude > 12.8 then
       target = nil
     end
@@ -282,7 +292,7 @@ function Explosives.pulse(snap, targets, cfg)
     comboMode, comboAt = launch and "dtap" or "crystal", snap.now
     -- Break the observed crystal first; empty swings waste the native attack interval.
     local broke = false
-    if crystal and native.canAct("attack") then
+    if crystal and elevated and native.canAct("attack") then
       if native.strike(hitPoint) then
         entry.spent, broke = true, true
         acted = true
@@ -296,7 +306,7 @@ function Explosives.pulse(snap, targets, cfg)
         acted = true
       end
     end
-    if (continuous and (crystal or entry.untilAt > snap.now)) or finishing or acted then
+    if acted or (continuous and crystal) then
       lastPulse = snap.now
       return true, target
     end
