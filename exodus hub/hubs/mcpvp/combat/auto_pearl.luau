@@ -1,11 +1,11 @@
 -- [[ autopearl ]]
 --!optimize 2
 local Pearl = {}
-local native, ballistics, tuning
+local native, ballistics, tuning, units
 local shot, retryAt = nil, 0
-local speed, gravity, drag = 96, 38.4, 0.99
+local speed, gravity, drag = 30, 12, 0.99
 function Pearl.setup(deps)
-  native, ballistics, tuning = deps.Native, deps.Ballistics, deps.Options.tuning
+  native, ballistics, tuning, units = deps.Native, deps.Ballistics, deps.Options.tuning, deps.Units
   return true
 end
 local function restore(snap)
@@ -30,11 +30,11 @@ function Pearl.observeProjectile(action, _id, kind, _position, velocity, acceler
   if action ~= "Projectile" or kind ~= "Pearl" or typeof(velocity) ~= "Vector3" then
     return
   end
-  if velocity.Magnitude > 0 and velocity.Magnitude < 1000 then
-    speed = velocity.Magnitude
+  if units.toBlocks(velocity.Magnitude) > 0 and units.toBlocks(velocity.Magnitude) < 312.5 then
+    speed = units.toBlocks(velocity.Magnitude)
   end
-  if type(acceleration) == "number" and acceleration > 0 and acceleration < 1000 then
-    gravity = acceleration
+  if type(acceleration) == "number" and acceleration > 0 and units.toBlocks(acceleration) < 312.5 then
+    gravity = units.toBlocks(acceleration)
   end
   if type(resistance) == "number" and resistance > 0 and resistance <= 1 then
     drag = resistance
@@ -55,25 +55,26 @@ local function plan(snap, chosen)
   end
   local params = RaycastParams.new()
   params.FilterType, params.RespectCanCollide, params.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, true, ignored
-  local motion = chosen.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-  if motion.Magnitude > 45 then
-    motion = motion.Unit * 45
+  local playerPosition, targetPosition, eye = units.toBlocks(snap.root.Position), units.toBlocks(chosen.root.Position), units.toBlocks(snap.eye)
+  local motion = units.toBlocks(chosen.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
+  if motion.Magnitude > 14.0625 then
+    motion = motion.Unit * 14.0625
   end
-  local flight = math.clamp((chosen.root.Position - snap.eye).Magnitude / speed, 0.1, 5)
+  local flight = math.clamp((targetPosition - eye).Magnitude / speed, 0.1, 5)
   for _ = 1, 5 do
-    local prediction = chosen.root.Position + motion * flight
-    if (prediction - snap.root.Position).Magnitude > tuning.focusRange then
+    local prediction = targetPosition + motion * flight
+    if (prediction - playerPosition).Magnitude > tuning.focusRangeBlocks then
       return nil
     end
-    local floor = workspace:Raycast(prediction + Vector3.new(0, 2, 0), Vector3.new(0, -64, 0), params)
-    if not floor or (floor.Position - snap.root.Position).Magnitude > tuning.focusRange then
+    local floor = workspace:Raycast(units.toWorld(prediction + Vector3.new(0, 0.625, 0)), units.offset(0, -20, 0), params)
+    if not floor or units.distance(floor.Position, snap.root.Position) > tuning.focusRangeBlocks then
       break
     end
-    local direction, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 0.75, drag)
+    local direction, duration = ballistics.solve(eye, units.toBlocks(floor.Position), speed, gravity, params, 0.75, drag)
     if not direction then
       break
     end
-    if math.abs(duration - flight) * motion.Magnitude < 0.75 then
+    if math.abs(duration - flight) * motion.Magnitude < 15 / 64 then
       return direction, duration
     end
     flight = (flight + duration) * 0.5
@@ -88,7 +89,7 @@ function Pearl.step(snap, chosen)
       shot.character ~= snap.character
       or not chosen
       or chosen.character ~= shot.target
-      or (chosen.root.Position - snap.root.Position).Magnitude > tuning.focusRange
+      or units.distance(chosen.root.Position, snap.root.Position) > tuning.focusRangeBlocks
     )
   then
     Pearl.reset()
@@ -142,7 +143,7 @@ function Pearl.step(snap, chosen)
   end
   if
     not chosen
-    or (chosen.root.Position - snap.root.Position).Magnitude > tuning.focusRange
+    or units.distance(chosen.root.Position, snap.root.Position) > tuning.focusRangeBlocks
     or snap.now < retryAt
     or native.blocked(snap)
     or not native.pearlReady()
@@ -177,9 +178,10 @@ function Pearl.step(snap, chosen)
 end
 Pearl.__contract = {
   provides = { "setup", "reset", "busy", "step", "observeProjectile" },
-  requires = { Native = "mcpnative", Options = "mcpoptions", Ballistics = "mcpballistics" },
+  requires = { Native = "mcpnative", Options = "mcpoptions", Ballistics = "mcpballistics", Units = "mcpunits" },
   requiresData = { Options = { "tuning" } },
   requiresMethods = {
+    Units = { "toBlocks", "toWorld", "offset", "distance" },
     Native = { "snapshot", "findSword", "equip", "findPearl", "usePearl", "pearlReady", "pearlCooldown", "blocked", "canHit", "aerialMace" },
     Ballistics = { "solve" },
   },

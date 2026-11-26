@@ -2,8 +2,12 @@
 --!native
 --!optimize 2
 local Ballistics = {}
+local units
 local STEP = 0.05
-function Ballistics.setup() return true end
+function Ballistics.setup(deps)
+  units = deps.Units
+  return true
+end
 -- Exact sums for move -> drag -> gravity, including the fractional final tick.
 local function coefficients(time, drag)
   local n = math.floor(time / STEP)
@@ -16,19 +20,19 @@ local function coefficients(time, drag)
   return STEP * sum + fraction * power, STEP / (1 - drag) * (STEP * (n - sum) + fraction * (1 - power))
 end
 local function safeFloor(hit, destination, params)
-  if hit.Normal.Y < 0.65 or hit.Material == Enum.Material.Water or (hit.Position - destination).Magnitude > 1.5 then
+  if hit.Normal.Y < 0.65 or hit.Material == Enum.Material.Water or (units.toBlocks(hit.Position) - destination).Magnitude > 15 / 32 then
     return false
   end
   local block = hit.Instance:GetAttribute("BlockKey")
   if block == "lava" or block == "water" then
     return false
   end
-  local feet = hit.Position + Vector3.new(0, 0.15, 0)
-  for _, offset in ipairs({ Vector3.zero, Vector3.new(0.65, 0, 0), Vector3.new(-0.65, 0, 0), Vector3.new(0, 0, 0.65), Vector3.new(0, 0, -0.65) }) do
-    if workspace:Raycast(feet + offset, Vector3.new(0, 6.4, 0), params) then
+  local feet = units.toBlocks(hit.Position) + Vector3.new(0, 3 / 64, 0)
+  for _, offset in ipairs({ Vector3.zero, Vector3.new(13 / 64, 0, 0), Vector3.new(-13 / 64, 0, 0), Vector3.new(0, 0, 13 / 64), Vector3.new(0, 0, -13 / 64) }) do
+    if workspace:Raycast(units.toWorld(feet + offset), units.offset(0, 2, 0), params) then
       return false
     end
-    local floor = workspace:Raycast(feet + offset, Vector3.new(0, -0.8, 0), params)
+    local floor = workspace:Raycast(units.toWorld(feet + offset), units.offset(0, -0.25, 0), params)
     if not floor or floor.Normal.Y < 0.65 or floor.Material == Enum.Material.Water then
       return false
     end
@@ -43,7 +47,7 @@ local function clear(origin, velocity, gravity, drag, duration, destination, par
   local position = origin
   for _ = 1, math.ceil((duration + STEP) / STEP) do
     local offset = velocity * STEP
-    local hit = workspace:Raycast(position, offset, params)
+    local hit = workspace:Raycast(units.toWorld(position), units.toWorld(offset), params)
     if hit then
       return safeFloor(hit, destination, params)
     end
@@ -52,6 +56,7 @@ local function clear(origin, velocity, gravity, drag, duration, destination, par
   end
   return false
 end
+-- Positions are blocks; speed is blocks/s and gravity is blocks/s^2.
 function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, drag)
   drag, maxFlight = drag or 0.99, maxFlight or 6
   if speed <= 0 or gravity <= 0 or drag <= 0 or drag > 1 or maxFlight <= STEP then
@@ -89,5 +94,6 @@ function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight
   end
   return nil
 end
-Ballistics.__contract = { provides = { "setup", "solve" }, requires = {} }
+Ballistics.__contract =
+  { provides = { "setup", "solve" }, requires = { Units = "mcpunits" }, requiresMethods = { Units = { "toBlocks", "toWorld", "offset" } } }
 return Ballistics

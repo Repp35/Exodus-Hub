@@ -1,7 +1,7 @@
 -- [[ mcpsupplies ]]
 --!optimize 2
 local Supplies = {}
-local inventory, native, utils, target
+local inventory, native, utils, target, units
 local owner, class, job, immediate, rejected
 local remembered, nextRun = {}, 0
 local strengthEpoch, strengthUsed, quietUntil = nil, false, 0
@@ -48,7 +48,7 @@ local function restore(snap)
   end
 end
 function Supplies.setup(deps)
-  inventory, native, utils, target = deps.Inventory, deps.Native, deps.Utils, deps.Target
+  inventory, native, utils, target, units = deps.Inventory, deps.Native, deps.Utils, deps.Target, deps.Units
   return true
 end
 function Supplies.reset()
@@ -165,7 +165,7 @@ function Supplies.step(snap, allowStart)
         native.equip(snap, job.tool)
         return
       end
-      if native.blocked(snap) or math.abs(snap.root.AssemblyLinearVelocity.Y) > 5 then
+      if native.blocked(snap) or math.abs(units.toBlocks(snap.root.AssemblyLinearVelocity.Y)) > 25 / 16 then
         return
       end
       job.count, job.stage = tonumber(job.tool:GetAttribute("Count")) or 1, "confirm"
@@ -240,8 +240,9 @@ function Supplies.step(snap, allowStart)
 end
 Supplies.__contract = {
   provides = { "setup", "reset", "busy", "observe", "step" },
-  requires = { Inventory = "mcpinventory", Native = "mcpnative", Utils = "utils", Target = "mcptarget" },
+  requires = { Inventory = "mcpinventory", Native = "mcpnative", Utils = "utils", Target = "mcptarget", Units = "mcpunits" },
   requiresMethods = {
+    Units = { "toBlocks" },
     Inventory = { "slots", "begin", "ready", "move", "offhand", "confirm", "finish", "cancel", "busy" },
     Native = { "snapshot", "equip", "blocked", "stats", "useItem" },
     Utils = { "getConfigValue" },

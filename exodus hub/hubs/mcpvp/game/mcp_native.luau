@@ -1,7 +1,7 @@
 -- [[ mcpnative ]]
 --!optimize 2
 local Native = {}
-local player, world, storage, weapons, geometry, config, controller, utils
+local player, world, storage, weapons, geometry, config, controller, utils, units
 local bridge, charge, dispatching, criticalAt = nil, nil, false, 0
 local observedCharacter, observedTool
 local equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
@@ -20,7 +20,7 @@ local function owned(tool)
     and (tool.Parent == player.Character or tool.Parent == player:FindFirstChild("Backpack"))
 end
 function Native.setup(deps)
-  utils, bridge = deps.Utils, deps.Bridge
+  utils, bridge, units = deps.Utils, deps.Bridge, deps.Units
   player, world = utils.getLocalPlayer(), utils.getWorkspace()
   storage = game:GetService("ReplicatedStorage")
   weapons, geometry, config, controller = load("VoxelWeapons"), load("VoxelMeleeGeometry"), load("GameConfig"), load("ControllerInput")
@@ -47,7 +47,7 @@ function Native.snapshot()
     observedTool, equippedAt = tool, now
   end
   local sneaking = char:GetAttribute("Sneaking") == true
-  local eye = geometry and geometry.Eye(root.Position, sneaking) or root.Position + Vector3.new(0, sneaking and 0.064 or 1.184, 0)
+  local eye = geometry and geometry.Eye(root.Position, sneaking) or root.Position + units.offset(0, sneaking and 0.02 or 0.37, 0)
   return {
     player = player,
     character = char,
@@ -60,10 +60,16 @@ function Native.snapshot()
   }
 end
 function Native.stats(tool)
-  if weapons and type(weapons.Stats) == "function" then
-    return weapons.Stats(tool)
+  local stats = weapons and type(weapons.Stats) == "function" and weapons.Stats(tool)
+  if not stats then
+    return { type = tool and tool:GetAttribute("WeaponType"), speed = 1.6, reachBlocks = 3 }
   end
-  return { type = tool and tool:GetAttribute("WeaponType"), speed = 1.6, reach = 9.6 }
+  return {
+    type = stats.type,
+    speed = stats.speed,
+    damage = stats.damage,
+    reachBlocks = tonumber(stats.reachBlocks) or units.toBlocks(stats.reach or units.toWorld(3)),
+  }
 end
 local function find(snap, predicate)
   for _, parent in pairs({ snap.character, player:FindFirstChild("Backpack") }) do
@@ -100,34 +106,35 @@ function Native.aimDirection(snap)
   local aim = snap.player:GetAttribute("FrontCameraAimDirection")
   return typeof(aim) == "Vector3" and aim.Magnitude > 0.001 and aim.Unit or snap.camera.CFrame.LookVector
 end
-function Native.hitDistance(snap, target, tool, direction)
-  local delta = target.root.Position - snap.eye
-  if delta.Magnitude < 0.01 then
+function Native.hitDistanceBlocks(snap, target, tool, direction)
+  local delta = units.toBlocks(target.root.Position - snap.eye)
+  if delta.Magnitude < 1 / 320 then
     return nil
   end
   direction = direction or delta.Unit
-  local reach = Native.stats(tool).reach
-  if type(reach) ~= "number" or reach <= 0 then
+  local reachBlocks = Native.stats(tool).reachBlocks
+  if type(reachBlocks) ~= "number" or reachBlocks <= 0 then
     return nil
   end
-  local distance
+  local distanceBlocks
   if geometry and type(geometry.Hit) == "function" then
-    distance = geometry.Hit(snap.eye, direction, target.root.Position, target.character:GetAttribute("Sneaking"), reach)
-    if distance == nil then
+    local worldDistance = geometry.Hit(snap.eye, direction, target.root.Position, target.character:GetAttribute("Sneaking"), units.toWorld(reachBlocks))
+    if worldDistance == nil then
       return nil
     end
+    distanceBlocks = units.toBlocks(worldDistance)
   else
-    distance = delta.Magnitude
-    if distance > reach or direction:Dot(delta.Unit) < 0.995 then
+    distanceBlocks = delta.Magnitude
+    if distanceBlocks > reachBlocks or direction:Dot(delta.Unit) < 0.995 then
       return nil
     end
   end
-  if not Native.visible(snap, snap.eye + direction * distance, target.character) then
+  if not Native.visible(snap, snap.eye + direction * units.toWorld(distanceBlocks), target.character) then
     return nil
   end
-  return distance
+  return distanceBlocks
 end
-function Native.canHit(snap, target, tool, direction) return Native.hitDistance(snap, target, tool or snap.tool, direction) ~= nil end
+function Native.canHit(snap, target, tool, direction) return Native.hitDistanceBlocks(snap, target, tool or snap.tool, direction) ~= nil end
 function Native.blocked(snap)
   return (controller and type(controller.IsBlocked) == "function" and controller.IsBlocked())
     or player:GetAttribute("MenuOpen") == true
@@ -205,8 +212,8 @@ local function intercepted(snap, chosen, direction, distance)
     if not root or not human or human.Health <= 0 then
       return false
     end
-    local hit = geometry.Hit(snap.eye, direction, root.Position, character:GetAttribute("Sneaking"), distance)
-    return hit ~= nil and hit <= distance
+    local hit = geometry.Hit(snap.eye, direction, root.Position, character:GetAttribute("Sneaking"), units.toWorld(distance))
+    return hit ~= nil and units.toBlocks(hit) <= distance
   end
   for _, other in ipairs(game:GetService("Players"):GetPlayers()) do
     if closer(other.Character) then
@@ -229,8 +236,8 @@ local function intercepted(snap, chosen, direction, distance)
         continue
       end
       -- performAttack prioritizes crystalPick before the selected melee target.
-      local hit = geometry.Box(snap.eye, direction, feet - Vector3.new(3.2, 0, 3.2), feet + Vector3.new(3.2, 6.4, 3.2), distance)
-      if hit and hit < distance then
+      local hit = geometry.Box(snap.eye, direction, feet - units.offset(1, 0, 1), feet + units.offset(1, 2, 1), units.toWorld(distance))
+      if hit and units.toBlocks(hit) < distance then
         return true
       end
     end
@@ -242,7 +249,7 @@ function Native.attackDirection(snap, chosen, tool)
     return nil
   end
   local function valid(direction)
-    local distance = Native.hitDistance(snap, chosen, tool, direction)
+    local distance = Native.hitDistanceBlocks(snap, chosen, tool, direction)
     return distance and not intercepted(snap, chosen, direction, distance)
   end
   local aim = Native.aimDirection(snap)
@@ -250,14 +257,15 @@ function Native.attackDirection(snap, chosen, tool)
     return aim
   end
   local root = chosen.root.Position
-  local crouch = chosen.character:GetAttribute("Sneaking") == true and 0.96 or 0
-  local relative = snap.eye - root
+  local crouch = chosen.character:GetAttribute("Sneaking") == true and 0.3 or 0
+  local relative = units.toBlocks(snap.eye - root)
   -- Use current body/head boxes from VoxelMeleeGeometry, with points inside their margins.
-  local nearest = Vector3.new(math.clamp(relative.X, -1.2, 1.2), math.clamp(relative.Y, -4.2, 0.6 - crouch), math.clamp(relative.Z, -1.2, 1.2))
-  local head = Vector3.new(math.clamp(relative.X, -1.2, 1.2), math.clamp(relative.Y, 0.8 - crouch, 2.5 - crouch), math.clamp(relative.Z, -1.2, 1.2))
-  for _, offset in ipairs({ nearest, head, Vector3.new(0, 0.3 - crouch, 0), Vector3.new(0, 1.5 - crouch, 0) }) do
-    local delta = root + offset - snap.eye
-    if delta.Magnitude > 0.001 and valid(delta.Unit) then
+  local nearest = Vector3.new(math.clamp(relative.X, -3 / 8, 3 / 8), math.clamp(relative.Y, -21 / 16, 3 / 16 - crouch), math.clamp(relative.Z, -3 / 8, 3 / 8))
+  local head =
+    Vector3.new(math.clamp(relative.X, -3 / 8, 3 / 8), math.clamp(relative.Y, 1 / 4 - crouch, 25 / 32 - crouch), math.clamp(relative.Z, -3 / 8, 3 / 8))
+  for _, offset in ipairs({ nearest, head, Vector3.new(0, 3 / 32 - crouch, 0), Vector3.new(0, 15 / 32 - crouch, 0) }) do
+    local delta = units.toBlocks(root - snap.eye) + offset
+    if delta.Magnitude > 1 / 3200 and valid(delta.Unit) then
       return delta.Unit
     end
   end
@@ -335,16 +343,16 @@ function Native.crystalJumpRisk(snap)
     ignored[#ignored + 1] = crystal
   end
   params.FilterDescendantsInstances = ignored
-  local motion = snap.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
-  -- Native movement: 26.88 jump speed, 0.05 s ticks, then (vy - 5.12) * 0.98.
-  local trajectory, height, vertical = {}, 0, 26.88
+  local motion = units.toBlocks(snap.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
+  -- Native movement in blocks: 8.4 blocks/s jump, 0.05 s ticks, then (vy - 1.6) * 0.98.
+  local trajectory, height, vertical = {}, 0, 8.4
   for tick = 1, 20 do
     height += vertical * 0.05
     if height < 0 then
       break
     end
-    trajectory[#trajectory + 1] = snap.root.Position - Vector3.new(0, 4, 0) + motion * (tick * 0.05) + Vector3.new(0, height, 0)
-    vertical = (vertical - 5.12) * 0.98
+    trajectory[#trajectory + 1] = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0) + motion * (tick * 0.05) + Vector3.new(0, height, 0)
+    vertical = (vertical - 1.6) * 0.98
   end
   for _, crystal in ipairs(crystals) do
     if seen[crystal] or not crystal.Parent then
@@ -355,18 +363,25 @@ function Native.crystalJumpRisk(snap)
     if typeof(origin) ~= "Vector3" then
       continue
     end
+    origin = units.toBlocks(origin)
     for _, feet in ipairs(trajectory) do
       -- Narrow client estimate: feet at/above the crystal in its immediate one-block space,
       -- with full body exposure. The server's exact damage formula is not replicated.
-      if feet.Y < origin.Y or (feet - origin).Magnitude > 3.2 then
+      if feet.Y < origin.Y or (feet - origin).Magnitude > 1 then
         continue
       end
       local exposed = true
-      for _, heightOffset in ipairs({ 0.15, 3.2, 6.2 }) do
-        for _, side in ipairs({ Vector3.zero, Vector3.new(-0.9, 0, -0.9), Vector3.new(-0.9, 0, 0.9), Vector3.new(0.9, 0, -0.9), Vector3.new(0.9, 0, 0.9) }) do
-          local from = origin + Vector3.new(0, 0.05, 0)
+      for _, heightOffset in ipairs({ 3 / 64, 1, 31 / 16 }) do
+        for _, side in ipairs({
+          Vector3.zero,
+          Vector3.new(-9 / 32, 0, -9 / 32),
+          Vector3.new(-9 / 32, 0, 9 / 32),
+          Vector3.new(9 / 32, 0, -9 / 32),
+          Vector3.new(9 / 32, 0, 9 / 32),
+        }) do
+          local from = origin + Vector3.new(0, 1 / 64, 0)
           local destination = feet + side + Vector3.new(0, heightOffset, 0)
-          if world:Raycast(from, destination - from, params) then
+          if world:Raycast(units.toWorld(from), units.toWorld(destination - from), params) then
             exposed = false
             break
           end
@@ -440,11 +455,11 @@ function Native.aerialMace(snap, target)
   params.FilterType = Enum.RaycastFilterType.Exclude
   params.RespectCanCollide = true
   params.FilterDescendantsInstances = { snap.character, target.character, snap.camera }
-  -- A normal jump rises about four studs. Require much more clearance for aerial mace mode.
-  local support = world:Raycast(target.root.Position, Vector3.new(0, -12, 0), params)
-  local above = target.root.Position.Y - snap.root.Position.Y
-  local fall = tonumber(target.character:GetAttribute("LocalFallDistance")) or 0
-  return not support or above > 8 or fall > 8
+  -- A normal jump rises about 1.25 blocks; aerial mace detection needs more clearance.
+  local support = world:Raycast(target.root.Position, units.offset(0, -3.75, 0), params)
+  local above = units.toBlocks(target.root.Position.Y - snap.root.Position.Y)
+  local fall = units.toBlocks(tonumber(target.character:GetAttribute("LocalFallDistance")) or 0)
+  return not support or above > 2.5 or fall > 2.5
 end
 Native.__contract = {
   provides = {
@@ -454,7 +469,7 @@ Native.__contract = {
     "visible",
     "canHit",
     "aimDirection",
-    "hitDistance",
+    "hitDistanceBlocks",
     "attack",
     "readyAt",
     "attackDirection",
@@ -472,7 +487,11 @@ Native.__contract = {
     "useItem",
     "aerialMace",
   },
-  requires = { Utils = "utils", Bridge = "mcpbridge" },
-  requiresMethods = { Bridge = { "get", "upvalues" }, Utils = { "getLocalPlayer", "getWorkspace", "recordError" } },
+  requires = { Utils = "utils", Bridge = "mcpbridge", Units = "mcpunits" },
+  requiresMethods = {
+    Units = { "toBlocks", "toWorld", "offset" },
+    Bridge = { "get", "upvalues" },
+    Utils = { "getLocalPlayer", "getWorkspace", "recordError" },
+  },
 }
 return Native

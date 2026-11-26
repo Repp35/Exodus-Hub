@@ -7,6 +7,7 @@ import re
 import json
 import shutil
 import subprocess
+import tempfile
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'indeed/tests'))
 import test_api_contracts as contracts
@@ -21,6 +22,54 @@ class MCPvPContracts(contracts.InternalAPIContracts):
             cls.contracts = contracts.load_contracts()
         finally:
             contracts.MANIFEST = original
+
+    def test_block_units_api(self):
+        runtime = os.environ.get('LUAU_BIN') or shutil.which('luau')
+        if not runtime:
+            self.skipTest('Luau runtime required')
+        source = (ROOT / 'hubs/mcpvp/game/mcp_units.luau').read_text()
+        script = 'local source = ' + json.dumps(source) + '\n' + r"""
+local Vector = {}
+local meta = {}
+function Vector.new(x, y, z) return setmetatable({X = x, Y = y, Z = z}, meta) end
+meta.__index = function(v, key)
+  if key == "Magnitude" then return math.sqrt(v.X*v.X + v.Y*v.Y + v.Z*v.Z) end
+end
+meta.__mul = function(v, n) return Vector.new(v.X*n, v.Y*n, v.Z*n) end
+meta.__div = function(v, n) return Vector.new(v.X/n, v.Y/n, v.Z/n) end
+meta.__sub = function(a, b) return Vector.new(a.X-b.X, a.Y-b.Y, a.Z-b.Z) end
+local block = 4
+local environment = setmetatable({
+  Vector3 = Vector,
+  game = {GetService = function(_, name)
+    assert(name == "ReplicatedStorage")
+    return {FindFirstChild = function(_, key) assert(key == "VoxelWeapons") return {} end}
+  end},
+  require = function() return {Block = block} end,
+}, {__index = getfenv()})
+local chunk = assert(loadstring(source))
+setfenv(chunk, environment)
+local units = chunk()
+assert(units.setup() == true)
+assert(units.toWorld(0.5) == 2 and units.toBlocks(2) == 0.5)
+local converted = units.toWorld(Vector.new(0.5, -1.25, 2.75))
+assert(converted.X == 2 and converted.Y == -5 and converted.Z == 11)
+local restored = units.toBlocks(converted)
+assert(restored.X == 0.5 and restored.Y == -1.25 and restored.Z == 2.75)
+assert(units.distance(Vector.new(0, 0, 0), units.offset(3, 4, 0)) == 5)
+block = 3.2
+assert(units.setup() == true)
+assert(math.abs(units.toBlocks(units.toWorld(0.125)) - 0.125) < 1e-12)
+assert(math.abs(units.toWorld(0.125) - 0.4) < 1e-12)
+block = 0
+assert(units.setup() == true)
+assert(math.abs(units.toWorld(1) - 3.2) < 1e-12)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'units_api.luau'
+            path.write_text(script)
+            result = subprocess.run([runtime, str(path)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_game_luau_syntax_and_globals(self):
         compiler = os.environ.get('LUAU_COMPILE_BIN') or shutil.which('luau-compile')

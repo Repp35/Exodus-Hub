@@ -1,10 +1,10 @@
 -- [[ mcpaim ]]
 --!optimize 2
 local Aim = {}
-local native, utils, tuning
+local native, utils, tuning, units
 local input, gui
 function Aim.setup(deps)
-  native, utils, tuning = deps.Native, deps.Utils, deps.Options.tuning
+  native, utils, tuning, units = deps.Native, deps.Utils, deps.Options.tuning, deps.Units
   input, gui = game:GetService("UserInputService"), game:GetService("GuiService")
   return true
 end
@@ -19,14 +19,14 @@ function Aim.step(snap, target, dt)
   end
   local camera, root = snap.camera, target.root.Position
   local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
-  local range = tuning.focusRange
-  if (root - snap.root.Position).Magnitude > range then
+  local range = tuning.focusRangeBlocks
+  if units.distance(root, snap.root.Position) > range then
     return
   end
   -- Aim at the current body position, without leading or projecting target motion.
-  local point = root + Vector3.new(0, target.character:GetAttribute("Sneaking") == true and 0.15 or 0.5, 0)
+  local point = root + units.offset(0, target.character:GetAttribute("Sneaking") == true and 3 / 64 or 5 / 32, 0)
   local delta = point - eye
-  if delta.Magnitude < 0.01 then
+  if units.toBlocks(delta).Magnitude < 1 / 320 then
     return
   end
   local direction = delta.Unit
@@ -50,8 +50,8 @@ function Aim.step(snap, target, dt)
 end
 Aim.__contract = {
   provides = { "setup", "step" },
-  requires = { Native = "mcpnative", Utils = "utils", Options = "mcpoptions" },
+  requires = { Native = "mcpnative", Utils = "utils", Options = "mcpoptions", Units = "mcpunits" },
   requiresData = { Options = { "tuning" } },
-  requiresMethods = { Native = { "blocked", "visible" }, Utils = { "getConfigValue" } },
+  requiresMethods = { Units = { "distance", "offset", "toBlocks" }, Native = { "blocked", "visible" }, Utils = { "getConfigValue" } },
 }
 return Aim

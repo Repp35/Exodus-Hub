@@ -1,11 +1,11 @@
 -- [[ mcpmelee ]]
 --!optimize 2
 local Melee = {}
-local native, target, utils, tuning
+local native, target, utils, tuning, units
 local owner, cycle, selected
 local queuedManual, equipAt, apex = false, 0, 0.25
 function Melee.setup(deps)
-  native, target, utils, tuning = deps.Native, deps.Target, deps.Utils, deps.Options.tuning
+  native, target, utils, tuning, units = deps.Native, deps.Target, deps.Utils, deps.Options.tuning, deps.Units
   return true
 end
 function Melee.reset()
@@ -31,7 +31,7 @@ local function startJump(snap)
     return false
   end
   native.prepareCritical()
-  cycle = { at = snap.now, phase = "takeoff", vertical = snap.root.AssemblyLinearVelocity.Y }
+  cycle = { at = snap.now, phase = "takeoff", vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
   queuedManual = false
   native.requestJump(snap)
   return true
@@ -55,7 +55,7 @@ function Melee.preSimulation(snap)
   bind(snap)
   local ground = grounded(snap)
   if cycle then
-    local vertical = snap.root.AssemblyLinearVelocity.Y
+    local vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y)
     if cycle.phase == "takeoff" then
       if ground then
         -- Keep the request alive until the native movement actually leaves the ground.
@@ -107,10 +107,10 @@ local function criticalReady(snap, readyAt)
     return false
   end
   if not cycle then
-    cycle = { at = snap.now, phase = "air", vertical = snap.root.AssemblyLinearVelocity.Y }
+    cycle = { at = snap.now, phase = "air", vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
   end
-  local fall = tonumber(snap.character:GetAttribute("LocalFallDistance")) or 0
-  local falling = snap.root.AssemblyLinearVelocity.Y < -0.1 or fall > 0
+  local fall = units.toBlocks(tonumber(snap.character:GetAttribute("LocalFallDistance")) or 0)
+  local falling = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) < -1 / 32 or fall > 0
   if not falling or snap.now < readyAt then
     return false
   end
@@ -123,7 +123,7 @@ function Melee.step(snap, chosen)
     not utils.getConfigValue("MCAutoSword")
     or not chosen
     or native.blocked(snap)
-    or (chosen.root.Position - snap.root.Position).Magnitude > tuning.focusRange
+    or units.distance(chosen.root.Position, snap.root.Position) > tuning.focusRangeBlocks
   then
     return false
   end
@@ -163,8 +163,9 @@ function Melee.step(snap, chosen)
 end
 Melee.__contract = {
   provides = { "setup", "reset", "step", "manual", "preSimulation" },
-  requires = { Native = "mcpnative", Target = "mcptarget", Utils = "utils", Options = "mcpoptions" },
+  requires = { Native = "mcpnative", Target = "mcptarget", Utils = "utils", Options = "mcpoptions", Units = "mcpunits" },
   requiresMethods = {
+    Units = { "distance", "toBlocks" },
     Native = { "blocked", "findSword", "stats", "equip", "prepareCritical", "requestJump", "crystalJumpRisk", "attack", "readyAt", "attackDirection" },
     Target = { "noteAttack" },
     Utils = { "getConfigValue" },

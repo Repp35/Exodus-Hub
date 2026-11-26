@@ -1,11 +1,11 @@
 -- [[ mcptarget ]]
 --!optimize 2
 local Target = {}
-local native, tuning, players
+local native, tuning, players, units
 local current, attempt, owner, health, engaged
 local clickAt, hurtAt, hitAt = -math.huge, -math.huge, -math.huge
 function Target.setup(deps)
-  native, tuning, players = deps.Native, deps.Options.tuning, game:GetService("Players")
+  native, tuning, players, units = deps.Native, deps.Options.tuning, game:GetService("Players"), deps.Units
   return true
 end
 function Target.reset()
@@ -22,11 +22,11 @@ local function candidate(player, snap)
   if not root or not human or human.Health <= 0 or char:FindFirstChildOfClass("ForceField") then
     return nil
   end
-  local distance = (root.Position - snap.root.Position).Magnitude
-  if distance > tuning.focusRange then
+  local distance = units.distance(root.Position, snap.root.Position)
+  if distance > tuning.focusRangeBlocks then
     return nil
   end
-  return { player = player, character = char, root = root, humanoid = human, distance = distance }
+  return { player = player, character = char, root = root, humanoid = human, distanceBlocks = distance }
 end
 function Target.observe(snap)
   if owner ~= snap.character then
@@ -60,7 +60,7 @@ function Target.manual(snap)
   -- Match the native attack ray: only a player actually under our strike can start PvP.
   for _, player in ipairs(players:GetPlayers()) do
     local value = candidate(player, snap)
-    local hit = value and native.hitDistance(snap, value, snap.tool, direction)
+    local hit = value and native.hitDistanceBlocks(snap, value, snap.tool, direction)
     if hit and (not distance or hit < distance) then
       best, distance = value, hit
     end
@@ -85,8 +85,8 @@ function Target.get(snap)
     if not native.visible(snap, value.root.Position, value.character) then
       continue
     end
-    if not distance or value.distance < distance then
-      nearest, distance = value, value.distance
+    if not distance or value.distanceBlocks < distance then
+      nearest, distance = value, value.distanceBlocks
     end
   end
   current = nearest
@@ -98,8 +98,8 @@ end
 function Target.quiet(snap, duration) return snap.now - math.max(clickAt, hurtAt, hitAt) >= (duration or 4) end
 Target.__contract = {
   provides = { "setup", "reset", "observe", "manual", "get", "noteAttack", "confirmHit", "quiet" },
-  requires = { Native = "mcpnative", Options = "mcpoptions" },
-  requiresMethods = { Native = { "blocked", "aimDirection", "hitDistance", "visible" } },
+  requires = { Native = "mcpnative", Options = "mcpoptions", Units = "mcpunits" },
+  requiresMethods = { Units = { "distance" }, Native = { "blocked", "aimDirection", "hitDistanceBlocks", "visible" } },
   requiresData = { Options = { "tuning" } },
 }
 return Target
