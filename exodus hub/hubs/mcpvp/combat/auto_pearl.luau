@@ -12,20 +12,36 @@ function Pearl.setup(deps)
 end
 local function restore(snap)
   if not shot or shot.restored or not snap or shot.character ~= snap.character then
-    return
+    return shot and shot.restored or false
   end
-  if snap.tool and snap.tool ~= shot.tool then
-    shot.restored = true
-    return
+  local tool = shot.phase == "equip" and shot.previous or native.find(snap, "sword")
+  if not tool or not tool.Parent or tool == shot.tool then
+    tool = shot.previous ~= shot.tool and shot.previous or nil
   end
-  local tool = utils.getConfigValue("MCAutoSword") and native.find(snap, "sword") or shot.previous
-  if tool and tool.Parent then
-    shot.restored = native.equip(snap, tool)
+  if not tool or not tool.Parent then
+    return nil
   end
+  native.equip(snap, tool)
+  shot.restored = snap.character:FindFirstChildOfClass("Tool") == tool
+  return shot.restored
+end
+local function finishRestore(snap)
+  if native.blocked(snap) then
+    return false
+  end
+  local equipped = restore(snap)
+  if equipped == nil then
+    utils.recordError("mcpvp.pearl.weapon", "Lançamento confirmado, mas a espada e o item anterior não estão disponíveis para restaurar.")
+  end
+  if equipped or equipped == nil then
+    shot.phase = "flight"
+    return true
+  end
+  return false
 end
 function Pearl.reset()
   local snap = native.snapshot()
-  if shot and shot.phase == "confirm" and snap and shot.character == snap.character then
+  if shot and (shot.phase == "confirm" or shot.phase == "restore") and snap and shot.character == snap.character then
     -- Resetting combat cannot declare an in-flight request completed or repeat it.
     motion = nil
     return
@@ -33,41 +49,26 @@ function Pearl.reset()
   restore(snap)
   shot, motion, retryAt = nil, nil, 0
 end
-function Pearl.busy() return shot ~= nil and (shot.phase == "equip" or shot.phase == "confirm") end
+function Pearl.busy() return shot ~= nil and (shot.phase == "equip" or shot.phase == "confirm" or shot.phase == "restore") end
 function Pearl.pending() return shot ~= nil end
 function Pearl.observe(snap)
-  if not shot or (shot.phase ~= "confirm" and shot.phase ~= "interrupted") or shot.character ~= snap.character then
+  if not shot or shot.character ~= snap.character then
     return
   end
-  local count = tonumber(shot.tool:GetAttribute("Count"))
-  shot.consumed = shot.consumed or not shot.tool.Parent or count ~= nil and count < shot.count
-  local cooldown = tonumber(snap.player:GetAttribute("ItemCooldown_Pearl")) or 0
-  shot.cooldown = shot.cooldown or cooldown > shot.cooldownBefore
-  if shot.consumed and shot.cooldown and shot.projectile then
-    shot.phase, shot.untilAt = "flight", math.max(snap.now + 0.2, shot.requestAt + shot.duration + 0.7)
+  if shot.phase == "confirm" then
+    local count = tonumber(shot.tool:GetAttribute("Count")) or shot.count
+    -- The game's own stack is the acknowledgement: it decreased or the last item was consumed.
+    if shot.tool.Parent and count >= shot.count then
+      return
+    end
+    shot.phase, shot.untilAt = "restore", math.max(snap.now + 0.2, shot.requestAt + shot.duration + 0.7)
     target.attacked(snap, shot.chosen)
-    if not native.blocked(snap) then
-      restore(snap)
-    end
-    return true
   end
-  if snap.tool ~= shot.tool and shot.tool.Parent and not shot.consumed and not shot.cooldown and not native.busy() then
-    if shot.phase ~= "interrupted" then
-      utils.recordError(
-        "mcpvp.pearl.interrupted",
-        "A pearl foi desequipada antes da confirmação. O lançamento não foi marcado como concluído e o uso não será repetido."
-      )
-    end
-    shot.phase = "interrupted"
-  elseif snap.now >= shot.confirmUntil and not shot.warned then
-    shot.warned = true
-    utils.recordError(
-      "mcpvp.pearl.confirm",
-      "Sem confirmação completa do servidor: mantendo a pearl equipada, sem repetir o uso. Troque de item manualmente para cancelar a espera."
-    )
+  if shot.phase == "restore" then
+    return finishRestore(snap)
   end
 end
-function Pearl.projectile(action, id, kind, position, velocity, acceleration, resistance, sentAt)
+function Pearl.projectile(action, _id, kind, _position, velocity, acceleration, resistance)
   if action ~= "Projectile" or kind ~= "Pearl" or typeof(velocity) ~= "Vector3" then
     return
   end
@@ -80,23 +81,6 @@ function Pearl.projectile(action, id, kind, position, velocity, acceleration, re
   end
   if type(resistance) == "number" and resistance > 0 and resistance <= 1 then
     drag = resistance
-  end
-  if
-    shot
-    and (shot.phase == "confirm" or shot.phase == "interrupted")
-    and type(id) == "number"
-    and typeof(position) == "Vector3"
-    and velocity.Magnitude > 0.001
-    and (type(sentAt) ~= "number" or sentAt >= shot.serverAt - 0.25)
-    and units.distance(position, shot.origin) <= 2 + math.min(4, shot.motionSpeed * math.max(0, os.clock() - shot.requestAt))
-    and velocity.Unit:Dot(shot.direction) >= 0.98
-  then
-    -- The broadcast has no owner field. Only our consumption AND cooldown can authorize it.
-    shot.projectile = id
-    local snap = native.snapshot()
-    if snap then
-      Pearl.observe(snap)
-    end
   end
 end
 local function trackTarget(snap, value)
@@ -168,11 +152,7 @@ function Pearl.prepare(snap)
   if shot and shot.character ~= snap.character then
     Pearl.reset()
   end
-  if shot and shot.phase == "interrupted" and not utils.getConfigValue("MCAutoPearl") then
-    Pearl.reset()
-    return
-  end
-  if shot and (shot.phase == "confirm" or shot.phase == "interrupted") then
+  if shot and (shot.phase == "confirm" or shot.phase == "restore") then
     Pearl.observe(snap)
     return
   end
@@ -185,7 +165,6 @@ function Pearl.prepare(snap)
     trackTarget(snap, value)
   end
   if shot and shot.phase == "flight" then
-    restore(snap)
     local arrived = units.distance(snap.root.Position, units.toWorld(shot.landing + Vector3.new(0, 1.25, 0))) < 1
     if arrived or snap.now >= shot.untilAt then
       shot, retryAt = nil, snap.now + 0.2
@@ -235,16 +214,11 @@ function Pearl.prepare(snap)
     shot = nil
     return
   end
-  -- Capture ownership evidence before requesting use; equip remains reserved until acknowledged.
-  shot.phase, shot.chosen, shot.direction, shot.landing, shot.duration = "confirm", value, direction, landing, duration
-  shot.count, shot.cooldownBefore = tonumber(shot.tool:GetAttribute("Count")) or 0, tonumber(snap.player:GetAttribute("ItemCooldown_Pearl")) or 0
-  shot.requestAt, shot.serverAt, shot.origin, shot.confirmUntil = snap.now, workspace:GetServerTimeNow(), snap.eye, snap.now + 3
-  shot.motionSpeed = units.toBlocks(snap.root.AssemblyLinearVelocity.Magnitude)
+  shot.phase, shot.chosen, shot.landing, shot.duration = "confirm", value, landing, duration
+  shot.count, shot.requestAt = tonumber(shot.tool:GetAttribute("Count")) or 0, snap.now
   local requested = shot
   if not native.use(snap, requested.tool, direction) and shot == requested and shot.phase == "confirm" then
-    -- A local refusal has not submitted a throw. Retain the equip deadline and try when ready.
     shot.phase = "equip"
-    shot.consumed, shot.cooldown, shot.projectile = nil, nil, nil
   end
 end
 Pearl.__contract = {
@@ -259,7 +233,7 @@ Pearl.__contract = {
     Utils = "utils",
   },
   requiresMethods = {
-    Native = { "snapshot", "find", "equip", "use", "blocked", "busy" },
+    Native = { "snapshot", "find", "equip", "use", "blocked" },
     Geometry = { "direction", "aerialMace", "stats" },
     Target = { "current", "attacked" },
     Units = { "toBlocks", "toWorld", "offset", "distance" },

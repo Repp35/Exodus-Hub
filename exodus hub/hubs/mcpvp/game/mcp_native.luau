@@ -1,7 +1,7 @@
 -- [[ mcpnative ]]
 --!optimize 2
 local Native = {}
-local utils, bridge, geometry, player, storage, controller, charge
+local utils, bridge, geometry, inventory, player, storage, controller, charge
 local dispatching, callback, hooked, original, hooker, restoreAim
 local lastAttack, lastUse, nextHook = -math.huge, {}, 0
 local observed, heldTool, equippedAt = nil, nil, -math.huge
@@ -13,7 +13,7 @@ local function library(name)
   return ok and type(value) == "table" and value or nil
 end
 function Native.setup(deps)
-  utils, bridge, geometry = deps.Utils, deps.Bridge, deps.Geometry
+  utils, bridge, geometry, inventory = deps.Utils, deps.Bridge, deps.Geometry, deps.Inventory
   player, storage = utils.getLocalPlayer(), game:GetService("ReplicatedStorage")
   controller, charge = library("ControllerInput"), library("HeldItemFov")
   return true
@@ -65,10 +65,19 @@ function Native.equip(snap, tool)
   if dispatching and tool.Parent ~= snap.character then
     return false
   end
+  local select, slots = bridge.get("select"), inventory.slots()
+  if select and slots then
+    for slot = 1, 9 do
+      if slots[slot] == tool then
+        local ok = pcall(select, slot)
+        return ok and snap.character:FindFirstChildOfClass("Tool") == tool
+      end
+    end
+  end
   if tool.Parent ~= snap.character then
     snap.humanoid:EquipTool(tool)
   end
-  return tool.Parent == snap.character
+  return snap.character:FindFirstChildOfClass("Tool") == tool
 end
 function Native.charge(snap)
   local speed = geometry.stats(snap.tool).speed or 1.6
@@ -278,7 +287,12 @@ Native.__contract = {
     "reset",
     "teardown",
   },
-  requires = { Utils = "utils", Bridge = "mcpbridge", Geometry = "mcpgeometry" },
-  requiresMethods = { Utils = { "getLocalPlayer", "recordError" }, Bridge = { "get" }, Geometry = { "allowed", "eye", "stats", "direction" } },
+  requires = { Utils = "utils", Bridge = "mcpbridge", Geometry = "mcpgeometry", Inventory = "mcpinventory" },
+  requiresMethods = {
+    Utils = { "getLocalPlayer", "recordError" },
+    Bridge = { "get" },
+    Geometry = { "allowed", "eye", "stats", "direction" },
+    Inventory = { "slots" },
+  },
 }
 return Native

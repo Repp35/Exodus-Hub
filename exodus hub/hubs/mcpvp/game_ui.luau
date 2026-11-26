@@ -71,7 +71,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Mantém a pearl equipada até confirmar consumo, cooldown e criação do projétil pelo servidor. Antecipa apenas fuga distante e contínua.",
+              description = "Espera a contagem da pearl diminuir e seleciona a espada pela hotbar antes de liberar o combate. Antecipa apenas fuga distante e contínua.",
             },
             {
               kind = "toggle",

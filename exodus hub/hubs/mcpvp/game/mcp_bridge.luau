@@ -6,7 +6,7 @@ local functions = {}
 local names = {
   VoxelCombatClient = { performAttack = "attack" },
   ItemClient = { use = "use" },
-  VoxelPackHUD = { refreshTools = "refresh", setOpen = "open" },
+  VoxelPackHUD = { refreshTools = "refresh", setOpen = "open", selectSlot = "select" },
 }
 function Bridge.setup(deps)
   utils = deps.Utils
