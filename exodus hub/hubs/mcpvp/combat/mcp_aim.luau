@@ -5,6 +5,7 @@ local native, utils, tuning, units, input, gui, world, scope
 local humanoids, assisted = {}, nil
 local ASSIST_PULL, ASSIST_SPEED = 20, math.rad(480)
 local LOCK_PULL, LOCK_SPEED = 32, math.rad(900)
+local ACQUIRE_DOT = math.cos(math.rad(20))
 function Aim.reset()
   assisted = nil
 end
@@ -65,20 +66,37 @@ local function directionTo(snap, model, humanoid, root, lock)
   if lock and not native.visible(snap, point, model) then
     return nil
   end
-  return delta.Unit, distance
+  return delta.Unit, distance, point
+end
+local function onScreen(snap, point)
+  local projected, visible = snap.camera:WorldToViewportPoint(point)
+  return visible and projected.Z > 0
 end
 local function assistTarget(snap)
+  -- Only an already acquired nearby target may be followed outside the screen.
+  if assisted then
+    local human = assisted:FindFirstChildOfClass("Humanoid")
+    local root = assisted:FindFirstChild("HumanoidRootPart")
+    local aim, distance, point = directionTo(snap, assisted, human, root, false)
+    if aim and (distance <= tuning.focusRangeBlocks or onScreen(snap, point)) then
+      return aim
+    end
+    assisted = nil
+  end
   local best, direction, score
-  -- Select in world space over the full sphere, including targets behind the camera.
+  local look = snap.camera.CFrame.LookVector
   for human in pairs(humanoids) do
     local model = human.Parent
     local root = model and model:FindFirstChild("HumanoidRootPart")
-    local aim, distance = directionTo(snap, model, human, root, false)
-    if not aim then
+    local aim, _, point = directionTo(snap, model, human, root, false)
+    if not aim or not onScreen(snap, point) then
       continue
     end
-    local rank = distance - (model == assisted and 1 or 0)
-    if score == nil or rank < score then
+    local rank = look:Dot(aim)
+    if rank < ACQUIRE_DOT then
+      continue
+    end
+    if score == nil or rank > score then
       best, direction, score = model, aim, rank
     end
   end

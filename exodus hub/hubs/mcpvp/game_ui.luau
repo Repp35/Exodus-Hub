@@ -53,7 +53,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Assist",
               key = "MCAimAssist",
-              description = "Mira rápida em 360° até 32 blocos, inclusive atrás da câmera, para jogadores, bots e NPCs sem obstáculos.",
+              description = "Ajuda a mirar até 32 blocos; mantém o mesmo alvo próximo ao sair da tela, sem buscar novos alvos atrás da câmera.",
             },
           },
         },
