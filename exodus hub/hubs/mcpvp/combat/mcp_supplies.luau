@@ -49,17 +49,6 @@ local function servicePotion(snap, slots)
     potion = nil
     return
   end
-  if potion.phase == "load" then
-    if not alive(potion.tool) or snap.now - potion.at > 3 then
-      potion.phase = "cleanup"
-      return
-    end
-    if inventory.move(snap, potion.tool, potion.from, potion.slot, potion.stored ~= nil) then
-      potion.loaded, potion.phase = true, "use"
-      inventory.close()
-    end
-    return
-  end
   if potion.phase == "confirm" then
     local state = native.useState(snap, potion, potion.effect)
     if state == nil then
@@ -76,21 +65,17 @@ local function servicePotion(snap, slots)
       potion = nil
       return
     end
-    if
-      potion.loaded
-      and alive(potion.stored)
-      and slots[potion.from] == potion.stored
-      and (slots[potion.slot] == potion.tool or not alive(slots[potion.slot]))
-    then
-      if not inventory.move(snap, potion.stored, potion.from, potion.slot, true) then
-        return
-      end
-      potion.loaded = false
-    end
     finish(snap)
     return
   end
-  if snap.now - potion.at > 4 or not alive(potion.tool) then
+  local inHotbar = false
+  for slot = 1, 9 do
+    if slots[slot] == potion.tool then
+      inHotbar = true
+      break
+    end
+  end
+  if snap.now - potion.at > 4 or not alive(potion.tool) or not inHotbar then
     potion.phase = "cleanup"
     return
   end
@@ -120,36 +105,14 @@ local function refill(snap, slots)
   end
   return true
 end
-local function beginPotion(snap, slots, effect, tool, from)
-  local to, stored = from, nil
-  if from > 9 then
-    to = destination(slots, identity(tool))
-    if not to then
-      -- With a full hotbar, borrow a non-selected slot through the visible inventory,
-      -- then put the original item back before releasing the action.
-      for slot = 9, 1, -1 do
-        local value = slots[slot]
-        local class = value and value:GetAttribute("ClassItem")
-        if alive(value) and value ~= snap.tool and class ~= "Pearl" and class ~= "Totem" then
-          to, stored = slot, value
-          break
-        end
-      end
-    end
-    if not to then
-      return false
-    end
-  end
+local function beginPotion(snap, slots, effect, tool)
   potion = {
     character = snap.character,
     tool = tool,
     effect = effect.effect,
     previous = snap.tool,
-    from = from,
-    slot = to,
-    stored = stored,
     at = snap.now,
-    phase = from > 9 and "load" or "use",
+    phase = "use",
   }
   servicePotion(snap, slots)
   return true
@@ -202,8 +165,8 @@ function Supplies.step(snap, allowBackground)
         and snap.now >= (awaiting[effect.effect] or 0)
         and (tonumber(snap.character:GetAttribute("Effect_" .. effect.effect)) or 0) <= workspace:GetServerTimeNow()
       then
-        local tool, from = inventory.find(effect.class)
-        if tool and beginPotion(snap, slots, effect, tool, from) then
+        local tool = inventory.find(effect.class, 1, 9)
+        if tool and beginPotion(snap, slots, effect, tool) then
           return
         end
       end

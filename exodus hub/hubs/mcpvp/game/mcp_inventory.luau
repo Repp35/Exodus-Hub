@@ -161,9 +161,9 @@ function Inventory.close(force)
   lease = nil
   return true
 end
-function Inventory.move(snap, tool, from, to, swap)
+function Inventory.move(snap, tool, from, to)
   local slots = Inventory.slots()
-  if not slots or not owned(tool) or slots[from] ~= tool or to < 1 or to > 9 or owned(slots[to]) and not swap or not Inventory.open(snap) then
+  if not slots or not owned(tool) or slots[from] ~= tool or to < 1 or to > 9 or owned(slots[to]) or not Inventory.open(snap) then
     return false
   end
   local previous = slots[to]
