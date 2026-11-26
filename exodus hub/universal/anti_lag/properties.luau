@@ -1,4 +1,4 @@
--- [[ reversible property optimization ]]
+-- [[ properties ]]
 --!optimize 2
 -- @modules renderproperties
 

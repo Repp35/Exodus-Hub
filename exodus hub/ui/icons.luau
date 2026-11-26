@@ -1,4 +1,4 @@
--- [[ uiicons ]]
+-- [[ icons ]]
 --!optimize 2
 -- @modules uiicons
 

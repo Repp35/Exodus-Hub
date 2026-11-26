@@ -1,4 +1,4 @@
--- [[ module linking ]]
+-- [[ module linker ]]
 --!optimize 2
 -- @modules modulelinker
 

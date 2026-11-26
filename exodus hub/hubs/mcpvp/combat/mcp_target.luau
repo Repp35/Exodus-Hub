@@ -1,4 +1,4 @@
--- [[ mcptarget ]]
+-- [[ mcp target ]]
 --!optimize 2
 local Target = {}
 local geometry, native, units, tuning, players, aim
@@ -79,7 +79,6 @@ function Target.observeView(snap)
   local advancing = delta.Magnitude > 0.001 and move.Magnitude > 0.1 and move.Unit:Dot(delta.Unit) > 0.25
   local nearby = value.distance <= tuning.pursuitAwayRangeBlocks
   local arriving = snap.now < (fight.pursueUntil or 0)
-  -- Close combat, deliberate approach and an outstanding pearl all preserve PvP.
   if nearby or advancing or arriving then
     resume()
     return
@@ -92,7 +91,6 @@ function Target.observeView(snap)
     if fight.awayAt or not fight.turnUntil or snap.now >= fight.turnUntil then
       resume()
     else
-      -- Allow a deliberate turn to leave the viewport before restoring the lock.
       aim.pause(snap)
     end
     return
@@ -100,8 +98,6 @@ function Target.observeView(snap)
   if not fight.turnUntil then
     return
   end
-  -- A distant offscreen target alone never cancels pursuit. Require a manual
-  -- turn away and no approach, continuously, after any pearl has finished.
   fight.awayAt = fight.awayAt or snap.now
   aim.pause(snap)
   if snap.now - fight.awayAt >= tuning.lookAwaySeconds then

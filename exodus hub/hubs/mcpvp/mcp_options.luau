@@ -1,4 +1,4 @@
--- [[ mcpoptions ]]
+-- [[ mcp options ]]
 --!optimize 2
 local Options = {}
 Options.__config = {

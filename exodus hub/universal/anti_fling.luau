@@ -102,7 +102,6 @@ local function guard()
   local linear, angular = root.AssemblyLinearVelocity, root.AssemblyAngularVelocity
   local maxSpeed = math.max(250, humanoid.WalkSpeed * 5, humanoid.JumpPower * 3)
   local horizontal = Vector3.new(linear.X, 0, linear.Z).Magnitude
-  -- Freefall alone is not a fling. Preserve ordinary falls, jumps and game teleports.
   local violent = not finite(linear) or not finite(angular) or horizontal > maxSpeed or angular.Magnitude > 100
   if violent then
     root.AssemblyLinearVelocity = Vector3.zero

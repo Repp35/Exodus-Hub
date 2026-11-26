@@ -3,8 +3,8 @@ from pathlib import Path
 import argparse
 
 ROOT = Path(__file__).resolve().parents[2]
-START = '-- BEGIN GENERATED NOTIFICATION SURFACE'
-END = '-- END GENERATED NOTIFICATION SURFACE'
+START = '-- generated-start'
+END = '-- generated-end'
 
 
 def main():
@@ -13,7 +13,8 @@ def main():
     args = parser.parse_args()
     path = ROOT / 'loader.luau'
     source = path.read_text()
-    body = (ROOT / 'ui/appearance.luau').read_text().replace('-- @modules uiappearance\n', '')
+    body_lines = (ROOT / 'ui/appearance.luau').read_text().splitlines()
+    body = '\n'.join(line for line in body_lines if not line.startswith('-- [[') and not line.startswith('-- @modules '))
     expected = START + '\nlocal Appearance = (function()\n' + body + '\nend)()\n' + END
     start, end = source.index(START), source.index(END) + len(END)
     updated = source[:start] + expected + source[end:]

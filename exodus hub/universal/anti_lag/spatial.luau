@@ -1,4 +1,4 @@
--- [[ spatial visual selection ]]
+-- [[ spatial ]]
 --!optimize 2
 --!native
 -- @modules renderspatial
@@ -332,7 +332,6 @@ local function createSpatialController(services, getOption, PROFILE)
       end
       count += 1
     end
-    -- Revisit visible and hidden entries; moving cameras and objects can cross either boundary.
     local visited = 0
     while #chunkList > 0 and visited < #chunkList and os.clock() < deadline do
       if chunkIndex > #chunkList then

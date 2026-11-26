@@ -1,4 +1,4 @@
--- [[ mcpballistics ]]
+-- [[ mcp ballistics ]]
 --!native
 --!optimize 2
 local Ballistics = {}
@@ -8,7 +8,6 @@ function Ballistics.setup(deps)
   units = deps.Units
   return true
 end
--- Exact sums for move -> drag -> gravity, including the fractional final tick.
 local function coefficients(time, drag)
   local n = math.floor(time / STEP)
   local fraction = time - n * STEP
@@ -56,7 +55,6 @@ local function clear(origin, velocity, gravity, drag, duration, destination, par
   end
   return false
 end
--- Positions are blocks; speed is blocks/s and gravity is blocks/s^2.
 function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight, drag)
   drag, maxFlight = drag or 0.99, maxFlight or 6
   if speed <= 0 or gravity <= 0 or drag <= 0 or drag > 1 or maxFlight <= STEP then
@@ -151,8 +149,6 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
       local radius = landingRadius or 1.25
       local height = -(gap.Y + 1.25)
       local validHeight = math.abs(height) <= 0.5
-      -- The dump's projectile visuals ignore characters. Also prove that continuing
-      -- past the body cannot send the pearl to a distant terrain impact.
       if (gap * Vector3.new(1, 0, 1)).Magnitude > radius or not validHeight or (impact - ownPosition).Magnitude < 3 or not safeFloor(hit, impact, params) then
         return nil
       end
@@ -164,7 +160,6 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
   end
   return nil
 end
--- Pursuit intercepts the target body; terrain checks validate the eventual landing.
 function Ballistics.intercept(origin, target, others, speed, gravity, drag, inherited, params, maxFlight, ownPosition, landingRadius)
   local aimOffset = Vector3.new(0, -1.05, 0)
   local function required(time)

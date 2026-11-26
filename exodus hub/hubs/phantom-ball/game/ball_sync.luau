@@ -1,4 +1,4 @@
--- [[ ballsync ]]
+-- [[ ball sync ]]
 --!optimize 2
 
 -- code

@@ -64,9 +64,8 @@ local function printStartup(message)
     print(message)
   end
 end
--- BEGIN GENERATED NOTIFICATION SURFACE
+-- generated-start
 local Appearance = (function()
-  -- [[ shared surface appearance ]]
   --!optimize 2
 
   local Appearance = {}
@@ -171,7 +170,6 @@ local Appearance = (function()
   end
   function Appearance.updateNotification(card, message, kind, viewport)
     local content = card:FindFirstChild("Content")
-    -- Replace cards created by older loaders rather than retain an incompatible layout.
     assert(content and content:IsA("ScrollingFrame"), "Unsupported notification surface")
     local label = content:FindFirstChild("Message")
     local maxWidth = math.max(24, math.min(280, viewport.X - 24))
@@ -208,9 +206,8 @@ local Appearance = (function()
   end
   Appearance.__contract = { provides = { "setup", "borderColor", "interactionColor", "borderGradient", "notification", "updateNotification" }, requires = {} }
   return Appearance
-
 end)()
--- END GENERATED NOTIFICATION SURFACE
+-- generated-end
 local function fallbackNotification(message, key, kind, duration)
   local player = game:GetService("Players").LocalPlayer
   local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
@@ -373,8 +370,6 @@ local function getRequestFunction()
         end
       end
       reason = tostring(response)
-      -- HttpGet throws for HTTP failures. Do not retry a blocked host through
-      -- another executor API; let the source fallback honor its cooldown.
       if not ok then
         local code = tonumber(reason:match("[Hh][Tt][Tt][Pp]%s*:?%s*(%d%d%d)"))
         if code then
@@ -434,7 +429,6 @@ if type(requestState.pending) ~= "number" or requestState.pending < 0 then
 end
 if type(requestState.cooldowns) ~= "table" then
   requestState.cooldowns = {}
-  -- Migrate the former global cooldown without blocking independent CDNs.
   if type(requestState.retryAt) == "number" then
     requestState.cooldowns["api.github.com"] = requestState.retryAt
   end
@@ -452,7 +446,6 @@ local function requestOnce(url, headers)
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
   end
-  -- Reserve a global slot before yielding so updates and reloads share pacing.
   if type(task) == "table" and type(task.wait) == "function" then
     if requestState.pending >= CONFIG.MAX_PENDING_REQUESTS then
       return nil, "Transportes HTTP ocupados"
@@ -628,7 +621,6 @@ local function request(url, headers)
     },
     { url = "https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
     { url = "https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path },
-    -- Official jsDelivr testing endpoints are last-resort routes, never primary.
     { url = "https://fastly.jsdelivr.net/gh/" .. suffix },
     { url = "https://gcore.jsdelivr.net/gh/" .. suffix },
     { url = "https://testingcf.jsdelivr.net/gh/" .. suffix },
@@ -643,7 +635,6 @@ local function request(url, headers)
       break
     end
   end
-  -- Bound the fallback phase; hanging native requests cannot spawn an endless queue.
   local deadline = os.clock() + CONFIG.REQUEST_TIMEOUT
   for _, mirror in ipairs(mirrors) do
     if os.clock() >= deadline then
@@ -1159,7 +1150,6 @@ local function startInternal()
   end
   if type(requested) == "table" and requested.automatic and Exodus.Context then
     local previous = Exodus.Context
-    -- Release the start lock while waiting so an explicit loadstring can force a replacement.
     _G.ExodusLoaderStartToken = nil
     local safe = previous.updates.awaitSafe(function() return Exodus.Context == previous and previous.utils.getConfigValue("AutoExecute") == true end)
     if not safe or Exodus.Context ~= previous or _G.ExodusLoaderStartToken then

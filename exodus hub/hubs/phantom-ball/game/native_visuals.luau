@@ -1,4 +1,4 @@
--- [[ native visual and audio adaptation ]]
+-- [[ native visuals ]]
 --!optimize 2
 
 -- code

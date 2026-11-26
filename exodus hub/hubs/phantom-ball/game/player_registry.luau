@@ -1,4 +1,4 @@
--- [[ event-maintained player references ]]
+-- [[ player registry ]]
 --!optimize 2
 
 -- code

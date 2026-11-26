@@ -1,4 +1,4 @@
--- [[ internal permissions: generic action categories ]]
+-- [[ permissions ]]
 --!optimize 2
 -- @modules permissions
 

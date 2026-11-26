@@ -1,4 +1,4 @@
--- [[ mcpaim ]]
+-- [[ mcp aim ]]
 --!optimize 2
 local Aim = {}
 local geometry, native, utils, units, tuning, input, gui, world, scope, players, base
@@ -84,7 +84,6 @@ function Aim.looking(snap, value)
   if not value or not value.root.Parent then
     return false
   end
-  -- Direction only: terrain and trees do not count as looking away.
   local point = snap.camera:WorldToViewportPoint(value.root.Position)
   local size = snap.camera.ViewportSize
   local margin = tuning.pursuitScreenMargin
@@ -248,8 +247,6 @@ local function nudge(snap, desired, dt, settings)
   if axis.Magnitude < 1e-6 then
     axis = frame.UpVector
   end
-  -- Same limited pull and turn speed as MobileAimAssist.Step, including a
-  -- defined axis for the exceptional case of a remembered opponent behind us.
   local look = CFrame.fromAxisAngle(axis.Unit, turn):VectorToWorldSpace(frame.LookVector)
   snap.camera.CFrame = CFrame.lookAt(frame.Position, frame.Position + look)
 end
@@ -272,8 +269,6 @@ function Aim.step(snap, focus, dt)
   if focus then
     ignored[focus.character] = nil
     local weapon = native.weapon(snap, focus) or snap.tool
-    -- Actual weapon reach, target hitbox and obstructions define the click
-    -- zone. The pursuit distance must never become an aim-lock distance.
     if focus.distance <= tuning.focusRangeBlocks and geometry.direction(snap, focus, weapon) then
       Aim.remember(focus.character, snap.now)
       if lock then

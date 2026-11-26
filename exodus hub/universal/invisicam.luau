@@ -1,4 +1,4 @@
--- [[ chorus camera occlusion ]]
+-- [[ invisicam ]]
 --!optimize 2
 -- @modules invisicam
 

@@ -1,4 +1,4 @@
--- [[ mcpgeometry ]]
+-- [[ mcp geometry ]]
 --!optimize 2
 local Geometry = {}
 local units, world, players, weapons, boxes, shields, rules
@@ -219,7 +219,6 @@ function Geometry.criticalWindow(snap)
   if room < 3 / 64 then
     return nil
   end
-  -- Under a low ceiling, charge first: the head collision creates a much shorter fall window.
   return room >= 1.3 - 1 / 320 and 0.28 or 0
 end
 function Geometry.jumpRisk(snap)
@@ -251,7 +250,6 @@ function Geometry.jumpRisk(snap)
     for tick = 0, 12 do
       local predicted = start + motion * (tick * 0.05) + Vector3.new(0, height, 0)
       local delta = predicted - origin
-      -- Local estimate only: the server's maximum-damage formula is absent from the dump.
       if delta.Y >= -1 / 64 and delta.Y <= 2 and math.abs(delta.X) <= 1.3 and math.abs(delta.Z) <= 1.3 then
         local exposed = true
         for _, y in ipairs({ 3 / 64, 1, 1.95 }) do

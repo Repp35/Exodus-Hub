@@ -1,4 +1,4 @@
--- [[ game readout overlays ]]
+-- [[ information ]]
 --!optimize 2
 -- @modules uitelemetry
 

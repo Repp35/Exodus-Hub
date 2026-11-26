@@ -1,4 +1,4 @@
--- [[ autopearl ]]
+-- [[ auto pearl ]]
 --!optimize 2
 local Pearl = {}
 local native, geometry, target, units, ballistics, tuning, utils, prediction
@@ -104,7 +104,6 @@ function Pearl.projectile(action, _id, kind, position, velocity, acceleration, r
   if (units.toBlocks(position) - shot.plan.origin).Magnitude > 2 or measured.Magnitude < 1 or measured.Unit:Dot(shot.plan.direction) < 0.95 then
     return
   end
-  -- Other players' pearls must not change our launch model.
   local elapsed = os.clock() - shot.requestAt
   if elapsed > 0 and elapsed < 1 then
     measuredLatency = elapsed
@@ -143,7 +142,6 @@ local function params(snap)
   ray.FilterType, ray.RespectCanCollide, ray.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, true, ignored
   return ray
 end
--- Emergency escape alone uses a safe landing surface. Combat never calls this path.
 function Pearl.route(snap, position, elevated)
   local ray, origin = params(snap), units.toBlocks(snap.eye)
   local floor = workspace:Raycast(units.toWorld(position + Vector3.new(0, elevated and 12 or -0.75, 0)), units.offset(0, elevated and -48 or -24, 0), ray)
@@ -177,7 +175,6 @@ local function plan(snap, value)
   local roundTrip = measuredLatency
   local ok, ping = pcall(snap.player.GetNetworkPing, snap.player)
   if ok and type(ping) == "number" and ping > 0 then
-    -- Player:GetNetworkPing is one-way: account for the observed pose and outgoing Use.
     roundTrip = math.clamp(ping * 2, 0, 1)
   elseif not roundTrip then
     local readable, value = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
@@ -281,7 +278,6 @@ function Pearl.launch(snap, route, escaping)
   }
   return true
 end
--- Manual use shares the confirmation and restoration state, without pursuit or auto aiming.
 function Pearl.throw(snap)
   Pearl.cancelPrepared(snap)
   if shot and shot.phase == "flight" then

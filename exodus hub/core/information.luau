@@ -1,4 +1,4 @@
--- [[ read-only session information ]]
+-- [[ information ]]
 --!optimize 2
 -- @modules information
 

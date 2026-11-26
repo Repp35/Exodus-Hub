@@ -1,4 +1,4 @@
--- [[ mcpbridge ]]
+-- [[ mcp bridge ]]
 --!optimize 2
 local Bridge = {}
 local utils, owner, nextScan = nil, nil, 0

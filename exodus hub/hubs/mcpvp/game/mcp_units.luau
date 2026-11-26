@@ -1,4 +1,4 @@
--- [[ mcpunits ]]
+-- [[ mcp units ]]
 --!optimize 2
 local Units = {}
 local scale = 3.2
@@ -9,7 +9,6 @@ function Units.setup()
   scale = type(block) == "number" and block == block and block > 0 and block < math.huge and block or 3.2
   return true
 end
--- Numbers and Vector3s retain fractional blocks; no grid rounding belongs here.
 function Units.toBlocks(worldValue) return worldValue / scale end
 function Units.toWorld(blockValue) return blockValue * scale end
 function Units.offset(x, y, z) return Vector3.new(x, y, z) * scale end

@@ -1,4 +1,4 @@
--- [[ movement: dash actions ]]
+-- [[ movement ]]
 --!optimize 2
 
 -- module

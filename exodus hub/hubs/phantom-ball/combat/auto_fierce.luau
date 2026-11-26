@@ -1,4 +1,4 @@
--- [[ autofierce ]]
+-- [[ auto fierce ]]
 --!optimize 2
 
 -- code

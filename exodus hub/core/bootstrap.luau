@@ -1,4 +1,4 @@
--- [[ session bootstrap ]]
+-- [[ bootstrap ]]
 --!optimize 2
 -- @modules bootstrap
 
@@ -40,7 +40,6 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
       if name == "character" then
         deps.characterBinds = binds
       end
-      -- Register before setup so partial initialization is also cleaned up.
       if type(module.teardown) == "function" then
         local cleanup = { Connected = true }
         function cleanup:Disconnect()

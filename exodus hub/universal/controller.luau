@@ -1,4 +1,4 @@
--- [[ universal feature lifecycle ]]
+-- [[ controller ]]
 --!optimize 2
 -- @modules universalcontroller
 

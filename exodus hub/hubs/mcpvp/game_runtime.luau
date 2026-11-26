@@ -1,4 +1,4 @@
--- [[ gameruntime ]]
+-- [[ game runtime ]]
 --!optimize 2
 local Runtime = {}
 local modules, scope, owner
@@ -80,7 +80,6 @@ function Runtime.bind(loaded)
       return true
     end
     if survival.busy() or pearl.busy() or supplies.busy() then
-      -- Item automation must never swallow the player's own native input.
       return true
     end
     if native.blocked(snap) then
@@ -182,8 +181,6 @@ function Runtime.bind(loaded)
           return
         end
       end
-      -- Finish the current item transaction before another subsystem can equip
-      -- a tool. Pearl confirmation may restore its own tool before handoff.
       if survival.busy() then
         melee.reset()
         survival.step(snap, not native.busy())
@@ -203,7 +200,6 @@ function Runtime.bind(loaded)
         melee.reset()
         return
       end
-      -- Start new work in one place: survival, supplies, pursuit, then melee.
       if survival.step(snap, true) then
         melee.reset()
         return

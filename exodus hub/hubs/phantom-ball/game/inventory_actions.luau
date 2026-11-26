@@ -1,4 +1,4 @@
--- [[ Phantom Ball inventory actions ]]
+-- [[ inventory actions ]]
 --!optimize 2
 local Actions = {}
 function Actions.setup() return true end

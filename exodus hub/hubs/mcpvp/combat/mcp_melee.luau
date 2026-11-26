@@ -1,4 +1,4 @@
--- [[ mcpmelee ]]
+-- [[ mcp melee ]]
 --!optimize 2
 local Melee = {}
 local native, geometry, target, utils
@@ -97,7 +97,6 @@ function Melee.prepare(snap)
       cycle.phase = "ground"
     end
   elseif cycle.phase == "air" and geometry.grounded(snap) then
-    -- A missed fall window must not leave the attack permanently pending.
     cycle.phase = "ready"
   end
   if cycle.phase == "air" or cycle.phase == "jump" then
@@ -136,7 +135,6 @@ function Melee.strike(snap)
     if not (cycle.phase == "ground" or geometry.falling(snap)) then
       return
     end
-    -- Stop sprint immediately before the native attack; do not wait for replicated request flags.
     native.sprint(snap, true, true)
   end
   if native.attack(snap, value, direction) then

@@ -1,4 +1,4 @@
--- [[ shared surface appearance ]]
+-- [[ appearance ]]
 --!optimize 2
 -- @modules uiappearance
 
@@ -104,7 +104,6 @@ function Appearance.notification(parent, name)
 end
 function Appearance.updateNotification(card, message, kind, viewport)
   local content = card:FindFirstChild("Content")
-  -- Replace cards created by older loaders rather than retain an incompatible layout.
   assert(content and content:IsA("ScrollingFrame"), "Unsupported notification surface")
   local label = content:FindFirstChild("Message")
   local maxWidth = math.max(24, math.min(280, viewport.X - 24))

@@ -166,7 +166,6 @@ function Controller.create(context)
       return
     end
     twPlay(context.refs.floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) })
-    -- The outline follows BackgroundTransparency through kit.stroke.
   end)
   UIState.btnIsDragging = makeDraggable(context.refs.floatingButton, context.refs.floatingButton, function()
     context.setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset)

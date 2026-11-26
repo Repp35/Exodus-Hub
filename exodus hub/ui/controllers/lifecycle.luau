@@ -1,4 +1,4 @@
--- [[ interface lifecycle ]]
+-- [[ lifecycle ]]
 --!optimize 2
 -- @modules uilifecycle
 
@@ -18,7 +18,6 @@ function Controller.create(context)
       return
     end
     retired, state.closing = true, true
-    -- Visual copies finish independently while the live session releases all input and resources.
     local service = game:GetService("TweenService")
     local profile = context.theme.MOTION.panel
     for _, source in ipairs({ context.refs.screenGui, context.refs.informationGui }) do

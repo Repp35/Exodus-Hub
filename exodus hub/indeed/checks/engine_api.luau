@@ -1,4 +1,4 @@
--- [[ API smoke environment; no gameplay emulation ]]
+-- [[ engine api ]]
 
 -- code
 local function signal()

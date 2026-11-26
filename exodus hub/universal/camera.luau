@@ -1,4 +1,4 @@
--- [[ camera sensitivity ]]
+-- [[ camera ]]
 --!optimize 2
 -- @modules camera
 

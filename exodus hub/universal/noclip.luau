@@ -1,4 +1,4 @@
--- [[ chorus noclip ]]
+-- [[ noclip ]]
 --!optimize 2
 -- @modules noclip
 

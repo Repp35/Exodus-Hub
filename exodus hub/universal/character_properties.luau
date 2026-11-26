@@ -1,4 +1,4 @@
--- [[ character property overrides ]]
+-- [[ character properties ]]
 --!optimize 2
 -- @modules characterproperties
 

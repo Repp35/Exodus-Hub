@@ -1,4 +1,4 @@
--- [[ gameui ]]
+-- [[ game ui ]]
 --!optimize 2
 
 -- code

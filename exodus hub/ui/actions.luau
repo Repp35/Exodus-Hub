@@ -1,4 +1,4 @@
--- [[ uiactions ]]
+-- [[ actions ]]
 --!optimize 2
 -- @modules uiactions
 

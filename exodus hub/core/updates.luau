@@ -1,4 +1,4 @@
--- [[ automatic updates ]]
+-- [[ updates ]]
 --!optimize 2
 -- @modules updates
 
@@ -61,7 +61,6 @@ function Updates.check()
     if not current() then
       return
     end
-    -- The replacement downloads first, then rechecks the policy before stopping this session.
     _G.ExodusRequestedRevision = { revision = revision, automatic = true }
     chunk()
   end, function(err) return debug.traceback(tostring(err), 2) end)

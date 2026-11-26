@@ -1,4 +1,4 @@
--- [[ server navigation ]]
+-- [[ servers ]]
 --!optimize 2
 -- @modules servers
 

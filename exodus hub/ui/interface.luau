@@ -1,4 +1,4 @@
--- [[ ui ]]
+-- [[ interface ]]
 --!optimize 2
 -- @modules ui
 

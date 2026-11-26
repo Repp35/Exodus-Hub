@@ -1,4 +1,4 @@
--- [[ mcpnative ]]
+-- [[ mcp native ]]
 --!optimize 2
 local Native = {}
 local utils, bridge, geometry, inventory, player, storage, controller, charge
@@ -150,7 +150,6 @@ function Native.weapon(snap, target)
   if tool and not selectable(snap, tool) then
     tool = nil
   end
-  -- A manually selected Density mace suspends ground combos instead of forcing a sword.
   if tool and not geometry.melee(tool) then
     return nil
   end
@@ -212,7 +211,6 @@ local function call(action, snap, direction)
     if restoreAim ~= restore then
       return
     end
-    -- Release ownership first, even if an attribute restoration fails.
     restoreAim, dispatching = nil, false
     local ok, reason = pcall(function()
       if player:GetAttribute("FrontCameraAimDirection") == direction then
@@ -262,8 +260,6 @@ local function call(action, snap, direction)
     local config = library("GameConfig")
     local item = config and config.Items[class]
     local drinking = class == "InvisPotion" or item and item.effect and not item.splash
-    -- ItemClient returns nil for both rejection and success. Non-drinking uses
-    -- advance LocalAttackSwing only when the native function actually submits Use.
     if not drinking then
       return snap.character:GetAttribute("LocalAttackSwing") ~= marker
     end
@@ -281,7 +277,6 @@ function Native.useState(snap, action, effect)
   if effect and (tonumber(snap.character:GetAttribute("Effect_" .. effect)) or 0) > workspace:GetServerTimeNow() then
     return true
   end
-  -- Expiry is cancellation, never a fabricated consumption confirmation.
   if snap.now - action.requestAt >= 3 then
     return false
   end
@@ -291,8 +286,6 @@ function Native.attack(snap, target, direction)
   if snap.now - lastAttack < 1 / 7 or Native.blocked(snap) then
     return false
   end
-  -- The camera owns aiming. An attack may only use the visible crosshair,
-  -- never a hidden direction toward the tracked opponent.
   direction = snap.camera.CFrame.LookVector
   if not geometry.inView(snap, target) or not geometry.hit(snap, target, snap.tool, direction) then
     return false

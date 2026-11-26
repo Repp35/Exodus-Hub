@@ -1,4 +1,4 @@
--- [[ mcpmotion ]]
+-- [[ mcp motion ]]
 --!optimize 2
 local Motion = {}
 local units, collision, surface
@@ -71,7 +71,6 @@ function Motion.sample(root, character, now, previous)
   end
   local observed = offset / elapsed
   local velocity = reported.Magnitude > 0.1 and reported or (finite(observed) and observed or reported)
-  -- Prefer fresh positional evidence when a turn arrives before its velocity packet.
   if
     finite(observed)
     and observed.Magnitude > 1
@@ -186,11 +185,9 @@ function Motion.actor(root, character, sample, latency, params, detailed)
       position += movement
     end
     if movementMode == "controlled" then
-      -- Sustained non-ballistic motion follows measured acceleration, not an invented jump.
       velocity += acceleration * (STEP * 0.85 ^ ticks)
     else
       local horizontal = control + (velocity * FLAT - control) * (grounded and groundDrag or AIR_DRAG)
-      -- Same move -> (vy - 1.6) * 0.98 tick used by VoxelAirMovement, in blocks.
       velocity = horizontal + Vector3.new(0, grounded and 0 or (velocity.Y - 1.6) * VERTICAL_DRAG, 0)
     end
     ticks += 1

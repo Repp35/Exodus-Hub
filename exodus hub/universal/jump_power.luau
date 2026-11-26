@@ -1,4 +1,4 @@
--- [[ jump_power ]]
+-- [[ jump power ]]
 --!optimize 2
 -- @modules jumppower
 
