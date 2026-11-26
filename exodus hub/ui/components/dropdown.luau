@@ -36,10 +36,9 @@ function Components.install(context)
   function components.dropdown(parent, definition)
     definition = definition or {}
     local choices = definition.options or definition.choices or {}
-    local headerHeight = definition.description and 56 or 24
-    local handle = control(parent, definition, Theme.RATE_CARD_H + headerHeight - 24)
-    title(handle, definition, 0, headerHeight)
-    local trigger = button(handle.Root, "", { Name = "Select", Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, headerHeight + 5) })
+    local handle = control(parent, definition, Theme.RATE_CARD_H)
+    title(handle, definition, 0, 24)
+    local trigger = button(handle.Root, "", { Name = "Select", Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 29) })
     local selectedLabel = text(trigger, "", {
       Name = "Selected",
       Position = UDim2.fromOffset(10, 0),

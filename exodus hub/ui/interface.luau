@@ -123,20 +123,19 @@ function ExodusUI.setup(deps, preview)
     rebuild = rebuild,
     abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
   })
-  context.pages =
-    deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIPages.forGame(deps.UIConfig.getPages(hubUI), context.combatUI, context.state.desktop), {
-      desktop = context.state.desktop,
-      capabilities = { clashPrediction = context.combatUI and deps.Hub.hasClashPrediction() },
-      read = deps.Utils.getConfigValue,
-      resolve = context.actions.resolve,
-      onComponent = context.actions.attach,
-      onError = function(name, reason, title)
-        deps.Utils.recordError("UI." .. tostring(name), reason)
-        context.notifications.toast("Falha ao carregar " .. tostring(title) .. ".", true)
-      end,
-      abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
-      onNavigate = context.window.updateNavigation,
-    })
+  context.pages = deps.UIPages.create(context.kit, context.refs.configPanel, deps.UIPages.forGame(deps.UIConfig.getPages(hubUI), context.combatUI), {
+    desktop = context.state.desktop,
+    capabilities = { clashPrediction = context.combatUI and deps.Hub.hasClashPrediction() },
+    read = deps.Utils.getConfigValue,
+    resolve = context.actions.resolve,
+    onComponent = context.actions.attach,
+    onError = function(name, reason, title)
+      deps.Utils.recordError("UI." .. tostring(name), reason)
+      context.notifications.toast("Falha ao carregar " .. tostring(title) .. ".", true)
+    end,
+    abilitiesEnabled = deps.Hub.areAbilitiesEnabled,
+    onNavigate = context.window.updateNavigation,
+  })
   deps.Details.create(context)
   context.floating.refreshAbilities()
   context.updateResponsiveScale()

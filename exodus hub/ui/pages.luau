@@ -49,23 +49,22 @@ function Pages.validate(definitions, components)
   assert(normal > 0, "UI needs at least one primary page")
   return true
 end
-function Pages.forGame(definitions, integrated, desktop)
-  local function onDevice(definition) return desktop == nil or not (desktop and definition.mobileOnly or not desktop and definition.desktopOnly) end
+function Pages.forGame(definitions, integrated)
   local pages = {}
   for _, sourcePage in ipairs(definitions) do
-    if sourcePage.integrationOnly and not integrated or not onDevice(sourcePage) then
+    if sourcePage.integrationOnly and not integrated then
       continue
     end
     local page = table.clone(sourcePage)
     page.sections = {}
     for _, sourceSection in ipairs(sourcePage.sections) do
-      if sourceSection.integrationOnly and not integrated or not onDevice(sourceSection) then
+      if sourceSection.integrationOnly and not integrated then
         continue
       end
       local section = table.clone(sourceSection)
       section.components = {}
       for _, definition in ipairs(sourceSection.components or {}) do
-        if (not definition.integrationOnly or integrated) and onDevice(definition) then
+        if not definition.integrationOnly or integrated then
           section.components[#section.components + 1] = table.clone(definition)
         end
       end
