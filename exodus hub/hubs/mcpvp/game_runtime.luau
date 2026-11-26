@@ -237,10 +237,15 @@ function Runtime.bind(loaded)
     run("aim", function()
       local snap = snapshot()
       if snap then
+        target.observeView(snap)
         survival.move(snap)
-      end
-      if snap and not survival.busy() and not supplies.busy() and not pearl.busy() and not native.blocked(snap) then
-        aim.step(snap, target.near(snap), dt)
+        if not supplies.busy() and not native.blocked(snap) then
+          local aimingPearl = pearl.aim(snap, dt)
+          if not aimingPearl and not pearl.busy() and not survival.busy() then
+            aim.step(snap, target.near(snap), dt)
+          end
+        end
+        aim.observe(snap)
       end
     end)
   end)

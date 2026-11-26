@@ -173,7 +173,7 @@ function Geometry.incoming(snap, target)
   local eye = Geometry.eye(target.root, target.character)
   local aim = target.player:GetAttribute("FrontCameraAimDirection")
   if typeof(aim) ~= "Vector3" or aim.Magnitude < 0.001 then
-    aim = Geometry.point(snap.character, snap.root) - eye
+    aim = target.root.CFrame.LookVector
   end
   if aim.Magnitude < 0.001 then
     return false

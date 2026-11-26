@@ -4,8 +4,10 @@ local Aim = {}
 local geometry, utils, units, tuning, input, gui, world, scope
 local humanoids, held, lastLook, lastCamera = {}, nil, nil, nil
 local manualAt, resumeAt, stick = -math.huge, 0, false
+local manualSerial, checkedSerial = 0, 0
 function Aim.reset()
   held, lastLook, lastCamera, resumeAt = nil, nil, nil, 0
+  checkedSerial = manualSerial
 end
 function Aim.teardown()
   if scope then
@@ -50,12 +52,17 @@ function Aim.setup(deps)
   scope.connect(input.InputChanged, function(event, processed)
     if event.KeyCode == Enum.KeyCode.Thumbstick2 then
       stick = event.Position.Magnitude > 0.12
-    elseif event.UserInputType == Enum.UserInputType.MouseMovement and event.Delta.Magnitude > 0.1 then
-      manualAt = os.clock()
+    elseif
+      not processed
+      and event.UserInputType == Enum.UserInputType.MouseMovement
+      and event.Delta.Magnitude > 0.5
+      and (input.MouseBehavior ~= Enum.MouseBehavior.Default or input:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
+    then
+      manualAt, manualSerial = os.clock(), manualSerial + 1
     elseif not processed and event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.1 then
       local camera = world.CurrentCamera
       if camera and event.Position.X >= camera.ViewportSize.X * 0.5 then
-        manualAt = os.clock()
+        manualAt, manualSerial = os.clock(), manualSerial + 1
       end
     end
   end)
@@ -65,6 +72,71 @@ function Aim.setup(deps)
     end
   end)
   return true
+end
+function Aim.looking(snap, value)
+  if not value or not value.root.Parent then
+    return false
+  end
+  -- Direction only: terrain and trees do not count as looking away.
+  local point = snap.camera:WorldToViewportPoint(value.root.Position)
+  local size = snap.camera.ViewportSize
+  return point.Z > 0 and point.X >= 0 and point.X <= size.X and point.Y >= 0 and point.Y <= size.Y
+end
+function Aim.canTurn(snap, direction)
+  if snap.now < resumeAt then
+    return false
+  end
+  local localDirection = snap.camera.CFrame:VectorToObjectSpace(direction)
+  if localDirection.Z >= -1e-5 then
+    return false
+  end
+  local size = snap.camera.ViewportSize
+  local vertical = math.tan(math.rad(snap.camera.FieldOfView) / 2)
+  return math.abs(localDirection.Y / -localDirection.Z) <= vertical * 0.98
+    and math.abs(localDirection.X / -localDirection.Z) <= vertical * size.X / math.max(1, size.Y) * 0.98
+end
+function Aim.yielding(snap, value)
+  local manual = manualSerial ~= checkedSerial or stick
+  if not manual or not value or lastCamera ~= snap.camera or not lastLook then
+    return false
+  end
+  local delta = value.root.Position - snap.camera.CFrame.Position
+  if delta.Magnitude < 0.001 then
+    return false
+  end
+  local desired, look = delta.Unit, snap.camera.CFrame.LookVector
+  if lastLook:Dot(look) > math.cos(math.rad(0.1)) then
+    return false
+  end
+  checkedSerial = manualSerial
+  local before = math.acos(math.clamp(lastLook:Dot(desired), -1, 1))
+  local after = math.acos(math.clamp(look:Dot(desired), -1, 1))
+  return after > before + math.rad(0.35)
+end
+function Aim.pause(snap)
+  Aim.reset()
+  resumeAt = snap.now + 0.75
+  checkedSerial = manualSerial
+end
+function Aim.turn(snap, desired, dt, emergency)
+  if snap.now < resumeAt or not emergency and not Aim.canTurn(snap, desired) then
+    return false
+  end
+  local frame = snap.camera.CFrame
+  local angle = math.acos(math.clamp(frame.LookVector:Dot(desired), -1, 1))
+  local turn = math.min(angle, math.rad(360) * math.clamp(dt or 1 / 60, 0, 1 / 15))
+  local axis = frame.LookVector:Cross(desired)
+  if axis.Magnitude < 1e-6 and angle > 0.001 then
+    axis = frame.UpVector
+  end
+  if axis.Magnitude > 1e-6 then
+    snap.camera.CFrame = CFrame.new(frame.Position) * CFrame.fromAxisAngle(axis.Unit, turn) * frame.Rotation
+  end
+  lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
+  return lastLook:Dot(desired) >= math.cos(math.rad(0.75))
+end
+function Aim.observe(snap)
+  lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 local function direction(snap, model, range)
   local human = model and model:FindFirstChildOfClass("Humanoid")
@@ -131,6 +203,9 @@ local function assist(snap)
 end
 function Aim.step(snap, focus, dt)
   local lock, enabled = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
+  if snap.now < resumeAt then
+    return
+  end
   if not (lock or enabled) or input:GetFocusedTextBox() or gui.MenuIsOpen then
     Aim.reset()
     return
@@ -163,7 +238,7 @@ function Aim.step(snap, focus, dt)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 Aim.__contract = {
-  provides = { "setup", "reset", "step", "teardown" },
+  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe" },
   requires = { Geometry = "mcpgeometry", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
   requiresMethods = {
     Geometry = { "point", "visible" },

@@ -94,6 +94,99 @@ function Ballistics.solve(origin, destination, speed, gravity, params, maxFlight
   end
   return nil
 end
+local function boxFraction(origin, delta, low, high)
+  local near, far = 0, 1
+  for _, axis in ipairs({ "X", "Y", "Z" }) do
+    if math.abs(delta[axis]) < 1e-8 then
+      if origin[axis] < low[axis] or origin[axis] > high[axis] then
+        return nil
+      end
+    else
+      local first, last = (low[axis] - origin[axis]) / delta[axis], (high[axis] - origin[axis]) / delta[axis]
+      if first > last then
+        first, last = last, first
+      end
+      near, far = math.max(near, first), math.min(far, last)
+      if near > far then
+        return nil
+      end
+    end
+  end
+  return near
+end
+local function actorHit(position, offset, actor, time, step)
+  local before, after = actor.predict(time), actor.predict(time + step)
+  local crouch = actor.crouch and 0.3 or 0
+  return boxFraction(position - before, offset - (after - before), Vector3.new(-0.3, -1.25, -0.3), Vector3.new(0.3, 0.71875 - crouch, 0.3))
+end
+local function hitsPlayer(origin, velocity, gravity, drag, duration, target, others, params, ownPosition)
+  local position, time = origin, 0
+  for _ = 1, math.ceil((duration + STEP) / STEP) do
+    local offset = velocity * STEP
+    local hit = workspace:Raycast(units.toWorld(position), units.toWorld(offset), params)
+    local fraction = actorHit(position, offset, target, time, STEP)
+    local blocked = hit and hit.Distance / units.toWorld(offset.Magnitude) or math.huge
+    for _, other in ipairs(others) do
+      local earlier = actorHit(position, offset, other, time, STEP)
+      if earlier then
+        blocked = math.min(blocked, earlier)
+      end
+    end
+    if fraction and fraction < blocked then
+      local impact = position + offset * fraction
+      if (impact - ownPosition).Magnitude < 3 then
+        return nil
+      end
+      return time + STEP * fraction, impact
+    end
+    if hit or blocked < math.huge then
+      return nil
+    end
+    position += offset
+    velocity = velocity * drag - Vector3.new(0, gravity * STEP, 0)
+    time += STEP
+  end
+  return nil
+end
+-- Solve interception directly against the moving body; no floor destination or nearby fallback.
+function Ballistics.intercept(origin, target, others, speed, gravity, drag, inherited, params, maxFlight, ownPosition, near, canAim)
+  local aimOffset = Vector3.new(0, near and -0.75 or -0.2, 0)
+  local outsideView = false
+  local function required(time)
+    local travel, drop = coefficients(time, drag)
+    local velocity = (target.predict(time) + aimOffset - origin + Vector3.new(0, gravity * drop, 0)) / travel - inherited
+    return velocity:Dot(velocity) - speed * speed, velocity
+  end
+  local low, previous = 0.001, required(0.001)
+  for tick = 1, math.ceil(maxFlight / STEP) do
+    local high = tick * STEP
+    local error = required(high)
+    if previous * error <= 0 then
+      local left, right, sign = low, high, previous
+      for _ = 1, 18 do
+        local mid = (left + right) / 2
+        local value = required(mid)
+        if sign * value <= 0 then
+          right = mid
+        else
+          left, sign = mid, value
+        end
+      end
+      local duration = (left + right) / 2
+      local _, velocity = required(duration)
+      local direction = velocity.Unit
+      local contact, impact = hitsPlayer(origin, direction * speed + inherited, gravity, drag, duration, target, others, params, ownPosition)
+      if contact then
+        if not canAim or canAim(direction) then
+          return { direction = direction, duration = contact, landing = impact, origin = origin }
+        end
+        outsideView = true
+      end
+    end
+    low, previous = high, error
+  end
+  return nil, outsideView and "view" or nil
+end
 Ballistics.__contract =
-  { provides = { "setup", "solve" }, requires = { Units = "mcpunits" }, requiresMethods = { Units = { "toBlocks", "toWorld", "offset" } } }
+  { provides = { "setup", "solve", "intercept" }, requires = { Units = "mcpunits" }, requiresMethods = { Units = { "toBlocks", "toWorld", "offset" } } }
 return Ballistics

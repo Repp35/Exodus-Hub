@@ -190,8 +190,19 @@ function Native.charge(snap)
   end
   return current
 end
+function Native.realAim(snap)
+  local direction = player:GetAttribute("FrontCameraAimDirection")
+  return typeof(direction) == "Vector3" and direction.Magnitude > 0.001 and direction.Unit or snap.camera.CFrame.LookVector
+end
 local function call(action, snap, direction)
   if Native.blocked(snap) then
+    return false
+  end
+  local visibleUse = action == "Use" and snap.tool and snap.tool:GetAttribute("ClassItem") == "Pearl"
+  if
+    visibleUse
+    and (snap.camera.CFrame.LookVector:Dot(direction) < math.cos(math.rad(0.75)) or Native.realAim(snap):Dot(direction) < math.cos(math.rad(0.75)))
+  then
     return false
   end
   local fn = bridge.get(action == "Attack" and "attack" or "use")
@@ -204,10 +215,10 @@ local function call(action, snap, direction)
     -- Release ownership first, even if an attribute restoration fails.
     restoreAim, dispatching = nil, false
     local ok, reason = pcall(function()
-      if player:GetAttribute("FrontCameraAimDirection") == direction then
+      if not visibleUse and player:GetAttribute("FrontCameraAimDirection") == direction then
         player:SetAttribute("FrontCameraAimDirection", oldDirection)
       end
-      if aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
+      if not visibleUse and aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
         player:SetAttribute("FrontCameraAimCFrame", oldFrame)
       end
     end)
@@ -218,9 +229,11 @@ local function call(action, snap, direction)
   restoreAim, dispatching, dispatchUntil = restore, true, os.clock() + 0.5
   local marker = snap.character:GetAttribute("LocalAttackSwing")
   local ok, accepted = pcall(function()
-    aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
-    player:SetAttribute("FrontCameraAimDirection", direction)
-    player:SetAttribute("FrontCameraAimCFrame", aimFrame)
+    if not visibleUse then
+      aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
+      player:SetAttribute("FrontCameraAimDirection", direction)
+      player:SetAttribute("FrontCameraAimCFrame", aimFrame)
+    end
     if fn then
       return fn(direction) ~= false
     end
@@ -414,6 +427,7 @@ Native.__contract = {
     "attack",
     "use",
     "useState",
+    "realAim",
     "jump",
     "sprint",
     "gate",
