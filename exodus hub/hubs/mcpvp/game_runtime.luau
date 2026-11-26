@@ -7,222 +7,220 @@ function Runtime.reset()
   if not modules then
     return
   end
-  modules.autopearl.reset()
   modules.mcpmelee.reset()
-  modules.mcpsupplies.reset()
+  modules.autopearl.reset()
   modules.mcptarget.reset()
   modules.mcpaim.reset()
 end
 function Runtime.teardown()
-  if modules then
-    modules.mcpnative.setAttackGate(nil)
-  end
   if scope then
     scope.destroy()
     scope = nil
   end
-  Runtime.reset()
+  if modules then
+    Runtime.reset()
+    modules.mcpsupplies.reset()
+    modules.mcpnative.teardown()
+  end
   modules, owner = nil, nil
 end
 function Runtime.bind(loaded)
   Runtime.teardown()
   modules, scope = loaded, loaded.lifetime.scope()
-  local native, target, supplies = loaded.mcpnative, loaded.mcptarget, loaded.mcpsupplies
-  local function intercept(snap, direction)
-    if owner ~= snap.character then
-      Runtime.reset()
-      owner = snap.character
-    end
-    return loaded.mcpmelee.intercept(snap, direction)
-  end
-  native.setAttackGate(intercept)
-  local input, storage, run = game:GetService("UserInputService"), game:GetService("ReplicatedStorage"), game:GetService("RunService")
-  local source = storage:FindFirstChild("ControllerInput")
-  local ok, controller = pcall(function() return source and require(source) end)
-  if not ok or type(controller) ~= "table" then
-    controller = nil
-  end
-  local function enabled(key) return loaded.utils.getConfigValue(key) == true end
-  local function combatEnabled()
-    return enabled("MCAutoSword") or enabled("MCAutoCrit") or enabled("MCAutoPearl") or enabled("MCAimLock") or enabled("MCAimAssist")
-  end
-  local pearlRecoverAt = 0
-  local function guarded(name, fn, ...)
-    local success, reason = pcall(fn, ...)
-    if not success then
-      if name == "aim" then
-        loaded.mcpaim.reset()
-      elseif name == "critical" then
-        loaded.mcpmelee.reset()
-      elseif name == "pearl" then
-        loaded.autopearl.reset()
-        pearlRecoverAt = os.clock() + 0.5
+  local native, target, melee, pearl, supplies, aim = loaded.mcpnative, loaded.mcptarget, loaded.mcpmelee, loaded.autopearl, loaded.mcpsupplies, loaded.mcpaim
+  local function run(name, fn, ...)
+    local ok, reason = pcall(fn, ...)
+    if not ok then
+      if name == "pearl" then
+        pearl.reset()
+      elseif name == "melee" then
+        melee.reset()
+      elseif name == "aim" then
+        aim.reset()
       else
         Runtime.reset()
+        supplies.reset()
       end
       loaded.utils.recordError("mcpvp." .. name, tostring(reason))
     end
   end
-  scope.connect(controller and controller.InputBegan or input.InputBegan, function(event, processed)
-    guarded("input", function()
-      if native.isDispatching() or processed or input:GetFocusedTextBox() or not loaded.utils.isActive() or not combatEnabled() then
-        return
-      end
-      local matches = controller and type(controller.Matches) == "function" and controller.Matches(event, "Attack")
-      if not matches and (controller or event.UserInputType ~= Enum.UserInputType.MouseButton1) then
-        return
-      end
-      local snap = native.snapshot()
-      if snap then
-        if owner ~= snap.character then
-          Runtime.reset()
-          owner = snap.character
-        end
-        local chosen = target.manual(snap)
-        if not native.attackGateReady() then
-          loaded.mcpmelee.manual(snap, chosen)
-        end
-      end
-    end)
-  end)
-  local bound, scanAt = {}, 0
-  local protectionOwner, protectionConnections = nil, {}
-  local function clearProtection()
-    for _, connection in ipairs(protectionConnections) do
-      connection:Disconnect()
-    end
-    protectionOwner, protectionConnections = nil, {}
-  end
-  scope.add(clearProtection)
-  local function bindProtection(snap)
-    if protectionOwner == snap.character then
+  local characterScope
+  local function synchronize(snap)
+    if owner == snap.character then
       return
     end
-    clearProtection()
-    protectionOwner = snap.character
+    Runtime.reset()
+    supplies.reset()
+    native.reset()
+    owner = snap.character
+    if characterScope then
+      characterScope.destroy()
+    end
+    characterScope = loaded.lifetime.scope()
     for _, attribute in ipairs({ "OffhandItem", "TotemPoppedAt" }) do
-      protectionConnections[#protectionConnections + 1] = snap.character:GetAttributeChangedSignal(attribute):Connect(function()
-        guarded("totem", function()
+      characterScope.connect(owner:GetAttributeChangedSignal(attribute), function()
+        run("supplies", function()
           local current = loaded.utils.isActive() and native.snapshot()
-          if current and current.character == protectionOwner then
-            supplies.protect(current)
+          if current and current.character == owner then
+            supplies.step(current)
           end
         end)
       end)
     end
   end
-  local function bindRemote(folderName, name, callback)
-    local folder = storage:FindFirstChild(folderName)
-    local remote = folder and folder:FindFirstChild(name)
-    local previous = bound[name]
-    if previous and previous.remote ~= remote then
-      previous.connection:Disconnect()
-      bound[name] = nil
+  scope.add(function()
+    if characterScope then
+      characterScope.destroy()
+      characterScope = nil
     end
-    if not remote or not remote:IsA("RemoteEvent") or bound[name] then
-      return
-    end
-    bound[name] = { remote = remote, connection = scope.connect(remote.OnClientEvent, function(...) guarded(name, callback, ...) end) }
-  end
-  local function heartbeat()
-    loaded.mcpinventory.step()
+  end)
+  local function snapshot()
     if not loaded.utils.isActive() then
-      if owner then
-        Runtime.reset()
-        owner = nil
-      end
-      return
+      return nil
     end
     local snap = native.snapshot()
-    if not snap then
-      if owner then
-        Runtime.reset()
-        owner = nil
-      end
-      return
-    end
-    if owner ~= snap.character then
-      Runtime.reset()
-      owner = snap.character
-    end
-    bindProtection(snap)
-    if snap.now >= scanAt then
-      scanAt = snap.now + 1
-      native.setAttackGate(intercept)
-      bindRemote("VoxelCombat", "Swing", target.noteSwing)
-      bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
-        if kind == "HitConfirm" and not blocked then
-          target.confirmHit(os.clock())
-        end
-      end)
-      bindRemote("Remotes", "ItemAction", loaded.autopearl.observeProjectile)
-    end
-    target.observe(snap)
-    supplies.observe(snap)
-    supplies.step(snap, not loaded.autopearl.busy())
-    if supplies.busy() then
-      loaded.mcpmelee.reset()
-      return
-    end
-    if not combatEnabled() then
-      loaded.autopearl.reset()
-      loaded.mcpmelee.reset()
-      target.reset()
-      return
-    end
-    snap = native.snapshot()
-    if not snap then
-      return
-    end
-    if enabled("MCAutoPearl") then
-      if snap.now >= pearlRecoverAt then
-        guarded("pearl", loaded.autopearl.step, snap, target.getPearl(snap))
-      end
-    else
-      loaded.autopearl.reset()
-    end
-    if loaded.autopearl.busy() then
-      loaded.mcpmelee.reset()
-      return
-    end
-    snap = native.snapshot()
     if snap then
-      loaded.mcpmelee.step(snap, target.get(snap))
+      synchronize(snap)
     end
+    return snap
   end
-  scope.connect(run.PreSimulation, function()
-    guarded("critical", function()
-      local snap = loaded.utils.isActive() and native.snapshot() or nil
-      if snap then
-        if owner ~= snap.character then
-          Runtime.reset()
-          owner = snap.character
-        end
-        bindProtection(snap)
-        supplies.protect(snap)
-      end
-      loaded.mcpmelee.preSimulation(snap)
-    end)
-  end)
-  scope.connect(run.PostSimulation, function()
-    guarded("critical", function() loaded.mcpmelee.postSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
-  end)
-  scope.connect(run.Heartbeat, function() guarded("heartbeat", heartbeat) end)
-  local renderScope = scope
-  local renderName = "ExodusMCPAim_" .. tostring(renderScope)
-  renderScope.add(function() run:UnbindFromRenderStep(renderName) end)
-  run:BindToRenderStep(renderName, Enum.RenderPriority.Camera.Value + 1, function(dt)
-    if not renderScope.alive then
-      return
+  local source = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
+  local ok, controller = pcall(function() return source and require(source) end)
+  if not ok then
+    controller = nil
+  end
+  local input = game:GetService("UserInputService")
+  local function gate(snap, direction)
+    if not loaded.utils.isActive() or native.blocked(snap) then
+      return true
     end
-    guarded("aim", function()
-      if not loaded.utils.isActive() or not (enabled("MCAimLock") or enabled("MCAimAssist")) or supplies.busy() or loaded.autopearl.busy() then
+    synchronize(snap)
+    local chosen
+    if controller and controller.IsHeld("Attack") then
+      chosen = target.manual(snap, direction)
+    else
+      chosen = target.near(snap)
+      direction = direction or snap.player:GetAttribute("FrontCameraAimDirection") or snap.camera.CFrame.LookVector
+      if chosen and not loaded.mcpgeometry.hit(snap, chosen, snap.tool, direction) then
+        chosen = nil
+      end
+    end
+    return not melee.request(snap, chosen)
+  end
+  if controller and type(controller.BeginTouch) == "function" then
+    local original, lifetime = controller.BeginTouch, scope
+    local function begin(action)
+      if lifetime.alive and action == "Attack" and not native.isDispatching() then
+        run("input", function()
+          local snap = snapshot()
+          if snap then
+            target.manual(snap)
+          end
+        end)
+      end
+      return original(action)
+    end
+    controller.BeginTouch = begin
+    scope.add(function()
+      if controller.BeginTouch == begin then
+        controller.BeginTouch = original
+      end
+    end)
+  end
+  local warned = false
+  scope.connect(controller and controller.InputBegan or input.InputBegan, function(event, processed)
+    run("input", function()
+      if processed or native.isDispatching() or input:GetFocusedTextBox() then
         return
       end
-      local snap = native.snapshot()
+      local attack = controller and controller.Matches(event, "Attack") or not controller and event.UserInputType == Enum.UserInputType.MouseButton1
+      if not attack then
+        return
+      end
+      local snap = snapshot()
+      if not snap then
+        return
+      end
+      target.manual(snap)
+      if loaded.utils.getConfigValue("MCAutoCrit") and not native.gate(gate) and not warned then
+        warned = true
+        loaded.utils.recordError("mcpvp.manual", "O executor não permite adiar o clique nativo para o crítico manual.")
+      end
+    end)
+  end)
+  local remotes, scanAt = {}, 0
+  local function bindRemote(folderName, name, callback)
+    local folder = game:GetService("ReplicatedStorage"):FindFirstChild(folderName)
+    local remote = folder and folder:FindFirstChild(name)
+    local old = remotes[name]
+    if old and old.remote == remote then
+      return
+    end
+    if old then
+      old.connection:Disconnect()
+      remotes[name] = nil
+    end
+    if remote and remote:IsA("RemoteEvent") then
+      remotes[name] = { remote = remote, connection = scope.connect(remote.OnClientEvent, function(...) run(name, callback, ...) end) }
+    end
+  end
+  native.gate(gate)
+  local service = game:GetService("RunService")
+  scope.connect(service.PreSimulation, function()
+    run("frame", function()
+      local snap = snapshot()
+      if not snap then
+        if owner then
+          Runtime.reset()
+          supplies.reset()
+          owner = nil
+        end
+        return
+      end
+      if snap.now >= scanAt then
+        scanAt = snap.now + 1
+        native.gate(gate)
+        bindRemote("VoxelCombat", "Swing", target.noteSwing)
+        bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
+          if kind == "HitConfirm" and not blocked then
+            target.hit(os.clock())
+          end
+        end)
+        bindRemote("Remotes", "ItemAction", pearl.projectile)
+      end
+      target.observe(snap)
+      supplies.step(snap)
+      if supplies.busy() or native.blocked(snap) then
+        melee.reset()
+        return
+      end
+      run("pearl", pearl.prepare, snap)
+      if pearl.busy() or native.busy() then
+        melee.reset()
+        return
+      end
+      snap = native.snapshot()
       if snap then
-        local nearest = target.get(snap)
-        loaded.mcpaim.step(snap, nearest, dt)
+        run("melee", melee.prepare, snap)
+      end
+    end)
+  end)
+  scope.connect(service.PostSimulation, function()
+    run("melee", function()
+      local snap = snapshot()
+      if not snap or supplies.busy() or pearl.busy() or native.busy() then
+        return
+      end
+      melee.strike(snap)
+    end)
+  end)
+  local binding = "ExodusMCPAim_" .. tostring(scope)
+  scope.add(function() service:UnbindFromRenderStep(binding) end)
+  service:BindToRenderStep(binding, Enum.RenderPriority.Camera.Value + 1, function(dt)
+    run("aim", function()
+      local snap = snapshot()
+      if snap and not supplies.busy() and not pearl.busy() and not native.blocked(snap) then
+        aim.step(snap, target.near(snap), dt)
       end
     end)
   end)
@@ -232,7 +230,7 @@ function Runtime.createAPI(loaded)
   return {
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = Runtime.reset,
-    updateBlockers = { loaded.autopearl.pending, loaded.mcpsupplies.busy, loaded.mcpinventory.busy },
+    updateBlockers = { loaded.autopearl.pending, loaded.mcpsupplies.busy, loaded.mcpnative.busy },
     migrateConfig = loaded.mcpoptions.migrateConfig,
   }
 end

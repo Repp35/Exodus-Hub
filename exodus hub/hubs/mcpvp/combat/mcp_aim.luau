@@ -1,220 +1,176 @@
 -- [[ mcpaim ]]
 --!optimize 2
 local Aim = {}
-local native, utils, tuning, units, input, gui, world, scope
-local humanoids, assisted = {}, nil
-local ASSIST_PULL, ASSIST_SPEED = 10, math.rad(84)
-local manualUntil, resumeAt, stickMoving = 0, 0, false
-local lastLook, lastCamera
-local LOCK_PULL, LOCK_SPEED = 32, math.rad(900)
-local ACQUIRE_DOT = math.cos(math.rad(20))
+local geometry, utils, units, tuning, input, gui, world, scope
+local humanoids, held, lastLook, lastCamera = {}, nil, nil, nil
+local manualAt, resumeAt, stick = -math.huge, 0, false
 function Aim.reset()
-  assisted, lastLook, lastCamera = nil, nil, nil
-  manualUntil, resumeAt = 0, 0
+  held, lastLook, lastCamera, resumeAt = nil, nil, nil, 0
 end
 function Aim.teardown()
   if scope then
     scope.destroy()
     scope = nil
   end
-  humanoids, stickMoving = {}, false
+  humanoids, stick = {}, false
   Aim.reset()
 end
 function Aim.setup(deps)
   Aim.teardown()
-  native, utils, tuning, units = deps.Native, deps.Utils, deps.Options.tuning, deps.Units
+  geometry, utils, units, tuning = deps.Geometry, deps.Utils, deps.Units, deps.Options.tuning
   input, gui, world = game:GetService("UserInputService"), game:GetService("GuiService"), utils.getWorkspace()
   scope = deps.Lifetime.scope()
   local source = game:GetService("ReplicatedStorage"):FindFirstChild("MobileAimAssist")
-  local ok, nativeAssist = pcall(function() return source and require(source) end)
-  if ok and type(nativeAssist) == "table" and type(nativeAssist.Adjust) == "function" then
-    local original = nativeAssist.Adjust
-    local function adjust(look)
+  local ok, base = pcall(function() return source and require(source) end)
+  if ok and type(base) == "table" and type(base.Adjust) == "function" then
+    local original = base.Adjust
+    local function adjust(frame)
       if utils.isActive() and utils.getConfigValue("MCAimAssist") then
-        return look
+        return frame
       end
-      return original(look)
+      return original(frame)
     end
-    nativeAssist.Adjust = adjust
+    base.Adjust = adjust
     scope.add(function()
-      if nativeAssist.Adjust == adjust then
-        nativeAssist.Adjust = original
+      if base.Adjust == adjust then
+        base.Adjust = original
       end
     end)
   end
+  local function add(value)
+    if value:IsA("Humanoid") then
+      humanoids[value] = true
+    end
+  end
+  scope.connect(world.DescendantAdded, add)
+  scope.connect(world.DescendantRemoving, function(value) humanoids[value] = nil end)
+  for _, value in ipairs(world:GetDescendants()) do
+    add(value)
+  end
   scope.connect(input.InputChanged, function(event, processed)
     if event.KeyCode == Enum.KeyCode.Thumbstick2 then
-      stickMoving = event.Position.Magnitude > 0.12
+      stick = event.Position.Magnitude > 0.12
     elseif event.UserInputType == Enum.UserInputType.MouseMovement and event.Delta.Magnitude > 0.1 then
-      manualUntil = os.clock() + 0.15
+      manualAt = os.clock()
     elseif not processed and event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.1 then
       local camera = world.CurrentCamera
       if camera and event.Position.X >= camera.ViewportSize.X * 0.5 then
-        manualUntil = os.clock() + 0.15
+        manualAt = os.clock()
       end
     end
   end)
   scope.connect(input.InputEnded, function(event)
     if event.KeyCode == Enum.KeyCode.Thumbstick2 then
-      stickMoving = false
+      stick = false
     end
   end)
-  local function add(instance)
-    if instance:IsA("Humanoid") then
-      humanoids[instance] = true
-    end
-  end
-  scope.connect(world.DescendantAdded, add)
-  scope.connect(world.DescendantRemoving, function(instance) humanoids[instance] = nil end)
-  for _, instance in ipairs(world:GetDescendants()) do
-    add(instance)
-  end
   return true
 end
-local function directionTo(snap, model, humanoid, root, lock)
+local function direction(snap, model, range)
+  local human = model and model:FindFirstChildOfClass("Humanoid")
+  local root = model and model:FindFirstChild("HumanoidRootPart")
   if
     not model
-    or not model.Parent
     or model == snap.character
-    or not model:IsA("Model")
+    or not model.Parent
     or model:IsDescendantOf(snap.camera)
     or model:GetAttribute("Invisible") == true
-    or not humanoid
-    or humanoid.Health <= 0
-    or model:FindFirstChildOfClass("ForceField")
+    or not human
+    or human.Health <= 0
     or not root
-    or not root:IsA("BasePart")
-    or not root.Parent
+    or model:FindFirstChildOfClass("ForceField")
   then
     return nil
   end
   local distance = units.distance(root.Position, snap.root.Position)
-  if distance > (lock and tuning.focusRangeBlocks or tuning.assistRangeBlocks) then
+  if distance > range then
     return nil
   end
-  local point = native.aimPoint(model, root)
+  local point = geometry.point(model, root)
+  if not geometry.visible(snap, point, model, snap.camera.CFrame.Position) then
+    return nil
+  end
   local delta = point - snap.camera.CFrame.Position
-  if units.toBlocks(delta).Magnitude < 1 / 320 then
+  if delta.Magnitude < 0.001 then
     return nil
   end
-  if not native.visible(snap, point, model, snap.camera.CFrame.Position) then
-    return nil
-  end
-  if lock and not native.visible(snap, point, model) then
-    return nil
-  end
-  return delta.Unit, distance, point
-end
-local function onScreen(snap, point)
   local projected, visible = snap.camera:WorldToViewportPoint(point)
-  return visible and projected.Z > 0
+  return delta.Unit, distance, visible and projected.Z > 0
 end
-local function assistTarget(snap)
+local function assist(snap)
   if snap.now < resumeAt then
     return nil
   end
-  -- Manual camera motion away from the target wins over assistance.
-  -- Target movement alone does not count as camera input, including a pass behind us.
-  if assisted then
-    local human = assisted:FindFirstChildOfClass("Humanoid")
-    local root = assisted:FindFirstChild("HumanoidRootPart")
-    local aim, distance, point = directionTo(snap, assisted, human, root, false)
+  local look = snap.camera.CFrame.LookVector
+  if held then
+    local aim, distance, visible = direction(snap, held, tuning.assistRangeBlocks)
     if aim then
-      local look = snap.camera.CFrame.LookVector
-      local moving = snap.now < manualUntil or input.PreferredInput == Enum.PreferredInput.Gamepad and stickMoving
-      if moving and lastCamera == snap.camera and lastLook then
+      local manual = snap.now - manualAt < 0.15 or input.PreferredInput == Enum.PreferredInput.Gamepad and stick
+      if manual and lastCamera == snap.camera and lastLook then
         local before = math.acos(math.clamp(lastLook:Dot(aim), -1, 1))
-        local after = math.acos(math.clamp(look:Dot(aim), -1, 1))
-        if after - before > math.rad(0.2) then
-          assisted, resumeAt = nil, snap.now + 0.35
+        if math.acos(math.clamp(look:Dot(aim), -1, 1)) > before + math.rad(0.2) then
+          held, resumeAt = nil, snap.now + 0.35
           return nil
         end
       end
-      if distance <= tuning.focusRangeBlocks or onScreen(snap, point) and look:Dot(aim) >= ACQUIRE_DOT then
-        return aim, distance
+      if distance <= tuning.focusRangeBlocks or visible and look:Dot(aim) >= math.cos(math.rad(20)) then
+        return aim
       end
     end
-    assisted = nil
+    held = nil
   end
-  local best, direction, score, bestDistance
-  local look = snap.camera.CFrame.LookVector
+  local best, score
   for human in pairs(humanoids) do
-    local model = human.Parent
-    local root = model and model:FindFirstChild("HumanoidRootPart")
-    local aim, distance, point = directionTo(snap, model, human, root, false)
-    if not aim or not onScreen(snap, point) then
-      continue
-    end
-    local rank = look:Dot(aim)
-    if rank < ACQUIRE_DOT then
-      continue
-    end
-    if score == nil or rank > score then
-      best, direction, score, bestDistance = model, aim, rank, distance
+    local aim, _, visible = direction(snap, human.Parent, tuning.assistRangeBlocks)
+    local rank = aim and look:Dot(aim)
+    if visible and rank >= math.cos(math.rad(20)) and (not score or rank > score) then
+      held, best, score = human.Parent, aim, rank
     end
   end
-  assisted = best
-  return direction, bestDistance
-end
-local function apply(camera, direction, maxTurn)
-  local look, eye = camera.CFrame.LookVector, camera.CFrame.Position
-  local angle = math.acos(math.clamp(look:Dot(direction), -1, 1))
-  if angle < 1e-6 then
-    return
-  end
-  angle = math.min(angle, maxTurn or angle)
-  local axis = look:Cross(direction)
-  if axis.Magnitude < 1e-6 then
-    axis = camera.CFrame.UpVector
-  end
-  camera.CFrame = CFrame.new(eye) * CFrame.fromAxisAngle(axis.Unit, angle) * camera.CFrame.Rotation
+  return best
 end
 function Aim.step(snap, focus, dt)
-  local lock, assist = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
-  if not (lock or assist) or input:GetFocusedTextBox() or gui.MenuIsOpen or native.blocked(snap) then
+  local lock, enabled = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
+  if not (lock or enabled) or input:GetFocusedTextBox() or gui.MenuIsOpen then
     Aim.reset()
     return
   end
-  local direction, distance
-  local pull, speed = ASSIST_PULL, ASSIST_SPEED
-  if input.PreferredInput == Enum.PreferredInput.Gamepad then
-    pull, speed = 2.9, math.rad(24)
-  end
+  local aim, pull, speed
   if lock and focus then
-    direction = directionTo(snap, focus.character, focus.humanoid, focus.root, true)
-    if direction then
-      pull, speed = LOCK_PULL, LOCK_SPEED
-      assisted = focus.character
+    aim = direction(snap, focus.character, tuning.focusRangeBlocks)
+    if aim then
+      held, pull, speed = focus.character, 32, math.rad(900)
     end
   end
-  if not direction and assist then
-    direction, distance = assistTarget(snap)
-    if distance then
-      local falloff = 1 - 0.3 * math.clamp((distance - tuning.focusRangeBlocks) / (tuning.assistRangeBlocks - tuning.focusRangeBlocks), 0, 1)
-      pull, speed = pull * falloff, speed * falloff
+  if not aim and enabled then
+    aim = assist(snap)
+    pull, speed = 10, math.rad(84)
+    if input.PreferredInput == Enum.PreferredInput.Gamepad then
+      pull, speed = 2.9, math.rad(24)
     end
   end
-  if not direction then
-    assisted = nil
-    lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
-    return
+  local frame = snap.camera.CFrame
+  if aim then
+    local angle = math.acos(math.clamp(frame.LookVector:Dot(aim), -1, 1))
+    local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 15)
+    local turn = math.min(angle * (1 - math.exp(-pull * elapsed)), speed * elapsed)
+    local axis = frame.LookVector:Cross(aim)
+    if axis.Magnitude < 1e-6 then
+      axis = frame.UpVector
+    end
+    snap.camera.CFrame = CFrame.new(frame.Position) * CFrame.fromAxisAngle(axis.Unit, turn) * frame.Rotation
   end
-  local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 15)
-  local angle = math.acos(math.clamp(snap.camera.CFrame.LookVector:Dot(direction), -1, 1))
-  local turn = math.min(angle * (1 - math.exp(-pull * elapsed)), speed * elapsed)
-  -- apply also resolves the exactly-behind case where the cross product is zero.
-  apply(snap.camera, direction, turn)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 Aim.__contract = {
-  provides = { "setup", "reset", "teardown", "step" },
-  requires = { Native = "mcpnative", Utils = "utils", Options = "mcpoptions", Units = "mcpunits", Lifetime = "lifetime" },
-  requiresData = { Options = { "tuning" } },
+  provides = { "setup", "reset", "step", "teardown" },
+  requires = { Geometry = "mcpgeometry", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
   requiresMethods = {
-    Units = { "distance", "toBlocks" },
-    Native = { "blocked", "visible", "aimPoint" },
-    Utils = { "getConfigValue", "getWorkspace" },
+    Geometry = { "point", "visible" },
+    Utils = { "getWorkspace", "isActive", "getConfigValue" },
+    Units = { "distance" },
     Lifetime = { "scope" },
   },
+  requiresData = { Options = { "tuning" } },
 }
 return Aim
