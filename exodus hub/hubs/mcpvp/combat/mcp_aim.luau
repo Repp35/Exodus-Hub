@@ -25,6 +25,23 @@ function Aim.setup(deps)
   native, utils, tuning, units = deps.Native, deps.Utils, deps.Options.tuning, deps.Units
   input, gui, world = game:GetService("UserInputService"), game:GetService("GuiService"), utils.getWorkspace()
   scope = deps.Lifetime.scope()
+  local source = game:GetService("ReplicatedStorage"):FindFirstChild("MobileAimAssist")
+  local ok, nativeAssist = pcall(function() return source and require(source) end)
+  if ok and type(nativeAssist) == "table" and type(nativeAssist.Adjust) == "function" then
+    local original = nativeAssist.Adjust
+    local function adjust(look)
+      if utils.isActive() and utils.getConfigValue("MCAimAssist") then
+        return look
+      end
+      return original(look)
+    end
+    nativeAssist.Adjust = adjust
+    scope.add(function()
+      if nativeAssist.Adjust == adjust then
+        nativeAssist.Adjust = original
+      end
+    end)
+  end
   scope.connect(input.InputChanged, function(event, processed)
     if event.KeyCode == Enum.KeyCode.Thumbstick2 then
       stickMoving = event.Position.Magnitude > 0.12

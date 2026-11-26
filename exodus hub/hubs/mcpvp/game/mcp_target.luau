@@ -28,13 +28,22 @@ local function candidate(player, snap, rangeBlocks)
     or player.Parent ~= players
     or player:GetAttribute("ArenaProtected") == true
     or player:GetAttribute("InArena") == false
+    or player:GetAttribute("DuelCombatActive") == false
   then
     return nil
   end
   local char = player.Character
   local root = char and char:FindFirstChild("HumanoidRootPart")
   local human = char and char:FindFirstChildOfClass("Humanoid")
-  if not root or not root.Parent or not human or human.Health <= 0 or char:FindFirstChildOfClass("ForceField") then
+  if
+    not root
+    or not root.Parent
+    or not human
+    or human.Health <= 0
+    or char:FindFirstChildOfClass("ForceField")
+    or char:GetAttribute("ArenaProtected") == true
+    or char:GetAttribute("DuelCombatActive") == false
+  then
     return nil
   end
   local distance = units.distance(root.Position, snap.root.Position)

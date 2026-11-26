@@ -170,7 +170,7 @@ function Inventory.move(actor, snap, tool, from, destination, swap)
 end
 function Inventory.offhand(actor, snap, tool, immediate)
   if offhand and not offhand.confirmed then
-    if not offhand.done or offhand.accepted and offhand.character == snap.character then
+    if offhand.character == snap.character and (not offhand.done or offhand.accepted) then
       return nil
     end
     offhand = nil

@@ -3,7 +3,7 @@
 local Native = {}
 local intercepted
 local player, world, storage, weapons, geometry, config, controller, utils, units
-local shields
+local shields, combatRules
 local bridge, charge, dispatching, criticalAt = nil, nil, false, 0
 local gate, hookedAttack, originalAttack, hooker
 local sprintOwner, resumeSprint
@@ -28,7 +28,7 @@ function Native.setup(deps)
   player, world = utils.getLocalPlayer(), utils.getWorkspace()
   storage = game:GetService("ReplicatedStorage")
   weapons, geometry, config, controller = load("VoxelWeapons"), load("VoxelMeleeGeometry"), load("GameConfig"), load("ControllerInput")
-  charge, shields = load("HeldItemFov"), load("ShieldRules")
+  charge, shields, combatRules = load("HeldItemFov"), load("ShieldRules"), load("SpawnBowRules")
   dispatching, criticalAt = false, 0
   observedCharacter, observedTool = nil, nil
   equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
@@ -41,6 +41,9 @@ function Native.snapshot()
   local human = char and char:FindFirstChildOfClass("Humanoid")
   local camera = world.CurrentCamera
   if not root or not human or human.Health <= 0 or not camera or player:GetAttribute("InArena") == false or player:GetAttribute("ArenaProtected") == true then
+    return nil
+  end
+  if combatRules and type(combatRules.CanShoot) == "function" and not combatRules.CanShoot(char) then
     return nil
   end
   local now, tool = os.clock(), char:FindFirstChildOfClass("Tool")
@@ -110,7 +113,26 @@ function Native.aimDirection(snap)
   local aim = snap.player:GetAttribute("FrontCameraAimDirection")
   return typeof(aim) == "Vector3" and aim.Magnitude > 0.001 and aim.Unit or snap.camera.CFrame.LookVector
 end
+local function combatRayParams(snap)
+  local ignored = { snap.camera }
+  for _, other in ipairs(game:GetService("Players"):GetPlayers()) do
+    if other.Character then
+      ignored[#ignored + 1] = other.Character
+    end
+  end
+  local bots = world:FindFirstChild("ArenaPvPBots")
+  if bots then
+    ignored[#ignored + 1] = bots
+  end
+  local params = RaycastParams.new()
+  params.FilterType, params.RespectCanCollide, params.IgnoreWater = Enum.RaycastFilterType.Exclude, true, true
+  params.FilterDescendantsInstances = ignored
+  return params
+end
 function Native.hitDistanceBlocks(snap, target, tool, direction)
+  if combatRules and type(combatRules.CanMelee) == "function" and not combatRules.CanMelee(snap.character, target.character) then
+    return nil
+  end
   local delta = units.toBlocks(target.root.Position - snap.eye)
   if delta.Magnitude < 1 / 320 then
     return nil
@@ -133,7 +155,11 @@ function Native.hitDistanceBlocks(snap, target, tool, direction)
       return nil
     end
   end
-  if not Native.visible(snap, snap.eye + direction * units.toWorld(distanceBlocks), target.character) then
+  -- performAttack ignores character meshes and water in the obstruction ray;
+  -- living targets/crystals are selected separately by their native hitboxes.
+  local distance = units.toWorld(distanceBlocks)
+  local obstruction = world:Raycast(snap.eye, direction * distance, combatRayParams(snap))
+  if obstruction and obstruction.Distance < distance - units.toWorld(1 / 320) then
     return nil
   end
   if intercepted(snap, target, direction, distanceBlocks) then
@@ -150,6 +176,32 @@ function Native.blocked(snap)
     or snap.character:GetAttribute("BowDrawStarted")
     or player:GetAttribute("OffhandUsing") == true
 end
+local function itemLedger(fn)
+  local values = bridge.upvalues(fn)
+  if not values or not config or type(config.Items) ~= "table" then
+    return nil
+  end
+  local found
+  for _, value in pairs(values) do
+    if type(value) ~= "table" or getmetatable(value) ~= nil then
+      continue
+    end
+    local valid = true
+    for class, usedAt in pairs(value) do
+      if type(class) ~= "string" or not config.Items[class] or type(usedAt) ~= "number" or usedAt ~= usedAt then
+        valid = false
+        break
+      end
+    end
+    if valid then
+      if found then
+        return nil
+      end
+      found = value
+    end
+  end
+  return found
+end
 local function invoke(action, direction)
   local previous = player:GetAttribute("FrontCameraAimDirection")
   local previousCF = player:GetAttribute("FrontCameraAimCFrame")
@@ -164,17 +216,34 @@ local function invoke(action, direction)
   player:SetAttribute("FrontCameraAimCFrame", aimCF)
   local ok, result = pcall(function()
     local fn = bridge.get(action == "Attack" and "attack" or "use")
+    local class = action == "Use" and snap.tool and snap.tool:GetAttribute("ClassItem")
+    local ledger = class and fn and itemLedger(fn)
+    local before = ledger and rawget(ledger, class)
+    local swing = snap.character:GetAttribute("LocalAttackSwing")
+    local accepted
     if fn then
-      return fn(direction) ~= false
-    end
-    if controller and type(controller.BeginTouch) == "function" and type(controller.EndTouch) == "function" then
+      accepted = fn(direction) ~= false
+    elseif controller and type(controller.BeginTouch) == "function" and type(controller.EndTouch) == "function" then
       if not controller.BeginTouch(action) then
         return false
       end
       controller.EndTouch(action)
-      return true
+      accepted = true
+    else
+      return false
     end
-    return false
+    if action ~= "Use" or not accepted then
+      return accepted
+    end
+    -- ItemClient.use returns nil on BOTH refusal and dispatch. Its local cooldown
+    -- timestamp changes only immediately before ItemAction:FireServer("Use", ...).
+    if ledger then
+      local after = rawget(ledger, class)
+      return type(after) == "number" and after ~= before
+    end
+    -- Non-drinking items (including pearls) also update this marker at dispatch.
+    local after = snap.character:GetAttribute("LocalAttackSwing")
+    return type(after) == "number" and after ~= swing
   end)
   if player:GetAttribute("FrontCameraAimDirection") == direction then
     player:SetAttribute("FrontCameraAimDirection", previous)
@@ -303,6 +372,9 @@ intercepted = function(snap, chosen, direction, distance)
   return false
 end
 function Native.incomingHit(snap, opponent)
+  if combatRules and type(combatRules.CanMelee) == "function" and not combatRules.CanMelee(opponent.character, snap.character) then
+    return false
+  end
   local tool = opponent.character:FindFirstChildOfClass("Tool")
   local reach = Native.stats(tool).reachBlocks
   if type(reach) ~= "number" or reach <= 0 then
