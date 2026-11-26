@@ -65,12 +65,11 @@ function Native.equip(snap, tool)
   if dispatching and tool.Parent ~= snap.character then
     return false
   end
-  local select, slots = bridge.get("select"), inventory.slots()
-  if select and slots then
+  local slots = inventory.slots()
+  if slots then
     for slot = 1, 9 do
       if slots[slot] == tool then
-        local ok = pcall(select, slot)
-        return ok and snap.character:FindFirstChildOfClass("Tool") == tool
+        return inventory.select(snap, slot)
       end
     end
   end
@@ -292,7 +291,7 @@ Native.__contract = {
     Utils = { "getLocalPlayer", "recordError" },
     Bridge = { "get" },
     Geometry = { "allowed", "eye", "stats", "direction" },
-    Inventory = { "slots" },
+    Inventory = { "slots", "select" },
   },
 }
 return Native

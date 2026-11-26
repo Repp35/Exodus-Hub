@@ -10,18 +10,10 @@ local function identity(tool)
   end
   return tool.Name .. "|" .. tostring(tool:GetAttribute("ClassItem")) .. "|" .. tostring(tool:GetAttribute("BlockKey"))
 end
-local function destination(slots, snap, urgent)
+local function destination(slots)
   for slot = 1, 9 do
     if not slots[slot] or not slots[slot].Parent then
       return slot
-    end
-  end
-  if urgent then
-    for slot = 9, 1, -1 do
-      local tool = slots[slot]
-      if tool ~= snap.tool and tool:GetAttribute("ClassItem") ~= "Pearl" then
-        return slot
-      end
     end
   end
   return nil
@@ -65,7 +57,7 @@ function Supplies.step(snap, allowBackground)
     end
     if not inventory.find("Totem", 1, 9) then
       local tool, from = inventory.find("Totem", 10, 36)
-      local to = tool and destination(slots, snap, true)
+      local to = tool and destination(slots)
       if tool and to and not inventory.move(snap, tool, from, to) then
         return
       end
@@ -122,7 +114,9 @@ function Supplies.step(snap, allowBackground)
         for from = 10, 36 do
           local tool = slots[from]
           if identity(tool) == layout[slot] then
-            inventory.move(snap, tool, from, slot)
+            if not inventory.move(snap, tool, from, slot) then
+              return
+            end
             break
           end
         end
@@ -145,7 +139,7 @@ function Supplies.step(snap, allowBackground)
     return
   end
   if from > 9 then
-    local to = destination(slots, snap, false)
+    local to = destination(slots)
     if not to or not inventory.move(snap, tool, from, to) then
       return
     end

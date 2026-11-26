@@ -77,7 +77,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Totem",
               key = "MCAutoTotem",
-              description = "Prioriza a segunda mão e a reserva da hotbar na mesma abertura do inventário, sem pausas artificiais.",
+              description = "Seleciona o totem da hotbar antes de passá-lo à segunda mão. Para reservas, abre o inventário e repõe a hotbar apenas em espaço vazio.",
             },
           },
         },

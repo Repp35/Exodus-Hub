@@ -223,6 +223,7 @@ function Runtime.bind(loaded)
   local binding = "ExodusMCPAim_" .. tostring(scope)
   scope.add(function() service:UnbindFromRenderStep(binding) end)
   service:BindToRenderStep(binding, Enum.RenderPriority.Camera.Value + 1, function(dt)
+    loaded.mcpinventory.present()
     run("aim", function()
       local snap = snapshot()
       if snap and not supplies.busy() and not pearl.busy() and not native.blocked(snap) then
