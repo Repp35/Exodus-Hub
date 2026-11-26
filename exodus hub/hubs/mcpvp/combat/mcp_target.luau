@@ -35,7 +35,7 @@ local function candidate(player, snap, range)
   end
   return { player = player, character = character, root = root, humanoid = human, distance = distance }
 end
-function Target.current(snap)
+function Target.tracked(snap)
   if not fight then
     return nil
   end
@@ -47,6 +47,18 @@ function Target.current(snap)
   value.id = fight.id
   return value
 end
+function Target.current(snap)
+  local value = Target.tracked(snap)
+  return fight and not fight.suspended and value or nil
+end
+local function suspend(snap, value)
+  if fight and value.distance > tuning.focusRangeBlocks then
+    fight.suspended, fight.resumeUntil, fight.sawOutside = true, snap.now + tuning.pursuitResumeSeconds, not aim.looking(snap, value)
+    aim.pause(snap)
+  else
+    Target.abandon(snap, value)
+  end
+end
 function Target.abandon(snap, value)
   if fight and (not value or value.id == fight.id) and owner == snap.character then
     fight, attempted, swings = nil, nil, {}
@@ -54,12 +66,27 @@ function Target.abandon(snap, value)
   end
 end
 function Target.observeView(snap)
-  local value = Target.current(snap)
+  local value = Target.tracked(snap)
   if not value then
     return
   end
+  if fight.suspended then
+    if snap.now > fight.resumeUntil then
+      Target.abandon(snap, value)
+      return
+    end
+    local looking = aim.looking(snap, value)
+    if not looking then
+      fight.sawOutside = true
+    end
+    if looking and (fight.sawOutside or aim.returning(snap, value)) then
+      fight.suspended, fight.lookAt = false, snap.now
+      aim.reset()
+    end
+    return
+  end
   if aim.yielding(snap, value) then
-    Target.abandon(snap, value)
+    suspend(snap, value)
     return
   end
   if aim.looking(snap, value) then
@@ -152,7 +179,7 @@ function Target.observe(snap)
   end
   local current = Target.current(snap)
   if current and aim.yielding(snap, current) then
-    Target.abandon(snap, current)
+    suspend(snap, current)
     current = nil
   end
   local hurt = health and snap.humanoid.Health < health
@@ -205,6 +232,7 @@ Target.__contract = {
     "manual",
     "observe",
     "current",
+    "tracked",
     "near",
     "isCurrent",
     "hit",
@@ -220,7 +248,7 @@ Target.__contract = {
     Geometry = { "allowed", "hit", "incoming", "visible" },
     Native = { "snapshot", "blocked" },
     Units = { "distance" },
-    Aim = { "reset", "pause", "looking", "yielding" },
+    Aim = { "reset", "pause", "looking", "yielding", "returning" },
   },
   requiresData = { Options = { "tuning" } },
 }

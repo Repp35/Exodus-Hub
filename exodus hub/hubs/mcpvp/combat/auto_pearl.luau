@@ -36,6 +36,12 @@ function Pearl.cancelPrepared(snap)
   end
 end
 function Pearl.observe(snap)
+  local followed = target.tracked(snap)
+  if followed then
+    motion = prediction.sample(followed.root, followed.character, snap.now, motion)
+  else
+    motion = nil
+  end
   if not shot or shot.character ~= snap.character then
     return
   end
@@ -139,9 +145,24 @@ function Pearl.route(snap, position, elevated)
   local direction, duration = ballistics.solve(origin, landing, speed, gravity, ray, tuning.pearlMaxFlight, drag)
   return direction and { direction = direction, duration = duration, landing = landing, origin = origin } or nil
 end
-local function track(snap, value) motion = prediction.sample(value.root, value.character, snap.now, motion) end
+local function nearGround(snap, value, ray)
+  local gap = units.toBlocks(value.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)
+  if gap.Magnitude >= tuning.pearlLobRangeBlocks then
+    return true
+  end
+  local feet = value.root.Position - units.offset(0, 1.25, 0)
+  local hit = workspace:Raycast(feet + units.offset(0, 1 / 32, 0), units.offset(0, -tuning.pearlTargetHeightBlocks - 1 / 32, 0), ray)
+  return hit ~= nil
+    and hit.Normal.Y >= 0.65
+    and hit.Material ~= Enum.Material.Water
+    and hit.Instance:GetAttribute("BlockKey") ~= "lava"
+    and hit.Instance:GetAttribute("BlockKey") ~= "water"
+end
 local function plan(snap, value)
   local ray = params(snap)
+  if not nearGround(snap, value, ray) then
+    return nil, "height"
+  end
   local roundTrip = measuredLatency
   local ok, ping = pcall(snap.player.GetNetworkPing, snap.player)
   if ok and type(ping) == "number" and ping > 0 then
@@ -176,11 +197,12 @@ local function plan(snap, value)
     tuning.pearlMaxFlight,
     units.toBlocks(snap.root.Position),
     value.distance <= 6,
-    function(direction) return aim.canTurn(snap, direction) end,
+    function(direction) return aim.canTurn(snap, direction, tuning.pursuitScreenMargin) end,
     {
       allowHigh = (units.toBlocks(value.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)).Magnitude >= tuning.pearlLobRangeBlocks,
       lobRange = tuning.pearlLobRangeBlocks,
       lowPitch = math.sin(math.rad(tuning.pearlLowPitchDegrees)),
+      landingRadius = tuning.pearlLandingRadiusBlocks,
     }
   )
   if route then
@@ -192,6 +214,9 @@ end
 local function rangeAllows(snap)
   if not shot or not shot.chosen then
     return true
+  end
+  if not nearGround(snap, shot.chosen, params(snap)) then
+    return false
   end
   local launch = shot.plan.direction * speed + units.toBlocks(snap.root.AssemblyLinearVelocity) * inheritance
   if not shot.plan.high and launch.Unit.Y <= math.sin(math.rad(tuning.pearlLowPitchDegrees)) then
@@ -220,9 +245,30 @@ local function advance(snap)
   if not shot.aimedAt or snap.now - shot.aimedAt > 0.1 then
     return
   end
+  if shot.chosen then
+    if not target.isCurrent(snap, shot.chosen) then
+      Pearl.cancelPrepared(snap)
+      return
+    end
+    local fresh = plan(snap, shot.chosen)
+    if not fresh then
+      Pearl.cancelPrepared(snap)
+      return
+    end
+    shot.plan, shot.planAt = fresh, snap.now
+  end
   local real = native.realAim(snap)
-  if real:Dot(shot.plan.direction) < math.cos(shot.plan.tolerance or math.rad(0.5)) then
+  local tolerance = math.cos(shot.plan.tolerance or math.rad(0.5))
+  if real:Dot(shot.plan.direction) < tolerance or snap.camera.CFrame.LookVector:Dot(shot.plan.direction) < tolerance then
     return
+  end
+  if shot.chosen then
+    local verified = shot.plan.verify(real)
+    if not verified then
+      Pearl.cancelPrepared(snap)
+      return
+    end
+    shot.plan.direction, shot.plan.landing, shot.plan.duration = real, verified.landing, verified.duration
   end
   shot.count, shot.requestAt = tonumber(shot.tool:GetAttribute("Count")) or 0, snap.now
   shot.requestRoot, shot.requestVelocity = snap.root.Position, units.toBlocks(snap.root.AssemblyLinearVelocity)
@@ -281,12 +327,12 @@ function Pearl.aim(snap, dt)
     Pearl.cancelPrepared(snap)
     return false
   end
-  if not shot.escape and (not target.isCurrent(snap, shot.chosen) or not aim.canTurn(snap, shot.plan.direction)) then
+  if not shot.escape and (not target.isCurrent(snap, shot.chosen) or not aim.canTurn(snap, shot.plan.direction, tuning.pursuitScreenMargin)) then
     Pearl.cancelPrepared(snap)
     return false
   end
   if
-    aim.turn(snap, shot.plan.direction, dt, shot.escape)
+    aim.turn(snap, shot.plan.direction, dt, shot.escape, tuning.pursuitScreenMargin)
     and snap.camera.CFrame.LookVector:Dot(shot.plan.direction) >= math.cos(shot.plan.tolerance or math.rad(0.5))
   then
     shot.aimedAt = snap.now
@@ -299,9 +345,6 @@ function Pearl.prepare(snap)
   end
   Pearl.observe(snap)
   local value = target.current(snap)
-  if value then
-    track(snap, value)
-  end
   if shot and shot.phase ~= "equip" then
     return
   end
@@ -315,7 +358,7 @@ function Pearl.prepare(snap)
     Pearl.cancelPrepared(snap)
     return
   end
-  if not motion.ready then
+  if not motion or not motion.ready then
     Pearl.cancelPrepared(snap)
     return
   end
@@ -325,12 +368,9 @@ function Pearl.prepare(snap)
       return
     end
     if not shot.planAt or snap.now - shot.planAt >= 0.05 or shot.plan.revision ~= motion.revision then
-      local route, reason = plan(snap, value)
+      local route = plan(snap, value)
       if not route then
         Pearl.cancelPrepared(snap)
-        if reason == "view" then
-          target.abandon(snap, value)
-        end
         return
       end
       shot.plan, shot.planAt = route, snap.now
@@ -347,12 +387,9 @@ function Pearl.prepare(snap)
   if not native.find(snap, "Pearl", true) or (tonumber(snap.player:GetAttribute("ItemCooldown_Pearl")) or 0) > workspace:GetServerTimeNow() then
     return
   end
-  local route, reason = plan(snap, value)
+  local route = plan(snap, value)
   if not route then
     retryAt = snap.now + 0.2
-    if reason == "view" then
-      target.abandon(snap, value)
-    end
     return
   end
   if Pearl.launch(snap, route) then
@@ -375,7 +412,7 @@ Pearl.__contract = {
   requiresMethods = {
     Native = { "snapshot", "find", "weapon", "restore", "equip", "use", "useState", "blocked", "realAim" },
     Geometry = { "direction" },
-    Target = { "current", "near", "attacked", "abandon", "isCurrent" },
+    Target = { "current", "tracked", "near", "attacked", "abandon", "isCurrent" },
     Units = { "toBlocks", "toWorld", "offset", "distance" },
     Ballistics = { "solve", "intercept" },
     Utils = { "getConfigValue" },

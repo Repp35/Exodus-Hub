@@ -80,9 +80,10 @@ function Aim.looking(snap, value)
   -- Direction only: terrain and trees do not count as looking away.
   local point = snap.camera:WorldToViewportPoint(value.root.Position)
   local size = snap.camera.ViewportSize
-  return point.Z > 0 and point.X >= 0 and point.X <= size.X and point.Y >= 0 and point.Y <= size.Y
+  local margin = tuning.pursuitScreenMargin
+  return point.Z > 0 and point.X >= -size.X * margin and point.X <= size.X * (1 + margin) and point.Y >= -size.Y * margin and point.Y <= size.Y * (1 + margin)
 end
-function Aim.canTurn(snap, direction)
+function Aim.canTurn(snap, direction, margin)
   if snap.now < resumeAt then
     return false
   end
@@ -91,35 +92,43 @@ function Aim.canTurn(snap, direction)
     return false
   end
   local size = snap.camera.ViewportSize
-  local vertical = math.tan(math.rad(snap.camera.FieldOfView) / 2)
+  local vertical = math.tan(math.rad(snap.camera.FieldOfView) / 2) * (1 + 2 * (margin or 0))
   return math.abs(localDirection.Y / -localDirection.Z) <= vertical * 0.98
     and math.abs(localDirection.X / -localDirection.Z) <= vertical * size.X / math.max(1, size.Y) * 0.98
 end
-function Aim.yielding(snap, value)
+local function intent(snap, value)
   local manual = manualSerial ~= checkedSerial or stick
   if not manual or not value or lastCamera ~= snap.camera or not lastLook then
-    return false
+    return 0
   end
   local delta = value.root.Position - snap.camera.CFrame.Position
   if delta.Magnitude < 0.001 then
-    return false
+    return 0
   end
   local desired, look = delta.Unit, snap.camera.CFrame.LookVector
   if lastLook:Dot(look) > math.cos(math.rad(0.1)) then
-    return false
+    return 0
   end
   checkedSerial = manualSerial
   local before = math.acos(math.clamp(lastLook:Dot(desired), -1, 1))
   local after = math.acos(math.clamp(look:Dot(desired), -1, 1))
-  return after > before + math.rad(0.35)
+  if after > before + math.rad(0.35) then
+    return 1
+  end
+  if after < before - math.rad(0.35) then
+    return -1
+  end
+  return 0
 end
+function Aim.yielding(snap, value) return intent(snap, value) == 1 end
+function Aim.returning(snap, value) return intent(snap, value) == -1 end
 function Aim.pause(snap)
   Aim.reset()
   resumeAt = snap.now + 0.75
   checkedSerial = manualSerial
 end
-function Aim.turn(snap, desired, dt, emergency)
-  if snap.now < resumeAt or not emergency and not Aim.canTurn(snap, desired) then
+function Aim.turn(snap, desired, dt, emergency, margin)
+  if snap.now < resumeAt or not emergency and not Aim.canTurn(snap, desired, margin) then
     return false
   end
   local frame = snap.camera.CFrame
@@ -238,7 +247,7 @@ function Aim.step(snap, focus, dt)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 Aim.__contract = {
-  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe" },
+  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe", "returning" },
   requires = { Geometry = "mcpgeometry", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
   requiresMethods = {
     Geometry = { "point", "visible" },
