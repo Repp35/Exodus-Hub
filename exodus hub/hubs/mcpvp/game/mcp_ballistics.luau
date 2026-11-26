@@ -149,7 +149,7 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
   return nil
 end
 -- Solve interception directly against the moving body; no floor destination or nearby fallback.
-function Ballistics.intercept(origin, target, others, speed, gravity, drag, inherited, params, maxFlight, ownPosition, near, canAim)
+function Ballistics.intercept(origin, target, others, speed, gravity, drag, inherited, params, maxFlight, ownPosition, near, canAim, policy)
   local aimOffset = Vector3.new(0, near and -0.75 or -0.2, 0)
   local outsideView = false
   local function required(time)
@@ -175,6 +175,13 @@ function Ballistics.intercept(origin, target, others, speed, gravity, drag, inhe
       local duration = (left + right) / 2
       local _, velocity = required(duration)
       local direction = velocity.Unit
+      local direct = target.predict(duration) + aimOffset - origin
+      local lift = math.asin(math.clamp(direction.Y, -1, 1)) - math.asin(math.clamp(direct.Unit.Y, -1, 1))
+      -- Near shots may aim directly at an elevated player, but cannot use a high lob.
+      if policy and lift > policy.lift then
+        low, previous = high, error
+        continue
+      end
       local contact, impact = hitsPlayer(origin, direction * speed + inherited, gravity, drag, duration, target, others, params, ownPosition)
       if contact then
         if not canAim or canAim(direction) then
