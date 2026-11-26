@@ -1,6 +1,7 @@
 -- [[ mcpnative ]]
 --!optimize 2
 local Native = {}
+local intercepted
 local player, world, storage, weapons, geometry, config, controller, utils, units
 local shields
 local bridge, charge, dispatching, criticalAt = nil, nil, false, 0
@@ -135,6 +136,9 @@ function Native.hitDistanceBlocks(snap, target, tool, direction)
   if not Native.visible(snap, snap.eye + direction * units.toWorld(distanceBlocks), target.character) then
     return nil
   end
+  if intercepted(snap, target, direction, distanceBlocks) then
+    return nil
+  end
   return distanceBlocks
 end
 function Native.canHit(snap, target, tool, direction) return Native.hitDistanceBlocks(snap, target, tool or snap.tool, direction) ~= nil end
@@ -253,7 +257,7 @@ function Native.readyAt(snap, tool)
   end
   return math.max(ready, swing + period)
 end
-local function intercepted(snap, chosen, direction, distance)
+intercepted = function(snap, chosen, direction, distance)
   if not geometry or type(geometry.Hit) ~= "function" then
     return false
   end
@@ -362,10 +366,7 @@ function Native.attackDirection(snap, chosen, tool)
   if not chosen.character.Parent or not chosen.root.Parent or chosen.humanoid.Health <= 0 then
     return nil
   end
-  local function valid(direction)
-    local distance = Native.hitDistanceBlocks(snap, chosen, tool, direction)
-    return distance and not intercepted(snap, chosen, direction, distance)
-  end
+  local function valid(direction) return Native.hitDistanceBlocks(snap, chosen, tool, direction) ~= nil end
   local rear = Native.shieldRear(chosen.character, chosen.root)
   if rear then
     local delta = Native.aimPoint(chosen.character, chosen.root) - snap.eye
@@ -477,13 +478,13 @@ function Native.crystalJumpRisk(snap)
   params.FilterDescendantsInstances = ignored
   local motion = units.toBlocks(snap.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
   -- Native movement in blocks: 8.4 blocks/s jump, 0.05 s ticks, then (vy - 1.6) * 0.98.
-  local trajectory, height, vertical = {}, 0, 8.4
-  for tick = 1, 20 do
+  local trajectory, height, vertical = {}, 0, math.max(8.4, units.toBlocks(snap.root.AssemblyLinearVelocity.Y))
+  for tick = 0, 20 do
+    trajectory[#trajectory + 1] = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0) + motion * (tick * 0.05) + Vector3.new(0, height, 0)
     height += vertical * 0.05
     if height < 0 then
       break
     end
-    trajectory[#trajectory + 1] = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0) + motion * (tick * 0.05) + Vector3.new(0, height, 0)
     vertical = (vertical - 1.6) * 0.98
   end
   for _, crystal in ipairs(crystals) do
@@ -497,9 +498,11 @@ function Native.crystalJumpRisk(snap)
     end
     origin = units.toBlocks(origin)
     for _, feet in ipairs(trajectory) do
-      -- Narrow client estimate: feet at/above the crystal in its immediate one-block space,
-      -- with full body exposure. The server's exact damage formula is not replicated.
-      if feet.Y < origin.Y or (feet - origin).Magnitude > 1 then
+      -- Use the native crystal column (one block each side, two blocks high),
+      -- including the player's footprint. A sphere around its base missed elevated/diagonal overlap.
+      -- This is a local exposure estimate; the server damage formula is not replicated.
+      local delta = feet - origin
+      if delta.Y < -1 / 64 or delta.Y > 2 or math.abs(delta.X) > 1 + 9 / 32 or math.abs(delta.Z) > 1 + 9 / 32 then
         continue
       end
       local exposed = true

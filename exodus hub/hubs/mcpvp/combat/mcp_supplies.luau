@@ -109,6 +109,23 @@ local function request(snap, kind, tool, from, to)
   return true
 end
 local configKeys = { totem = "MCAutoTotem", refill = "MCAutoRefill", strength = "MCAutoStrength" }
+local function continueTotems(snap, values)
+  if snap.character:GetAttribute("OffhandItem") ~= "totem" then
+    local tool, from = find(values, "Totem", 1, 36)
+    if tool then
+      job.tool, job.from, job.to = tool, from, from > 9 and destination(values, snap, true) or nil
+      job.stage = from > 9 and "move" or "offhand"
+      return
+    end
+  elseif not find(values, "Totem", 1, 9) then
+    local tool, from = find(values, "Totem", 10, 36)
+    if tool then
+      job.tool, job.from, job.to, job.stage = tool, from, destination(values, snap, true), "move"
+      return
+    end
+  end
+  job.stage = "close"
+end
 function Supplies.step(snap, allowStart)
   local values = inventory.slots()
   if not values then
@@ -125,11 +142,14 @@ function Supplies.step(snap, allowStart)
       if not inventory.ready(job.kind, snap, job.kind == "totem") then
         return
       end
+      if immediate then
+        return
+      end
       if not job.pending then
         if job.stage == "move" then
           job.pending = inventory.move(job.kind, snap, job.tool, job.from, job.to, job.kind == "totem" and "totem" or job.kind == "strength")
         elseif snap.character:GetAttribute("OffhandItem") == "totem" then
-          job.stage = "close"
+          continueTotems(snap, values)
         else
           job.pending = inventory.offhand(job.kind, snap, job.tool)
         end
@@ -139,7 +159,11 @@ function Supplies.step(snap, allowStart)
         return
       end
       job.pending = nil
-      job.stage = job.kind == "totem" and snap.character:GetAttribute("OffhandItem") ~= "totem" and "offhand" or "close"
+      if job.kind == "totem" then
+        continueTotems(snap, values)
+      else
+        job.stage = "close"
+      end
     end
     if job.stage == "close" then
       if not inventory.finish(job.kind, snap) then

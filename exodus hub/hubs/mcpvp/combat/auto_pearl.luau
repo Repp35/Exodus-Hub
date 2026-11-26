@@ -10,7 +10,7 @@ function Pearl.setup(deps)
   return true
 end
 local function restore(snap)
-  if not shot or not snap or snap.character ~= shot.character or snap.tool and snap.tool ~= shot.tool then
+  if not shot or shot.restored or not snap or snap.character ~= shot.character or snap.tool and snap.tool ~= shot.tool then
     return
   end
   local tool = shot.previous
@@ -18,7 +18,7 @@ local function restore(snap)
     tool = native.findSword(snap)
   end
   if tool then
-    native.equip(snap, tool)
+    shot.restored = native.equip(snap, tool)
   end
 end
 function Pearl.reset()
@@ -27,9 +27,9 @@ function Pearl.reset()
 end
 local function finish(snap, delay)
   restore(snap)
-  shot, retryAt = nil, snap.now + delay
+  shot, track, retryAt = nil, nil, snap.now + delay
 end
-function Pearl.busy() return shot ~= nil and shot.phase ~= "flight" end
+function Pearl.busy() return shot ~= nil and not shot.detached and shot.phase ~= "flight" end
 function Pearl.pending() return shot ~= nil end
 function Pearl.observeProjectile(action, _id, kind, _position, velocity, acceleration, resistance, sentAt)
   if action ~= "Projectile" or kind ~= "Pearl" or typeof(velocity) ~= "Vector3" then
@@ -58,18 +58,43 @@ local function observe(snap, chosen)
   if velocity.Magnitude > 14 then
     velocity = velocity.Unit * 14
   end
-  if not track or track.character ~= chosen.character then
-    track = { character = chosen.character, position = position, velocity = velocity, at = snap.now }
+  local gap = (position - units.toBlocks(snap.root.Position)) * HORIZONTAL
+  if not track or track.owner ~= snap.character or track.character ~= chosen.character or track.sessionId ~= chosen.sessionId then
+    track = {
+      owner = snap.character,
+      character = chosen.character,
+      sessionId = chosen.sessionId,
+      position = position,
+      velocity = velocity,
+      gap = gap.Magnitude,
+      at = snap.now,
+    }
     return velocity
   end
   local elapsed = snap.now - track.at
-  if elapsed >= 0.04 then
+  if elapsed >= 0.1 then
+    local measured
     if elapsed <= 0.5 then
-      local measured = (position - track.position) * HORIZONTAL / elapsed
+      measured = (position - track.position) * HORIZONTAL / elapsed
       if measured.Magnitude <= 14 then
         velocity = (velocity + measured) * 0.5
       end
     end
+    local outward = gap.Magnitude > 0.001 and gap.Unit or Vector3.zero
+    local escaping = measured
+      and measured.Magnitude <= 14
+      and gap.Magnitude >= 8
+      and measured:Dot(outward) >= 2
+      and velocity:Dot(outward) >= 2
+      and gap.Magnitude >= track.gap - 0.1
+    local heading = velocity.Magnitude > 0.001 and velocity.Unit or Vector3.zero
+    if not escaping or track.heading and heading:Dot(track.heading) < 0.85 then
+      track.escapeAt, track.escapeGap, track.leading = nil, nil, false
+    else
+      track.escapeAt, track.escapeGap = track.escapeAt or snap.now, track.escapeGap or gap.Magnitude
+      track.leading = snap.now - track.escapeAt >= 1 and gap.Magnitude - track.escapeGap >= 1
+    end
+    track.heading, track.gap = heading, gap.Magnitude
     track.position, track.at = position, snap.now
   end
   track.velocity = track.velocity:Lerp(velocity, 0.7)
@@ -96,47 +121,35 @@ local function plan(snap, chosen, motion)
   local params = rayParams(snap)
   local origin, position = units.toBlocks(snap.eye), units.toBlocks(chosen.root.Position)
   local playerPosition = units.toBlocks(snap.root.Position)
-  local rear = native.shieldBlocks(snap, chosen) and native.shieldRear(chosen.character, chosen.root)
-  local forward = motion.Magnitude >= 0.5 and motion.Unit or (position - playerPosition) * HORIZONTAL
-  if forward.Magnitude < 0.001 then
-    return nil
-  end
-  forward = forward.Unit
-  local approach = rear or forward
-  local ahead = rear and 1.4 or math.clamp(0.75 + motion.Magnitude * 0.12, 0.75, 1.6)
-  local side = Vector3.new(-approach.Z, 0, approach.X)
+  local leading = track and track.leading == true
   local delay = transportDelay + 0.05
   local sword = native.findSword(snap)
   local reach = native.stats(sword or snap.tool).reachBlocks or 3
-  for _, lateral in ipairs({ 0, 0.6, -0.6 }) do
-    local flight = math.clamp((position - origin).Magnitude / speed, 0.1, tuning.pearlMaxFlight)
-    for _ = 1, 8 do
-      -- Lead by travel AND replication time, then stand ahead instead of at the old feet position.
-      local future = position + motion * (flight + delay)
-      local destination = future + approach * ahead + side * lateral
-      if (destination - playerPosition).Magnitude > tuning.pearlRangeBlocks + reach then
-        break
-      end
-      local floor = workspace:Raycast(units.toWorld(destination + Vector3.new(0, 1, 0)), units.offset(0, -20, 0), params)
-      if not floor then
-        break
-      end
-      local landing = units.toBlocks(floor.Position)
-      local direction, duration = ballistics.solve(origin, landing, speed, gravity, params, tuning.pearlMaxFlight, drag)
-      if not direction then
-        break
-      end
-      local actualFuture = position + motion * (duration + delay)
-      local gap = (landing - actualFuture) * HORIZONTAL
-      local inFront = gap:Dot(approach) >= (rear and 0.5 or 0.4)
-      local inReach = (landing + Vector3.new(0, 1.25, 0) - actualFuture).Magnitude <= reach
-      if math.abs(duration - flight) * math.max(1, motion.Magnitude) <= 0.15 and inFront and inReach then
-        return direction, duration, landing
-      end
-      flight = duration
+  local flight = math.clamp((position - origin).Magnitude / speed, 0.1, tuning.pearlMaxFlight)
+  for _ = 1, leading and 8 or 1 do
+    -- Direct throws are the default. Only sustained, distant escape enables interception.
+    local destination = position + (leading and motion * (flight + delay) or Vector3.zero)
+    if (destination - playerPosition).Magnitude > tuning.pearlRangeBlocks + reach then
+      break
     end
+    local floor = workspace:Raycast(units.toWorld(destination - Vector3.new(0, 0.75, 0)), units.offset(0, -20, 0), params)
+    if not floor then
+      break
+    end
+    local landing = units.toBlocks(floor.Position)
+    local direction, duration = ballistics.solve(origin, landing, speed, gravity, params, tuning.pearlMaxFlight, drag)
+    if not direction then
+      break
+    end
+    local actualFuture = position + motion * (duration + delay)
+    local gap = (landing - actualFuture) * HORIZONTAL
+    local inReach = (landing + Vector3.new(0, 1.25, 0) - actualFuture).Magnitude <= reach
+    local closer = gap.Magnitude + 0.5 < ((position - playerPosition) * HORIZONTAL).Magnitude
+    if (not leading or math.abs(duration - flight) * math.max(1, motion.Magnitude) <= 0.15) and inReach and closer then
+      return direction, duration, landing
+    end
+    flight = duration
   end
-  -- No throw is better than a fallback that repeatedly lands behind a runner.
   return nil
 end
 function Pearl.step(snap, chosen)
@@ -145,6 +158,11 @@ function Pearl.step(snap, chosen)
   end
   local motion = chosen and observe(snap, chosen)
   if shot then
+    if shot.phase ~= "equip" and (not chosen or chosen.sessionId ~= shot.sessionId or chosen.character ~= shot.target) then
+      -- The projectile cannot be recalled, but it no longer owns combat or camera focus.
+      restore(snap)
+      shot.detached = true
+    end
     if shot.phase == "equip" then
       if
         snap.now >= shot.deadline
@@ -155,6 +173,10 @@ function Pearl.step(snap, chosen)
         or units.distance(chosen.root.Position, snap.root.Position) > tuning.pearlRangeBlocks
       then
         finish(snap, 0.3)
+        return false
+      end
+      if native.canHit(snap, chosen, native.findSword(snap) or snap.tool) then
+        finish(snap, 0.2)
         return false
       end
       if snap.tool ~= shot.tool or native.blocked(snap) then
@@ -206,7 +228,7 @@ function Pearl.step(snap, chosen)
   then
     return false
   end
-  if native.canHit(snap, chosen) and not native.shieldBlocks(snap, chosen) then
+  if native.canHit(snap, chosen, native.findSword(snap) or snap.tool) then
     return false
   end
   retryAt = snap.now + 0.4
@@ -251,8 +273,6 @@ Pearl.__contract = {
       "canHit",
       "aerialMace",
       "stats",
-      "shieldRear",
-      "shieldBlocks",
     },
     Ballistics = { "solve" },
     Target = { "follow", "isCurrent" },

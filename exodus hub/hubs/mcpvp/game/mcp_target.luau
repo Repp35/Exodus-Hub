@@ -60,7 +60,7 @@ local function active(snap)
 end
 local function select(snap, chosen)
   finish()
-  session = { id = serial, player = chosen.player, character = chosen.character, at = snap.now, startedAt = snap.now, switchedAt = snap.now }
+  session = { id = serial, player = chosen.player, character = chosen.character, at = snap.now, startedAt = snap.now }
   chosen.sessionId = session.id
 end
 function Target.noteSwing(source)
@@ -73,14 +73,19 @@ function Target.noteSwing(source)
   if not source or not source:IsA("Model") or source == owner or not players:GetPlayerFromCharacter(source) then
     return
   end
-  swings[source] = { at = os.clock(), sessionId = session.id }
+  local snap = native.snapshot()
+  local other = snap and candidate(players:GetPlayerFromCharacter(source), snap, tuning.focusRangeBlocks)
+  if other and native.incomingHit(snap, other) then
+    -- Capture the attack geometry now; the attacker may turn before health replicates.
+    swings[source] = { at = snap.now, sessionId = session.id }
+    Target.observe(snap)
+  end
 end
 local function considerSwitch(snap, current)
-  if not session or not session.damageAt or snap.now - session.damageAt > SWITCH_WINDOW or snap.now - session.switchedAt < SWITCH_WINDOW then
+  if not session or not session.damageAt or snap.now - session.damageAt > SWITCH_WINDOW then
     return
   end
   local chosen, distance
-  local currentClose = native.canHit(snap, current)
   for character, swing in pairs(swings) do
     if swing.sessionId ~= session.id or not character.Parent or snap.now - swing.at > SWITCH_WINDOW then
       swings[character] = nil
@@ -90,10 +95,10 @@ local function considerSwitch(snap, current)
       continue
     end
     local other = candidate(players:GetPlayerFromCharacter(character), snap, tuning.focusRangeBlocks)
-    if not other or other.character ~= character or not native.canHit(snap, other) or not native.incomingHit(snap, other) then
+    if not other or other.character ~= character or not native.visible(snap, other.root.Position, other.character) then
       continue
     end
-    if currentClose and other.distanceBlocks + 0.25 >= current.distanceBlocks then
+    if other.distanceBlocks >= current.distanceBlocks then
       continue
     end
     if not distance or other.distanceBlocks < distance then
@@ -199,7 +204,7 @@ function Target.quiet(snap, duration) return snap.now - math.max(clickAt, hurtAt
 Target.__contract = {
   provides = { "setup", "reset", "observe", "noteSwing", "manual", "pick", "get", "noteAttack", "confirmHit", "follow", "getPearl", "isCurrent", "quiet" },
   requires = { Native = "mcpnative", Options = "mcpoptions", Units = "mcpunits" },
-  requiresMethods = { Units = { "distance" }, Native = { "blocked", "aimDirection", "hitDistanceBlocks", "visible", "canHit", "incomingHit" } },
+  requiresMethods = { Units = { "distance" }, Native = { "snapshot", "blocked", "aimDirection", "hitDistanceBlocks", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },
 }
 return Target

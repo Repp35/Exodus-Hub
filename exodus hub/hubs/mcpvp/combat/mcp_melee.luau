@@ -26,29 +26,49 @@ local function bind(snap)
     owner = snap.character
   end
 end
-local function startJump(snap)
-  if native.crystalJumpRisk(snap) then
+local function validIntent(snap, chosen, tool, direction)
+  if not chosen or snap.tool ~= tool or not target.isCurrent(snap, chosen) then
+    return false
+  end
+  return direction and native.canHit(snap, chosen, tool, direction) or direction == nil and native.attackDirection(snap, chosen, tool) ~= nil
+end
+local function cancelCritical()
+  cycle, queuedManual, pending = nil, false, nil
+  native.finishCritical()
+end
+local function startJump(snap, chosen, direction)
+  if not validIntent(snap, chosen, snap.tool, direction) or native.crystalJumpRisk(snap) then
     cycle, queuedManual = nil, false
+    native.finishCritical()
     return false
   end
   native.prepareCritical()
-  cycle = { at = snap.now, phase = "takeoff", vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
+  cycle = {
+    at = snap.now,
+    phase = "takeoff",
+    vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y),
+    chosen = chosen,
+    tool = snap.tool,
+    direction = direction,
+  }
   queuedManual = false
   native.requestJump(snap)
   return true
 end
-function Melee.manual(snap)
+function Melee.manual(snap, chosen, direction)
   bind(snap)
-  if not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) then
+  direction = direction or native.aimDirection(snap)
+  if not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) or not validIntent(snap, chosen, snap.tool, direction) then
+    cancelCritical()
     return false
   end
   if not native.attackGateReady() and not warnedManual then
     warnedManual = true
     utils.recordError("mcpvp.critical.manual", "O executor não permite adiar o ataque nativo; o pulo manual sozinho não garante um crítico.")
   end
-  queuedManual = true
+  queuedManual = { chosen = chosen, tool = snap.tool, direction = direction, expires = snap.now + 0.5 }
   if grounded(snap) and native.readyAt(snap, snap.tool) - snap.now <= apex + 0.04 then
-    return startJump(snap)
+    return startJump(snap, chosen, direction)
   end
   return true
 end
@@ -62,8 +82,12 @@ function Melee.intercept(snap, direction)
     return true
   end
   local intended = target.manual(snap, direction)
+  if not intended then
+    cancelCritical()
+    return true
+  end
   if grounded(snap) and native.crystalJumpRisk(snap) then
-    pending = nil
+    cancelCritical()
     return true
   end
   if native.criticalReady(snap) and snap.now >= native.readyAt(snap, snap.tool) then
@@ -74,8 +98,8 @@ function Melee.intercept(snap, direction)
     return true
   end
   local aim = typeof(direction) == "Vector3" and direction.Magnitude > 0.001 and direction.Unit or nil
-  pending = { character = snap.character, tool = snap.tool, direction = aim, chosen = intended, expires = snap.now + 2.5 }
-  Melee.manual(snap)
+  pending = { character = snap.character, tool = snap.tool, chosen = intended, expires = snap.now + 2.5 }
+  Melee.manual(snap, intended, aim)
   return false
 end
 function Melee.postSimulation(snap)
@@ -88,7 +112,7 @@ function Melee.postSimulation(snap)
     or snap.character ~= pending.character
     or snap.tool ~= pending.tool
     or snap.now >= pending.expires
-    or pending.chosen and not target.isCurrent(snap, pending.chosen)
+    or not validIntent(snap, pending.chosen, pending.tool)
   then
     pending, queuedManual, cycle = nil, false, nil
     native.finishCritical()
@@ -105,10 +129,10 @@ function Melee.postSimulation(snap)
   if not crystalException then
     native.prepareCritical(true)
   end
-  -- A deferred click must not acquire whoever happens to enter the camera later.
-  local direction = pending.direction or native.aimDirection(snap)
-  local underRay = target.pick(snap, direction)
-  if (underRay and underRay.character) ~= (pending.chosen and pending.chosen.character) then
+  -- Recompute the same clicked target's hitbox from the airborne eye position.
+  -- Reusing the ground-level ray misses above its head after jumping.
+  local direction = native.attackDirection(snap, pending.chosen, pending.tool)
+  if not direction then
     pending, queuedManual = nil, false
     if cycle then
       cycle.phase = "land"
@@ -134,6 +158,16 @@ function Melee.preSimulation(snap)
   end
   bind(snap)
   local ground = grounded(snap)
+  if queuedManual and (snap.now >= queuedManual.expires or not validIntent(snap, queuedManual.chosen, queuedManual.tool, queuedManual.direction)) then
+    cancelCritical()
+  end
+  if
+    cycle
+    and cycle.chosen
+    and (not validIntent(snap, cycle.chosen, cycle.tool) or cycle.phase == "takeoff" and not validIntent(snap, cycle.chosen, cycle.tool, cycle.direction))
+  then
+    cancelCritical()
+  end
   if cycle then
     local vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y)
     if cycle.phase == "takeoff" then
@@ -141,6 +175,11 @@ function Melee.preSimulation(snap)
         -- Keep the request alive until the native movement actually leaves the ground.
         if native.crystalJumpRisk(snap) then
           cycle, queuedManual = nil, false
+          native.finishCritical()
+          return
+        end
+        if snap.now - cycle.at > 0.6 then
+          cancelCritical()
           return
         end
         native.requestJump(snap)
@@ -165,10 +204,11 @@ function Melee.preSimulation(snap)
     end
   end
   if not cycle and queuedManual and ground and native.readyAt(snap, snap.tool) - snap.now <= apex + 0.04 then
-    startJump(snap)
+    local intent = queuedManual
+    startJump(snap, intent.chosen, intent.direction)
   end
 end
-local function criticalReady(snap, readyAt)
+local function criticalReady(snap, chosen, readyAt)
   if not utils.getConfigValue("MCAutoCrit") then
     cycle, queuedManual = nil, false
     return snap.now >= readyAt
@@ -176,10 +216,11 @@ local function criticalReady(snap, readyAt)
   if grounded(snap) then
     if native.crystalJumpRisk(snap) then
       cycle, queuedManual = nil, false
+      native.finishCritical()
       return snap.now >= readyAt
     end
     if not cycle and readyAt - snap.now <= apex + 0.04 then
-      startJump(snap)
+      startJump(snap, chosen)
     end
     return false
   end
@@ -188,7 +229,7 @@ local function criticalReady(snap, readyAt)
     return false
   end
   if not cycle then
-    cycle = { at = snap.now, phase = "air", vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
+    cycle = { at = snap.now, phase = "air", vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y), chosen = chosen, tool = snap.tool }
   end
   if snap.now < readyAt or not native.criticalReady(snap) then
     return false
@@ -232,7 +273,7 @@ function Melee.step(snap, chosen)
     return false
   end
   local direction = native.attackDirection(snap, chosen, tool)
-  if not direction or not criticalReady(snap, readyAt) then
+  if not direction or not criticalReady(snap, chosen, readyAt) then
     return false
   end
   if not target.isCurrent(snap, chosen) or not native.attack(snap, chosen, direction) then
@@ -260,13 +301,14 @@ Melee.__contract = {
       "attack",
       "readyAt",
       "attackDirection",
+      "canHit",
       "finishCritical",
       "criticalReady",
       "attackGateReady",
       "replayAttack",
       "aimDirection",
     },
-    Target = { "noteAttack", "manual", "isCurrent", "pick" },
+    Target = { "noteAttack", "manual", "isCurrent" },
     Utils = { "getConfigValue", "isActive", "recordError" },
   },
   requiresData = { Options = { "tuning" } },

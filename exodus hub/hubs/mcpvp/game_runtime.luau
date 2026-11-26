@@ -78,10 +78,10 @@ function Runtime.bind(loaded)
           Runtime.reset()
           owner = snap.character
         end
+        local chosen = target.manual(snap)
         if not native.attackGateReady() then
-          loaded.mcpmelee.manual(snap)
+          loaded.mcpmelee.manual(snap, chosen)
         end
-        target.manual(snap)
       end
     end)
   end)
