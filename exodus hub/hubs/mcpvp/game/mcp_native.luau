@@ -2,7 +2,9 @@
 --!optimize 2
 local Native = {}
 local player, world, storage, weapons, geometry, config, controller, utils
-local bridge, dispatching, criticalAt = nil, false, 0
+local bridge, charge, dispatching, criticalAt = nil, nil, false, 0
+local observedCharacter, observedTool
+local equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
 local function load(name)
   local source = storage:FindFirstChild(name)
   if not source then
@@ -22,7 +24,10 @@ function Native.setup(deps)
   player, world = utils.getLocalPlayer(), utils.getWorkspace()
   storage = game:GetService("ReplicatedStorage")
   weapons, geometry, config, controller = load("VoxelWeapons"), load("VoxelMeleeGeometry"), load("GameConfig"), load("ControllerInput")
+  charge = load("HeldItemFov")
   dispatching, criticalAt = false, 0
+  observedCharacter, observedTool = nil, nil
+  equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
   return true
 end
 function Native.isDispatching() return dispatching end
@@ -34,6 +39,13 @@ function Native.snapshot()
   if not root or not human or human.Health <= 0 or not camera or player:GetAttribute("InArena") == false or player:GetAttribute("ArenaProtected") == true then
     return nil
   end
+  local now, tool = os.clock(), char:FindFirstChildOfClass("Tool")
+  if observedCharacter ~= char then
+    observedCharacter, observedTool = char, tool
+    equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
+  elseif observedTool ~= tool then
+    observedTool, equippedAt = tool, now
+  end
   local sneaking = char:GetAttribute("Sneaking") == true
   local eye = geometry and geometry.Eye(root.Position, sneaking) or root.Position + Vector3.new(0, sneaking and 0.064 or 1.184, 0)
   return {
@@ -43,8 +55,8 @@ function Native.snapshot()
     humanoid = human,
     camera = camera,
     eye = eye,
-    tool = char:FindFirstChildOfClass("Tool"),
-    now = os.clock(),
+    tool = tool,
+    now = now,
   }
 end
 function Native.stats(tool)
@@ -162,16 +174,109 @@ local function invoke(action, direction)
   end
   return ok and result == true
 end
-function Native.attack(snap, target)
-  if
-    Native.blocked(snap)
-    or not snap.tool
-    or Native.stats(snap.tool).type ~= "sword"
-    or not Native.canHit(snap, target, snap.tool, snap.camera.CFrame.LookVector)
-  then
+function Native.readyAt(snap, tool)
+  local speed = Native.stats(tool).speed
+  if type(speed) ~= "number" or speed <= 0 then
+    return math.huge
+  end
+  -- VoxelWeapons.Strength reaches full damage at (elapsed + 0.025) * speed == 1.
+  local period = math.max(1 / 15, 1 / speed - 0.025)
+  local swing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
+  local ready = math.max(attackAt + period, attemptAt + 1 / 15, equippedAt + period, swing + period)
+  -- The native HUD tracks charge after manual attacks and equipment changes too.
+  if tool == snap.tool and charge and type(charge.Charge) == "function" then
+    local ok, value = pcall(charge.Charge)
+    if ok and type(value) == "number" and value == value and value >= 0 and value <= 1 then
+      return math.max(ready, snap.now + math.max(0, (1 - value) / speed - 0.025))
+    end
+  end
+  return math.max(ready, swing + period)
+end
+local function intercepted(snap, chosen, direction, distance)
+  if not geometry or type(geometry.Hit) ~= "function" then
     return false
   end
-  return invoke("Attack", snap.camera.CFrame.LookVector)
+  local function closer(character)
+    if not character or character == snap.character or character == chosen.character then
+      return false
+    end
+    local human = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root or not human or human.Health <= 0 then
+      return false
+    end
+    local hit = geometry.Hit(snap.eye, direction, root.Position, character:GetAttribute("Sneaking"), distance)
+    return hit ~= nil and hit <= distance
+  end
+  for _, other in ipairs(game:GetService("Players"):GetPlayers()) do
+    if closer(other.Character) then
+      return true
+    end
+  end
+  local bots = world:FindFirstChild("ArenaPvPBots")
+  if bots then
+    for _, character in ipairs(bots:GetChildren()) do
+      if closer(character) then
+        return true
+      end
+    end
+  end
+  local crystals = world:FindFirstChild("EndCrystals")
+  if crystals and type(geometry.Box) == "function" then
+    for _, crystal in ipairs(crystals:GetChildren()) do
+      local feet = crystal:GetAttribute("CrystalFeet")
+      if typeof(feet) ~= "Vector3" then
+        continue
+      end
+      -- performAttack prioritizes crystalPick before the selected melee target.
+      local hit = geometry.Box(snap.eye, direction, feet - Vector3.new(3.2, 0, 3.2), feet + Vector3.new(3.2, 6.4, 3.2), distance)
+      if hit and hit < distance then
+        return true
+      end
+    end
+  end
+  return false
+end
+function Native.attackDirection(snap, chosen, tool)
+  if not chosen.character.Parent or not chosen.root.Parent or chosen.humanoid.Health <= 0 then
+    return nil
+  end
+  local function valid(direction)
+    local distance = Native.hitDistance(snap, chosen, tool, direction)
+    return distance and not intercepted(snap, chosen, direction, distance)
+  end
+  local aim = Native.aimDirection(snap)
+  if valid(aim) then
+    return aim
+  end
+  local root = chosen.root.Position
+  local crouch = chosen.character:GetAttribute("Sneaking") == true and 0.96 or 0
+  local relative = snap.eye - root
+  -- Use current body/head boxes from VoxelMeleeGeometry, with points inside their margins.
+  local nearest = Vector3.new(math.clamp(relative.X, -1.2, 1.2), math.clamp(relative.Y, -4.2, 0.6 - crouch), math.clamp(relative.Z, -1.2, 1.2))
+  local head = Vector3.new(math.clamp(relative.X, -1.2, 1.2), math.clamp(relative.Y, 0.8 - crouch, 2.5 - crouch), math.clamp(relative.Z, -1.2, 1.2))
+  for _, offset in ipairs({ nearest, head, Vector3.new(0, 0.3 - crouch, 0), Vector3.new(0, 1.5 - crouch, 0) }) do
+    local delta = root + offset - snap.eye
+    if delta.Magnitude > 0.001 and valid(delta.Unit) then
+      return delta.Unit
+    end
+  end
+  return nil
+end
+function Native.attack(snap, target, direction)
+  if Native.blocked(snap) or not snap.tool or Native.stats(snap.tool).type ~= "sword" or snap.now + 1e-6 < Native.readyAt(snap, snap.tool) then
+    return false
+  end
+  direction = direction or Native.attackDirection(snap, target, snap.tool)
+  if not direction then
+    return false
+  end
+  attemptAt = snap.now
+  local sent = invoke("Attack", direction)
+  if sent then
+    attackAt = os.clock()
+  end
+  return sent
 end
 function Native.pearlCooldown() return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1 end
 function Native.pearlReady() return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow() end
@@ -277,6 +382,8 @@ Native.__contract = {
     "aimDirection",
     "hitDistance",
     "attack",
+    "readyAt",
+    "attackDirection",
     "findSword",
     "findPearl",
     "pearlCooldown",

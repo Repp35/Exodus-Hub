@@ -3,14 +3,14 @@
 local Melee = {}
 local native, target, utils
 local owner, jump, selected, manualJump
-local nextAttack, equipAt, fallbackAt, apex = 0, 0, 0, 0.25
+local equipAt, fallbackAt, apex = 0, 0, 0.25
 function Melee.setup(deps)
   native, target, utils = deps.Native, deps.Target, deps.Utils
   return true
 end
 function Melee.reset()
   owner, jump, selected, manualJump = nil, nil, nil, nil
-  nextAttack, equipAt, fallbackAt, apex = 0, 0, 0, 0.25
+  equipAt, fallbackAt, apex = 0, 0, 0.25
 end
 local function grounded(snap)
   local state = snap.character:GetAttribute("VoxelGrounded")
@@ -136,7 +136,7 @@ local function critical(snap, chosen, tool, readyAt)
       apex = math.clamp(apex * 0.5 + (snap.now - jump.at) * 0.5, 0.1, 0.8)
     end
     jump.vertical = vertical
-    if jump.airborne and ground or not jump.airborne and snap.now - jump.at > 0.35 then
+    if jump.airborne and ground or not jump.airborne and snap.now - jump.at > 0.35 or snap.now - jump.at > 1.25 then
       fallbackAt, jump = snap.now + 0.3, nil
     elseif not jump.airborne then
       snap.humanoid.Jump = true
@@ -178,11 +178,10 @@ function Melee.step(snap, chosen)
     jump = nil
     return false
   end
-  if not native.canHit(snap, chosen, tool) then
-    jump = nil
-    return false
-  end
   if snap.tool ~= tool then
+    if not native.attackDirection(snap, chosen, tool) then
+      return false
+    end
     if selected ~= tool or snap.now >= equipAt + 0.75 then
       if native.equip(snap, tool) then
         selected, equipAt = tool, snap.now
@@ -190,25 +189,32 @@ function Melee.step(snap, chosen)
     end
     return false
   end
-  local swing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
-  local readyAt = math.max(nextAttack, swing + 1 / stats.speed)
-  local ready = critical(snap, chosen, tool, readyAt)
-  if not ready or not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then
+  local readyAt = native.readyAt(snap, tool)
+  local lead = utils.getConfigValue("MCAutoCrit") and apex + 0.03 or 0
+  -- Collision checks are useful only near the strike/jump window, not throughout recharge.
+  if not jump and not manualJump and readyAt - snap.now > lead then
     return false
   end
-  if native.attack(snap, chosen) then
+  local direction = native.attackDirection(snap, chosen, tool)
+  if not direction then
+    jump = nil
+    return false
+  end
+  local ready = critical(snap, chosen, tool, readyAt)
+  if not ready then
+    return false
+  end
+  if native.attack(snap, chosen, direction) then
     target.noteAttack(snap, chosen)
-    nextAttack = snap.now + 1 / stats.speed
     return true
   end
-  nextAttack = snap.now + 0.1
   return false
 end
 Melee.__contract = {
   provides = { "setup", "reset", "step", "manual", "preSimulation" },
   requires = { Native = "mcpnative", Target = "mcptarget", Utils = "utils" },
   requiresMethods = {
-    Native = { "blocked", "aerialMace", "findSword", "stats", "canHit", "equip", "prepareCritical", "attack" },
+    Native = { "blocked", "aerialMace", "findSword", "stats", "equip", "prepareCritical", "attack", "readyAt", "attackDirection" },
     Target = { "noteAttack" },
     Utils = { "getConfigValue" },
   },

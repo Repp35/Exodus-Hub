@@ -29,7 +29,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie atacando um jogador. Sincroniza os golpes com o cooldown real da arma.",
+              description = "Inicie atacando um jogador. Usa a carga nativa da espada e acerta a hitbox sem depender da mira.",
             },
             {
               kind = "toggle",
