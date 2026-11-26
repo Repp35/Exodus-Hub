@@ -2,17 +2,17 @@
 --!optimize 2
 local Target = {}
 local native, tuning, players, units
-local current, attempt, owner, health, engaged
+local current, attempt, owner, health, engaged, pursuit
 local clickAt, hurtAt, hitAt = -math.huge, -math.huge, -math.huge
 function Target.setup(deps)
   native, tuning, players, units = deps.Native, deps.Options.tuning, game:GetService("Players"), deps.Units
   return true
 end
 function Target.reset()
-  current, attempt, owner, health, engaged = nil, nil, nil, nil, false
+  current, attempt, owner, health, engaged, pursuit = nil, nil, nil, nil, false, nil
   clickAt, hurtAt, hitAt = -math.huge, -math.huge, -math.huge
 end
-local function candidate(player, snap)
+local function candidate(player, snap, rangeBlocks)
   if player == snap.player or player.Parent ~= players or player:GetAttribute("ArenaProtected") == true or player:GetAttribute("InArena") == false then
     return nil
   end
@@ -23,7 +23,7 @@ local function candidate(player, snap)
     return nil
   end
   local distance = units.distance(root.Position, snap.root.Position)
-  if distance > tuning.focusRangeBlocks then
+  if distance > (rangeBlocks or tuning.focusRangeBlocks) then
     return nil
   end
   return { player = player, character = char, root = root, humanoid = human, distanceBlocks = distance }
@@ -41,7 +41,14 @@ function Target.observe(snap)
     attempt = nil
   end
 end
-function Target.noteAttack(snap, _chosen) attempt = snap.now end
+function Target.follow(snap, chosen)
+  engaged = true
+  pursuit = { player = chosen.player, character = chosen.character, at = snap.now }
+end
+function Target.noteAttack(snap, chosen)
+  attempt = snap.now
+  Target.follow(snap, chosen)
+end
 function Target.confirmHit(now)
   if not attempt or now - attempt > 0.7 then
     return
@@ -90,14 +97,29 @@ function Target.get(snap)
     end
   end
   current = nearest
-  if not current then
-    engaged, attempt = false, nil
-  end
+  -- Losing close range does not disable pursuit; camera/melee still receive only nearby targets.
   return current
+end
+function Target.getPearl(snap)
+  if not engaged then
+    return nil
+  end
+  local near = Target.get(snap)
+  if near then
+    return near
+  end
+  if not pursuit or snap.now - pursuit.at > tuning.pursuitSeconds then
+    return nil
+  end
+  local chosen = candidate(pursuit.player, snap, tuning.pearlRangeBlocks)
+  if not chosen or chosen.character ~= pursuit.character then
+    return nil
+  end
+  return chosen
 end
 function Target.quiet(snap, duration) return snap.now - math.max(clickAt, hurtAt, hitAt) >= (duration or 4) end
 Target.__contract = {
-  provides = { "setup", "reset", "observe", "manual", "get", "noteAttack", "confirmHit", "quiet" },
+  provides = { "setup", "reset", "observe", "manual", "get", "noteAttack", "confirmHit", "follow", "getPearl", "quiet" },
   requires = { Native = "mcpnative", Options = "mcpoptions", Units = "mcpunits" },
   requiresMethods = { Units = { "distance" }, Native = { "blocked", "aimDirection", "hitDistanceBlocks", "visible" } },
   requiresData = { Options = { "tuning" } },

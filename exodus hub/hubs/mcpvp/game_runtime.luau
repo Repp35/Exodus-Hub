@@ -35,10 +35,20 @@ function Runtime.bind(loaded)
   local function combatEnabled()
     return enabled("MCAutoSword") or enabled("MCAutoCrit") or enabled("MCAutoPearl") or enabled("MCAimLock") or enabled("MCAimAssist")
   end
+  local pearlRecoverAt = 0
   local function guarded(name, fn, ...)
     local success, reason = pcall(fn, ...)
     if not success then
-      Runtime.reset()
+      if name == "aim" then
+        loaded.mcpaim.reset()
+      elseif name == "critical" then
+        loaded.mcpmelee.reset()
+      elseif name == "pearl" then
+        loaded.autopearl.reset()
+        pearlRecoverAt = os.clock() + 0.5
+      else
+        Runtime.reset()
+      end
       loaded.utils.recordError("mcpvp." .. name, tostring(reason))
     end
   end
@@ -125,7 +135,9 @@ function Runtime.bind(loaded)
     end
     local chosen = target.get(snap)
     if enabled("MCAutoPearl") then
-      loaded.autopearl.step(snap, chosen)
+      if snap.now >= pearlRecoverAt then
+        guarded("pearl", loaded.autopearl.step, snap, target.getPearl(snap))
+      end
     else
       loaded.autopearl.reset()
     end
@@ -163,7 +175,7 @@ function Runtime.createAPI(loaded)
   return {
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = Runtime.reset,
-    updateBlockers = { loaded.autopearl.busy, loaded.mcpsupplies.busy, loaded.mcpinventory.busy },
+    updateBlockers = { loaded.autopearl.pending, loaded.mcpsupplies.busy, loaded.mcpinventory.busy },
     migrateConfig = loaded.mcpoptions.migrateConfig,
   }
 end

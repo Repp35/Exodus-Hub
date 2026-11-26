@@ -2,6 +2,7 @@
 --!optimize 2
 local Native = {}
 local player, world, storage, weapons, geometry, config, controller, utils, units
+local shields
 local bridge, charge, dispatching, criticalAt = nil, nil, false, 0
 local observedCharacter, observedTool
 local equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
@@ -24,7 +25,7 @@ function Native.setup(deps)
   player, world = utils.getLocalPlayer(), utils.getWorkspace()
   storage = game:GetService("ReplicatedStorage")
   weapons, geometry, config, controller = load("VoxelWeapons"), load("VoxelMeleeGeometry"), load("GameConfig"), load("ControllerInput")
-  charge = load("HeldItemFov")
+  charge, shields = load("HeldItemFov"), load("ShieldRules")
   dispatching, criticalAt = false, 0
   observedCharacter, observedTool = nil, nil
   equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
@@ -244,6 +245,37 @@ local function intercepted(snap, chosen, direction, distance)
   end
   return false
 end
+function Native.shieldRear(character, root)
+  local now = world:GetServerTimeNow()
+  local blocking
+  if shields and type(shields.IsBlocking) == "function" then
+    blocking = shields.IsBlocking(character, now)
+  else
+    local raised = tonumber(character:GetAttribute("ShieldRaisedAt"))
+    blocking = raised ~= nil and now - raised >= 0.25 and (tonumber(character:GetAttribute("ShieldDisabledUntil")) or 0) <= now
+  end
+  if not blocking then
+    return nil
+  end
+  local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+  return facing.Magnitude > 0.001 and -facing.Unit or nil
+end
+function Native.shieldBlocks(snap, chosen)
+  if shields and type(shields.Blocks) == "function" then
+    return shields.Blocks(chosen.character, snap.eye, world:GetServerTimeNow())
+  end
+  local rear = Native.shieldRear(chosen.character, chosen.root)
+  if not rear then
+    return false
+  end
+  local towardUs = (snap.eye - chosen.root.Position) * Vector3.new(1, 0, 1)
+  return towardUs.Magnitude > 0.001 and towardUs.Unit:Dot(rear) < 0
+end
+function Native.aimPoint(character, root)
+  local rear = Native.shieldRear(character, root)
+  local height = character:GetAttribute("Sneaking") == true and 3 / 64 or 5 / 32
+  return root.Position + units.offset(0, height, 0) + (rear and rear * units.toWorld(0.25) or Vector3.zero)
+end
 function Native.attackDirection(snap, chosen, tool)
   if not chosen.character.Parent or not chosen.root.Parent or chosen.humanoid.Health <= 0 then
     return nil
@@ -251,6 +283,13 @@ function Native.attackDirection(snap, chosen, tool)
   local function valid(direction)
     local distance = Native.hitDistanceBlocks(snap, chosen, tool, direction)
     return distance and not intercepted(snap, chosen, direction, distance)
+  end
+  local rear = Native.shieldRear(chosen.character, chosen.root)
+  if rear then
+    local delta = Native.aimPoint(chosen.character, chosen.root) - snap.eye
+    if units.toBlocks(delta).Magnitude > 1 / 3200 and valid(delta.Unit) then
+      return delta.Unit
+    end
   end
   local aim = Native.aimDirection(snap)
   if valid(aim) then
@@ -473,6 +512,9 @@ Native.__contract = {
     "attack",
     "readyAt",
     "attackDirection",
+    "shieldRear",
+    "shieldBlocks",
+    "aimPoint",
     "findSword",
     "findPearl",
     "pearlCooldown",
