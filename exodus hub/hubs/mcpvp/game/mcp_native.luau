@@ -133,7 +133,7 @@ local function call(action, snap, direction)
     return false
   end
   if action == "Use" and fn then
-    -- Pearl marks dispatch here; nil return values alone do not prove a throw.
+    -- This is local submission evidence only. Pearl owns server-side completion checks.
     local class = snap.tool and snap.tool:GetAttribute("ClassItem")
     if class == "Pearl" then
       return snap.character:GetAttribute("LocalAttackSwing") ~= marker

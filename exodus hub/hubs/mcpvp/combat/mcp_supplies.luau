@@ -39,7 +39,7 @@ function Supplies.reset()
   inventory.reset()
 end
 function Supplies.busy() return inventory.busy() or potion ~= nil end
-function Supplies.step(snap)
+function Supplies.step(snap, allowBackground)
   local pop = snap.character:GetAttribute("TotemPoppedAt") or 0
   if owner ~= snap.character then
     Supplies.reset()
@@ -72,6 +72,9 @@ function Supplies.step(snap)
     end
   end
   inventory.close()
+  if allowBackground == false then
+    return
+  end
   if potion then
     if potion.character ~= snap.character or target.current(snap) or not enabled("MCAutoStrength") then
       if potion.previous and potion.previous.Parent then

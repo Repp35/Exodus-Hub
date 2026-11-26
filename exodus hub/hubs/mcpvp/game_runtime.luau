@@ -62,7 +62,7 @@ function Runtime.bind(loaded)
         run("supplies", function()
           local current = loaded.utils.isActive() and native.snapshot()
           if current and current.character == owner then
-            supplies.step(current)
+            supplies.step(current, not pearl.busy())
           end
         end)
       end)
@@ -189,7 +189,13 @@ function Runtime.bind(loaded)
         bindRemote("Remotes", "ItemAction", pearl.projectile)
       end
       target.observe(snap)
-      supplies.step(snap)
+      if pearl.observe(snap) then
+        snap = native.snapshot()
+        if not snap then
+          return
+        end
+      end
+      supplies.step(snap, not pearl.busy())
       if supplies.busy() or native.blocked(snap) then
         melee.reset()
         return

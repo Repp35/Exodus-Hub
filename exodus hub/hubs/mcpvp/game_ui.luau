@@ -71,7 +71,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Lança junto do oponente atual e devolve a arma após o envio. Antecipa apenas uma fuga distante e contínua, até 24 blocos.",
+              description = "Mantém a pearl equipada até confirmar consumo, cooldown e criação do projétil pelo servidor. Antecipa apenas fuga distante e contínua.",
             },
             {
               kind = "toggle",
