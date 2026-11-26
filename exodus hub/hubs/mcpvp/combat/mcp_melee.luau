@@ -36,7 +36,11 @@ local function chosen(snap)
     Melee.reset()
   end
   if cycle then
-    return cycle.chosen
+    local current = target.near(snap)
+    if current and current.id == cycle.chosen.id then
+      cycle.chosen = current
+    end
+    return current
   end
   return enabled("MCAutoSword") and target.near(snap) or nil
 end
@@ -94,7 +98,7 @@ function Melee.prepare(snap)
     end
   elseif cycle.phase == "air" and geometry.grounded(snap) then
     -- A missed fall window must not leave the attack permanently pending.
-    cycle.phase = cycle.jumpAt and "ground" or "ready"
+    cycle.phase = "ready"
   end
   if cycle.phase == "air" or cycle.phase == "jump" then
     native.sprint(snap, true)
@@ -116,9 +120,10 @@ function Melee.strike(snap)
   end
   local direction = geometry.direction(snap, value, tool)
   if not direction then
-    if cycle then
-      Melee.reset()
-    end
+    return
+  end
+  local charged = native.charge(snap) + (geometry.stats(tool).speed or 1.6) * 0.025 >= 1
+  if not charged then
     return
   end
   if enabled("MCAutoCrit") then
@@ -128,15 +133,13 @@ function Melee.strike(snap)
     if cycle.phase == "jump" and not geometry.grounded(snap) then
       cycle.phase = "air"
     end
-    local charged = native.charge(snap) + (geometry.stats(tool).speed or 1.6) * 0.025 >= 1
-    if not charged or not (cycle.phase == "ground" or geometry.falling(snap)) then
+    if not (cycle.phase == "ground" or geometry.falling(snap)) then
       return
     end
     -- Stop sprint immediately before the native attack; do not wait for replicated request flags.
     native.sprint(snap, true, true)
   end
   if native.attack(snap, value, direction) then
-    target.attacked(snap, value)
     native.sprint(snap, false)
     cycle, retryAt = nil, snap.now + 1 / 7
   end
@@ -147,7 +150,7 @@ Melee.__contract = {
   requiresMethods = {
     Native = { "snapshot", "sprint", "blocked", "weapon", "equip", "charge", "jump", "attack" },
     Geometry = { "grounded", "direction", "stats", "jumpRisk", "criticalWindow", "melee", "falling" },
-    Target = { "isCurrent", "near", "attacked" },
+    Target = { "isCurrent", "near" },
     Utils = { "getConfigValue" },
   },
 }

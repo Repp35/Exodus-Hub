@@ -3,20 +3,25 @@
 local Aim = {}
 local geometry, utils, units, tuning, input, gui, world, scope
 local humanoids, held, lastLook, lastCamera = {}, nil, nil, nil
-local manualAt, resumeAt, stick = -math.huge, 0, false
+local resumeAt, stick = 0, false
 local manualSerial, checkedSerial = 0, 0
-local lockRoot, lockSide
+local ignored = setmetatable({}, { __mode = "k" })
 function Aim.reset()
   held, lastLook, lastCamera, resumeAt = nil, nil, nil, 0
   checkedSerial = manualSerial
-  lockRoot, lockSide = nil, nil
+end
+function Aim.dismiss(character)
+  ignored[character] = true
+  if held == character then
+    held = nil
+  end
 end
 function Aim.teardown()
   if scope then
     scope.destroy()
     scope = nil
   end
-  humanoids, stick = {}, false
+  humanoids, stick, ignored = {}, false, setmetatable({}, { __mode = "k" })
   Aim.reset()
 end
 function Aim.setup(deps)
@@ -29,7 +34,7 @@ function Aim.setup(deps)
   if ok and type(base) == "table" and type(base.Adjust) == "function" then
     local original = base.Adjust
     local function adjust(frame)
-      if utils.isActive() and utils.getConfigValue("MCAimAssist") then
+      if utils.isActive() and (utils.getConfigValue("MCAimAssist") or utils.getConfigValue("MCAimLock")) then
         return frame
       end
       return original(frame)
@@ -60,11 +65,11 @@ function Aim.setup(deps)
       and event.Delta.Magnitude > 0.5
       and (input.MouseBehavior ~= Enum.MouseBehavior.Default or input:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
     then
-      manualAt, manualSerial = os.clock(), manualSerial + 1
+      manualSerial += 1
     elseif not processed and event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.1 then
       local camera = world.CurrentCamera
       if camera and event.Position.X >= camera.ViewportSize.X * 0.5 then
-        manualAt, manualSerial = os.clock(), manualSerial + 1
+        manualSerial += 1
       end
     end
   end)
@@ -84,19 +89,6 @@ function Aim.looking(snap, value)
   local size = snap.camera.ViewportSize
   local margin = tuning.pursuitScreenMargin
   return point.Z > 0 and point.X >= -size.X * margin and point.X <= size.X * (1 + margin) and point.Y >= -size.Y * margin and point.Y <= size.Y * (1 + margin)
-end
-function Aim.canTurn(snap, direction, margin)
-  if snap.now < resumeAt then
-    return false
-  end
-  local localDirection = snap.camera.CFrame:VectorToObjectSpace(direction)
-  if localDirection.Z >= -1e-5 then
-    return false
-  end
-  local size = snap.camera.ViewportSize
-  local vertical = math.tan(math.rad(snap.camera.FieldOfView) / 2) * (1 + 2 * (margin or 0))
-  return math.abs(localDirection.Y / -localDirection.Z) <= vertical * 0.98
-    and math.abs(localDirection.X / -localDirection.Z) <= vertical * size.X / math.max(1, size.Y) * 0.98
 end
 local function intent(snap, value)
   local manual = manualSerial ~= checkedSerial or stick
@@ -123,51 +115,13 @@ local function intent(snap, value)
   return 0
 end
 function Aim.yielding(snap, value) return intent(snap, value) == 1 end
-function Aim.returning(snap, value) return intent(snap, value) == -1 end
-function Aim.paused(snap) return snap.now < resumeAt end
 function Aim.pause(snap)
   Aim.reset()
   resumeAt = snap.now + 0.75
   checkedSerial = manualSerial
 end
-function Aim.turn(snap, desired, dt, emergency, margin)
-  if snap.now < resumeAt or not emergency and not Aim.canTurn(snap, desired, margin) then
-    return false
-  end
-  local frame = snap.camera.CFrame
-  local angle = math.acos(math.clamp(frame.LookVector:Dot(desired), -1, 1))
-  local turn = math.min(angle, math.rad(360) * math.clamp(dt or 1 / 60, 0, 1 / 15))
-  local axis = frame.LookVector:Cross(desired)
-  if axis.Magnitude < 1e-6 and angle > 0.001 then
-    axis = frame.UpVector
-  end
-  if axis.Magnitude > 1e-6 then
-    snap.camera.CFrame = CFrame.new(frame.Position) * CFrame.fromAxisAngle(axis.Unit, turn) * frame.Rotation
-  end
-  lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
-  return lastLook:Dot(desired) >= math.cos(math.rad(0.75))
-end
 function Aim.observe(snap)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
-end
-local function lockPoint(snap, focus)
-  local root = focus.root
-  local forward = root.CFrame.LookVector * Vector3.new(1, 0, 1)
-  if forward.Magnitude < 1e-5 then
-    return geometry.point(focus.character, root)
-  end
-  forward = forward.Unit
-  local facing = units.toBlocks(snap.root.Position - root.Position):Dot(forward)
-  if lockRoot ~= root then
-    lockRoot, lockSide = root, facing >= 0 and 1 or -1
-  elseif facing > 0.5 then
-    lockSide = 1
-  elseif facing < -0.5 then
-    lockSide = -1
-  end
-  local side = geometry.blocking(focus.character) and -1 or lockSide
-  -- Keep the torso point inside the body, without chasing its lateral edges.
-  return root.Position + units.offset(0, focus.character:GetAttribute("Sneaking") and 3 / 64 or 5 / 32, 0) + forward * units.toWorld(side / 8)
 end
 local function direction(snap, model, range, point)
   local human = model and model:FindFirstChildOfClass("Humanoid")
@@ -197,42 +151,29 @@ local function direction(snap, model, range, point)
   if delta.Magnitude < 0.001 then
     return nil
   end
-  local projected, visible = snap.camera:WorldToViewportPoint(point)
-  return delta.Unit, distance, visible and projected.Z > 0
+  return delta.Unit, distance
 end
 local function assist(snap)
-  if snap.now < resumeAt then
-    return nil
-  end
-  local look = snap.camera.CFrame.LookVector
-  if held then
-    local aim, distance, visible = direction(snap, held, tuning.assistRangeBlocks)
+  if held and not ignored[held] then
+    local aim = direction(snap, held, tuning.assistRangeBlocks)
     if aim then
-      local manual = snap.now - manualAt < 0.15 or input.PreferredInput == Enum.PreferredInput.Gamepad and stick
-      if manual and lastCamera == snap.camera and lastLook then
-        local before = math.acos(math.clamp(lastLook:Dot(aim), -1, 1))
-        if math.acos(math.clamp(look:Dot(aim), -1, 1)) > before + math.rad(0.2) then
-          held, resumeAt = nil, snap.now + 0.35
-          return nil
-        end
-      end
-      if distance <= tuning.focusRangeBlocks or visible and look:Dot(aim) >= math.cos(math.rad(20)) then
-        return aim
-      end
+      return aim
     end
     held = nil
   end
-  local best, score
+  local best, nearest
   for human in pairs(humanoids) do
-    local aim, _, visible = direction(snap, human.Parent, tuning.assistRangeBlocks)
-    local rank = aim and look:Dot(aim)
-    if visible and rank >= math.cos(math.rad(20)) and (not score or rank > score) then
-      held, best, score = human.Parent, aim, rank
+    local aim, distance
+    if not ignored[human.Parent] then
+      aim, distance = direction(snap, human.Parent, tuning.assistRangeBlocks)
+    end
+    if aim and (not nearest or distance < nearest) then
+      held, best, nearest = human.Parent, aim, distance
     end
   end
   return best
 end
-function Aim.step(snap, focus, dt, recovery)
+function Aim.step(snap, focus)
   local lock, enabled = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
   if snap.now < resumeAt then
     return
@@ -241,57 +182,31 @@ function Aim.step(snap, focus, dt, recovery)
     Aim.reset()
     return
   end
-  local aim, pull, speed, radius
-  if lock and focus then
-    local point = lockPoint(snap, focus)
-    local distance
-    aim, distance = direction(snap, focus.character, tuning.focusRangeBlocks, point)
-    if aim then
-      held, pull = focus.character, 24
-      -- Close crossings must not whip the camera around and redirect forward input into an orbit.
-      speed = math.rad(360) * math.clamp((distance - 0.45) / 1.55, 0, 1)
-      radius = math.atan(0.1 / math.max(0.1, units.distance(point, snap.camera.CFrame.Position)))
-    end
-  else
-    lockRoot, lockSide = nil, nil
-  end
-  if not aim and enabled then
-    if recovery then
-      if snap.now - manualAt < 0.15 or stick then
-        return
-      end
-      local root = recovery:FindFirstChild("HumanoidRootPart")
-      local delta = root and geometry.point(recovery, root) - snap.camera.CFrame.Position
-      aim = delta and delta.Magnitude > 0.001 and delta.Unit or nil
-      radius = math.rad(6)
-    else
-      aim = assist(snap)
-    end
-    pull, speed = 10, math.rad(84)
-    if input.PreferredInput == Enum.PreferredInput.Gamepad then
-      pull, speed = 2.9, math.rad(24)
+  local desired
+  if focus and (lock or enabled) then
+    ignored[focus.character] = nil
+    desired = direction(snap, focus.character, tuning.assistRangeBlocks, geometry.point(focus.character, focus.root))
+    if desired then
+      held = focus.character
     end
   end
-  local frame = snap.camera.CFrame
-  if aim then
-    local angle = math.acos(math.clamp(frame.LookVector:Dot(aim), -1, 1))
-    local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 15)
-    local turn = math.min(math.max(0, angle - (radius or 0)) * (1 - math.exp(-pull * elapsed)), speed * elapsed)
-    local axis = frame.LookVector:Cross(aim)
-    if axis.Magnitude < 1e-6 then
-      axis = frame.UpVector
-    end
-    snap.camera.CFrame = CFrame.new(frame.Position) * CFrame.fromAxisAngle(axis.Unit, turn) * frame.Rotation
+  if not desired and enabled then
+    desired = assist(snap)
+  end
+  if desired then
+    local frame = snap.camera.CFrame
+    -- One camera writer, no pearl arc tracking or close-range speed limiter.
+    snap.camera.CFrame = CFrame.lookAt(frame.Position, frame.Position + desired)
   end
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 Aim.__contract = {
-  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe", "returning", "paused" },
+  provides = { "setup", "reset", "step", "teardown", "looking", "yielding", "pause", "observe", "dismiss" },
   requires = { Geometry = "mcpgeometry", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
   requiresMethods = {
-    Geometry = { "point", "visible", "blocking" },
+    Geometry = { "point", "visible" },
     Utils = { "getWorkspace", "isActive", "getConfigValue" },
-    Units = { "distance", "toBlocks", "toWorld", "offset" },
+    Units = { "distance" },
     Lifetime = { "scope" },
   },
   requiresData = { Options = { "tuning" } },

@@ -40,7 +40,9 @@ local function finish(snap)
   if not inventory.close() then
     return
   end
-  native.restore(snap, potion.previous)
+  if not native.restore(snap, potion.previous) then
+    return
+  end
   awaiting[potion.effect] = snap.now + (potion.confirmed and 0.5 or 1)
   potion = nil
 end

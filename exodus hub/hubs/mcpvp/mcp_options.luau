@@ -31,16 +31,15 @@ Options.__config = {
 }
 Options.tuning = {
   focusRangeBlocks = 5,
-  assistRangeBlocks = 6,
-  lookAwaySeconds = 3,
-  retaliationSeconds = 2.5,
-  pursuitResumeSeconds = 3,
+  assistRangeBlocks = 64,
+  pearlAttackMarginBlocks = 0.65,
+  pursuitAwayRangeBlocks = 10,
+  lookAwaySeconds = 6,
+  manualTurnSeconds = 0.75,
   pursuitScreenMargin = 0.15,
   pearlTargetHeightBlocks = 2,
   pearlLandingRadiusBlocks = 1.25,
   pearlMaxFlight = 6,
-  pearlLobRangeBlocks = 32,
-  pearlLowPitchDegrees = 8,
 }
 function Options.setup() return true end
 function Options.migrateConfig(data)

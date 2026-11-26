@@ -9,6 +9,10 @@ function Runtime.reset()
   end
   modules.mcpmelee.reset()
   modules.autopearl.reset()
+  local snap = modules.mcpnative.snapshot()
+  if snap then
+    modules.mcptarget.abandon(snap)
+  end
   modules.mcptarget.reset()
   modules.mcpaim.reset()
   modules.mcpsurvival.reset()
@@ -46,7 +50,6 @@ function Runtime.bind(loaded)
       loaded.utils.recordError("mcpvp." .. name, tostring(reason))
     end
   end
-  local characterScope
   local function synchronize(snap)
     if owner == snap.character then
       return
@@ -55,27 +58,7 @@ function Runtime.bind(loaded)
     supplies.reset()
     native.reset()
     owner = snap.character
-    if characterScope then
-      characterScope.destroy()
-    end
-    characterScope = loaded.lifetime.scope()
-    for _, attribute in ipairs({ "OffhandItem", "TotemPoppedAt" }) do
-      characterScope.connect(owner:GetAttributeChangedSignal(attribute), function()
-        run("supplies", function()
-          local current = loaded.utils.isActive() and native.snapshot()
-          if current and current.character == owner then
-            supplies.step(current, not pearl.busy() and not survival.busy())
-          end
-        end)
-      end)
-    end
   end
-  scope.add(function()
-    if characterScope then
-      characterScope.destroy()
-      characterScope = nil
-    end
-  end)
   local function snapshot()
     if not loaded.utils.isActive() then
       return nil
@@ -190,11 +173,6 @@ function Runtime.bind(loaded)
         scanAt = snap.now + 1
         native.gate(gate)
         bindRemote("VoxelCombat", "Swing", target.noteSwing)
-        bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
-          if kind == "HitConfirm" and not blocked then
-            target.hit(os.clock())
-          end
-        end)
         bindRemote("Remotes", "ItemAction", pearl.projectile)
       end
       target.observe(snap)
@@ -204,10 +182,39 @@ function Runtime.bind(loaded)
           return
         end
       end
-      local surviving = survival.step(snap, not supplies.busy() and not native.busy())
-      supplies.step(snap, not pearl.busy() and not surviving)
-      if surviving or supplies.busy() or native.blocked(snap) then
+      -- Finish the current item transaction before another subsystem can equip
+      -- a tool. Pearl confirmation may restore its own tool before handoff.
+      if survival.busy() then
         melee.reset()
+        survival.step(snap, not native.busy())
+        return
+      end
+      if supplies.busy() then
+        melee.reset()
+        supplies.step(snap, true)
+        return
+      end
+      if pearl.busy() then
+        melee.reset()
+        pearl.advance(snap)
+        return
+      end
+      if native.blocked(snap) then
+        melee.reset()
+        return
+      end
+      -- Start new work in one place: survival, supplies, pursuit, then melee.
+      if survival.step(snap, true) then
+        melee.reset()
+        return
+      end
+      supplies.step(snap, true)
+      if supplies.busy() or native.blocked(snap) then
+        melee.reset()
+        return
+      end
+      snap = native.snapshot()
+      if not snap then
         return
       end
       run("pearl", pearl.prepare, snap)
@@ -215,10 +222,7 @@ function Runtime.bind(loaded)
         melee.reset()
         return
       end
-      snap = native.snapshot()
-      if snap then
-        run("melee", melee.prepare, snap)
-      end
+      run("melee", melee.prepare, snap)
     end)
   end)
   scope.connect(service.PostSimulation, function()
@@ -240,9 +244,9 @@ function Runtime.bind(loaded)
         target.observeView(snap)
         survival.move(snap)
         if not supplies.busy() and not native.blocked(snap) then
-          local aimingPearl = pearl.aim(snap, dt)
-          if not aimingPearl and not pearl.busy() and not survival.busy() then
-            aim.step(snap, target.near(snap), dt)
+          pearl.render(dt)
+          if not pearl.busy() and not survival.busy() then
+            aim.step(snap, target.current(snap))
           end
         end
         aim.observe(snap)

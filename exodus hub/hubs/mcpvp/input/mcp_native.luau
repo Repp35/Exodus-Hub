@@ -97,6 +97,9 @@ function Native.equip(snap, tool)
   if dispatching and tool.Parent ~= snap.character then
     return false
   end
+  if snap.tool == tool then
+    return true
+  end
   expected = tool
   local slots = inventory.slots()
   if slots then
@@ -198,19 +201,8 @@ function Native.charge(snap)
   end
   return current
 end
-function Native.realAim(snap)
-  local direction = player:GetAttribute("FrontCameraAimDirection")
-  return typeof(direction) == "Vector3" and direction.Magnitude > 0.001 and direction.Unit or snap.camera.CFrame.LookVector
-end
 local function call(action, snap, direction)
   if Native.blocked(snap) then
-    return false
-  end
-  local visibleUse = action == "Use" and snap.tool and snap.tool:GetAttribute("ClassItem") == "Pearl"
-  if
-    visibleUse
-    and (snap.camera.CFrame.LookVector:Dot(direction) < math.cos(math.rad(0.75)) or Native.realAim(snap):Dot(direction) < math.cos(math.rad(0.75)))
-  then
     return false
   end
   local fn = bridge.get(action == "Attack" and "attack" or "use")
@@ -223,10 +215,10 @@ local function call(action, snap, direction)
     -- Release ownership first, even if an attribute restoration fails.
     restoreAim, dispatching = nil, false
     local ok, reason = pcall(function()
-      if not visibleUse and player:GetAttribute("FrontCameraAimDirection") == direction then
+      if player:GetAttribute("FrontCameraAimDirection") == direction then
         player:SetAttribute("FrontCameraAimDirection", oldDirection)
       end
-      if not visibleUse and aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
+      if aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
         player:SetAttribute("FrontCameraAimCFrame", oldFrame)
       end
     end)
@@ -237,11 +229,9 @@ local function call(action, snap, direction)
   restoreAim, dispatching, dispatchUntil = restore, true, os.clock() + 0.5
   local marker = snap.character:GetAttribute("LocalAttackSwing")
   local ok, accepted = pcall(function()
-    if not visibleUse then
-      aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
-      player:SetAttribute("FrontCameraAimDirection", direction)
-      player:SetAttribute("FrontCameraAimCFrame", aimFrame)
-    end
+    aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
+    player:SetAttribute("FrontCameraAimDirection", direction)
+    player:SetAttribute("FrontCameraAimCFrame", aimFrame)
     if fn then
       return fn(direction) ~= false
     end
@@ -305,8 +295,15 @@ function Native.attack(snap, target, direction)
   if not direction then
     return false
   end
-  lastAttack = snap.now
-  return call("Attack", snap, direction)
+  local point = geometry.point(target.character, target.root)
+  if (point - snap.camera.CFrame.Position).Magnitude > 0.001 then
+    snap.camera.CFrame = CFrame.lookAt(snap.camera.CFrame.Position, point)
+  end
+  local sent = call("Attack", snap, direction)
+  if sent then
+    lastAttack = snap.now
+  end
+  return sent
 end
 function Native.use(snap, tool, direction)
   local class = tool and tool:GetAttribute("ClassItem")
@@ -435,7 +432,6 @@ Native.__contract = {
     "attack",
     "use",
     "useState",
-    "realAim",
     "jump",
     "sprint",
     "gate",
@@ -448,7 +444,7 @@ Native.__contract = {
   requiresMethods = {
     Utils = { "getLocalPlayer", "recordError" },
     Bridge = { "get" },
-    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking" },
+    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking", "point" },
     Inventory = { "slots", "select" },
   },
 }

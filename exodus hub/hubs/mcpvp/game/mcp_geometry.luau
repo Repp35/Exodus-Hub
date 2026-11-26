@@ -236,17 +236,6 @@ function Geometry.jumpRisk(snap)
       origins[#origins + 1] = units.toBlocks(feet)
     end
   end
-  local overlap = OverlapParams.new()
-  overlap.FilterType, overlap.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, ignored
-  for _, block in ipairs(world:GetPartBoundsInBox(CFrame.new(snap.root.Position), units.offset(5, 6, 5), overlap)) do
-    local key = string.lower(tostring(block:GetAttribute("BlockKey") or block.Name))
-    if key == "obsidian" then
-      local top = block.Position + Vector3.new(0, block.Size.Y / 2, 0)
-      if not world:Raycast(top + units.offset(0, 1 / 64, 0), units.offset(0, 2, 0), ray) then
-        origins[#origins + 1] = units.toBlocks(top)
-      end
-    end
-  end
   local start = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0)
   local motion = units.toBlocks(snap.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
   for _, origin in ipairs(origins) do

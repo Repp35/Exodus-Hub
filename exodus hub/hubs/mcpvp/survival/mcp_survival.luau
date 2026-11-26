@@ -23,6 +23,9 @@ end
 function Survival.reset()
   local snap = native.snapshot()
   if apple and snap and owner == snap.character and snap.character:GetAttribute("EatingApple") then
+    escape, routeJob, episode = nil, nil, true
+    generation += 1
+    stopWalking(snap)
     return
   end
   native.holdUse(nil, false)
@@ -296,8 +299,8 @@ function Survival.step(snap, available)
     episode = false
   end
   local value = target.current(snap)
-  if not escape and not episode and not hasTotem and snap.humanoid.Health <= snap.humanoid.MaxHealth * 0.5 then
-    local threat = value or target.threat(snap)
+  local threat = value or target.threat(snap)
+  if not escape and not episode and threat and not hasTotem and snap.humanoid.Health <= snap.humanoid.MaxHealth * 0.5 then
     escape = {
       foe = threat and threat.root,
       position = threat and threat.root.Position,

@@ -42,7 +42,7 @@ function Motion.sample(root, character, now, previous)
       position = position,
       velocity = reported,
       reported = reported,
-      control = Vector3.zero,
+      control = reported.Magnitude <= 8 and reported * FLAT or Vector3.zero,
       acceleration = Vector3.zero,
       at = now,
       revision = 0,
