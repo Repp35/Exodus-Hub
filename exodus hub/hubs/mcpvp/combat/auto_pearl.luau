@@ -150,6 +150,8 @@ function Pearl.step(snap, chosen)
         snap.now >= shot.deadline
         or not chosen
         or chosen.character ~= shot.target
+        or chosen.sessionId ~= shot.sessionId
+        or not target.isCurrent(snap, chosen)
         or units.distance(chosen.root.Position, snap.root.Position) > tuning.pearlRangeBlocks
       then
         finish(snap, 0.3)
@@ -195,6 +197,7 @@ function Pearl.step(snap, chosen)
   end
   if
     not chosen
+    or not target.isCurrent(snap, chosen)
     or snap.now < retryAt
     or native.blocked(snap)
     or not native.pearlReady()
@@ -217,6 +220,7 @@ function Pearl.step(snap, chosen)
   shot = {
     character = snap.character,
     target = chosen.character,
+    sessionId = chosen.sessionId,
     previous = snap.tool,
     tool = tool,
     phase = "equip",
@@ -251,7 +255,7 @@ Pearl.__contract = {
       "shieldBlocks",
     },
     Ballistics = { "solve" },
-    Target = { "follow" },
+    Target = { "follow", "isCurrent" },
   },
 }
 return Pearl

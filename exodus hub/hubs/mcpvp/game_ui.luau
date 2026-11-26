@@ -29,7 +29,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie atacando um jogador. Usa a carga nativa da espada e acerta a hitbox sem depender da mira.",
+              description = "Inicie atacando um jogador. Continua apenas no PvP atual, sem reaproveitar alvos de lutas encerradas.",
             },
             {
               kind = "toggle",
@@ -71,7 +71,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Intercepta à frente de quem foge, até 24 blocos. Prioriza quem está perto e busca as costas de escudos levantados.",
+              description = "Intercepta o oponente do PvP atual, até 24 blocos, e busca as costas de escudos levantados.",
             },
             {
               kind = "toggle",

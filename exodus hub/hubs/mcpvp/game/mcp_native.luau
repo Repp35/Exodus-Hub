@@ -298,6 +298,35 @@ local function intercepted(snap, chosen, direction, distance)
   end
   return false
 end
+function Native.incomingHit(snap, opponent)
+  local tool = opponent.character:FindFirstChildOfClass("Tool")
+  local reach = Native.stats(tool).reachBlocks
+  if type(reach) ~= "number" or reach <= 0 then
+    return false
+  end
+  local sneaking = opponent.character:GetAttribute("Sneaking") == true
+  local eye = geometry and geometry.Eye(opponent.root.Position, sneaking) or opponent.root.Position + units.offset(0, sneaking and 0.02 or 0.37, 0)
+  local aim = opponent.player:GetAttribute("FrontCameraAimDirection")
+  local direction = typeof(aim) == "Vector3" and aim.Magnitude > 0.001 and aim.Unit or opponent.root.CFrame.LookVector
+  local distance
+  if geometry and type(geometry.Hit) == "function" then
+    distance = geometry.Hit(eye, direction, snap.root.Position, snap.character:GetAttribute("Sneaking"), units.toWorld(reach))
+    if distance == nil then
+      return false
+    end
+  else
+    local delta = snap.root.Position - eye
+    if units.toBlocks(delta).Magnitude > reach or delta.Magnitude < 0.001 or direction:Dot(delta.Unit) < 0.995 then
+      return false
+    end
+    distance = delta.Magnitude
+  end
+  local params = RaycastParams.new()
+  params.FilterType, params.RespectCanCollide, params.IgnoreWater = Enum.RaycastFilterType.Exclude, true, true
+  params.FilterDescendantsInstances = { opponent.character, snap.camera }
+  local hit = world:Raycast(eye, direction * distance, params)
+  return not hit or hit.Instance:IsDescendantOf(snap.character)
+end
 function Native.shieldRear(character, root)
   local now = world:GetServerTimeNow()
   local blocking
@@ -644,6 +673,7 @@ Native.__contract = {
     "canHit",
     "aimDirection",
     "hitDistanceBlocks",
+    "incomingHit",
     "attack",
     "readyAt",
     "attackDirection",

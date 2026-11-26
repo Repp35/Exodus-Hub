@@ -61,6 +61,7 @@ function Melee.intercept(snap, direction)
   if snap.tool and not kind then
     return true
   end
+  local intended = target.manual(snap, direction)
   if grounded(snap) and native.crystalJumpRisk(snap) then
     pending = nil
     return true
@@ -70,11 +71,10 @@ function Melee.intercept(snap, direction)
     pending, queuedManual = nil, false
     cycle = cycle or { at = snap.now, vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
     cycle.phase = "land"
-    target.manual(snap)
     return true
   end
-  pending = { character = snap.character, tool = snap.tool, direction = direction, expires = snap.now + 2.5 }
-  target.manual(snap)
+  local aim = typeof(direction) == "Vector3" and direction.Magnitude > 0.001 and direction.Unit or nil
+  pending = { character = snap.character, tool = snap.tool, direction = aim, chosen = intended, expires = snap.now + 2.5 }
   Melee.manual(snap)
   return false
 end
@@ -82,7 +82,14 @@ function Melee.postSimulation(snap)
   if not pending then
     return
   end
-  if not snap or not utils.getConfigValue("MCAutoCrit") or snap.character ~= pending.character or snap.tool ~= pending.tool or snap.now >= pending.expires then
+  if
+    not snap
+    or not utils.getConfigValue("MCAutoCrit")
+    or snap.character ~= pending.character
+    or snap.tool ~= pending.tool
+    or snap.now >= pending.expires
+    or pending.chosen and not target.isCurrent(snap, pending.chosen)
+  then
     pending, queuedManual, cycle = nil, false, nil
     native.finishCritical()
     return
@@ -98,8 +105,21 @@ function Melee.postSimulation(snap)
   if not crystalException then
     native.prepareCritical(true)
   end
-  target.manual(snap)
-  if native.replayAttack(snap, pending.direction) then
+  -- A deferred click must not acquire whoever happens to enter the camera later.
+  local direction = pending.direction or native.aimDirection(snap)
+  local underRay = target.pick(snap, direction)
+  if (underRay and underRay.character) ~= (pending.chosen and pending.chosen.character) then
+    pending, queuedManual = nil, false
+    if cycle then
+      cycle.phase = "land"
+    end
+    return
+  end
+  local intended = pending.chosen
+  if native.replayAttack(snap, direction) then
+    if intended then
+      target.noteAttack(snap, intended)
+    end
     pending, queuedManual = nil, false
     if cycle then
       cycle.phase = "land"
@@ -181,6 +201,7 @@ function Melee.step(snap, chosen)
   if
     not utils.getConfigValue("MCAutoSword")
     or not chosen
+    or not target.isCurrent(snap, chosen)
     or native.blocked(snap)
     or units.distance(chosen.root.Position, snap.root.Position) > tuning.focusRangeBlocks
   then
@@ -214,7 +235,7 @@ function Melee.step(snap, chosen)
   if not direction or not criticalReady(snap, readyAt) then
     return false
   end
-  if not native.attack(snap, chosen, direction) then
+  if not target.isCurrent(snap, chosen) or not native.attack(snap, chosen, direction) then
     return false
   end
   target.noteAttack(snap, chosen)
@@ -243,8 +264,9 @@ Melee.__contract = {
       "criticalReady",
       "attackGateReady",
       "replayAttack",
+      "aimDirection",
     },
-    Target = { "noteAttack", "manual" },
+    Target = { "noteAttack", "manual", "isCurrent", "pick" },
     Utils = { "getConfigValue", "isActive", "recordError" },
   },
   requiresData = { Options = { "tuning" } },

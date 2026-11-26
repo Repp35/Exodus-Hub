@@ -123,6 +123,7 @@ function Runtime.bind(loaded)
     if snap.now >= scanAt then
       scanAt = snap.now + 1
       native.setAttackGate(intercept)
+      bindRemote("VoxelCombat", "Swing", target.noteSwing)
       bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
         if kind == "HitConfirm" and not blocked then
           target.confirmHit(os.clock())
