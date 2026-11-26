@@ -311,7 +311,7 @@ function Survival.step(snap, available)
     generation += 1
   end
   if not escape then
-    if available and hasTotem and appleDue(snap, value) then
+    if available and not pearl.busy() and hasTotem and appleDue(snap, value) then
       return beginApple(snap)
     end
     return false

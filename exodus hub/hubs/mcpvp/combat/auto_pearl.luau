@@ -2,7 +2,7 @@
 --!optimize 2
 local Pearl = {}
 local native, geometry, target, units, ballistics, tuning, utils, aim, prediction
-local shot, motion, retryAt = nil, nil, 0
+local shot, motion, retryAt, follow = nil, nil, 0, nil
 local speed, gravity, drag, inheritance = 30, 12, 0.99, 0
 local renderLead, measuredLatency = 1 / 60, nil
 function Pearl.setup(deps)
@@ -14,10 +14,14 @@ local function restore(snap)
   if not shot or shot.restored or not snap or shot.character ~= snap.character then
     return false
   end
+  if shot.requestAt and snap.now - shot.requestAt < 0.5 then
+    return false
+  end
   shot.restored = native.restore(snap, shot.previous ~= shot.tool and shot.previous or nil)
   return shot.restored
 end
 function Pearl.reset()
+  follow = nil
   local snap = native.snapshot()
   if shot and (shot.phase == "confirm" or shot.phase == "restore") and snap and shot.character == snap.character then
     motion = nil
@@ -47,23 +51,30 @@ function Pearl.observe(snap)
   end
   if shot.phase == "confirm" then
     local state = native.useState(snap, shot)
-    if state == nil then
+    if snap.now - shot.requestAt < 0.5 then
       return
     end
-    if state == false then
-      restore(snap)
-      shot, retryAt = nil, snap.now + 1
-      return true
+    if state == nil and not shot.failed and not shot.calibrated then
+      return
     end
-    shot.restoreAt, shot.phase = snap.now, "restore"
-    shot.untilAt = math.max(snap.now + 0.2, shot.requestAt + shot.plan.duration + 0.7)
-    if shot.chosen then
-      target.attacked(snap, shot.chosen)
+    state = state == true or shot.calibrated == true
+    if state == false then
+      shot.failed, shot.restoreAt, shot.phase = true, snap.now, "restore"
+    else
+      shot.failed, shot.restoreAt, shot.phase = false, snap.now, "restore"
+      shot.untilAt = math.max(snap.now + 0.2, shot.requestAt + shot.plan.duration + 0.7)
+      if shot.chosen then
+        target.attacked(snap, shot.chosen)
+      end
     end
   end
   if shot.phase == "restore" and not native.blocked(snap) then
     if restore(snap) or snap.now - shot.restoreAt >= 1 then
-      shot.phase = "flight"
+      if shot.failed then
+        shot, retryAt = nil, snap.now + 1
+      else
+        shot.phase = "flight"
+      end
       return true
     end
   elseif shot.phase == "flight" then
@@ -200,6 +211,7 @@ local function plan(snap, value)
     function(direction) return aim.canTurn(snap, direction, tuning.pursuitScreenMargin) end,
     {
       allowHigh = (units.toBlocks(value.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)).Magnitude >= tuning.pearlLobRangeBlocks,
+      groundAim = (units.toBlocks(value.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)).Magnitude < tuning.pearlLobRangeBlocks,
       lobRange = tuning.pearlLobRangeBlocks,
       lowPitch = math.sin(math.rad(tuning.pearlLowPitchDegrees)),
       landingRadius = tuning.pearlLandingRadiusBlocks,
@@ -239,9 +251,6 @@ local function advance(snap)
     shot, retryAt = nil, snap.now + 0.2
     return
   end
-  if not native.equip(snap, shot.tool) then
-    return
-  end
   if not shot.aimedAt or snap.now - shot.aimedAt > 0.1 then
     return
   end
@@ -273,10 +282,14 @@ local function advance(snap)
   shot.count, shot.requestAt = tonumber(shot.tool:GetAttribute("Count")) or 0, snap.now
   shot.requestRoot, shot.requestVelocity = snap.root.Position, units.toBlocks(snap.root.AssemblyLinearVelocity)
   shot.phase = "confirm"
-  if not native.use(snap, shot.tool, shot.plan.direction) then
-    shot.phase = "equip"
-  elseif not shot.escape then
-    shot.returnLook, shot.returnAfter = shot.originalLook, snap.now + 0.03
+  shot.failed = not native.use(snap, shot.tool, shot.plan.direction)
+  if not shot.escape and shot.chosen then
+    follow = {
+      player = shot.chosen.player,
+      character = shot.chosen.character,
+      owner = snap.character,
+      untilAt = snap.now + shot.plan.duration + 2,
+    }
   end
 end
 function Pearl.launch(snap, route, escaping)
@@ -296,32 +309,47 @@ function Pearl.launch(snap, route, escaping)
     character = snap.character,
     tool = tool,
     previous = snap.tool,
-    originalLook = snap.camera.CFrame.LookVector,
     escape = escaping == true,
     plan = route,
     deadline = snap.now + 1.5,
   }
-  native.equip(snap, tool)
+  if escaping then
+    follow = nil
+  end
   return true
 end
 function Pearl.advance(snap) advance(snap) end
 function Pearl.aim(snap, dt)
   renderLead = math.clamp(dt or 1 / 60, 0, 0.05)
-  if not shot then
-    return false
-  end
-  if shot.returnLook then
-    if not target.isCurrent(snap, shot.chosen) then
-      shot.returnLook = nil
+  if not shot or shot.phase ~= "equip" then
+    if shot and (shot.escape or shot.requestAt and snap.now - shot.requestAt < 0.5) then
+      return shot.phase == "confirm"
+    end
+    if not follow or not utils.getConfigValue("MCAimAssist") then
       return false
     end
-    if snap.now >= shot.returnAfter and aim.turn(snap, shot.returnLook, dt, true) then
-      shot.returnLook = nil
+    local current = target.tracked(snap)
+    local root = follow.character:FindFirstChild("HumanoidRootPart")
+    local human = follow.character:FindFirstChildOfClass("Humanoid")
+    if
+      snap.character ~= follow.owner
+      or snap.now >= follow.untilAt
+      or follow.player.Character ~= follow.character
+      or not root
+      or not human
+      or human.Health <= 0
+      or current and current.character ~= follow.character
+      or aim.paused(snap)
+      or aim.yielding(snap, { root = root })
+    then
+      follow = nil
+      return false
     end
+    if current and current.distance <= tuning.focusRangeBlocks and utils.getConfigValue("MCAimLock") then
+      return false
+    end
+    aim.step(snap, nil, dt, follow.character)
     return true
-  end
-  if shot.phase ~= "equip" then
-    return false
   end
   if not rangeAllows(snap) then
     Pearl.cancelPrepared(snap)
@@ -416,7 +444,7 @@ Pearl.__contract = {
     Units = { "toBlocks", "toWorld", "offset", "distance" },
     Ballistics = { "solve", "intercept" },
     Utils = { "getConfigValue" },
-    Aim = { "canTurn", "turn", "looking" },
+    Aim = { "canTurn", "turn", "looking", "paused", "yielding", "step" },
     Prediction = { "sample", "actor" },
   },
   requiresData = { Options = { "tuning" } },

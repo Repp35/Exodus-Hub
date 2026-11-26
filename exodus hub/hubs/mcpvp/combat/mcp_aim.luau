@@ -124,6 +124,7 @@ local function intent(snap, value)
 end
 function Aim.yielding(snap, value) return intent(snap, value) == 1 end
 function Aim.returning(snap, value) return intent(snap, value) == -1 end
+function Aim.paused(snap) return snap.now < resumeAt end
 function Aim.pause(snap)
   Aim.reset()
   resumeAt = snap.now + 0.75
@@ -231,7 +232,7 @@ local function assist(snap)
   end
   return best
 end
-function Aim.step(snap, focus, dt)
+function Aim.step(snap, focus, dt, recovery)
   local lock, enabled = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
   if snap.now < resumeAt then
     return
@@ -255,7 +256,17 @@ function Aim.step(snap, focus, dt)
     lockRoot, lockSide = nil, nil
   end
   if not aim and enabled then
-    aim = assist(snap)
+    if recovery then
+      if snap.now - manualAt < 0.15 or stick then
+        return
+      end
+      local root = recovery:FindFirstChild("HumanoidRootPart")
+      local delta = root and geometry.point(recovery, root) - snap.camera.CFrame.Position
+      aim = delta and delta.Magnitude > 0.001 and delta.Unit or nil
+      radius = math.rad(6)
+    else
+      aim = assist(snap)
+    end
     pull, speed = 10, math.rad(84)
     if input.PreferredInput == Enum.PreferredInput.Gamepad then
       pull, speed = 2.9, math.rad(24)
@@ -275,7 +286,7 @@ function Aim.step(snap, focus, dt)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 Aim.__contract = {
-  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe", "returning" },
+  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe", "returning", "paused" },
   requires = { Geometry = "mcpgeometry", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
   requiresMethods = {
     Geometry = { "point", "visible", "blocking" },

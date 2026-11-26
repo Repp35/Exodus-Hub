@@ -126,6 +126,9 @@ local function actorHit(position, offset, actor, time, step, margin)
   )
 end
 local function hitsPlayer(origin, velocity, gravity, drag, duration, target, others, params, ownPosition, policy)
+  if policy and policy.groundAim and velocity.Y >= 0 then
+    return nil
+  end
   local position, time, contact = origin, 0, nil
   for _ = 1, math.ceil((duration + 0.5) / STEP) do
     local offset = velocity * STEP
@@ -142,24 +145,24 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
       contact = time + STEP * fraction
     end
     if hit then
-      if not contact then
+      if not contact and not (policy and policy.groundAim) then
         return nil
       end
       local impact, impactTime = units.toBlocks(hit.Position), time + STEP * solid
       local expected = target.predict(impactTime)
       local gap = impact - expected
-      local radius = policy and policy.landingRadius or 1.25
+      local radius = policy and policy.groundAim and 0.65 or policy and policy.landingRadius or 1.25
+      local height = -(gap.Y + 1.25)
+      local validHeight = math.abs(height) <= 0.5
+      if policy and policy.groundAim then
+        validHeight = height >= -0.1 and height <= 2
+      end
       -- The dump's projectile visuals ignore characters. Also prove that continuing
       -- past the body cannot send the pearl to a distant terrain impact.
-      if
-        (gap * Vector3.new(1, 0, 1)).Magnitude > radius
-        or math.abs(gap.Y + 1.25) > 0.5
-        or (impact - ownPosition).Magnitude < 3
-        or not safeFloor(hit, impact, params)
-      then
+      if (gap * Vector3.new(1, 0, 1)).Magnitude > radius or not validHeight or (impact - ownPosition).Magnitude < 3 or not safeFloor(hit, impact, params) then
         return nil
       end
-      return contact, impact, impactTime
+      return contact or impactTime, impact, impactTime
     end
     position += offset
     velocity = velocity * drag - Vector3.new(0, gravity * STEP, 0)
@@ -167,13 +170,22 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
   end
   return nil
 end
--- Solve interception directly against the moving body; no floor destination or nearby fallback.
+-- Close pursuit targets the floor below predicted feet; distant pursuit intercepts the body.
 function Ballistics.intercept(origin, target, others, speed, gravity, drag, inherited, params, maxFlight, ownPosition, near, canAim, policy)
   local aimOffset = Vector3.new(0, -1.05, 0)
   local outsideView = false
   local function required(time)
     local travel, drop = coefficients(time, drag)
-    local velocity = (target.predict(time) + aimOffset - origin + Vector3.new(0, gravity * drop, 0)) / travel - inherited
+    local destination = target.predict(time) + aimOffset
+    if policy and policy.groundAim then
+      local feet = target.predict(time) - Vector3.new(0, 1.25, 0)
+      local floor = workspace:Raycast(units.toWorld(feet + Vector3.new(0, 1 / 32, 0)), units.offset(0, -2 - 1 / 32, 0), params)
+      if not floor then
+        return math.huge, Vector3.zero
+      end
+      destination = units.toBlocks(floor.Position) - Vector3.new(0, 1 / 64, 0)
+    end
+    local velocity = (destination - origin + Vector3.new(0, gravity * drop, 0)) / travel - inherited
     return velocity:Dot(velocity) - speed * speed, velocity
   end
   local low, previous = 0.001, required(0.001)
@@ -198,7 +210,7 @@ function Ballistics.intercept(origin, target, others, speed, gravity, drag, inhe
       local highShot = policy and (direction.Y > policy.lowPitch or launchVelocity.Unit.Y > policy.lowPitch)
       local predictedGap = (target.predict(duration) - ownPosition) * Vector3.new(1, 0, 1)
       -- Height never grants permission: both current and future horizontal range must be far.
-      if highShot and (not policy.allowHigh or predictedGap.Magnitude < policy.lobRange) then
+      if policy and policy.groundAim and direction.Y >= 0 or highShot and (not policy.allowHigh or predictedGap.Magnitude < policy.lobRange) then
         low, previous = high, error
         continue
       end
@@ -212,6 +224,9 @@ function Ballistics.intercept(origin, target, others, speed, gravity, drag, inhe
             origin = origin,
             high = highShot == true,
             verify = function(actualDirection)
+              if policy and policy.groundAim and actualDirection.Y >= 0 then
+                return nil
+              end
               local body, point, at =
                 hitsPlayer(origin, actualDirection * speed + inherited, gravity, drag, duration, target, others, params, ownPosition, policy)
               return body and { landing = point, duration = at } or nil
