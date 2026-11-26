@@ -291,13 +291,11 @@ function Native.attack(snap, target, direction)
   if snap.now - lastAttack < 1 / 7 or Native.blocked(snap) then
     return false
   end
-  direction = direction or geometry.direction(snap, target, snap.tool)
-  if not direction then
+  -- The camera owns aiming. An attack may only use the visible crosshair,
+  -- never a hidden direction toward the tracked opponent.
+  direction = snap.camera.CFrame.LookVector
+  if not geometry.inView(snap, target) or not geometry.hit(snap, target, snap.tool, direction) then
     return false
-  end
-  local point = geometry.point(target.character, target.root)
-  if (point - snap.camera.CFrame.Position).Magnitude > 0.001 then
-    snap.camera.CFrame = CFrame.lookAt(snap.camera.CFrame.Position, point)
   end
   local sent = call("Attack", snap, direction)
   if sent then
@@ -444,7 +442,7 @@ Native.__contract = {
   requiresMethods = {
     Utils = { "getLocalPlayer", "recordError" },
     Bridge = { "get" },
-    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking", "point" },
+    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking", "hit", "inView" },
     Inventory = { "slots", "select" },
   },
 }

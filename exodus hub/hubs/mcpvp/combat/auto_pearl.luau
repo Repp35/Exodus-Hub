@@ -221,7 +221,9 @@ local function rangeAllows(snap)
   end
   shot.chosen = current
   local weapon = native.weapon(snap, current) or shot.previous
-  return current.distance > (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks and nearGround(snap, current, params(snap))
+  return geometry.inView(snap, current)
+    and current.distance > (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks
+    and nearGround(snap, current, params(snap))
 end
 local function advance(snap)
   if not shot or shot.phase ~= "equip" then
@@ -308,7 +310,7 @@ function Pearl.prepare(snap)
   if shot and shot.phase ~= "equip" then
     return
   end
-  if not utils.getConfigValue("MCAutoPearl") or not value then
+  if not utils.getConfigValue("MCAutoPearl") or not value or not geometry.inView(snap, value) then
     Pearl.cancelPrepared(snap)
     return
   end
@@ -373,7 +375,7 @@ Pearl.__contract = {
   },
   requiresMethods = {
     Native = { "snapshot", "find", "weapon", "restore", "use", "useState", "blocked" },
-    Geometry = { "stats" },
+    Geometry = { "stats", "inView" },
     Target = { "current", "tracked", "isCurrent", "pursuing" },
     Units = { "toBlocks", "toWorld", "offset", "distance" },
     Ballistics = { "solve", "intercept" },

@@ -149,6 +149,7 @@ function Target.manual(snap, direction)
     chosen.id = current.id
   end
   resume()
+  aim.remember(chosen.character, snap.now)
   return chosen
 end
 function Target.noteSwing(source)
@@ -216,7 +217,7 @@ Target.__contract = {
     Geometry = { "allowed", "hit", "incoming" },
     Native = { "snapshot", "blocked" },
     Units = { "distance" },
-    Aim = { "reset", "pause", "looking", "yielding", "dismiss" },
+    Aim = { "reset", "pause", "looking", "yielding", "dismiss", "remember" },
   },
   requiresData = { Options = { "tuning" } },
 }

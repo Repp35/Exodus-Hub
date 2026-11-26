@@ -46,7 +46,7 @@ local function chosen(snap)
 end
 function Melee.prepare(snap)
   local value = chosen(snap)
-  if not value or native.blocked(snap) or snap.now < retryAt then
+  if not value or not geometry.inView(snap, value) or native.blocked(snap) or snap.now < retryAt then
     return
   end
   local tool
@@ -106,7 +106,7 @@ function Melee.prepare(snap)
 end
 function Melee.strike(snap)
   local value = chosen(snap)
-  if not value or native.blocked(snap) or snap.now < retryAt then
+  if not value or not geometry.inView(snap, value) or native.blocked(snap) or snap.now < retryAt then
     return
   end
   local tool
@@ -149,7 +149,7 @@ Melee.__contract = {
   requires = { Native = "mcpnative", Geometry = "mcpgeometry", Target = "mcptarget", Utils = "utils" },
   requiresMethods = {
     Native = { "snapshot", "sprint", "blocked", "weapon", "equip", "charge", "jump", "attack" },
-    Geometry = { "grounded", "direction", "stats", "jumpRisk", "criticalWindow", "melee", "falling" },
+    Geometry = { "grounded", "direction", "stats", "jumpRisk", "criticalWindow", "melee", "falling", "inView" },
     Target = { "isCurrent", "near" },
     Utils = { "getConfigValue" },
   },

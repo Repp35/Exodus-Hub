@@ -91,6 +91,14 @@ function Geometry.visible(snap, point, character, origin)
   local hit = world:Raycast(origin, point - origin, params(snap, false))
   return not hit or character and hit.Instance:IsDescendantOf(character)
 end
+function Geometry.inView(snap, target)
+  if not target or not target.root.Parent then
+    return false
+  end
+  local point = Geometry.point(target.character, target.root)
+  local projected, visible = snap.camera:WorldToViewportPoint(point)
+  return visible and projected.Z > 0 and Geometry.visible(snap, point, target.character, snap.camera.CFrame.Position)
+end
 function Geometry.point(character, root)
   local rear = Vector3.zero
   if shields and shields.IsBlocking(character) then
@@ -275,6 +283,7 @@ Geometry.__contract = {
     "grounded",
     "falling",
     "visible",
+    "inView",
     "point",
     "hit",
     "direction",

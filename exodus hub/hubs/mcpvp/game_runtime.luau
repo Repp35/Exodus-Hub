@@ -246,7 +246,7 @@ function Runtime.bind(loaded)
         if not supplies.busy() and not native.blocked(snap) then
           pearl.render(dt)
           if not pearl.busy() and not survival.busy() then
-            aim.step(snap, target.current(snap))
+            aim.step(snap, target.current(snap), dt)
           end
         end
         aim.observe(snap)
