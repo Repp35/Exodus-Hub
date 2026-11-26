@@ -5,6 +5,7 @@ local utils, bridge, geometry, inventory, player, storage, controller, charge
 local dispatching, callback, hooked, original, hooker, restoreAim
 local lastAttack, lastUse, nextHook = -math.huge, {}, 0
 local observed, heldTool, equippedAt = nil, nil, -math.huge
+local preferred, expected, holdingUse
 local sprintOwner, sprintWasOn, sprintAt
 local missingInput = false
 local function library(name)
@@ -29,8 +30,12 @@ function Native.snapshot()
   local tool, now = character:FindFirstChildOfClass("Tool"), os.clock()
   if observed ~= character then
     observed, heldTool, equippedAt = character, tool, -math.huge
+    preferred, expected = geometry.stats(tool).type and tool or nil, nil
   elseif heldTool ~= tool then
-    heldTool, equippedAt = tool, now
+    if tool and tool ~= expected and geometry.stats(tool).type ~= nil then
+      preferred = tool
+    end
+    heldTool, equippedAt, expected = tool, now, nil
   end
   return { player = player, character = character, root = root, humanoid = human, camera = camera, eye = geometry.eye(root, character), tool = tool, now = now }
 end
@@ -44,7 +49,22 @@ function Native.blocked(snap)
     or player:GetAttribute("OffhandUsing") == true
     or snap.root.Anchored
 end
-function Native.find(snap, kind)
+function Native.find(snap, kind, hotbarOnly)
+  local slots = inventory.slots()
+  for slot = 1, 9 do
+    local tool = slots and slots[slot]
+    if
+      tool
+      and tool.Parent
+      and (tonumber(tool:GetAttribute("Count")) or 1) > 0
+      and (geometry.stats(tool).type == kind or tool:GetAttribute("ClassItem") == kind)
+    then
+      return tool
+    end
+  end
+  if hotbarOnly then
+    return nil
+  end
   for _, parent in ipairs({ snap.character, player:FindFirstChild("Backpack") }) do
     for _, tool in ipairs(parent:GetChildren()) do
       if
@@ -65,6 +85,7 @@ function Native.equip(snap, tool)
   if dispatching and tool.Parent ~= snap.character then
     return false
   end
+  expected = tool
   local slots = inventory.slots()
   if slots then
     for slot = 1, 9 do
@@ -72,11 +93,81 @@ function Native.equip(snap, tool)
         return inventory.select(snap, slot)
       end
     end
+    return false
   end
   if tool.Parent ~= snap.character then
     snap.humanoid:EquipTool(tool)
   end
   return snap.character:FindFirstChildOfClass("Tool") == tool
+end
+local function selectable(snap, tool)
+  if not tool or not tool.Parent or (tonumber(tool:GetAttribute("Count")) or 1) <= 0 then
+    return false
+  end
+  if tool.Parent ~= snap.character and tool.Parent ~= player:FindFirstChild("Backpack") then
+    return false
+  end
+  local slots = inventory.slots()
+  if not slots then
+    return true
+  end
+  for slot = 1, 9 do
+    if slots[slot] == tool then
+      return true
+    end
+  end
+  return false
+end
+function Native.restore(snap, previous)
+  local tool = selectable(snap, preferred) and preferred
+    or selectable(snap, previous) and geometry.stats(previous).type and previous
+    or Native.find(snap, "sword", true)
+    or selectable(snap, previous) and previous
+  return not tool or Native.equip(snap, tool)
+end
+function Native.weapon(snap, target)
+  local tool = preferred
+  if tool and not selectable(snap, tool) then
+    tool = nil
+  end
+  -- A manually selected Density mace suspends ground combos instead of forcing a sword.
+  if tool and not geometry.melee(tool) then
+    return nil
+  end
+  tool = tool or (geometry.melee(snap.tool) and snap.tool) or Native.find(snap, "sword", true)
+  if target and geometry.blocking(target.character) then
+    local slots = inventory.slots()
+    for slot = 1, 9 do
+      local axe = slots and slots[slot]
+      if selectable(snap, axe) and geometry.stats(axe).type == "axe" then
+        return axe
+      end
+    end
+  end
+  return tool
+end
+function Native.holdUse(snap, begin)
+  if not controller or type(controller.BeginTouch) ~= "function" or type(controller.EndTouch) ~= "function" then
+    return false
+  end
+  if begin then
+    if holdingUse == snap.character then
+      return true
+    end
+    if Native.blocked(snap) then
+      return false
+    end
+    dispatching = true
+    local ok, accepted = pcall(controller.BeginTouch, "Use")
+    dispatching = false
+    holdingUse = ok and accepted and snap.character or nil
+    return holdingUse ~= nil
+  end
+  if holdingUse then
+    pcall(controller.EndTouch, "Use")
+    holdingUse = nil
+  end
+  return true
 end
 function Native.charge(snap)
   local speed = geometry.stats(snap.tool).speed or 1.6
@@ -251,6 +342,8 @@ end
 function Native.isDispatching() return dispatching == true end
 function Native.busy() return dispatching == true end
 function Native.reset()
+  Native.holdUse(nil, false)
+  preferred, expected = nil, nil
   if restoreAim then
     restoreAim()
   end
@@ -276,6 +369,9 @@ Native.__contract = {
     "find",
     "equip",
     "charge",
+    "weapon",
+    "restore",
+    "holdUse",
     "attack",
     "use",
     "jump",
@@ -290,7 +386,7 @@ Native.__contract = {
   requiresMethods = {
     Utils = { "getLocalPlayer", "recordError" },
     Bridge = { "get" },
-    Geometry = { "allowed", "eye", "stats", "direction" },
+    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking" },
     Inventory = { "slots", "select" },
   },
 }

@@ -5,7 +5,10 @@ Options.__config = {
   defaults = {
     MCAimLock = true,
     MCAimAssist = true,
+    MCAutoPotion = true,
     MCAutoStrength = true,
+    MCAutoSpeed = true,
+    MCAutoEscape = true,
     MCAutoCrit = true,
     MCAutoSword = true,
     MCAutoPearl = true,
@@ -15,7 +18,10 @@ Options.__config = {
   schema = {
     MCAimLock = "boolean",
     MCAimAssist = "boolean",
+    MCAutoPotion = "boolean",
     MCAutoStrength = "boolean",
+    MCAutoSpeed = "boolean",
+    MCAutoEscape = "boolean",
     MCAutoCrit = "boolean",
     MCAutoSword = "boolean",
     MCAutoPearl = "boolean",
@@ -23,7 +29,7 @@ Options.__config = {
     MCAutoTotem = "boolean",
   },
 }
-Options.tuning = { focusRangeBlocks = 5, assistRangeBlocks = 6, pearlRangeBlocks = 24, pursuitSeconds = 15, pearlMaxFlight = 2.5 }
+Options.tuning = { focusRangeBlocks = 5, assistRangeBlocks = 6, longEscapeBlocks = 12, crowdedPlayers = 10, pursuitSeconds = 15, pearlMaxFlight = 5 }
 function Options.setup() return true end
 function Options.migrateConfig(data)
   if data.MCAimStrength == nil then

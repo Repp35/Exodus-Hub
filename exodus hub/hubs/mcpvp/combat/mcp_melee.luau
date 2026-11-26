@@ -16,7 +16,7 @@ function Melee.reset()
   cycle, retryAt = nil, 0
 end
 function Melee.request(snap, chosen)
-  if not chosen or not enabled("MCAutoCrit") then
+  if not chosen or not enabled("MCAutoCrit") or snap.tool and not geometry.melee(snap.tool) then
     return false
   end
   if cycle and cycle.chosen.id == chosen.id and cycle.tool == snap.tool then
@@ -44,7 +44,7 @@ function Melee.prepare(snap)
   if cycle and cycle.manual then
     tool = snap.tool
   else
-    tool = native.find(snap, "sword")
+    tool = native.weapon(snap, value)
   end
   if not tool and not (cycle and cycle.manual) or not geometry.direction(snap, value, tool) then
     return
@@ -57,8 +57,9 @@ function Melee.prepare(snap)
     return
   end
   local speed = geometry.stats(tool).speed or 1.6
+  local window = geometry.criticalWindow(snap)
   if not cycle then
-    if native.charge(snap) + speed * 0.28 < 1 then
+    if native.charge(snap) + speed * (window or 0) < 1 then
       return
     end
     cycle = { chosen = value, character = snap.character, tool = tool, at = snap.now, phase = geometry.grounded(snap) and "ready" or "air" }
@@ -69,10 +70,10 @@ function Melee.prepare(snap)
   end
   cycle.tool = tool
   if cycle.phase == "ready" then
-    if native.charge(snap) + speed * 0.28 < 1 then
+    if native.charge(snap) + speed * (window or 0) < 1 then
       return
     end
-    if geometry.jumpRisk(snap) then
+    if geometry.jumpRisk(snap) or window == nil then
       cycle.phase = "ground"
       return
     end
@@ -103,7 +104,7 @@ function Melee.strike(snap)
   if cycle then
     tool = cycle.tool
   else
-    tool = native.find(snap, "sword")
+    tool = native.weapon(snap, value)
   end
   if not tool and not (cycle and cycle.manual) or snap.tool ~= tool then
     return
@@ -139,8 +140,8 @@ Melee.__contract = {
   provides = { "setup", "reset", "request", "prepare", "strike" },
   requires = { Native = "mcpnative", Geometry = "mcpgeometry", Target = "mcptarget", Utils = "utils" },
   requiresMethods = {
-    Native = { "snapshot", "sprint", "blocked", "find", "equip", "charge", "jump", "attack" },
-    Geometry = { "grounded", "direction", "stats", "jumpRisk", "falling" },
+    Native = { "snapshot", "sprint", "blocked", "weapon", "equip", "charge", "jump", "attack" },
+    Geometry = { "grounded", "direction", "stats", "jumpRisk", "criticalWindow", "melee", "falling" },
     Target = { "isCurrent", "near", "attacked" },
     Utils = { "getConfigValue" },
   },

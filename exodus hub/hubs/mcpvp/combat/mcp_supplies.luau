@@ -1,55 +1,84 @@
 -- [[ mcpsupplies ]]
 --!optimize 2
 local Supplies = {}
-local inventory, native, target, utils, units
-local owner, epoch, layout, potion, used, readyAt = nil, nil, {}, nil, false, 0
+local inventory, native, utils
+local owner, layout, potion, awaiting = nil, {}, nil, {}
+local effects = { { key = "MCAutoStrength", class = "StrengthPotion", effect = "strength" }, { key = "MCAutoSpeed", class = "SpeedPotion", effect = "speed" } }
 local function enabled(key) return utils.getConfigValue(key) == true end
+local function alive(tool) return tool and tool.Parent and (tonumber(tool:GetAttribute("Count")) or 1) > 0 end
 local function identity(tool)
-  if not tool or not tool.Parent then
-    return nil
-  end
-  return tool.Name .. "|" .. tostring(tool:GetAttribute("ClassItem")) .. "|" .. tostring(tool:GetAttribute("BlockKey"))
+  return alive(tool) and tool.Name .. "|" .. tostring(tool:GetAttribute("ClassItem")) .. "|" .. tostring(tool:GetAttribute("BlockKey")) or nil
 end
 local function destination(slots)
   for slot = 1, 9 do
-    if not slots[slot] or not slots[slot].Parent then
+    if not alive(slots[slot]) then
       return slot
     end
   end
   return nil
 end
+local function restore(snap) return native.restore(snap, potion and potion.previous) end
 function Supplies.setup(deps)
-  inventory, native, target, utils, units = deps.Inventory, deps.Native, deps.Target, deps.Utils, deps.Units
+  inventory, native, utils = deps.Inventory, deps.Native, deps.Utils
   return true
 end
 function Supplies.reset()
   local snap = native.snapshot()
-  if potion and snap and potion.character == snap.character and potion.previous and potion.previous.Parent then
-    native.equip(snap, potion.previous)
+  if potion and potion.sent and snap and potion.character == snap.character then
+    -- An accepted request stays owned until the game confirms consumption.
+    return
   end
-  owner, epoch, layout, potion, used, readyAt = nil, nil, {}, nil, false, 0
+  if snap and potion then
+    restore(snap)
+  end
+  owner, layout, potion, awaiting = nil, {}, nil, {}
   inventory.reset()
 end
 function Supplies.busy() return inventory.busy() or potion ~= nil end
-function Supplies.step(snap, allowBackground)
-  local pop = snap.character:GetAttribute("TotemPoppedAt") or 0
-  if owner ~= snap.character then
-    Supplies.reset()
-    owner, epoch, readyAt = snap.character, pop, snap.now + 4
-    used = snap.character:GetAttribute("ExodusStrengthAttemptPop") == pop and snap.character:GetAttribute("ExodusStrengthAttemptAt") ~= nil
+local function throw(snap)
+  if potion.character ~= snap.character then
+    potion = nil
+    return
   end
-  if epoch ~= pop then
-    epoch, used, readyAt = pop, false, snap.now + 4
+  if potion.sent then
+    local consumed = not alive(potion.tool) or (tonumber(potion.tool:GetAttribute("Count")) or potion.count) < potion.count
+    local active = (tonumber(snap.character:GetAttribute("Effect_" .. potion.effect)) or 0) > workspace:GetServerTimeNow()
+    if (consumed or active) and not snap.character:GetAttribute("DrinkingPotion") and not native.busy() and restore(snap) then
+      awaiting[potion.effect] = not active and snap.now + 1 or nil
+      potion = nil
+    end
+    return
+  end
+  if not alive(potion.tool) or snap.now > potion.deadline then
+    if restore(snap) then
+      potion = nil
+    end
+    return
+  end
+  if native.equip(snap, potion.tool) then
+    potion.count = tonumber(potion.tool:GetAttribute("Count")) or 1
+    potion.sent = native.use(snap, potion.tool, Vector3.new(0, -1, 0))
+  end
+end
+function Supplies.step(snap, allowBackground)
+  if owner ~= snap.character then
+    owner, layout, potion, awaiting = snap.character, {}, nil, {}
+    inventory.reset()
   end
   inventory.step(snap)
+  if potion then
+    throw(snap)
+    return
+  end
+  if allowBackground == false and not inventory.busy() or snap.character:GetAttribute("EatingApple") then
+    return
+  end
   local slots = inventory.slots()
   if not slots then
     return
   end
   for slot = 1, 9 do
-    if slots[slot] and slots[slot].Parent then
-      layout[slot] = identity(slots[slot])
-    end
+    layout[slot] = identity(slots[slot]) or layout[slot]
   end
   if enabled("MCAutoTotem") and (snap.character:GetAttribute("OffhandItem") == "totem" or inventory.find("Totem")) then
     if not inventory.totem(snap) then
@@ -58,62 +87,18 @@ function Supplies.step(snap, allowBackground)
     if not inventory.find("Totem", 1, 9) then
       local tool, from = inventory.find("Totem", 10, 36)
       local to = tool and destination(slots)
-      if tool and to and not inventory.move(snap, tool, from, to) then
+      if to and not inventory.move(snap, tool, from, to) then
         return
       end
     end
-  end
-  inventory.close()
-  if allowBackground == false then
-    return
-  end
-  if potion then
-    if potion.character ~= snap.character or target.current(snap) or not enabled("MCAutoStrength") then
-      if potion.previous and potion.previous.Parent then
-        native.equip(snap, potion.previous)
-      end
-      potion = nil
-      return
-    end
-    if potion.sent then
-      if snap.character:GetAttribute("DrinkingPotion") then
-        return
-      end
-      if snap.now - potion.at < 0.25 then
-        return
-      end
-      if potion.previous and potion.previous.Parent then
-        native.equip(snap, potion.previous)
-      end
-      potion = nil
-      return
-    end
-    if snap.now - potion.at > 1 then
-      potion = nil
-      return
-    end
-    if native.equip(snap, potion.tool) then
-      snap.tool = potion.tool
-      if native.use(snap, potion.tool, Vector3.new(0, -1, 0)) then
-        potion.sent, potion.at, used = true, snap.now, true
-        snap.character:SetAttribute("ExodusStrengthAttemptPop", epoch)
-        snap.character:SetAttribute("ExodusStrengthAttemptAt", workspace:GetServerTimeNow())
-      end
-    end
-    return
-  end
-  -- Background maintenance never opens an inventory in the middle of an active fight.
-  if target.current(snap) or native.blocked(snap) then
-    return
   end
   if enabled("MCAutoRefill") then
     for slot = 1, 9 do
-      if slots[slot] and slots[slot].Parent then
-        layout[slot] = identity(slots[slot])
-      elseif layout[slot] then
+      if not alive(slots[slot]) and layout[slot] then
         for from = 10, 36 do
           local tool = slots[from]
           if identity(tool) == layout[slot] then
+            -- Keep this inventory lease across frames until the actual move succeeds.
             if not inventory.move(snap, tool, from, slot) then
               return
             end
@@ -122,40 +107,44 @@ function Supplies.step(snap, allowBackground)
         end
       end
     end
-    inventory.close()
   end
-  if
-    not enabled("MCAutoStrength")
-    or used
-    or snap.now < readyAt
-    or not target.quiet(snap, 4)
-    or (tonumber(snap.character:GetAttribute("Effect_strength")) or 0) > workspace:GetServerTimeNow()
-    or math.abs(units.toBlocks(snap.root.AssemblyLinearVelocity.Y)) > 0.1
-  then
-    return
-  end
-  local tool, from = inventory.find("StrengthPotion")
-  if not tool then
-    return
-  end
-  if from > 9 then
-    local to = destination(slots)
-    if not to or not inventory.move(snap, tool, from, to) then
-      return
+  if allowBackground ~= false and enabled("MCAutoPotion") then
+    for _, effect in ipairs(effects) do
+      if
+        enabled(effect.key)
+        and snap.now >= (awaiting[effect.effect] or 0)
+        and (tonumber(snap.character:GetAttribute("Effect_" .. effect.effect)) or 0) <= workspace:GetServerTimeNow()
+      then
+        local tool, from = inventory.find(effect.class)
+        if tool then
+          if from > 9 then
+            local to = destination(slots)
+            if to and not inventory.move(snap, tool, from, to) then
+              return
+            end
+            if not to then
+              continue
+            end
+          end
+          inventory.close()
+          if not native.blocked(snap) then
+            potion = { character = snap.character, tool = tool, previous = snap.tool, effect = effect.effect, deadline = snap.now + 1 }
+            throw(snap)
+          end
+          return
+        end
+      end
     end
-    inventory.close()
   end
-  potion = { character = snap.character, tool = tool, previous = snap.tool, at = snap.now }
+  inventory.close()
 end
 Supplies.__contract = {
   provides = { "setup", "reset", "step", "busy" },
-  requires = { Inventory = "mcpinventory", Native = "mcpnative", Target = "mcptarget", Utils = "utils", Units = "mcpunits" },
+  requires = { Inventory = "mcpinventory", Native = "mcpnative", Utils = "utils" },
   requiresMethods = {
     Inventory = { "slots", "find", "move", "close", "totem", "step", "busy", "reset" },
-    Native = { "snapshot", "equip", "use", "blocked" },
-    Target = { "current", "quiet" },
+    Native = { "snapshot", "equip", "restore", "use", "blocked", "busy" },
     Utils = { "getConfigValue" },
-    Units = { "toBlocks" },
   },
 }
 return Supplies

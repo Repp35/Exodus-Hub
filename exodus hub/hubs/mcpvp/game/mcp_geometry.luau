@@ -27,6 +27,18 @@ function Geometry.stats(tool)
   local value = weapons.Stats(tool)
   return { type = value.type, speed = value.speed, reach = value.reachBlocks or units.toBlocks(value.reach), damage = value.damage }
 end
+function Geometry.melee(tool)
+  if not tool then
+    return false
+  end
+  local kind = Geometry.stats(tool).type
+  return kind == "sword"
+    or kind == "axe"
+    or kind == "spear"
+    or kind == "pickaxe"
+    or kind == "mace" and (tonumber(tool:GetAttribute("Breach")) or 0) > 0 and (tonumber(tool:GetAttribute("Density")) or 0) <= 0
+end
+function Geometry.blocking(character) return shields ~= nil and shields.IsBlocking(character) == true end
 function Geometry.allowed(character)
   if rules then
     return rules.CanShoot(character)
@@ -181,6 +193,27 @@ function Geometry.aerialMace(snap, target)
   local floor = world:Raycast(target.root.Position, units.offset(0, -3.75, 0), params(snap, true))
   return target.character:GetAttribute("VoxelGrounded") ~= true and (not floor or units.toBlocks(target.root.Position.Y - snap.root.Position.Y) > 2.5)
 end
+local function clearance(snap)
+  local ray, room = params(snap, true), 1.3
+  local feet = snap.root.Position - units.offset(0, 1.25, 0)
+  for _, offset in ipairs({ Vector3.zero, Vector3.new(0.28, 0, 0), Vector3.new(-0.28, 0, 0), Vector3.new(0, 0, 0.28), Vector3.new(0, 0, -0.28) }) do
+    local top = feet + units.toWorld(offset + Vector3.new(0, 1.9, 0))
+    local hit = world:Raycast(top, units.offset(0, 1.36, 0), ray)
+    if hit then
+      room = math.min(room, math.max(0, units.toBlocks(hit.Distance) - 0.06))
+    end
+  end
+  return room
+end
+function Geometry.headroom(snap) return clearance(snap) >= 1.3 - 1 / 320 end
+function Geometry.criticalWindow(snap)
+  local room = clearance(snap)
+  if room < 3 / 64 then
+    return nil
+  end
+  -- Under a low ceiling, charge first: the head collision creates a much shorter fall window.
+  return room >= 1.3 - 1 / 320 and 0.28 or 0
+end
 function Geometry.jumpRisk(snap)
   local crystals, seen = game:GetService("CollectionService"):GetTagged("EndCrystal"), {}
   local folder = world:FindFirstChild("EndCrystals")
@@ -195,15 +228,29 @@ function Geometry.jumpRisk(snap)
     ignored[#ignored + 1] = value
   end
   ray.FilterDescendantsInstances = ignored
-  local start = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0)
-  local motion = units.toBlocks(snap.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
+  local origins = {}
   for _, crystal in ipairs(crystals) do
     local feet = crystal:GetAttribute("CrystalFeet")
-    if seen[crystal] or not crystal.Parent or typeof(feet) ~= "Vector3" then
-      continue
+    if crystal.Parent and typeof(feet) == "Vector3" and not seen[crystal] then
+      seen[crystal] = true
+      origins[#origins + 1] = units.toBlocks(feet)
     end
-    seen[crystal] = true
-    local origin, height, vy = units.toBlocks(feet), 0, 8.4
+  end
+  local overlap = OverlapParams.new()
+  overlap.FilterType, overlap.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, ignored
+  for _, block in ipairs(world:GetPartBoundsInBox(CFrame.new(snap.root.Position), units.offset(5, 6, 5), overlap)) do
+    local key = string.lower(tostring(block:GetAttribute("BlockKey") or block.Name))
+    if key == "obsidian" then
+      local top = block.Position + Vector3.new(0, block.Size.Y / 2, 0)
+      if not world:Raycast(top + units.offset(0, 1 / 64, 0), units.offset(0, 2, 0), ray) then
+        origins[#origins + 1] = units.toBlocks(top)
+      end
+    end
+  end
+  local start = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0)
+  local motion = units.toBlocks(snap.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
+  for _, origin in ipairs(origins) do
+    local height, vy = 0, 8.4
     for tick = 0, 12 do
       local predicted = start + motion * (tick * 0.05) + Vector3.new(0, height, 0)
       local delta = predicted - origin
@@ -231,7 +278,25 @@ function Geometry.jumpRisk(snap)
   return false
 end
 Geometry.__contract = {
-  provides = { "setup", "stats", "allowed", "eye", "grounded", "falling", "visible", "point", "hit", "direction", "incoming", "aerialMace", "jumpRisk" },
+  provides = {
+    "setup",
+    "stats",
+    "allowed",
+    "eye",
+    "grounded",
+    "falling",
+    "visible",
+    "point",
+    "hit",
+    "direction",
+    "incoming",
+    "aerialMace",
+    "jumpRisk",
+    "headroom",
+    "criticalWindow",
+    "melee",
+    "blocking",
+  },
   requires = { Units = "mcpunits", Utils = "utils" },
   requiresMethods = { Units = { "toWorld", "toBlocks", "offset" }, Utils = { "getWorkspace" } },
 }

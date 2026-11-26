@@ -11,6 +11,7 @@ function Runtime.reset()
   modules.autopearl.reset()
   modules.mcptarget.reset()
   modules.mcpaim.reset()
+  modules.mcpsurvival.reset()
 end
 function Runtime.teardown()
   if scope then
@@ -27,7 +28,8 @@ end
 function Runtime.bind(loaded)
   Runtime.teardown()
   modules, scope = loaded, loaded.lifetime.scope()
-  local native, target, melee, pearl, supplies, aim = loaded.mcpnative, loaded.mcptarget, loaded.mcpmelee, loaded.autopearl, loaded.mcpsupplies, loaded.mcpaim
+  local native, target, melee, pearl, supplies, aim, survival =
+    loaded.mcpnative, loaded.mcptarget, loaded.mcpmelee, loaded.autopearl, loaded.mcpsupplies, loaded.mcpaim, loaded.mcpsurvival
   local function run(name, fn, ...)
     local ok, reason = pcall(fn, ...)
     if not ok then
@@ -62,7 +64,7 @@ function Runtime.bind(loaded)
         run("supplies", function()
           local current = loaded.utils.isActive() and native.snapshot()
           if current and current.character == owner then
-            supplies.step(current, not pearl.busy())
+            supplies.step(current, not pearl.busy() and not survival.busy())
           end
         end)
       end)
@@ -91,7 +93,13 @@ function Runtime.bind(loaded)
   end
   local input = game:GetService("UserInputService")
   local function gate(snap, direction)
-    if not loaded.utils.isActive() or native.blocked(snap) then
+    if not loaded.utils.isActive() then
+      return true
+    end
+    if survival.busy() or pearl.busy() or supplies.busy() then
+      return false
+    end
+    if native.blocked(snap) then
       return true
     end
     synchronize(snap)
@@ -195,8 +203,9 @@ function Runtime.bind(loaded)
           return
         end
       end
-      supplies.step(snap, not pearl.busy())
-      if supplies.busy() or native.blocked(snap) then
+      local surviving = survival.step(snap, not supplies.busy() and not native.busy())
+      supplies.step(snap, not pearl.busy() and not surviving)
+      if surviving or supplies.busy() or native.blocked(snap) then
         melee.reset()
         return
       end
@@ -214,7 +223,7 @@ function Runtime.bind(loaded)
   scope.connect(service.PostSimulation, function()
     run("melee", function()
       local snap = snapshot()
-      if not snap or supplies.busy() or pearl.busy() or native.busy() then
+      if not snap or survival.busy() or supplies.busy() or pearl.busy() or native.busy() then
         return
       end
       melee.strike(snap)
@@ -226,7 +235,10 @@ function Runtime.bind(loaded)
     loaded.mcpinventory.present()
     run("aim", function()
       local snap = snapshot()
-      if snap and not supplies.busy() and not pearl.busy() and not native.blocked(snap) then
+      if snap then
+        survival.move(snap)
+      end
+      if snap and not survival.busy() and not supplies.busy() and not pearl.busy() and not native.blocked(snap) then
         aim.step(snap, target.near(snap), dt)
       end
     end)
@@ -237,7 +249,7 @@ function Runtime.createAPI(loaded)
   return {
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = Runtime.reset,
-    updateBlockers = { loaded.autopearl.pending, loaded.mcpsupplies.busy, loaded.mcpnative.busy },
+    updateBlockers = { loaded.autopearl.pending, loaded.mcpsupplies.busy, loaded.mcpsurvival.busy, loaded.mcpnative.busy },
     migrateConfig = loaded.mcpoptions.migrateConfig,
   }
 end

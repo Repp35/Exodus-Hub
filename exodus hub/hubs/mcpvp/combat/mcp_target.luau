@@ -39,13 +39,25 @@ function Target.current(snap)
   if not fight then
     return nil
   end
-  local value = owner == snap.character and snap.now - fight.at <= tuning.pursuitSeconds and candidate(fight.player, snap, tuning.pearlRangeBlocks)
+  local value = owner == snap.character and candidate(fight.player, snap, math.huge)
   if not value or value.character ~= fight.character then
+    fight, attempted, swings = nil, nil, {}
+    return nil
+  end
+  if value.distance <= tuning.focusRangeBlocks and fight.distance > tuning.focusRangeBlocks then
+    fight.at = snap.now
+  end
+  if value.distance <= tuning.focusRangeBlocks and snap.now - fight.at > tuning.pursuitSeconds then
     fight, attempted, swings = nil, nil, {}
     return nil
   end
   value.id = fight.id
   return value
+end
+function Target.abandon(snap, value)
+  if fight and (not value or value.id == fight.id) and owner == snap.character then
+    fight, attempted, swings = nil, nil, {}
+  end
 end
 function Target.near(snap)
   local value = Target.current(snap)
@@ -57,7 +69,8 @@ function Target.isCurrent(snap, value)
 end
 local function select(snap, value)
   serial += 1
-  fight = { player = value.player, character = value.character, id = serial, at = snap.now }
+  fight =
+    { player = value.player, character = value.character, id = serial, at = snap.now, escapes = 0, position = value.root.Position, distance = value.distance }
   value.id, attempted, swings = serial, nil, {}
 end
 function Target.manual(snap, direction)
@@ -91,7 +104,7 @@ function Target.manual(snap, direction)
   return chosen
 end
 function Target.noteSwing(source)
-  if not fight or typeof(source) ~= "Instance" then
+  if typeof(source) ~= "Instance" then
     return
   end
   local character = source
@@ -108,12 +121,39 @@ function Target.noteSwing(source)
     swings[player] = snap.now
   end
 end
+function Target.threat(snap)
+  local best
+  for player, at in pairs(swings) do
+    if snap.now - at > 0.35 then
+      swings[player] = nil
+    else
+      local value = candidate(player, snap, tuning.focusRangeBlocks)
+      if value and geometry.incoming(snap, value) and (not best or value.distance < best.distance) then
+        best = value
+      end
+    end
+  end
+  return best
+end
 function Target.observe(snap)
   if owner ~= snap.character then
     Target.reset()
     owner = snap.character
   end
   local current = Target.current(snap)
+  if current then
+    local jumped = units.distance(current.root.Position, fight.position) >= 8
+    if jumped and current.distance >= tuning.longEscapeBlocks and current.distance - fight.distance >= 6 then
+      fight.escapes += 1
+      if #players:GetPlayers() >= tuning.crowdedPlayers and fight.escapes > 2 then
+        Target.abandon(snap, current)
+        current = nil
+      end
+    end
+    if fight then
+      fight.position, fight.distance = current.root.Position, current.distance
+    end
+  end
   local hurt = health and snap.humanoid.Health < health
   health = snap.humanoid.Health
   if hurt then
@@ -159,7 +199,7 @@ function Target.attacked(snap, value)
 end
 function Target.quiet(snap, seconds) return snap.now - activity >= seconds end
 Target.__contract = {
-  provides = { "setup", "reset", "manual", "observe", "current", "near", "isCurrent", "hit", "noteSwing", "attacked", "quiet" },
+  provides = { "setup", "reset", "manual", "observe", "current", "near", "isCurrent", "hit", "noteSwing", "attacked", "quiet", "abandon", "threat" },
   requires = { Geometry = "mcpgeometry", Native = "mcpnative", Units = "mcpunits", Options = "mcpoptions" },
   requiresMethods = { Geometry = { "allowed", "hit", "incoming", "visible" }, Native = { "snapshot", "blocked" }, Units = { "distance" } },
   requiresData = { Options = { "tuning" } },
