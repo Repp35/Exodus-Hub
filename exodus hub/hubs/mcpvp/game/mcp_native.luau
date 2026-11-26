@@ -4,6 +4,8 @@ local Native = {}
 local player, world, storage, weapons, geometry, config, controller, utils, units
 local shields
 local bridge, charge, dispatching, criticalAt = nil, nil, false, 0
+local gate, hookedAttack, originalAttack, hooker
+local sprintOwner, resumeSprint
 local observedCharacter, observedTool
 local equippedAt, attackAt, attemptAt = -math.huge, -math.huge, -math.huge
 local function load(name)
@@ -182,6 +184,57 @@ local function invoke(action, direction)
   end
   return ok and result == true
 end
+local function releaseAttackGate()
+  if hookedAttack and originalAttack and hooker then
+    local ok, reason = pcall(hooker, hookedAttack, originalAttack)
+    if not ok then
+      utils.recordError("mcpvp.critical.restore", tostring(reason))
+    end
+  end
+  hookedAttack, originalAttack, hooker = nil, nil, nil
+end
+function Native.setAttackGate(callback)
+  gate = callback
+  if not callback then
+    releaseAttackGate()
+    return false
+  end
+  local fn = bridge.get("attack")
+  if fn and fn == hookedAttack then
+    return true
+  end
+  local env = type(getgenv) == "function" and getgenv() or _G
+  if not fn or type(env.hookfunction) ~= "function" then
+    return false
+  end
+  releaseAttackGate()
+  local original
+  local ok, result = pcall(env.hookfunction, fn, function(direction)
+    if dispatching or not gate then
+      return original(direction)
+    end
+    local snap = Native.snapshot()
+    if not snap then
+      return original(direction)
+    end
+    local success, allow = pcall(gate, snap, direction)
+    if not success then
+      utils.recordError("mcpvp.critical.gate", tostring(allow))
+      return
+    end
+    if allow then
+      return original(direction)
+    end
+    return nil
+  end)
+  if not ok or type(result) ~= "function" then
+    return false
+  end
+  original = result
+  hookedAttack, originalAttack, hooker = fn, original, env.hookfunction
+  return true
+end
+function Native.attackGateReady() return hookedAttack ~= nil and gate ~= nil end
 function Native.readyAt(snap, tool)
   local speed = Native.stats(tool).speed
   if type(speed) ~= "number" or speed <= 0 then
@@ -325,6 +378,17 @@ function Native.attack(snap, target, direction)
   end
   return sent
 end
+function Native.replayAttack(snap, direction)
+  if Native.blocked(snap) or snap.now + 1e-6 < Native.readyAt(snap, snap.tool) then
+    return false
+  end
+  attemptAt = snap.now
+  local sent = invoke("Attack", direction or Native.aimDirection(snap))
+  if sent then
+    attackAt = os.clock()
+  end
+  return sent
+end
 function Native.pearlCooldown() return config and config.Items and config.Items.Pearl and config.Items.Pearl.cooldown or 1 end
 function Native.pearlReady() return (tonumber(player:GetAttribute("ItemCooldown_Pearl")) or 0) <= world:GetServerTimeNow() end
 function Native.usePearl(snap, tool, direction)
@@ -445,16 +509,87 @@ function Native.requestJump(snap)
   snap.humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
   return true
 end
-function Native.prepareCritical()
-  if os.clock() < criticalAt then
+function Native.prepareCritical(force)
+  local character = player.Character
+  if not character then
     return
   end
-  criticalAt = os.clock() + 0.2
+  if sprintOwner ~= character then
+    sprintOwner, resumeSprint = character, false
+  end
+  if character:GetAttribute("Sprinting") == true or character:GetAttribute("SprintRequested") == true then
+    resumeSprint = true
+  end
+  if not force and os.clock() < criticalAt then
+    return
+  end
+  criticalAt = os.clock() + 0.1
   local combat = storage:FindFirstChild("VoxelCombat")
   local sprint = combat and combat:FindFirstChild("Sprint")
   if sprint and sprint:IsA("RemoteEvent") then
     sprint:FireServer(false)
   end
+end
+function Native.finishCritical()
+  local character, shouldResume = sprintOwner, resumeSprint
+  sprintOwner, resumeSprint = nil, false
+  if not character or character ~= player.Character or not shouldResume or player:GetAttribute("SprintToggleEnabled") ~= true then
+    return
+  end
+  local humanoid = character:FindFirstChildOfClass("Humanoid")
+  if not humanoid or humanoid.Health <= 0 then
+    return
+  end
+  local snap = Native.snapshot()
+  if not snap or Native.blocked(snap) then
+    return
+  end
+  local forward
+  if controller and type(controller.ForwardHeld) == "function" then
+    forward = controller.ForwardHeld()
+  else
+    forward = humanoid.MoveDirection.Magnitude > 0.05
+  end
+  if not forward then
+    return
+  end
+  local combat = storage:FindFirstChild("VoxelCombat")
+  local sprint = combat and combat:FindFirstChild("Sprint")
+  if sprint and sprint:IsA("RemoteEvent") then
+    sprint:FireServer(true)
+  end
+end
+function Native.criticalReady(snap)
+  if Native.blocked(snap) or snap.humanoid.Sit or snap.humanoid.PlatformStand then
+    return false
+  end
+  local ground = snap.character:GetAttribute("VoxelGrounded")
+  if ground == true or ground == nil and snap.humanoid.FloorMaterial ~= Enum.Material.Air then
+    return false
+  end
+  local fall = units.toBlocks(tonumber(snap.character:GetAttribute("LocalFallDistance")) or 0)
+  -- performAttack sends LocalFallDistance as the native fall metadata. Velocity alone is insufficient.
+  if fall <= 0 or units.toBlocks(snap.root.AssemblyLinearVelocity.Y) >= -1 / 32 then
+    return false
+  end
+  if snap.character:GetAttribute("Sprinting") == true or snap.character:GetAttribute("SprintRequested") == true then
+    return false
+  end
+  if
+    snap.character:GetAttribute("LocalInWater") == true
+    or snap.character:GetAttribute("InLava") == true
+    or snap.player:GetAttribute("LocalGliding") == true
+    or snap.character:GetAttribute("Gliding") == true
+  then
+    return false
+  end
+  local state = snap.humanoid:GetState()
+  return state ~= Enum.HumanoidStateType.Swimming and state ~= Enum.HumanoidStateType.Climbing and state ~= Enum.HumanoidStateType.Seated
+end
+function Native.teardown()
+  gate = nil
+  releaseAttackGate()
+  Native.finishCritical()
 end
 function Native.useItem(snap, tool, direction)
   if Native.blocked(snap) or not owned(tool) or tool.Parent ~= snap.character then
@@ -524,6 +659,12 @@ Native.__contract = {
     "blocked",
     "isDispatching",
     "prepareCritical",
+    "finishCritical",
+    "criticalReady",
+    "setAttackGate",
+    "attackGateReady",
+    "replayAttack",
+    "teardown",
     "requestJump",
     "crystalJumpRisk",
     "useItem",

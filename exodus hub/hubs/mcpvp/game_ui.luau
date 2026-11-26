@@ -35,7 +35,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Crit",
               key = "MCAutoCrit",
-              description = "Pede pulo nativo a cada ataque e espera a descida. Evita saltos estimados como diretamente expostos a um cristal muito próximo.",
+              description = "Sincroniza o golpe com queda registrada, carga completa e sprint desligado. Adia cliques manuais quando o executor permite.",
             },
           },
         },

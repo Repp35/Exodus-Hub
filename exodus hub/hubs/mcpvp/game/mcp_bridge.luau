@@ -48,7 +48,12 @@ function Bridge.get(key)
     end
     local named, name = pcall(debug.info, fn, "n")
     if named and names[name] then
-      found[names[name]] = { fn = fn, source = source }
+      local key = names[name]
+      local existing = found[key]
+      -- Keep live call sites stable: executor hooks can expose an unhooked clone to getgc.
+      if not existing or existing.source.Parent ~= scripts then
+        found[key] = { fn = fn, source = source }
+      end
     end
   end
   entry = found[key]

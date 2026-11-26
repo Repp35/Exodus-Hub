@@ -2,14 +2,15 @@
 --!optimize 2
 local Melee = {}
 local native, target, utils, tuning, units
-local owner, cycle, selected
-local queuedManual, equipAt, apex = false, 0, 0.25
+local owner, cycle, selected, pending
+local queuedManual, equipAt, apex, warnedManual = false, 0, 0.25, false
 function Melee.setup(deps)
   native, target, utils, tuning, units = deps.Native, deps.Target, deps.Utils, deps.Options.tuning, deps.Units
   return true
 end
 function Melee.reset()
-  owner, cycle, selected = nil, nil, nil
+  native.finishCritical()
+  owner, cycle, selected, pending = nil, nil, nil, nil
   queuedManual, equipAt, apex = false, 0, 0.25
 end
 local function grounded(snap)
@@ -41,15 +42,74 @@ function Melee.manual(snap)
   if not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) then
     return false
   end
+  if not native.attackGateReady() and not warnedManual then
+    warnedManual = true
+    utils.recordError("mcpvp.critical.manual", "O executor não permite adiar o ataque nativo; o pulo manual sozinho não garante um crítico.")
+  end
   queuedManual = true
-  if grounded(snap) then
+  if grounded(snap) and native.readyAt(snap, snap.tool) - snap.now <= apex + 0.04 then
     return startJump(snap)
   end
   return true
 end
+function Melee.intercept(snap, direction)
+  if not utils.isActive() or not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) then
+    return true
+  end
+  bind(snap)
+  local kind = native.stats(snap.tool).type
+  if snap.tool and not kind then
+    return true
+  end
+  if grounded(snap) and native.crystalJumpRisk(snap) then
+    pending = nil
+    return true
+  end
+  if native.criticalReady(snap) and snap.now >= native.readyAt(snap, snap.tool) then
+    native.prepareCritical(true)
+    pending, queuedManual = nil, false
+    cycle = cycle or { at = snap.now, vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
+    cycle.phase = "land"
+    target.manual(snap)
+    return true
+  end
+  pending = { character = snap.character, tool = snap.tool, direction = direction, expires = snap.now + 2.5 }
+  target.manual(snap)
+  Melee.manual(snap)
+  return false
+end
+function Melee.postSimulation(snap)
+  if not pending then
+    return
+  end
+  if not snap or not utils.getConfigValue("MCAutoCrit") or snap.character ~= pending.character or snap.tool ~= pending.tool or snap.now >= pending.expires then
+    pending, queuedManual, cycle = nil, false, nil
+    native.finishCritical()
+    return
+  end
+  if native.blocked(snap) then
+    return
+  end
+  local readyAt = native.readyAt(snap, snap.tool)
+  local crystalException = grounded(snap) and native.crystalJumpRisk(snap)
+  if snap.now < readyAt or not (crystalException or native.criticalReady(snap)) then
+    return
+  end
+  if not crystalException then
+    native.prepareCritical(true)
+  end
+  target.manual(snap)
+  if native.replayAttack(snap, pending.direction) then
+    pending, queuedManual = nil, false
+    if cycle then
+      cycle.phase = "land"
+    end
+  end
+end
 function Melee.preSimulation(snap)
   if not snap or not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) then
-    cycle, queuedManual = nil, false
+    cycle, queuedManual, pending = nil, false, nil
+    native.finishCritical()
     return
   end
   bind(snap)
@@ -69,6 +129,7 @@ function Melee.preSimulation(snap)
       end
     elseif ground then
       cycle = nil
+      native.finishCritical()
     end
     if cycle then
       if cycle.phase == "air" and cycle.vertical > 0 and vertical <= 0 then
@@ -83,7 +144,7 @@ function Melee.preSimulation(snap)
       end
     end
   end
-  if not cycle and queuedManual and ground then
+  if not cycle and queuedManual and ground and native.readyAt(snap, snap.tool) - snap.now <= apex + 0.04 then
     startJump(snap)
   end
 end
@@ -109,12 +170,10 @@ local function criticalReady(snap, readyAt)
   if not cycle then
     cycle = { at = snap.now, phase = "air", vertical = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) }
   end
-  local fall = units.toBlocks(tonumber(snap.character:GetAttribute("LocalFallDistance")) or 0)
-  local falling = units.toBlocks(snap.root.AssemblyLinearVelocity.Y) < -1 / 32 or fall > 0
-  if not falling or snap.now < readyAt then
+  if snap.now < readyAt or not native.criticalReady(snap) then
     return false
   end
-  native.prepareCritical()
+  native.prepareCritical(true)
   return true
 end
 function Melee.step(snap, chosen)
@@ -129,6 +188,9 @@ function Melee.step(snap, chosen)
   end
   local tool = native.findSword(snap)
   local stats = native.stats(tool)
+  if pending then
+    return false
+  end
   if not tool or stats.type ~= "sword" or type(stats.speed) ~= "number" or stats.speed <= 0 then
     return false
   end
@@ -162,13 +224,28 @@ function Melee.step(snap, chosen)
   return true
 end
 Melee.__contract = {
-  provides = { "setup", "reset", "step", "manual", "preSimulation" },
+  provides = { "setup", "reset", "step", "manual", "preSimulation", "intercept", "postSimulation" },
   requires = { Native = "mcpnative", Target = "mcptarget", Utils = "utils", Options = "mcpoptions", Units = "mcpunits" },
   requiresMethods = {
     Units = { "distance", "toBlocks" },
-    Native = { "blocked", "findSword", "stats", "equip", "prepareCritical", "requestJump", "crystalJumpRisk", "attack", "readyAt", "attackDirection" },
-    Target = { "noteAttack" },
-    Utils = { "getConfigValue" },
+    Native = {
+      "blocked",
+      "findSword",
+      "stats",
+      "equip",
+      "prepareCritical",
+      "requestJump",
+      "crystalJumpRisk",
+      "attack",
+      "readyAt",
+      "attackDirection",
+      "finishCritical",
+      "criticalReady",
+      "attackGateReady",
+      "replayAttack",
+    },
+    Target = { "noteAttack", "manual" },
+    Utils = { "getConfigValue", "isActive", "recordError" },
   },
   requiresData = { Options = { "tuning" } },
 }

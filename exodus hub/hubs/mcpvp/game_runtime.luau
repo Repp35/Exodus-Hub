@@ -14,6 +14,9 @@ function Runtime.reset()
   modules.mcpaim.reset()
 end
 function Runtime.teardown()
+  if modules then
+    modules.mcpnative.setAttackGate(nil)
+  end
   if scope then
     scope.destroy()
     scope = nil
@@ -25,6 +28,14 @@ function Runtime.bind(loaded)
   Runtime.teardown()
   modules, scope = loaded, loaded.lifetime.scope()
   local native, target, supplies = loaded.mcpnative, loaded.mcptarget, loaded.mcpsupplies
+  local function intercept(snap, direction)
+    if owner ~= snap.character then
+      Runtime.reset()
+      owner = snap.character
+    end
+    return loaded.mcpmelee.intercept(snap, direction)
+  end
+  native.setAttackGate(intercept)
   local input, storage, run = game:GetService("UserInputService"), game:GetService("ReplicatedStorage"), game:GetService("RunService")
   local source = storage:FindFirstChild("ControllerInput")
   local ok, controller = pcall(function() return source and require(source) end)
@@ -67,7 +78,9 @@ function Runtime.bind(loaded)
           Runtime.reset()
           owner = snap.character
         end
-        loaded.mcpmelee.manual(snap)
+        if not native.attackGateReady() then
+          loaded.mcpmelee.manual(snap)
+        end
         target.manual(snap)
       end
     end)
@@ -109,6 +122,7 @@ function Runtime.bind(loaded)
     end
     if snap.now >= scanAt then
       scanAt = snap.now + 1
+      native.setAttackGate(intercept)
       bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
         if kind == "HitConfirm" and not blocked then
           target.confirmHit(os.clock())
@@ -149,6 +163,9 @@ function Runtime.bind(loaded)
   end
   scope.connect(run.PreSimulation, function()
     guarded("critical", function() loaded.mcpmelee.preSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
+  end)
+  scope.connect(run.PostSimulation, function()
+    guarded("critical", function() loaded.mcpmelee.postSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
   end)
   scope.connect(run.Heartbeat, function() guarded("heartbeat", heartbeat) end)
   local renderScope = scope
