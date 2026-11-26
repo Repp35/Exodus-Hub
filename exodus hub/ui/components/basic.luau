@@ -25,7 +25,7 @@ local __part_uicontrols = (function()
     local read = context.read
     function components.keybind(parent, definition)
       assert(kit.isDesktop(), "Keybind controls are unavailable in mobile mode; enable PC UI in settings")
-      local height = Theme.CARD_H
+      local height = definition.description and Theme.CARD_H + 22 or Theme.CARD_H
       local handle = control(parent, definition, height)
       title(handle, definition, 64, height)
       shortcut(handle, definition.key, -64)
@@ -232,11 +232,12 @@ local __part_uiselection = (function()
       definition = definition or {}
       local choices = definition.options or definition.choices or {}
       assert(#choices > 0, "segmented requires options")
-      local handle = control(parent, definition, Theme.RATE_CARD_H)
-      title(handle, definition, 0, 24)
+      local headerHeight = definition.description and 56 or 24
+      local handle = control(parent, definition, Theme.RATE_CARD_H + headerHeight - 24)
+      title(handle, definition, 0, headerHeight)
       local track = inst(
         "Frame",
-        { Name = "Track", Size = UDim2.new(1, -20, 0, 30), Position = UDim2.fromOffset(10, 28), BackgroundColor3 = C.inputBg, ZIndex = 8 },
+        { Name = "Track", Size = UDim2.new(1, -20, 0, 30), Position = UDim2.fromOffset(10, headerHeight + 4), BackgroundColor3 = C.inputBg, ZIndex = 8 },
         handle.Root
       )
       kit.corner(track)
@@ -279,14 +280,15 @@ local __part_uiselection = (function()
     end
     function components.rate_selector(parent, definition)
       local modes = { { value = "CPS", label = "CPS" }, { value = "CPF", label = "CPF" }, { value = "MS", label = "MS" }, { value = "Auto", label = "Auto" } }
-      local handle = components.segmented(parent, { title = definition.title or "Spam Rate", key = "SpamRateMode", options = modes })
+      local handle =
+        components.segmented(parent, { title = definition.title or "Spam Rate", description = definition.description, key = "SpamRateMode", options = modes })
       local updateMode = handle.setValue
       local track = handle.Root.Track
       track.Size = UDim2.new(1, -88, 0, 30)
       local input = inst("TextBox", {
         Name = "RateInput",
         Size = UDim2.fromOffset(58, 30),
-        Position = UDim2.new(1, -68, 0, 28),
+        Position = UDim2.new(1, -68, 0, track.Position.Y.Offset),
         BackgroundColor3 = C.inputBg,
         TextColor3 = C.text,
         TextSize = TEXT.control,

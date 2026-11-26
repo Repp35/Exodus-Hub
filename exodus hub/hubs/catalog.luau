@@ -10,7 +10,7 @@ return {
     placeIds = { 75260404327641 },
     universeIds = { 10774244015 },
     permissions = false,
-    version = "2.1.0",
+    version = "2.1.1",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · MCPvP carregado.",
     modules = {
@@ -27,7 +27,7 @@ return {
       { name = "mcpnative", path = "hubs/mcpvp/game/mcp_native.luau", hash = "31be1d2e74634d28ea99bc8363f36c434949969074189a62016b5192ca462631" },
       { name = "mcpunits", path = "hubs/mcpvp/game/mcp_units.luau", hash = "75eeebf07c1cd2a304832018c0da12cdbc2ca04fb2bfe25455513f336a4d18ba" },
       { name = "gameruntime", path = "hubs/mcpvp/game_runtime.luau", hash = "328d72c59a99a3ddc829c7e4d1f57c6a057b3a9bc57ec97b96624045a9dd54c7" },
-      { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "58c8da3d999caaad6692195acdfc76d954ae0f387ad18a3497703f53a63dfea6" },
+      { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "ed6067586141b6d55b92477c88b6f812657072eef35e3ebf23b74182ece45dfd" },
       { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "6e1c4d9e087ea7718cdd54b906e0b385a9df4a1a7aa5074909bea524726555ce" },
     },
   },
@@ -87,7 +87,7 @@ return {
       },
     },
     dataFolder = "Exodus Hub",
-    version = "3.3.0",
+    version = "3.3.1",
     developers = { "deltapolinha_2915" },
     modules = {
       { name = "autodark", path = "hubs/phantom-ball/combat/auto_dark.luau", hash = "a7f016ffd1e29127967c77184933a20bb855f6f0b72a65013f88148e7cb2a2a4" },
@@ -127,7 +127,7 @@ return {
       { name = "targeting", path = "hubs/phantom-ball/game/targeting.luau", hash = "2901a56c8ff24f7531df12a307fbcf3e9088b7b072faf3a6d7c3eadd7016b14d" },
       { name = "telemetry", path = "hubs/phantom-ball/game/telemetry.luau", hash = "d07c2ff8a0066a749198b673ede601f9e9031554cca402222526bae54779f4d0" },
       { name = "gameruntime", path = "hubs/phantom-ball/game_runtime.luau", hash = "de6166ccd8475b924f28649dc1e26054cbf84cd3d4af0167359484ff996b7162" },
-      { name = "gameui", path = "hubs/phantom-ball/game_ui.luau", hash = "6680e550787da1822471b4ae5bba0530efd0e5c7ac4269b28a3fb3047ada8f64" },
+      { name = "gameui", path = "hubs/phantom-ball/game_ui.luau", hash = "504c0fae8de2b16d8b9e5aeef41df426c722e45f5486277ffb9103a5835af80a" },
       {
         name = "clashstats",
         path = "hubs/phantom-ball/prediction/clash_stats.luau",

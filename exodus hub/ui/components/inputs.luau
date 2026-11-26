@@ -98,7 +98,7 @@ function Components.install(context)
     local minimum, maximum = finite(definition.min) or 0, finite(definition.max) or 100
     local step = finite(definition.increment or definition.step) or 1
     assert(maximum > minimum and step > 0, "slider requires max > min and increment > 0")
-    local height = definition.compact and Theme.CARD_H or (definition.description and 88 or 68)
+    local height = definition.compact and not definition.description and Theme.CARD_H or (definition.description and 88 or 68)
     local handle = control(parent, definition, height)
     title(handle, definition, 72, math.min(height - 24, 70))
     local label = text(handle.Root, "", {

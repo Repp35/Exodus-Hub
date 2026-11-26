@@ -76,7 +76,7 @@ function Actions.create(context)
       task.delay(CONFIG.CONFIRM_SECONDS, function()
         if scope.alive and revision == resetGeneration then
           resetPending = false
-          handle.setText("Reset settings")
+          handle.setText("Reset Settings")
         end
       end)
       return
@@ -87,7 +87,7 @@ function Actions.create(context)
     if not ok or not result then
       notify("Reset failed", true)
       warn("[Exodus] Reset settings: " .. tostring(result))
-      handle.setText("Reset settings")
+      handle.setText("Reset Settings")
       return
     end
     context.rebuild(true)
