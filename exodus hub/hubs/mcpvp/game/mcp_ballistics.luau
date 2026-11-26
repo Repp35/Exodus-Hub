@@ -175,17 +175,18 @@ function Ballistics.intercept(origin, target, others, speed, gravity, drag, inhe
       local duration = (left + right) / 2
       local _, velocity = required(duration)
       local direction = velocity.Unit
-      local direct = target.predict(duration) + aimOffset - origin
-      local lift = math.asin(math.clamp(direction.Y, -1, 1)) - math.asin(math.clamp(direct.Unit.Y, -1, 1))
-      -- Near shots may aim directly at an elevated player, but cannot use a high lob.
-      if policy and lift > policy.lift then
+      local launchVelocity = direction * speed + inherited
+      local highShot = policy and (direction.Y > policy.lowPitch or launchVelocity.Unit.Y > policy.lowPitch)
+      local predictedGap = (target.predict(duration) - ownPosition) * Vector3.new(1, 0, 1)
+      -- Height never grants permission: both current and future horizontal range must be far.
+      if highShot and (not policy.allowHigh or predictedGap.Magnitude < policy.lobRange) then
         low, previous = high, error
         continue
       end
-      local contact, impact = hitsPlayer(origin, direction * speed + inherited, gravity, drag, duration, target, others, params, ownPosition)
+      local contact, impact = hitsPlayer(origin, launchVelocity, gravity, drag, duration, target, others, params, ownPosition)
       if contact then
         if not canAim or canAim(direction) then
-          return { direction = direction, duration = contact, landing = impact, origin = origin }
+          return { direction = direction, duration = contact, landing = impact, origin = origin, high = highShot == true }
         end
         outsideView = true
       end

@@ -177,7 +177,11 @@ local function plan(snap, value)
     units.toBlocks(snap.root.Position),
     value.distance <= 6,
     function(direction) return aim.canTurn(snap, direction) end,
-    { lift = value.distance < tuning.pearlLobRangeBlocks and math.rad(value.distance <= 6 and 10 or 15) or math.pi }
+    {
+      allowHigh = (units.toBlocks(value.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)).Magnitude >= tuning.pearlLobRangeBlocks,
+      lobRange = tuning.pearlLobRangeBlocks,
+      lowPitch = math.sin(math.rad(tuning.pearlLowPitchDegrees)),
+    }
   )
   if route then
     route.revision = motion.revision
@@ -185,8 +189,24 @@ local function plan(snap, value)
   end
   return route, reason
 end
+local function rangeAllows(snap)
+  if not shot or not shot.chosen then
+    return true
+  end
+  local launch = shot.plan.direction * speed + units.toBlocks(snap.root.AssemblyLinearVelocity) * inheritance
+  if not shot.plan.high and launch.Unit.Y <= math.sin(math.rad(tuning.pearlLowPitchDegrees)) then
+    return true
+  end
+  local flat = Vector3.new(1, 0, 1)
+  return (units.toBlocks(shot.chosen.root.Position - snap.root.Position) * flat).Magnitude >= tuning.pearlLobRangeBlocks
+    and ((shot.plan.landing - units.toBlocks(snap.root.Position)) * flat).Magnitude >= tuning.pearlLobRangeBlocks
+end
 local function advance(snap)
   if not shot or shot.phase ~= "equip" then
+    return
+  end
+  if not rangeAllows(snap) then
+    Pearl.cancelPrepared(snap)
     return
   end
   if snap.now > shot.deadline then
@@ -255,6 +275,10 @@ function Pearl.aim(snap, dt)
     return true
   end
   if shot.phase ~= "equip" then
+    return false
+  end
+  if not rangeAllows(snap) then
+    Pearl.cancelPrepared(snap)
     return false
   end
   if not shot.escape and (not target.isCurrent(snap, shot.chosen) or not aim.canTurn(snap, shot.plan.direction)) then
