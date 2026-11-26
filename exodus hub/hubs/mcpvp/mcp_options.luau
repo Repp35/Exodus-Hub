@@ -5,7 +5,6 @@ Options.__config = {
   defaults = {
     MCAimLock = true,
     MCAimAssist = true,
-    MCAimStrength = 100,
     MCAutoStrength = true,
     MCAutoCrit = true,
     MCAutoSword = true,
@@ -16,7 +15,6 @@ Options.__config = {
   schema = {
     MCAimLock = "boolean",
     MCAimAssist = "boolean",
-    MCAimStrength = "rate",
     MCAutoStrength = "boolean",
     MCAutoCrit = "boolean",
     MCAutoSword = "boolean",
@@ -27,5 +25,12 @@ Options.__config = {
 }
 Options.tuning = { focusRangeBlocks = 5 }
 function Options.setup() return true end
-Options.__contract = { provides = { "setup" }, data = { "tuning" }, requires = {} }
+function Options.migrateConfig(data)
+  if data.MCAimStrength == nil then
+    return false
+  end
+  data.MCAimStrength = nil
+  return true
+end
+Options.__contract = { provides = { "setup", "migrateConfig" }, data = { "tuning" }, requires = {} }
 return Options

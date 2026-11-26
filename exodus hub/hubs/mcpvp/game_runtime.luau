@@ -1,7 +1,7 @@
 -- [[ gameruntime ]]
 --!optimize 2
 local Runtime = {}
-local modules, scope, owner, renderTarget
+local modules, scope, owner
 function Runtime.setup() return true end
 function Runtime.reset()
   if not modules then
@@ -11,7 +11,7 @@ function Runtime.reset()
   modules.mcpmelee.reset()
   modules.mcpsupplies.reset()
   modules.mcptarget.reset()
-  renderTarget = nil
+  modules.mcpaim.reset()
 end
 function Runtime.teardown()
   if scope then
@@ -109,7 +109,6 @@ function Runtime.bind(loaded)
     target.observe(snap)
     supplies.observe(snap)
     supplies.step(snap, not loaded.autopearl.busy())
-    renderTarget = nil
     if supplies.busy() then
       loaded.mcpmelee.reset()
       return
@@ -134,31 +133,27 @@ function Runtime.bind(loaded)
       loaded.mcpmelee.reset()
       return
     end
-    renderTarget = chosen
     loaded.mcpmelee.step(snap, chosen)
   end
   scope.connect(run.PreSimulation, function()
     guarded("critical", function() loaded.mcpmelee.preSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
   end)
   scope.connect(run.Heartbeat, function() guarded("heartbeat", heartbeat) end)
-  scope.connect(run.RenderStepped, function(dt)
+  local renderScope = scope
+  local renderName = "ExodusMCPAim_" .. tostring(renderScope)
+  renderScope.add(function() run:UnbindFromRenderStep(renderName) end)
+  run:BindToRenderStep(renderName, Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if not renderScope.alive then
+      return
+    end
     guarded("aim", function()
-      if
-        not renderTarget
-        or not renderTarget.root.Parent
-        or renderTarget.humanoid.Health <= 0
-        or not loaded.utils.isActive()
-        or supplies.busy()
-        or loaded.autopearl.busy()
-      then
+      if not loaded.utils.isActive() or not (enabled("MCAimLock") or enabled("MCAimAssist")) or supplies.busy() or loaded.autopearl.busy() then
         return
       end
       local snap = native.snapshot()
       if snap then
         local nearest = target.get(snap)
-        if nearest then
-          loaded.mcpaim.step(snap, nearest, dt)
-        end
+        loaded.mcpaim.step(snap, nearest, dt)
       end
     end)
   end)
@@ -169,6 +164,7 @@ function Runtime.createAPI(loaded)
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = Runtime.reset,
     updateBlockers = { loaded.autopearl.busy, loaded.mcpsupplies.busy, loaded.mcpinventory.busy },
+    migrateConfig = loaded.mcpoptions.migrateConfig,
   }
 end
 Runtime.__contract = { provides = { "setup", "reset", "teardown", "bind", "createAPI" }, requires = {} }

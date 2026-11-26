@@ -47,15 +47,14 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Lock",
               key = "MCAimLock",
-              description = "Mira no adversário visível mais próximo, até 5 blocos, sem perseguir quem fugiu.",
+              description = "Trava com força fixa no foco próximo do combate, até 5 blocos, sem previsão ou porcentagem.",
             },
             {
               kind = "toggle",
               title = "Aim Assist",
               key = "MCAimAssist",
-              description = "Correção leve até 5 blocos; Aim Lock tem prioridade quando ambos estão ativos.",
+              description = "Assistência nativa reforçada até 5 blocos, para qualquer personagem vivo visível, sem exigir alvo de combate.",
             },
-            { kind = "slider", title = "Força da mira", key = "MCAimStrength", min = 0, max = 100, increment = 1, valueName = "%" },
           },
         },
         {
