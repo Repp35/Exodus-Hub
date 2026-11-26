@@ -53,7 +53,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Assist",
               key = "MCAimAssist",
-              description = "Ajuda a mirar até 32 blocos; mantém o mesmo alvo próximo ao sair da tela, sem buscar novos alvos atrás da câmera.",
+              description = "Ajuda leve até 6 blocos e cede ao virar a câmera para longe. Reencontra o mesmo alvo próximo que passar para trás.",
             },
           },
         },

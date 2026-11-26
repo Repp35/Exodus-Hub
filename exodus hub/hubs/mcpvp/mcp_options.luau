@@ -23,7 +23,7 @@ Options.__config = {
     MCAutoTotem = "boolean",
   },
 }
-Options.tuning = { focusRangeBlocks = 5, assistRangeBlocks = 32, pearlRangeBlocks = 24, pursuitSeconds = 15, pearlMaxFlight = 2.5 }
+Options.tuning = { focusRangeBlocks = 5, assistRangeBlocks = 6, pearlRangeBlocks = 24, pursuitSeconds = 15, pearlMaxFlight = 2.5 }
 function Options.setup() return true end
 function Options.migrateConfig(data)
   if data.MCAimStrength == nil then
