@@ -97,7 +97,8 @@ function Runtime.bind(loaded)
       return true
     end
     if survival.busy() or pearl.busy() or supplies.busy() then
-      return false
+      -- Item automation must never swallow the player's own native input.
+      return true
     end
     if native.blocked(snap) then
       return true

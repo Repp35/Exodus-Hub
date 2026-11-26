@@ -41,22 +41,29 @@ local function throw(snap)
     return
   end
   if potion.sent then
-    local consumed = not alive(potion.tool) or (tonumber(potion.tool:GetAttribute("Count")) or potion.count) < potion.count
-    local active = (tonumber(snap.character:GetAttribute("Effect_" .. potion.effect)) or 0) > workspace:GetServerTimeNow()
-    if (consumed or active) and not snap.character:GetAttribute("DrinkingPotion") and not native.busy() and restore(snap) then
-      awaiting[potion.effect] = not active and snap.now + 1 or nil
+    local state = native.useState(snap, potion, potion.effect)
+    if state == nil then
+      return
+    end
+    if snap.character:GetAttribute("DrinkingPotion") or native.busy() then
+      return
+    end
+    local restored = restore(snap)
+    if restored or snap.now - potion.requestAt >= 4 then
+      awaiting[potion.effect] = snap.now + (state and 0.5 or 1)
       potion = nil
     end
     return
   end
   if not alive(potion.tool) or snap.now > potion.deadline then
-    if restore(snap) then
-      potion = nil
-    end
+    restore(snap)
+    awaiting[potion.effect] = snap.now + 1
+    potion = nil
     return
   end
   if native.equip(snap, potion.tool) then
     potion.count = tonumber(potion.tool:GetAttribute("Count")) or 1
+    potion.requestAt = snap.now
     potion.sent = native.use(snap, potion.tool, Vector3.new(0, -1, 0))
   end
 end
@@ -81,10 +88,11 @@ function Supplies.step(snap, allowBackground)
     layout[slot] = identity(slots[slot]) or layout[slot]
   end
   if enabled("MCAutoTotem") and (snap.character:GetAttribute("OffhandItem") == "totem" or inventory.find("Totem")) then
-    if not inventory.totem(snap) then
+    local ready = inventory.totem(snap)
+    if ready == false then
       return
     end
-    if not inventory.find("Totem", 1, 9) then
+    if ready and not inventory.find("Totem", 1, 9) then
       local tool, from = inventory.find("Totem", 10, 36)
       local to = tool and destination(slots)
       if to and not inventory.move(snap, tool, from, to) then
@@ -143,7 +151,7 @@ Supplies.__contract = {
   requires = { Inventory = "mcpinventory", Native = "mcpnative", Utils = "utils" },
   requiresMethods = {
     Inventory = { "slots", "find", "move", "close", "totem", "step", "busy", "reset" },
-    Native = { "snapshot", "equip", "restore", "use", "blocked", "busy" },
+    Native = { "snapshot", "equip", "restore", "use", "useState", "blocked", "busy" },
     Utils = { "getConfigValue" },
   },
 }

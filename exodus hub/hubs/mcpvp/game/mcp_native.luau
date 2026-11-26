@@ -8,6 +8,16 @@ local observed, heldTool, equippedAt = nil, nil, -math.huge
 local preferred, expected, holdingUse
 local sprintOwner, sprintWasOn, sprintAt
 local missingInput = false
+local dispatchUntil = 0
+local function releaseStaleInput()
+  if dispatching and os.clock() >= dispatchUntil then
+    if restoreAim then
+      restoreAim()
+    else
+      dispatching = false
+    end
+  end
+end
 local function library(name)
   local source = storage:FindFirstChild(name)
   local ok, value = pcall(function() return source and require(source) end)
@@ -20,6 +30,7 @@ function Native.setup(deps)
   return true
 end
 function Native.snapshot()
+  releaseStaleInput()
   local character = player.Character
   local root = character and character:FindFirstChild("HumanoidRootPart")
   local human = character and character:FindFirstChildOfClass("Humanoid")
@@ -40,6 +51,7 @@ function Native.snapshot()
   return { player = player, character = character, root = root, humanoid = human, camera = camera, eye = geometry.eye(root, character), tool = tool, now = now }
 end
 function Native.blocked(snap)
+  releaseStaleInput()
   return dispatching == true
     or (controller and controller.IsBlocked())
     or player:GetAttribute("MenuOpen") == true
@@ -94,9 +106,6 @@ function Native.equip(snap, tool)
       end
     end
     return false
-  end
-  if tool.Parent ~= snap.character then
-    snap.humanoid:EquipTool(tool)
   end
   return snap.character:FindFirstChildOfClass("Tool") == tool
 end
@@ -157,7 +166,7 @@ function Native.holdUse(snap, begin)
     if Native.blocked(snap) then
       return false
     end
-    dispatching = true
+    dispatching, dispatchUntil = true, os.clock() + 0.5
     local ok, accepted = pcall(controller.BeginTouch, "Use")
     dispatching = false
     holdingUse = ok and accepted and snap.character or nil
@@ -187,31 +196,37 @@ local function call(action, snap, direction)
   end
   local fn = bridge.get(action == "Attack" and "attack" or "use")
   local oldDirection, oldFrame = player:GetAttribute("FrontCameraAimDirection"), player:GetAttribute("FrontCameraAimCFrame")
-  dispatching = true
-  player:SetAttribute("FrontCameraAimDirection", direction)
-  local aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
-  player:SetAttribute("FrontCameraAimCFrame", aimFrame)
+  local aimFrame
   local function restore()
     if restoreAim ~= restore then
       return
     end
-    if player:GetAttribute("FrontCameraAimDirection") == direction then
-      player:SetAttribute("FrontCameraAimDirection", oldDirection)
-    end
-    if player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
-      player:SetAttribute("FrontCameraAimCFrame", oldFrame)
-    end
+    -- Release ownership first, even if an attribute restoration fails.
     restoreAim, dispatching = nil, false
+    local ok, reason = pcall(function()
+      if player:GetAttribute("FrontCameraAimDirection") == direction then
+        player:SetAttribute("FrontCameraAimDirection", oldDirection)
+      end
+      if aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
+        player:SetAttribute("FrontCameraAimCFrame", oldFrame)
+      end
+    end)
+    if not ok then
+      utils.recordError("mcpvp.input.restore", tostring(reason))
+    end
   end
-  restoreAim = restore
+  restoreAim, dispatching, dispatchUntil = restore, true, os.clock() + 0.5
   local marker = snap.character:GetAttribute("LocalAttackSwing")
   local ok, accepted = pcall(function()
+    aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
+    player:SetAttribute("FrontCameraAimDirection", direction)
+    player:SetAttribute("FrontCameraAimCFrame", aimFrame)
     if fn then
       return fn(direction) ~= false
     end
-    if not controller or type(controller.BeginTouch) ~= "function" then
+    if not controller or type(controller.BeginTouch) ~= "function" or type(controller.EndTouch) ~= "function" then
       if not missingInput then
-        utils.recordError("mcpvp.input", "Sem acesso ao ataque/uso nativo e ao ControllerInput deste jogo.")
+        utils.recordError("mcpvp.input", "Ataque/uso nativo e ControllerInput indisponíveis.")
         missingInput = true
       end
       return false
@@ -222,7 +237,7 @@ local function call(action, snap, direction)
     controller.EndTouch(action)
     return true
   end)
-  if fn then
+  if fn or not ok then
     restore()
   else
     task.defer(restore)
@@ -232,13 +247,34 @@ local function call(action, snap, direction)
     return false
   end
   if action == "Use" and fn then
-    -- This is local submission evidence only. Pearl owns server-side completion checks.
     local class = snap.tool and snap.tool:GetAttribute("ClassItem")
-    if class == "Pearl" then
+    local config = library("GameConfig")
+    local item = config and config.Items[class]
+    local drinking = class == "InvisPotion" or item and item.effect and not item.splash
+    -- ItemClient returns nil for both rejection and success. Non-drinking uses
+    -- advance LocalAttackSwing only when the native function actually submits Use.
+    if not drinking then
       return snap.character:GetAttribute("LocalAttackSwing") ~= marker
     end
   end
   return accepted == true
+end
+function Native.useState(snap, action, effect)
+  if action.character ~= snap.character then
+    return false
+  end
+  local tool = action.tool
+  if not tool.Parent or (tonumber(tool:GetAttribute("Count")) or action.count) < action.count then
+    return true
+  end
+  if effect and (tonumber(snap.character:GetAttribute("Effect_" .. effect)) or 0) > workspace:GetServerTimeNow() then
+    return true
+  end
+  -- Expiry is cancellation, never a fabricated consumption confirmation.
+  if snap.now - action.requestAt >= 3 then
+    return false
+  end
+  return nil
 end
 function Native.attack(snap, target, direction)
   if snap.now - lastAttack < 1 / 7 or Native.blocked(snap) then
@@ -340,7 +376,10 @@ function Native.gate(fn)
   return hooked ~= nil
 end
 function Native.isDispatching() return dispatching == true end
-function Native.busy() return dispatching == true end
+function Native.busy()
+  releaseStaleInput()
+  return dispatching == true
+end
 function Native.reset()
   Native.holdUse(nil, false)
   preferred, expected = nil, nil
@@ -374,6 +413,7 @@ Native.__contract = {
     "holdUse",
     "attack",
     "use",
+    "useState",
     "jump",
     "sprint",
     "gate",

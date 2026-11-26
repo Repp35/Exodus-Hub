@@ -20,6 +20,11 @@ function Melee.request(snap, chosen)
     return false
   end
   if cycle and cycle.chosen.id == chosen.id and cycle.tool == snap.tool then
+    local wait = math.max(0.8, 1 / (geometry.stats(snap.tool).speed or 1.6) + 0.6)
+    if snap.now - cycle.at >= wait then
+      Melee.reset()
+      return false
+    end
     cycle.manual = true
     return true
   end

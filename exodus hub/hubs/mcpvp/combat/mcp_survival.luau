@@ -44,12 +44,16 @@ local function findApple()
 end
 local function finishApple(snap, completed)
   native.holdUse(nil, false)
-  if not native.restore(snap, apple.previous) then
+  apple.finishedAt = apple.finishedAt or snap.now
+  if not native.restore(snap, apple.previous) and snap.now - apple.finishedAt < 1 then
     return false
   end
   apple, nextApple = nil, snap.now + (completed and eatingDuration or 0.8)
   if escape then
     escape.fed = completed == true
+    if completed then
+      escape.progressAt = snap.now
+    end
   end
   return true
 end
@@ -70,8 +74,19 @@ local function eat(snap)
     if duration > 0 and duration < 10 then
       eatingDuration = duration
     end
-    if snap.character:GetAttribute("EatingApple") or untilAt > workspace:GetServerTimeNow() then
+    local serverNow = workspace:GetServerTimeNow()
+    local active = untilAt > serverNow or snap.character:GetAttribute("EatingApple") == true
+    local expired = untilAt > 0 and serverNow > untilAt + 0.5 or untilAt <= 0 and snap.now - apple.started > math.max(3, eatingDuration + 1)
+    if active and not expired then
       apple.ack = true
+      if escape then
+        escape.progressAt = snap.now
+      end
+      return true
+    end
+    if active and expired then
+      -- Cancel a stale native hold, never a still-running first apple.
+      finishApple(snap)
       return true
     end
     -- No synthetic release or equipment change while the native eating action is active.
@@ -283,7 +298,14 @@ function Survival.step(snap, available)
   local value = target.current(snap)
   if not escape and not episode and not hasTotem and snap.humanoid.Health <= snap.humanoid.MaxHealth * 0.5 then
     local threat = value or target.threat(snap)
-    escape = { foe = threat and threat.root, position = threat and threat.root.Position, origin = snap.root.Position, at = snap.now, fed = false }
+    escape = {
+      foe = threat and threat.root,
+      position = threat and threat.root.Position,
+      origin = snap.root.Position,
+      progressPosition = snap.root.Position,
+      progressAt = snap.now,
+      fed = false,
+    }
     pearl.cancelPrepared(snap)
     target.abandon(snap)
     generation += 1
@@ -292,6 +314,16 @@ function Survival.step(snap, available)
     if available and hasTotem and appleDue(snap, value) then
       return beginApple(snap)
     end
+    return false
+  end
+  if units.distance(snap.root.Position, escape.progressPosition) >= 0.5 or pearl.escaping() then
+    escape.progressPosition, escape.progressAt = snap.root.Position, snap.now
+  end
+  if snap.now - escape.progressAt >= 3 and not pearl.busy() then
+    -- An impossible retreat must return control instead of disabling combat forever.
+    escape, routeJob, episode = nil, nil, true
+    generation += 1
+    stopWalking(snap)
     return false
   end
   if not available then

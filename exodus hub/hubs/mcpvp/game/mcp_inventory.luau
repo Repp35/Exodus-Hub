@@ -2,9 +2,13 @@
 --!optimize 2
 local Inventory = {}
 local utils, bridge, cachedFn, values, lease, pending
-local retryAt = 0
+local retryAt, nextToggle = 0, 0
+local controller
 function Inventory.setup(deps)
   utils, bridge = deps.Utils, deps.Bridge
+  local source = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
+  local ok, value = pcall(function() return source and require(source) end)
+  controller = ok and value or nil
   return true
 end
 local function owned(tool)
@@ -60,18 +64,29 @@ end
 function Inventory.select(snap, slot)
   local slots, select = Inventory.slots(), bridge.get("select")
   local tool = slots and slots[slot]
-  if not select or not owned(tool) or slot < 1 or slot > 9 then
+  if not owned(tool) or slot < 1 or slot > 9 then
     return false
   end
-  local ok = pcall(select, slot)
+  if select then
+    pcall(select, slot)
+  end
   snap.tool = snap.character:FindFirstChildOfClass("Tool")
-  return ok and snap.tool == tool
+  if snap.tool == tool then
+    return true
+  end
+  -- EquipTool is a fallback only for an item already proved to be in the hotbar.
+  if slots[slot] ~= tool or not owned(tool) then
+    return false
+  end
+  pcall(snap.humanoid.EquipTool, snap.humanoid, tool)
+  snap.tool = snap.character:FindFirstChildOfClass("Tool")
+  return snap.tool == tool
 end
 local function visible()
   local gui = utils.getLocalPlayer():FindFirstChildOfClass("PlayerGui")
   local hud = gui and gui:FindFirstChild("VoxelPackHUD")
   local panel = hud and hud:FindFirstChild("Inventory", true)
-  if not panel or not panel:IsA("GuiObject") then
+  if not panel or not panel:IsA("GuiObject") or panel.AbsoluteSize.X <= 0 or panel.AbsoluteSize.Y <= 0 then
     return false
   end
   local ancestor = panel
@@ -83,48 +98,68 @@ local function visible()
   end
   return ancestor == gui
 end
+local function setOpen(value)
+  local function matches() return visible() == value and (utils.getLocalPlayer():GetAttribute("MenuOpen") == true) == value end
+  if matches() then
+    return true
+  end
+  local fn = bridge.get("open")
+  if fn then
+    pcall(fn, value)
+  end
+  if matches() then
+    return true
+  end
+  -- Use the real inventory binding when direct access is unavailable.
+  if controller and type(controller.BeginTouch) == "function" and type(controller.EndTouch) == "function" and os.clock() >= nextToggle then
+    nextToggle = os.clock() + 0.2
+    pcall(function()
+      if controller.BeginTouch("Inventory") then
+        controller.EndTouch("Inventory")
+      end
+    end)
+  end
+  return matches()
+end
 function Inventory.open(snap)
   if lease and lease.character ~= snap.character then
     Inventory.reset()
   end
-  if not visible() and snap.player:GetAttribute("MenuOpen") then
+  if snap.now < retryAt or not visible() and snap.player:GetAttribute("MenuOpen") then
     return false
   end
   if not lease then
-    lease = { character = snap.character, owned = not visible() }
+    lease = { character = snap.character, owned = not visible(), frames = 0, deadline = snap.now + 3 }
   end
+  lease.closeRequested = nil
   if not visible() then
-    if snap.player:GetAttribute("MenuOpen") then
-      return false
-    end
-    local fn = bridge.get("open")
-    if not fn or not pcall(fn, true) then
-      lease = nil
-      return false
-    end
+    lease.frames, lease.visibleAt = 0, nil
+    setOpen(true)
   end
-  local ready = visible() and snap.player:GetAttribute("MenuOpen") == true
-  if not ready then
-    lease = nil
-  end
-  return ready and lease.presented == true
+  return visible() and snap.player:GetAttribute("MenuOpen") == true and lease.frames >= 2 and lease.visibleAt ~= nil and snap.now - lease.visibleAt >= 0.12
 end
 function Inventory.present()
   if lease and visible() then
-    lease.presented = true
+    lease.frames += 1
+    lease.visibleAt = lease.visibleAt or os.clock()
   end
 end
-function Inventory.close()
+function Inventory.close(force)
   if not lease then
-    return
+    return true
   end
-  if lease.owned and visible() then
-    local fn = bridge.get("open")
-    if fn then
-      pcall(fn, false)
+  if lease.owned then
+    if not force and lease.visibleAt and os.clock() - lease.visibleAt < 0.3 then
+      lease.closeRequested = true
+      return false
+    end
+    if not setOpen(false) then
+      lease.closeRequested = true
+      return false
     end
   end
   lease = nil
+  return true
 end
 function Inventory.move(snap, tool, from, to)
   local slots = Inventory.slots()
@@ -139,35 +174,58 @@ function Inventory.move(snap, tool, from, to)
   end
   return slots[to] == tool
 end
-function Inventory.step(snap)
-  if lease and lease.character ~= snap.character then
-    Inventory.close()
-  end
-  if pending then
-    if pending.character ~= snap.character then
-      pending = nil
-    else
-      local consumed = not owned(pending.tool) or (tonumber(pending.tool:GetAttribute("Count")) or 0) < pending.count
-      local popped = snap.character:GetAttribute("TotemPoppedAt")
-      local confirmed = consumed and (snap.character:GetAttribute("OffhandItem") == "totem" or popped ~= nil and popped ~= pending.pop)
-      if confirmed or pending.done and not pending.accepted then
-        if pending.hand and pending.previous and (not snap.tool or snap.tool == pending.tool) then
-          local slots = Inventory.slots()
-          for slot = 1, 9 do
-            if slots and slots[slot] == pending.previous then
-              Inventory.select(snap, slot)
-              break
-            end
-          end
-        end
-        pending, retryAt = nil, confirmed and 0 or snap.now + 0.15
+local function restoreHand(snap, operation)
+  if operation.hand and operation.previous and (not snap.tool or snap.tool == operation.tool) then
+    local slots = Inventory.slots()
+    for slot = 1, 9 do
+      if slots and slots[slot] == operation.previous then
+        Inventory.select(snap, slot)
+        return
       end
+    end
+  end
+end
+function Inventory.step(snap)
+  if lease then
+    if lease.character ~= snap.character or snap.now >= lease.deadline then
+      Inventory.close(true)
+      retryAt = snap.now + 1
+    elseif lease.closeRequested then
+      Inventory.close()
+    end
+  end
+  if not pending then
+    return
+  end
+  if pending.character ~= snap.character then
+    pending = nil
+    return
+  end
+  local consumed = not owned(pending.tool) or (tonumber(pending.tool:GetAttribute("Count")) or 0) < pending.count
+  local popped = snap.character:GetAttribute("TotemPoppedAt")
+  local confirmed = consumed and (snap.character:GetAttribute("OffhandItem") == "totem" or popped ~= nil and popped ~= pending.pop)
+    or pending.done and pending.accepted and snap.character:GetAttribute("OffhandItem") == "totem"
+  if confirmed or pending.done and not pending.accepted then
+    restoreHand(snap, pending)
+    pending, retryAt = nil, confirmed and 0 or snap.now + 1
+  elseif snap.now - pending.at >= 3 then
+    if not pending.expired then
+      pending.expired = true
+      restoreHand(snap, pending)
+      Inventory.close(true)
+    end
+    -- A yielding RPC may finish later; don't launch a duplicate while it is outstanding.
+    if pending.done then
+      pending, retryAt = nil, snap.now + 1
     end
   end
 end
 function Inventory.totem(snap)
   Inventory.step(snap)
   if pending then
+    if pending.expired then
+      return nil
+    end
     return false
   end
   if snap.character:GetAttribute("OffhandItem") == "totem" then
@@ -200,9 +258,15 @@ function Inventory.totem(snap)
     pop = snap.character:GetAttribute("TotemPoppedAt"),
     hand = slot <= 9,
     previous = previous,
+    at = snap.now,
   }
   pending = operation
   task.spawn(function()
+    -- Never send a reserve transfer if the inventory closed before dispatch.
+    if utils.getLocalPlayer().Character ~= operation.character or not operation.hand and not visible() then
+      operation.done, operation.accepted = true, false
+      return
+    end
     local ok, result = pcall(remote.InvokeServer, remote, "EquipOffhand", tool)
     operation.done, operation.accepted = true, ok and result ~= nil and result ~= false
     if operation.accepted and utils.getLocalPlayer().Character == operation.character and cachedFn then
@@ -211,9 +275,9 @@ function Inventory.totem(snap)
   end)
   return false
 end
-function Inventory.busy() return lease ~= nil or pending ~= nil and pending.hand end
+function Inventory.busy() return lease ~= nil or pending ~= nil and pending.hand and not pending.expired end
 function Inventory.reset()
-  Inventory.close()
+  Inventory.close(true)
   if pending and pending.character ~= utils.getLocalPlayer().Character then
     pending = nil
   end

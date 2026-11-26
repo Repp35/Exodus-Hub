@@ -40,10 +40,16 @@ function Pearl.observe(snap)
     return
   end
   if shot.phase == "confirm" then
-    local count = tonumber(shot.tool:GetAttribute("Count")) or shot.count
-    if shot.tool.Parent and count >= shot.count then
+    local state = native.useState(snap, shot)
+    if state == nil then
       return
     end
+    if state == false then
+      restore(snap)
+      shot, retryAt = nil, snap.now + 1
+      return true
+    end
+    shot.restoreAt = snap.now
     shot.phase, shot.untilAt = "restore", math.max(snap.now + 0.2, shot.requestAt + shot.plan.duration + 0.7)
     if shot.chosen then
       target.attacked(snap, shot.chosen)
@@ -51,7 +57,7 @@ function Pearl.observe(snap)
   end
   if shot.phase == "restore" and not native.blocked(snap) then
     local restored = restore(snap)
-    if restored then
+    if restored or snap.now - shot.restoreAt >= 1 then
       shot.phase = "flight"
       return true
     end
@@ -244,7 +250,7 @@ Pearl.__contract = {
     Utils = "utils",
   },
   requiresMethods = {
-    Native = { "snapshot", "find", "weapon", "restore", "equip", "use", "blocked" },
+    Native = { "snapshot", "find", "weapon", "restore", "equip", "use", "useState", "blocked" },
     Geometry = { "direction", "aerialMace", "stats" },
     Target = { "current", "attacked", "abandon" },
     Units = { "toBlocks", "toWorld", "offset", "distance" },
