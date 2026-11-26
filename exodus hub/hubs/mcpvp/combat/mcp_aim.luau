@@ -19,15 +19,12 @@ function Aim.step(snap, target, dt)
   end
   local camera, root = snap.camera, target.root.Position
   local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
-  local weapon = native.findSword(snap)
-  local range = lock and (weapon and native.stats(weapon).reach or 9.6) * 6 or 16
+  local range = lock and 57.6 or 16
   if (root - snap.root.Position).Magnitude > range then
     return
   end
-  local projection = eye + look * math.max(0, (root - eye):Dot(look))
-  local top = target.character:GetAttribute("Sneaking") == true and 0.5 or 1.6
-  local point = root
-    + Vector3.new(math.clamp(projection.X - root.X, -0.26, 0.26), math.clamp(projection.Y - root.Y, -1.2, top), math.clamp(projection.Z - root.Z, -0.26, 0.26))
+  -- Aim at the current body position, without leading or projecting target motion.
+  local point = root + Vector3.new(0, target.character:GetAttribute("Sneaking") == true and 0.15 or 0.5, 0)
   local delta = point - eye
   if delta.Magnitude < 0.01 then
     return
@@ -54,6 +51,6 @@ end
 Aim.__contract = {
   provides = { "setup", "step" },
   requires = { Native = "mcpnative", Utils = "utils" },
-  requiresMethods = { Native = { "blocked", "aerialMace", "findSword", "stats", "visible" }, Utils = { "getConfigValue" } },
+  requiresMethods = { Native = { "blocked", "aerialMace", "visible" }, Utils = { "getConfigValue" } },
 }
 return Aim

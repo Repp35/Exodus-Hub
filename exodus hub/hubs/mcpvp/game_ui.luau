@@ -29,13 +29,13 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie com dois ataques no alvo. Sincroniza os golpes com o cooldown real da arma.",
+              description = "Inicie atacando um jogador. Sincroniza os golpes com o cooldown real da arma.",
             },
             {
               kind = "toggle",
               title = "Auto Crit",
               key = "MCAutoCrit",
-              description = "Sincroniza o pulo com o cooldown e prioriza golpes durante a descida.",
+              description = "Pula ao seu comando de ataque, mesmo sem Auto Attack ou alvo travado.",
             },
           },
         },
@@ -47,7 +47,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Lock",
               key = "MCAimLock",
-              description = "Acompanha o alvo com suavização por tempo e verificação de obstáculos.",
+              description = "Mira na posição atual do alvo, sem previsão de movimento.",
             },
             {
               kind = "toggle",
@@ -72,7 +72,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Prevê o movimento e verifica a trajetória e o espaço de chegada da pérola.",
+              description = "Segue o jogador que você atacar, mesmo sem Auto Attack ou mira, verificando trajetória e chegada.",
             },
             {
               kind = "toggle",

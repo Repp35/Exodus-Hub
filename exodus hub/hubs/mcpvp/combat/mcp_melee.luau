@@ -2,14 +2,14 @@
 --!optimize 2
 local Melee = {}
 local native, target, utils
-local owner, jump, selected
+local owner, jump, selected, manualJump
 local nextAttack, equipAt, fallbackAt, apex = 0, 0, 0, 0.25
 function Melee.setup(deps)
   native, target, utils = deps.Native, deps.Target, deps.Utils
   return true
 end
 function Melee.reset()
-  owner, jump, selected = nil, nil, nil
+  owner, jump, selected, manualJump = nil, nil, nil, nil
   nextAttack, equipAt, fallbackAt, apex = 0, 0, 0, 0.25
 end
 local function grounded(snap)
@@ -35,7 +35,10 @@ local function canJump(snap, chosen, reach)
   end
   local params = RaycastParams.new()
   params.FilterType, params.RespectCanCollide = Enum.RaycastFilterType.Exclude, true
-  params.FilterDescendantsInstances = { char, chosen.character, snap.camera }
+  params.FilterDescendantsInstances = { char, snap.camera }
+  if chosen then
+    params.FilterDescendantsInstances = { char, snap.camera, chosen.character }
+  end
   if workspace:Raycast(snap.eye, Vector3.new(0, 5, 0), params) then
     return false
   end
@@ -49,9 +52,11 @@ local function canJump(snap, chosen, reach)
   if key == "lava" or key == "water" then
     return false
   end
-  local future = chosen.root.Position - snap.root.Position + (chosen.root.AssemblyLinearVelocity - velocity) * apex
-  if Vector3.new(future.X, 0, future.Z).Magnitude > reach + 1.28 then
-    return false
+  if chosen then
+    local future = chosen.root.Position - snap.root.Position + (chosen.root.AssemblyLinearVelocity - velocity) * apex
+    if Vector3.new(future.X, 0, future.Z).Magnitude > reach + 1.28 then
+      return false
+    end
   end
   local crystals = game:GetService("CollectionService"):GetTagged("EndCrystal")
   local folder = workspace:FindFirstChild("EndCrystals")
@@ -70,6 +75,51 @@ local function canJump(snap, chosen, reach)
     end
   end
   return true
+end
+function Melee.manual(snap)
+  if owner ~= snap.character then
+    Melee.reset()
+    owner = snap.character
+  end
+  if not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) or manualJump or not grounded(snap) then
+    return false
+  end
+  local kind = native.stats(snap.tool).type
+  if snap.tool and not kind then
+    return false
+  end
+  if not canJump(snap) then
+    return false
+  end
+  native.prepareCritical()
+  manualJump = { character = snap.character, at = snap.now, airborne = false }
+  snap.humanoid.Jump = true
+  return true
+end
+function Melee.preSimulation(snap)
+  if not manualJump then
+    return
+  end
+  if not snap or snap.character ~= manualJump.character or not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) or snap.now - manualJump.at > 1.5 then
+    manualJump = nil
+    return
+  end
+  local ground = grounded(snap)
+  if not ground then
+    manualJump.airborne = true
+  end
+  if manualJump.airborne then
+    if ground then
+      manualJump = nil
+    elseif snap.root.AssemblyLinearVelocity.Y < -0.2 then
+      native.prepareCritical()
+    end
+  elseif snap.now - manualJump.at <= 0.35 then
+    -- VoxelAirMovement consumes and clears Humanoid.Jump in PreSimulation.
+    snap.humanoid.Jump = true
+  else
+    manualJump = nil
+  end
 end
 local function critical(snap, chosen, tool, readyAt)
   local enabled = utils.getConfigValue("MCAutoCrit")
@@ -92,7 +142,14 @@ local function critical(snap, chosen, tool, readyAt)
       snap.humanoid.Jump = true
     end
   end
-  if not jump and ground and snap.now >= fallbackAt and readyAt - snap.now <= apex + 0.03 and canJump(snap, chosen, native.stats(tool).reach) then
+  if
+    not manualJump
+    and not jump
+    and ground
+    and snap.now >= fallbackAt
+    and readyAt - snap.now <= apex + 0.03
+    and canJump(snap, chosen, native.stats(tool).reach)
+  then
     native.prepareCritical()
     jump = { at = snap.now, airborne = false, vertical = vertical }
     snap.humanoid.Jump = true
@@ -111,12 +168,11 @@ function Melee.step(snap, chosen)
     Melee.reset()
     owner = snap.character
   end
-  if not chosen or native.blocked(snap) or native.aerialMace(snap, chosen) then
+  if not utils.getConfigValue("MCAutoSword") or not chosen or native.blocked(snap) or native.aerialMace(snap, chosen) then
     jump = nil
     return false
   end
-  local auto = utils.getConfigValue("MCAutoSword")
-  local tool = auto and native.findSword(snap) or snap.tool
+  local tool = native.findSword(snap)
   local stats = native.stats(tool)
   if not tool or stats.type ~= "sword" or type(stats.speed) ~= "number" or stats.speed <= 0 then
     jump = nil
@@ -135,13 +191,9 @@ function Melee.step(snap, chosen)
     return false
   end
   local swing = tonumber(snap.character:GetAttribute("LocalAttackSwing")) or -math.huge
-  if not auto and snap.now - swing > 1.5 then
-    jump = nil
-    return false
-  end
   local readyAt = math.max(nextAttack, swing + 1 / stats.speed)
   local ready = critical(snap, chosen, tool, readyAt)
-  if not auto or not ready or not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then
+  if not ready or not native.canHit(snap, chosen, tool, snap.camera.CFrame.LookVector) then
     return false
   end
   if native.attack(snap, chosen) then
@@ -153,7 +205,7 @@ function Melee.step(snap, chosen)
   return false
 end
 Melee.__contract = {
-  provides = { "setup", "reset", "step" },
+  provides = { "setup", "reset", "step", "manual", "preSimulation" },
   requires = { Native = "mcpnative", Target = "mcptarget", Utils = "utils" },
   requiresMethods = {
     Native = { "blocked", "aerialMace", "findSword", "stats", "canHit", "equip", "prepareCritical", "attack" },

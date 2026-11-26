@@ -84,56 +84,38 @@ function Native.visible(snap, point, target, origin)
   local hit = world:Raycast(origin, point - origin, params)
   return not hit or (target ~= nil and hit.Instance:IsDescendantOf(target))
 end
-function Native.canHit(snap, target, tool, direction)
-  tool = tool or Native.findSword(snap)
-  if not tool or Native.stats(tool).type ~= "sword" then
-    return false
-  end
+function Native.aimDirection(snap)
+  local aim = snap.player:GetAttribute("FrontCameraAimDirection")
+  return typeof(aim) == "Vector3" and aim.Magnitude > 0.001 and aim.Unit or snap.camera.CFrame.LookVector
+end
+function Native.hitDistance(snap, target, tool, direction)
   local delta = target.root.Position - snap.eye
   if delta.Magnitude < 0.01 then
-    return false
+    return nil
   end
   direction = direction or delta.Unit
   local reach = Native.stats(tool).reach
+  if type(reach) ~= "number" or reach <= 0 then
+    return nil
+  end
   local distance
   if geometry and type(geometry.Hit) == "function" then
     distance = geometry.Hit(snap.eye, direction, target.root.Position, target.character:GetAttribute("Sneaking"), reach)
     if distance == nil then
-      return false
+      return nil
     end
   else
     distance = delta.Magnitude
     if distance > reach or direction:Dot(delta.Unit) < 0.995 then
-      return false
+      return nil
     end
   end
-  return Native.visible(snap, snap.eye + direction * distance, target.character)
-end
-function Native.incomingHit(snap, opponent)
-  local tool = opponent.character:FindFirstChildOfClass("Tool")
-  local stats = Native.stats(tool)
-  if stats.type ~= "sword" and stats.type ~= "axe" and stats.type ~= "mace" then
-    return false
+  if not Native.visible(snap, snap.eye + direction * distance, target.character) then
+    return nil
   end
-  local sneak = opponent.character:GetAttribute("Sneaking") == true
-  local eye = geometry and geometry.Eye(opponent.root.Position, sneak) or opponent.root.Position + Vector3.new(0, sneak and 0.064 or 1.184, 0)
-  local aim = opponent.player:GetAttribute("FrontCameraAimDirection")
-  local direction = typeof(aim) == "Vector3" and aim.Magnitude > 0.001 and aim.Unit or opponent.root.CFrame.LookVector
-  if geometry and type(geometry.Hit) == "function" then
-    local distance = geometry.Hit(eye, direction, snap.root.Position, snap.character:GetAttribute("Sneaking"), stats.reach)
-    if distance == nil then
-      return false
-    end
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.RespectCanCollide = true
-    params.FilterDescendantsInstances = { opponent.character }
-    local hit = world:Raycast(eye, direction * distance, params)
-    return not hit or hit.Instance:IsDescendantOf(snap.character)
-  end
-  local delta = snap.root.Position - eye
-  return delta.Magnitude <= stats.reach and delta.Magnitude > 0.01 and direction:Dot(delta.Unit) >= 0.95 and Native.visible(snap, eye, opponent.character)
+  return distance
 end
+function Native.canHit(snap, target, tool, direction) return Native.hitDistance(snap, target, tool or snap.tool, direction) ~= nil end
 function Native.blocked(snap)
   return (controller and type(controller.IsBlocked) == "function" and controller.IsBlocked())
     or player:GetAttribute("MenuOpen") == true
@@ -292,6 +274,8 @@ Native.__contract = {
     "stats",
     "visible",
     "canHit",
+    "aimDirection",
+    "hitDistance",
     "attack",
     "findSword",
     "findPearl",
@@ -301,7 +285,6 @@ Native.__contract = {
     "equip",
     "blocked",
     "isDispatching",
-    "incomingHit",
     "prepareCritical",
     "useItem",
     "aerialMace",

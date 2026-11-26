@@ -53,6 +53,13 @@ function Runtime.bind(loaded)
       end
       local snap = native.snapshot()
       if snap then
+        if owner ~= snap.character then
+          Runtime.reset()
+          owner = snap.character
+        end
+        if type(event) ~= "table" or not event.RepeatedAttack then
+          loaded.mcpmelee.manual(snap)
+        end
         target.manual(snap)
       end
     end)
@@ -94,7 +101,6 @@ function Runtime.bind(loaded)
     end
     if snap.now >= scanAt then
       scanAt = snap.now + 1
-      bindRemote("VoxelCombat", "Swing", target.noteSwing)
       bindRemote("VoxelCombat", "Feedback", function(kind, blocked)
         if kind == "HitConfirm" and not blocked then
           target.confirmHit(os.clock())
@@ -131,12 +137,11 @@ function Runtime.bind(loaded)
       return
     end
     renderTarget = chosen
-    if chosen then
-      loaded.mcpmelee.step(snap, chosen)
-    else
-      loaded.mcpmelee.reset()
-    end
+    loaded.mcpmelee.step(snap, chosen)
   end
+  scope.connect(run.PreSimulation, function()
+    guarded("critical", function() loaded.mcpmelee.preSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
+  end)
   scope.connect(run.Heartbeat, function() guarded("heartbeat", heartbeat) end)
   scope.connect(run.RenderStepped, function(dt)
     guarded("aim", function()
