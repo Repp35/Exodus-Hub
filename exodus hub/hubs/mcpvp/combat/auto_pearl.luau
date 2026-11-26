@@ -29,7 +29,7 @@ local function finish(snap, delay)
   restore(snap)
   shot, track, retryAt = nil, nil, snap.now + delay
 end
-function Pearl.busy() return shot ~= nil and not shot.detached and shot.phase ~= "flight" end
+function Pearl.busy() return shot ~= nil and not shot.detached and (shot.phase == "equip" or shot.phase == "confirm" and not shot.dispatched) end
 function Pearl.pending() return shot ~= nil end
 function Pearl.observeProjectile(action, _id, kind, _position, velocity, acceleration, resistance, sentAt)
   if action ~= "Projectile" or kind ~= "Pearl" or typeof(velocity) ~= "Vector3" then
@@ -194,6 +194,9 @@ function Pearl.step(snap, chosen)
         finish(snap, 0.4)
         return false
       end
+      shot.dispatched = true
+      -- The use was dispatched; confirmation can continue while the sword is held again.
+      restore(snap)
       target.follow(snap, chosen)
       return true
     end

@@ -6,6 +6,7 @@ local owner, health, session, attempt
 local serial = 0
 local swings = {}
 local SWITCH_WINDOW = 0.35
+local COMBO_WINDOW = 2
 local clickAt, hurtAt, hitAt = -math.huge, -math.huge, -math.huge
 function Target.setup(deps)
   native, tuning, players, units = deps.Native, deps.Options.tuning, game:GetService("Players"), deps.Units
@@ -60,7 +61,7 @@ local function active(snap)
 end
 local function select(snap, chosen)
   finish()
-  session = { id = serial, player = chosen.player, character = chosen.character, at = snap.now, startedAt = snap.now }
+  session = { id = serial, player = chosen.player, character = chosen.character, at = snap.now, startedAt = snap.now, manualHits = 0, manualToken = 0 }
   chosen.sessionId = session.id
 end
 function Target.noteSwing(source)
@@ -106,7 +107,9 @@ local function considerSwitch(snap, current)
     end
   end
   if chosen then
+    local combo = session.combo
     select(snap, chosen)
+    session.combo = combo
   end
 end
 function Target.observe(snap)
@@ -147,16 +150,24 @@ function Target.follow(snap, chosen)
   session.at = snap.now
   return true
 end
-function Target.noteAttack(snap, chosen)
+function Target.canCombo(snap, chosen) return Target.isCurrent(snap, chosen) and session.combo == true end
+function Target.noteAttack(snap, chosen, manual)
   if not Target.follow(snap, chosen) then
     return false
   end
-  attempt = { at = snap.now, sessionId = session.id }
+  attempt = { at = snap.now, sessionId = session.id, manualToken = manual and session.manualToken or nil }
   return true
 end
 function Target.confirmHit(now)
   if attempt and session and attempt.sessionId == session.id and now - attempt.at <= 0.7 then
     hitAt, session.at = now, now
+    if attempt.manualToken and attempt.manualToken ~= session.confirmedToken then
+      session.manualHits = session.lastManualHit and now - session.lastManualHit <= COMBO_WINDOW and session.manualHits + 1 or 1
+      session.lastManualHit, session.confirmedToken = now, attempt.manualToken
+      if session.manualHits >= 2 then
+        session.combo = true
+      end
+    end
   end
   attempt = nil
 end
@@ -186,7 +197,12 @@ function Target.manual(snap, direction)
     select(snap, chosen)
   end
   chosen.sessionId = session.id
-  Target.noteAttack(snap, chosen)
+  -- InputBegan and the native attack hook may report the same click.
+  if not session.manualAt or snap.now - session.manualAt > 1 / 15 then
+    session.manualAt = snap.now
+    session.manualToken += 1
+  end
+  Target.noteAttack(snap, chosen, true)
   return chosen
 end
 function Target.get(snap)
@@ -194,15 +210,13 @@ function Target.get(snap)
   if not chosen or chosen.distanceBlocks > tuning.focusRangeBlocks then
     return nil
   end
-  if not native.visible(snap, chosen.root.Position, chosen.character) then
-    return nil
-  end
+  -- Each consumer checks its actual aim/hit point; root occlusion alone is not a missed strike.
   return chosen
 end
 function Target.getPearl(snap) return active(snap) end
 function Target.quiet(snap, duration) return snap.now - math.max(clickAt, hurtAt, hitAt) >= (duration or 4) end
 Target.__contract = {
-  provides = { "setup", "reset", "observe", "noteSwing", "manual", "pick", "get", "noteAttack", "confirmHit", "follow", "getPearl", "isCurrent", "quiet" },
+  provides = { "setup", "reset", "observe", "noteSwing", "manual", "pick", "get", "noteAttack", "confirmHit", "follow", "getPearl", "isCurrent", "canCombo", "quiet" },
   requires = { Native = "mcpnative", Options = "mcpoptions", Units = "mcpunits" },
   requiresMethods = { Units = { "distance" }, Native = { "snapshot", "blocked", "aimDirection", "hitDistanceBlocks", "visible", "incomingHit" } },
   requiresData = { Options = { "tuning" } },

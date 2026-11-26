@@ -59,7 +59,7 @@ function Supplies.reset()
   inventory.cancel()
   job = nil
 end
-function Supplies.busy() return job ~= nil or immediate ~= nil and os.clock() - immediate.at < 1 end
+function Supplies.busy() return job ~= nil end
 function Supplies.observe(snap)
   local equipped = snap.character:GetAttribute("EquippedClass")
   local epoch = snap.character:GetAttribute("TotemPoppedAt") or 0
@@ -85,9 +85,11 @@ local function protect(snap, values)
     if immediate.character ~= snap.character then
       immediate, rejected = nil, nil
     elseif inventory.confirm(immediate, snap) then
-      immediate = nil
+      immediate, rejected = nil, nil
     elseif immediate.done and not immediate.accepted then
-      rejected, immediate = immediate.tool, nil
+      local failures = rejected and rejected.tool == immediate.tool and rejected.failures + 1 or 1
+      rejected = { tool = immediate.tool, failures = failures, at = snap.now + math.min(0.5, 0.05 * 2 ^ math.min(failures, 4)) }
+      immediate = nil
     else
       return
     end
@@ -95,9 +97,34 @@ local function protect(snap, values)
   if not enabled("MCAutoTotem") or snap.character:GetAttribute("OffhandItem") == "totem" then
     return
   end
-  local tool = find(values, "Totem", 1, 9)
-  if tool and rejected ~= tool then
+  local tool, from = find(values, "Totem", 1, 36)
+  if tool and (not rejected or rejected.tool ~= tool or snap.now >= rejected.at) then
+    if from > 9 then
+      -- The native offhand action accepts a backpack slot directly while inventory is open.
+      if not inventory.begin("totem", snap) then
+        return
+      end
+      if not job or job.kind ~= "totem" then
+        restore(snap)
+        job = { kind = "totem", character = snap.character, tool = tool, stage = "offhand", at = snap.now }
+      end
+      if not inventory.ready("totem", snap, true) then
+        return
+      end
+    end
     immediate = inventory.offhand("totem", snap, tool, true)
+  end
+end
+function Supplies.protect(snap)
+  if not snap or not enabled("MCAutoTotem") then
+    return
+  end
+  if owner ~= snap.character then
+    Supplies.observe(snap)
+  end
+  local values = inventory.slots()
+  if values then
+    protect(snap, values)
   end
 end
 local function request(snap, kind, tool, from, to)
@@ -111,10 +138,9 @@ end
 local configKeys = { totem = "MCAutoTotem", refill = "MCAutoRefill", strength = "MCAutoStrength" }
 local function continueTotems(snap, values)
   if snap.character:GetAttribute("OffhandItem") ~= "totem" then
-    local tool, from = find(values, "Totem", 1, 36)
+    local tool = find(values, "Totem", 1, 36)
     if tool then
-      job.tool, job.from, job.to = tool, from, from > 9 and destination(values, snap, true) or nil
-      job.stage = from > 9 and "move" or "offhand"
+      job.tool, job.from, job.to, job.stage = tool, nil, nil, "offhand"
       return
     end
   elseif not find(values, "Totem", 1, 9) then
@@ -151,7 +177,7 @@ function Supplies.step(snap, allowStart)
         elseif snap.character:GetAttribute("OffhandItem") == "totem" then
           continueTotems(snap, values)
         else
-          job.pending = inventory.offhand(job.kind, snap, job.tool)
+          protect(snap, values)
         end
         return
       end
@@ -263,7 +289,7 @@ function Supplies.step(snap, allowStart)
   end
 end
 Supplies.__contract = {
-  provides = { "setup", "reset", "busy", "observe", "step" },
+  provides = { "setup", "reset", "busy", "observe", "protect", "step" },
   requires = { Inventory = "mcpinventory", Native = "mcpnative", Utils = "utils", Target = "mcptarget", Units = "mcpunits" },
   requiresMethods = {
     Units = { "toBlocks" },

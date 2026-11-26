@@ -29,7 +29,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Attack",
               key = "MCAutoSword",
-              description = "Inicie atacando um jogador. Continua apenas no PvP atual, sem reaproveitar alvos de lutas encerradas.",
+              description = "Dois acertos manuais no mesmo jogador em até 2 segundos confirmam o combo. Retoma após lançar a pearl, no alcance do golpe.",
             },
             {
               kind = "toggle",
@@ -77,7 +77,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Totem",
               key = "MCAutoTotem",
-              description = "Equipa a segunda mão e prepara a reserva da hotbar na mesma abertura do inventário.",
+              description = "Repõe a segunda mão ao detectar o consumo do totem e prepara a reserva da hotbar na mesma abertura do inventário.",
             },
           },
         },

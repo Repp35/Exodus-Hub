@@ -73,7 +73,7 @@ function Melee.manual(snap, chosen, direction)
   return true
 end
 function Melee.intercept(snap, direction)
-  if not utils.isActive() or not utils.getConfigValue("MCAutoCrit") or native.blocked(snap) then
+  if not utils.isActive() or native.blocked(snap) then
     return true
   end
   bind(snap)
@@ -82,6 +82,10 @@ function Melee.intercept(snap, direction)
     return true
   end
   local intended = target.manual(snap, direction)
+  if not utils.getConfigValue("MCAutoCrit") then
+    cancelCritical()
+    return true
+  end
   if not intended then
     cancelCritical()
     return true
@@ -142,7 +146,7 @@ function Melee.postSimulation(snap)
   local intended = pending.chosen
   if native.replayAttack(snap, direction) then
     if intended then
-      target.noteAttack(snap, intended)
+      target.noteAttack(snap, intended, true)
     end
     pending, queuedManual = nil, false
     if cycle then
@@ -243,6 +247,7 @@ function Melee.step(snap, chosen)
     not utils.getConfigValue("MCAutoSword")
     or not chosen
     or not target.isCurrent(snap, chosen)
+    or not target.canCombo(snap, chosen)
     or native.blocked(snap)
     or units.distance(chosen.root.Position, snap.root.Position) > tuning.focusRangeBlocks
   then
@@ -308,7 +313,7 @@ Melee.__contract = {
       "replayAttack",
       "aimDirection",
     },
-    Target = { "noteAttack", "manual", "isCurrent" },
+    Target = { "noteAttack", "manual", "isCurrent", "canCombo" },
     Utils = { "getConfigValue", "isActive", "recordError" },
   },
   requiresData = { Options = { "tuning" } },

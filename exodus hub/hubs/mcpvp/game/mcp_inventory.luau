@@ -72,6 +72,12 @@ function Inventory.slots()
 end
 function Inventory.begin(actor, snap)
   if session then
+    if actor == "totem" and session.actor ~= actor and session.character == snap.character and not session.cancelled and not session.closing then
+      session.actor, session.at = actor, snap.now
+      if session.pending then
+        session.pending.urgent = true
+      end
+    end
     return session.actor == actor and not session.cancelled
   end
   if not bridge.get("open") or not Inventory.slots() then
@@ -99,12 +105,12 @@ function Inventory.ready(actor, snap, urgent)
     return false
   end
   if not current.opened then
-    if snap.now < transitionAt then
+    if not urgent and snap.now < transitionAt then
       return false
     end
     current.opened = true
     if current.owned then
-      transitionAt = snap.now + DELAY
+      transitionAt = snap.now + (urgent and 0 or DELAY)
       local fn = bridge.get("open")
       if not fn or not pcall(fn, true) then
         current.cancelled = true
@@ -243,9 +249,9 @@ function Inventory.confirm(operation, snap)
   else
     local consumed = not owned(operation.tool) or (tonumber(operation.tool:GetAttribute("Count")) or operation.count) < operation.count
     local popped = snap.character:GetAttribute("TotemPoppedAt")
-    valid = operation.done
-      and operation.accepted
-      and consumed
+    -- Replicated consumption plus offhand/pop state already confirms the equip.
+    -- Do not wait for InvokeServer's return before replacing a totem that just popped.
+    valid = consumed
       and (snap.character:GetAttribute("OffhandItem") == "totem" or popped ~= nil and popped ~= operation.popAt)
   end
   if not valid then
@@ -267,12 +273,12 @@ function Inventory.finish(actor, snap)
   if current.pending and not Inventory.confirm(current.pending, snap) then
     return false
   end
-  if snap.now < math.max(transitionAt, current.actionAt + DELAY) then
+  if actor ~= "totem" and snap.now < math.max(transitionAt, current.actionAt + DELAY) then
     return false
   end
   if current.owned and Inventory.visible() then
     if not current.closing then
-      current.closing, transitionAt = true, snap.now + DELAY
+      current.closing, transitionAt = true, snap.now + (actor == "totem" and 0 or DELAY)
       local fn = bridge.get("open")
       if not fn or not pcall(fn, false) then
         current.cancelled = true

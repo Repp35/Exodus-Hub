@@ -86,6 +86,31 @@ function Runtime.bind(loaded)
     end)
   end)
   local bound, scanAt = {}, 0
+  local protectionOwner, protectionConnections = nil, {}
+  local function clearProtection()
+    for _, connection in ipairs(protectionConnections) do
+      connection:Disconnect()
+    end
+    protectionOwner, protectionConnections = nil, {}
+  end
+  scope.add(clearProtection)
+  local function bindProtection(snap)
+    if protectionOwner == snap.character then
+      return
+    end
+    clearProtection()
+    protectionOwner = snap.character
+    for _, attribute in ipairs({ "OffhandItem", "TotemPoppedAt" }) do
+      protectionConnections[#protectionConnections + 1] = snap.character:GetAttributeChangedSignal(attribute):Connect(function()
+        guarded("totem", function()
+          local current = loaded.utils.isActive() and native.snapshot()
+          if current and current.character == protectionOwner then
+            supplies.protect(current)
+          end
+        end)
+      end)
+    end
+  end
   local function bindRemote(folderName, name, callback)
     local folder = storage:FindFirstChild(folderName)
     local remote = folder and folder:FindFirstChild(name)
@@ -120,6 +145,7 @@ function Runtime.bind(loaded)
       Runtime.reset()
       owner = snap.character
     end
+    bindProtection(snap)
     if snap.now >= scanAt then
       scanAt = snap.now + 1
       native.setAttackGate(intercept)
@@ -148,7 +174,6 @@ function Runtime.bind(loaded)
     if not snap then
       return
     end
-    local chosen = target.get(snap)
     if enabled("MCAutoPearl") then
       if snap.now >= pearlRecoverAt then
         guarded("pearl", loaded.autopearl.step, snap, target.getPearl(snap))
@@ -160,10 +185,24 @@ function Runtime.bind(loaded)
       loaded.mcpmelee.reset()
       return
     end
-    loaded.mcpmelee.step(snap, chosen)
+    snap = native.snapshot()
+    if snap then
+      loaded.mcpmelee.step(snap, target.get(snap))
+    end
   end
   scope.connect(run.PreSimulation, function()
-    guarded("critical", function() loaded.mcpmelee.preSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
+    guarded("critical", function()
+      local snap = loaded.utils.isActive() and native.snapshot() or nil
+      if snap then
+        if owner ~= snap.character then
+          Runtime.reset()
+          owner = snap.character
+        end
+        bindProtection(snap)
+        supplies.protect(snap)
+      end
+      loaded.mcpmelee.preSimulation(snap)
+    end)
   end)
   scope.connect(run.PostSimulation, function()
     guarded("critical", function() loaded.mcpmelee.postSimulation(loaded.utils.isActive() and native.snapshot() or nil) end)
