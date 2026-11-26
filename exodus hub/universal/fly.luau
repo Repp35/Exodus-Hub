@@ -5,7 +5,7 @@
 local Fly = {}
 
 local Utils
-local configObserver
+local controller
 
 -- configuration
 local CONFIG = {
@@ -21,7 +21,6 @@ local CONFIG = {
 
 local Workspace = game:GetService("Workspace")
 local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local states = { Fly = false }
 local epoch = 0
 local flyCharacter
@@ -156,10 +155,13 @@ local function updateFly()
     return
   end
   local direction
-  if UIS:GetFocusedTextBox() then
+  local typing = UIS:GetFocusedTextBox() ~= nil
+  if typing then
     clearControls()
   end
-  if UIS.TouchEnabled and UIS:GetLastInputType() == Enum.UserInputType.Touch then
+  if typing then
+    direction = Vector3.zero
+  elseif UIS.TouchEnabled and UIS:GetLastInputType() == Enum.UserInputType.Touch then
     local controller = getPlayerControls()
     if controller then
       local movement = controller:GetMoveVector()
@@ -180,13 +182,16 @@ local function updateFly()
   end
   local speed = math.clamp(tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10)
   local velocity = direction * speed * 50
+  if not flyVelocity or not flyVelocity.Parent or not flyGyro or not flyGyro.Parent then
+    return
+  end
   flyVelocity.Velocity = velocity
   flyRoot.AssemblyLinearVelocity = velocity
   flyGyro.CFrame = camera.CFrame
   humanoid.PlatformStand = true
   humanoid.AutoRotate = false
 end
-local function startFly()
+local function startFly(scope, connectPhysics)
   connect("FlyBegan", UIS.InputBegan, function(input, processed)
     if processed then
       return
@@ -212,11 +217,7 @@ local function startFly()
     end
   end)
   connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
-  local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
-  if not frameSignal then
-    return false
-  end
-  connect("FlyFrame", frameSignal, updateFly)
+  connectPhysics(scope, updateFly)
   updateFly()
   return true
 end
@@ -228,47 +229,22 @@ local function stopFly()
   playerControls, playerControlsModule = nil, nil
   return true
 end
-function Fly.setEnabled(enabled)
-  if not Utils then
+function Fly.setEnabled(value)
+  if not controller then
     return false, "recurso indisponível"
   end
-  local value = enabled == true
-  if not Utils.setConfig({ UniversalFly = value }) then
-    return false, "configuração rejeitada"
-  end
-  if states.Fly == value then
-    return true
-  end
-  states.Fly = value
-  local ok, result, detail = pcall(value and startFly or stopFly)
-  if not ok or result == false then
-    pcall(stopFly)
-    states.Fly = false
-    Utils.setConfig({ UniversalFly = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
-  end
-  return true
+  return controller.setEnabled(value)
 end
 function Fly.setValue(value)
-  if not Utils then
+  if not controller then
     return false, "recurso indisponível"
   end
-  value = tonumber(value)
-  if not value or value ~= value or value == math.huge or value == -math.huge then
-    return false, "velocidade inválida"
-  end
-  if not Utils.setConfig({ UniversalFlySpeed = math.clamp(value, 0.1, 10) }) then
-    return false
-  end
-  if states.Fly then
-    updateFly()
-  end
-  return true
+  return controller.setValue(value)
 end
 function Fly.teardown()
-  if configObserver then
-    configObserver:Disconnect()
-    configObserver = nil
+  if controller then
+    controller.destroy()
+    controller = nil
   end
   stopFly()
   states.Fly = false
@@ -280,31 +256,36 @@ function Fly.teardown()
   return true
 end
 function Fly.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
-    return false, "dependência ausente: Utils"
-  end
   Fly.teardown()
   Utils = deps.Utils
   connectionPool = deps.Lifetime.connections(Utils)
   connections = connectionPool.connections
-  configObserver = Utils.observeConfig(function(changes)
-    if changes.UniversalFly ~= nil then
-      Fly.setEnabled(changes.UniversalFly == true)
-    end
-  end)
-  if Utils.getConfigValue("UniversalFly") == true then
-    return Fly.setEnabled(true)
-  end
-  return true
+  controller = deps.Controller.create(Utils, deps.Lifetime, {
+    key = "UniversalFly",
+    valueKey = "UniversalFlySpeed",
+    min = 0.1,
+    max = 10,
+    start = function(scope)
+      states.Fly = true
+      assert(startFly(scope, deps.Controller.connectPhysics), "sinal de física indisponível")
+    end,
+    stop = function()
+      states.Fly = false
+      stopFly()
+    end,
+    update = updateFly,
+  })
+  return controller.sync()
 end
 Fly.__config = CONFIG
 
 -- contract
 Fly.__contract = {
-  requires = { Utils = "utils", Lifetime = "lifetime" },
+  requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller" },
   requiresMethods = {
-    Lifetime = { "connections" },
-    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" },
+    Lifetime = { "connections", "scope" },
+    Controller = { "create", "connectPhysics" },
+    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
   },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }

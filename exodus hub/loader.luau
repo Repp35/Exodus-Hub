@@ -36,6 +36,7 @@ local CONFIG = {
   RAW_CACHE_HEADERS = { ["Cache-Control"] = "no-cache, no-store" },
   RETRYABLE_HTTP_STATUS = { [408] = true, [425] = true, [429] = true },
   REGISTRY_PATH = "hubs/registry.luau",
+  ACCESS_PATH = "hubs/access.luau",
   CATALOG_PATH = "hubs/catalog.luau",
   MANIFEST_PATH = "core/catalog.luau",
   BUNDLE_PATH = "dist/runtime.json",
@@ -951,23 +952,24 @@ local function selectHub(revision)
     return false, catalogError
   end
   local catalog = execute("hub catalog", catalogChunk)
-  selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
+  local accessChunk, accessError = loadModule("hub access", CONFIG.ACCESS_PATH, root .. CONFIG.ACCESS_PATH)
+  if not accessChunk then
+    return false, accessError
+  end
   local player = game:GetService("Players").LocalPlayer
-  if selectedHub.id == "mcpvp" and (not player or player.Name ~= "renannnhh") then
-    selectedHub = registry.select({}, game.PlaceId, game.GameId)
+  local selectionError
+  selectedHub, selectionError = registry.resolve(catalog, game.PlaceId, game.GameId, {
+    userId = player and player.UserId,
+    username = player and player.Name,
+  }, execute("hub access", accessChunk))
+  if not selectedHub then
+    return false, selectionError
   end
   local manifestChunk, manifestError = loadModule("shared manifest", CONFIG.MANIFEST_PATH, root .. CONFIG.MANIFEST_PATH)
   if not manifestChunk then
     return false, manifestError
   end
-  local extra = selectedHub.modules or {}
-  local common = {}
-  for _, entry in ipairs(execute("shared manifest", manifestChunk)) do
-    if entry.name ~= "permissions" or selectedHub.permissions == true then
-      common[#common + 1] = entry
-    end
-  end
-  MODULE_MANIFEST = registry.merge(common, extra)
+  MODULE_MANIFEST = registry.manifest(execute("shared manifest", manifestChunk), selectedHub)
   table.clear(MODULE_ORDER)
   table.clear(MODULE_BY_NAME)
   for _, entry in ipairs(MODULE_MANIFEST) do
@@ -977,70 +979,6 @@ local function selectHub(revision)
     end
   end
   return true
-end
-local function orderModulesByDependencies(loaded)
-  local positions, state, ordered = {}, {}, {}
-  for index, name in ipairs(MODULE_ORDER) do
-    positions[name] = index
-  end
-  local function visit(name)
-    if state[name] == 2 then
-      return
-    end
-    if state[name] == 1 then
-      error("dependência circular entre módulos: " .. name, 2)
-    end
-    if not positions[name] or type(loaded[name]) ~= "table" then
-      error("dependência não inicializável: " .. tostring(name), 2)
-    end
-    state[name] = 1
-    local dependencies = {}
-    for _, source in pairs(loaded[name].__contract.requires or {}) do
-      if source ~= "permissions" then
-        dependencies[#dependencies + 1] = source
-      end
-    end
-    table.sort(dependencies, function(a, b) return (positions[a] or math.huge) < (positions[b] or math.huge) end)
-    for _, source in ipairs(dependencies) do
-      visit(source)
-    end
-    state[name] = 2
-    ordered[#ordered + 1] = name
-  end
-  for _, name in ipairs(MODULE_ORDER) do
-    visit(name)
-  end
-  table.clear(MODULE_ORDER)
-  for _, name in ipairs(ordered) do
-    if name ~= "character" then
-      MODULE_ORDER[#MODULE_ORDER + 1] = name
-    end
-  end
-  if loaded.character then
-    MODULE_ORDER[#MODULE_ORDER + 1] = "character"
-  end
-end
-local function basicLinker()
-  local linker = {}
-  function linker.validate(name, module)
-    assert(type(module.__contract) == "table", name .. ": missing API contract")
-    for _, method in ipairs(module.__contract.provides or {}) do
-      assert(type(module[method]) == "function", name .. ": missing " .. method)
-    end
-    return true
-  end
-  function linker.resolve(name, loaded)
-    local dependencies = {}
-    for alias, source in pairs(loaded[name].__contract.requires or {}) do
-      local provider = assert(loaded[source], "Missing dependency: " .. source)
-      for _, method in ipairs((loaded[name].__contract.requiresMethods or {})[alias] or {}) do
-        assert(type(provider[method]) == "function", source .. ": missing " .. method)
-      end
-      dependencies[alias] = provider
-    end
-    return dependencies
-  end
-  return linker
 end
 local activeLoaded
 local function loadModules(urls, prepared)
@@ -1095,7 +1033,9 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
+  local linker = execute("modulelinker", results.modulelinker.chunk)
+  results.modulelinker.module = linker
+  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or linker
   if results.permissions then
     permissions.configure(selectedHub.permissionPolicy)
     permissions.validate("permissions", permissions, MODULE_BY_NAME.permissions.path)
@@ -1109,7 +1049,7 @@ local function loadModules(urls, prepared)
       loaded[name] = module
     end
   end
-  orderModulesByDependencies(loaded)
+  MODULE_ORDER = loaded.modulelinker.order(MODULE_MANIFEST, loaded)
   return loaded
 end
 
@@ -1200,6 +1140,10 @@ local function startInternal()
   if not version then
     return false, "Loader", revisionError or "revisão atual indisponível"
   end
+  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
+  if not playerReady then
+    return false, "Loader", playerError
+  end
   local selected, selectionError = selectHub(version)
   if not selected then
     return false, "Loader", selectionError
@@ -1212,10 +1156,6 @@ local function startInternal()
   local loaded, moduleName, loadError = loadModules(urls, prepared)
   if not loaded then
     return false, moduleName, loadError
-  end
-  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
-  if not playerReady then
-    return false, "Loader", playerError
   end
   if type(requested) == "table" and requested.automatic and Exodus.Context then
     local previous = Exodus.Context

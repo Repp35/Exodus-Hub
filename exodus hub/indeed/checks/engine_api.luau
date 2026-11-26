@@ -34,6 +34,7 @@ end
 local services = {}
 local player = node("Player")
 player.UserId = 1
+player.Idled = signal()
 player.CharacterAdded = signal()
 player.CharacterRemoving = signal()
 services.Players = node("Players")

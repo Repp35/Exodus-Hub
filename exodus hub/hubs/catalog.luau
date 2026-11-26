@@ -90,6 +90,7 @@ return {
     dataFolder = "Exodus Hub",
     version = "3.3.0",
     developers = { "deltapolinha_2915" },
+    defaults = { UniversalSpeed = 40 },
     modules = {
       { name = "autodark", path = "hubs/phantom-ball/combat/auto_dark.luau", hash = "a7f016ffd1e29127967c77184933a20bb855f6f0b72a65013f88148e7cb2a2a4" },
       { name = "autodash", path = "hubs/phantom-ball/combat/auto_dash.luau", hash = "4da66199ac6fd777c0571e77ca1c5287e9e4f1d1d8110365193e4605162316c4" },

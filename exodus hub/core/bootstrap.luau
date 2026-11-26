@@ -21,7 +21,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     end
   end
   utils.setConfigModule(loaded.config)
-  utils.setConfig(loaded.config.defaults())
+  utils.setConfig(loaded.config.defaults({ player = utils.getLocalPlayer(), profile = profile }))
   utils.loadConfig()
   utils.setModuleURLs(urls)
   local binds = {}

@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import hashlib
+import math
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_AUTHOR = 'deltapolinha_2915'
@@ -43,6 +44,9 @@ def discover(root=ROOT):
             used.update(values)
         if not profile.get('placeIds') and not profile.get('universeIds'):
             raise ValueError(f'{info}: at least one game ID required')
+        defaults = profile.get('defaults', {})
+        if not isinstance(defaults, dict) or any(not re.fullmatch(r'[A-Za-z_]\w*', key) or type(value) not in (int, float, bool, str) or isinstance(value, float) and not math.isfinite(value) for key, value in defaults.items()):
+            raise ValueError(f'{info}: invalid defaults')
         modules, seen = [], set()
         for path in sorted(info.parent.rglob('*.luau')):
             if "indeed" in path.relative_to(info.parent).parts: continue
@@ -62,7 +66,7 @@ def literal(value):
     if isinstance(value, list): return '{ ' + ', '.join(literal(item) for item in value) + ' }'
     if isinstance(value, dict): return '{ ' + ', '.join(f'{key} = {literal(item)}' for key, item in value.items()) + ' }'
     if type(value) is bool: return "true" if value else "false"
-    if type(value) is int: return str(value)
+    if type(value) in (int, float): return str(value)
     raise ValueError(f'Unsupported catalog value: {value!r}')
 
 def render(profiles):
