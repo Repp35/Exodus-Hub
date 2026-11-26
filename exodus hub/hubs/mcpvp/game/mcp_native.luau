@@ -127,7 +127,15 @@ local function selectable(snap, tool)
   end
   return false
 end
-function Native.restore(snap, previous)
+function Native.restore(snap, previous, exact)
+  if exact then
+    if selectable(snap, previous) then
+      return Native.equip(snap, previous)
+    elseif previous == nil then
+      snap.humanoid:UnequipTools()
+      return snap.character:FindFirstChildOfClass("Tool") == nil
+    end
+  end
   local tool = selectable(snap, preferred) and preferred
     or selectable(snap, previous) and geometry.stats(previous).type and previous
     or Native.find(snap, "sword", true)

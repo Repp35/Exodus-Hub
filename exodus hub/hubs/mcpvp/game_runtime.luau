@@ -255,6 +255,18 @@ function Runtime.createAPI(loaded)
   return {
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = Runtime.reset,
+    controls = {
+      onThrowPearl = function()
+        local snap = loaded.utils.isActive() and loaded.mcpnative.snapshot()
+        if not snap then
+          return false, "Personagem indisponível."
+        end
+        if loaded.mcpsupplies.busy() or loaded.mcpsurvival.busy() or loaded.mcpnative.blocked(snap) then
+          return false, "Aguarde a ação atual terminar."
+        end
+        return loaded.autopearl.throw(snap)
+      end,
+    },
     updateBlockers = { loaded.autopearl.pending, loaded.mcpsupplies.busy, loaded.mcpsurvival.busy, loaded.mcpnative.busy },
     migrateConfig = loaded.mcpoptions.migrateConfig,
   }

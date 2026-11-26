@@ -11,6 +11,13 @@ local miniBalls = {
   { title = "Auto Pearl", label = "PEARL", key = "MCAutoPearl", prefix = "MCPearlBall" },
   { title = "Auto Totem", label = "TOTEM", key = "MCAutoTotem", prefix = "MCTotemBall" },
   { title = "Auto Refill", label = "REFILL", key = "MCAutoRefill", prefix = "MCRefillBall" },
+  {
+    title = "Throw Pearl",
+    label = "THROW\nPEARL",
+    action = "onThrowPearl",
+    prefix = "MCThrowPearlBall",
+    description = "Lança na sua mira e volta ao item anterior.",
+  },
   { title = "Stop PvP", label = "STOP\nPVP", action = "resetState", prefix = "MCStopPvPBall" },
 }
 GameUI.definition = {
@@ -130,7 +137,7 @@ for _, ball in ipairs(miniBalls) do
     kind = "toggle",
     title = "Show " .. ball.title .. " Button",
     key = visibleKey,
-    description = ball.action == "resetState" and "Mostra o botão para encerrar o PvP." or "Mostra o botão flutuante desta função.",
+    description = ball.description or (ball.action == "resetState" and "Mostra o botão para encerrar o PvP." or "Mostra o botão flutuante desta função."),
     mobileOnly = true,
   }
 end

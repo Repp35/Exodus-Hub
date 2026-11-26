@@ -32,7 +32,7 @@ return {
   { name = "uiassists", path = "ui/controllers/assists.luau", hash = "5dd26df9d3d242909bacb64cfa66ce0c310db3ecbda1a9b3da2da93266538bea" },
   { name = "uicontext", path = "ui/controllers/context.luau", hash = "827924e643a0c449f37242060b19ecc46c9352b9de21b2cce4826db2e18b0b77" },
   { name = "uidetails", path = "ui/controllers/details.luau", hash = "4c20e56944af2f37b865304be9280c042fd58b43d84d7c6256ecb44d476cf47a" },
-  { name = "uifloating", path = "ui/controllers/floating.luau", hash = "fa0098881292c92f67707dfeea359d57e9b327174ca88fcf5c3330352cf48f5d" },
+  { name = "uifloating", path = "ui/controllers/floating.luau", hash = "b17d3a4c08779dc0460f926a0ba3d11c6e2defcf027e12ae669960840860b547" },
   { name = "uitelemetry", path = "ui/controllers/information.luau", hash = "128cad346c869d6221b4055d2c364f0450ee233f34f68fa24f1821f1adfc208f" },
   { name = "uiinput", path = "ui/controllers/input.luau", hash = "0c994c0ce98b5a88f07774a9afe69245d1620c2275186b161010aafbe11249ad" },
   { name = "uilifecycle", path = "ui/controllers/lifecycle.luau", hash = "db681647390fc319a92bd90ee42fe3ad63131eb569d29b62aae8480b219a0b16" },

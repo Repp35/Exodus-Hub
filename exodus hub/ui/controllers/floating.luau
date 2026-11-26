@@ -140,17 +140,31 @@ function Controller.create(context)
       local prefix = definition.prefix
       local visibleKey, xKey, yKey = prefix .. "Visible", prefix .. "X", prefix .. "Y"
       local key, label = definition.key, definition.label
-      local reset = definition.action == "resetState"
+      local action = definition.action
+      local reset = action == "resetState"
+      local onColor, offColor = C.green, action and not reset and C.accent or C.red
       local onText, offText = label .. "\nON", label .. "\nOFF"
-      if reset then
+      if action then
         onText, offText = label, label
       end
       local value = key ~= nil and config[key] == true
-      local ball = createMovementBall("Exodus" .. prefix, value and onText or offText, value and C.green or C.red, xKey, yKey, 0, function()
+      local ball = createMovementBall("Exodus" .. prefix, value and onText or offText, value and onColor or offColor, xKey, yKey, 0, function()
         if reset then
           GameInfo.resetState()
           if context.notifications.toast then
             context.notifications.toast("PvP encerrado.")
+          end
+          return
+        end
+        if action then
+          local callback = Controls[action]
+          if type(callback) == "function" then
+            local accepted, reason = callback()
+            if accepted then
+              pulseBall(context.refs[prefix])
+            elseif reason and context.notifications.toast then
+              context.notifications.toast(reason)
+            end
           end
           return
         end
@@ -176,9 +190,9 @@ function Controller.create(context)
         key = key,
         visibleKey = visibleKey,
         show = show,
-        paint = function(enabled) paintBall(ball, enabled, onText, offText, C.green, C.red, 14, 14) end,
+        paint = function(enabled) paintBall(ball, enabled, onText, offText, onColor, offColor, 14, 14) end,
       }
-      paintBall(ball, value, onText, offText, C.green, C.red, 14, 14)
+      paintBall(ball, value, onText, offText, onColor, offColor, 14, 14)
       show(config[visibleKey] == true)
     end
     return {

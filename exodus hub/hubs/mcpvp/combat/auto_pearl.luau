@@ -17,7 +17,11 @@ local function restore(snap)
   if shot.requestAt and snap.now - shot.requestAt < 0.5 then
     return false
   end
-  shot.restored = native.restore(snap, shot.previous ~= shot.tool and shot.previous or nil)
+  local previous = shot.previous
+  if not shot.manual and previous == shot.tool then
+    previous = nil
+  end
+  shot.restored = native.restore(snap, previous, shot.manual)
   return shot.restored
 end
 function Pearl.reset()
@@ -70,8 +74,9 @@ function Pearl.observe(snap)
   end
   if shot.phase == "restore" and not native.blocked(snap) then
     if restore(snap) or snap.now - shot.restoreAt >= 1 then
-      if shot.failed then
-        shot, retryAt = nil, snap.now + 1
+      if shot.failed or shot.manual then
+        local delay = shot.failed and 1 or 0.15
+        shot, retryAt = nil, snap.now + delay
       else
         shot.phase = "flight"
       end
@@ -318,9 +323,29 @@ function Pearl.launch(snap, route, escaping)
   end
   return true
 end
+-- Manual use shares the confirmation and restoration state, without pursuit or auto aiming.
+function Pearl.throw(snap)
+  Pearl.cancelPrepared(snap)
+  if shot and shot.phase == "flight" then
+    shot = nil
+  end
+  local route = { direction = snap.camera.CFrame.LookVector, origin = units.toBlocks(snap.eye), duration = 0 }
+  if not Pearl.launch(snap, route) then
+    return false, "Pearl indisponível ou em uso."
+  end
+  shot.manual, shot.aimedAt, follow = true, snap.now, nil
+  advance(snap)
+  return true
+end
 function Pearl.advance(snap) advance(snap) end
 function Pearl.aim(snap, dt)
   renderLead = math.clamp(dt or 1 / 60, 0, 0.05)
+  if shot and shot.manual then
+    if shot.phase == "equip" then
+      shot.plan.direction, shot.plan.origin, shot.aimedAt = snap.camera.CFrame.LookVector, units.toBlocks(snap.eye), snap.now
+    end
+    return true
+  end
   if not shot or shot.phase ~= "equip" then
     if shot and (shot.escape or shot.requestAt and snap.now - shot.requestAt < 0.5) then
       return shot.phase == "confirm"
@@ -372,6 +397,10 @@ function Pearl.prepare(snap)
     shot, motion = nil, nil
   end
   Pearl.observe(snap)
+  if shot and shot.manual then
+    advance(snap)
+    return
+  end
   local value = target.current(snap)
   if shot and shot.phase ~= "equip" then
     return
@@ -425,7 +454,22 @@ function Pearl.prepare(snap)
   end
 end
 Pearl.__contract = {
-  provides = { "setup", "reset", "prepare", "observe", "busy", "pending", "projectile", "route", "launch", "advance", "escaping", "cancelPrepared", "aim" },
+  provides = {
+    "setup",
+    "reset",
+    "prepare",
+    "observe",
+    "busy",
+    "pending",
+    "projectile",
+    "route",
+    "launch",
+    "advance",
+    "escaping",
+    "cancelPrepared",
+    "aim",
+    "throw",
+  },
   requires = {
     Native = "mcpnative",
     Geometry = "mcpgeometry",
