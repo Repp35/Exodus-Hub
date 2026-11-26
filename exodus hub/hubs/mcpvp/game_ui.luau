@@ -35,7 +35,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Crit",
               key = "MCAutoCrit",
-              description = "Pula ao seu comando de ataque, mesmo sem Auto Attack ou alvo travado.",
+              description = "Pede pulo nativo a cada ataque e espera a descida. Evita saltos estimados como diretamente expostos a um cristal muito próximo.",
             },
           },
         },
@@ -47,7 +47,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Lock",
               key = "MCAimLock",
-              description = "Mira na posição atual do alvo, sem previsão de movimento.",
+              description = "Mira no adversário visível mais próximo, até 16 studs, sem perseguir quem fugiu.",
             },
             {
               kind = "toggle",
@@ -72,7 +72,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Segue o jogador que você atacar, mesmo sem Auto Attack ou mira, verificando trajetória e chegada.",
+              description = "Aproxima do adversário próximo, até 16 studs. Cancela a preparação se o foco mudar ou se afastar.",
             },
             {
               kind = "toggle",

@@ -57,9 +57,7 @@ function Runtime.bind(loaded)
           Runtime.reset()
           owner = snap.character
         end
-        if type(event) ~= "table" or not event.RepeatedAttack then
-          loaded.mcpmelee.manual(snap)
-        end
+        loaded.mcpmelee.manual(snap)
         target.manual(snap)
       end
     end)
@@ -157,7 +155,10 @@ function Runtime.bind(loaded)
       end
       local snap = native.snapshot()
       if snap then
-        loaded.mcpaim.step(snap, renderTarget, dt)
+        local nearest = target.get(snap)
+        if nearest then
+          loaded.mcpaim.step(snap, nearest, dt)
+        end
       end
     end)
   end)

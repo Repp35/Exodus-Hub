@@ -1,10 +1,10 @@
 -- [[ mcpaim ]]
 --!optimize 2
 local Aim = {}
-local native, utils
+local native, utils, tuning
 local input, gui
 function Aim.setup(deps)
-  native, utils = deps.Native, deps.Utils
+  native, utils, tuning = deps.Native, deps.Utils, deps.Options.tuning
   input, gui = game:GetService("UserInputService"), game:GetService("GuiService")
   return true
 end
@@ -14,12 +14,12 @@ function Aim.step(snap, target, dt)
     return
   end
   local strength = math.clamp(tonumber(utils.getConfigValue("MCAimStrength")) or 100, 0, 100) / 100
-  if strength == 0 or native.aerialMace(snap, target) then
+  if strength == 0 then
     return
   end
   local camera, root = snap.camera, target.root.Position
   local eye, look = camera.CFrame.Position, camera.CFrame.LookVector
-  local range = lock and 57.6 or 16
+  local range = tuning.focusRange
   if (root - snap.root.Position).Magnitude > range then
     return
   end
@@ -50,7 +50,8 @@ function Aim.step(snap, target, dt)
 end
 Aim.__contract = {
   provides = { "setup", "step" },
-  requires = { Native = "mcpnative", Utils = "utils" },
-  requiresMethods = { Native = { "blocked", "aerialMace", "visible" }, Utils = { "getConfigValue" } },
+  requires = { Native = "mcpnative", Utils = "utils", Options = "mcpoptions" },
+  requiresData = { Options = { "tuning" } },
+  requiresMethods = { Native = { "blocked", "visible" }, Utils = { "getConfigValue" } },
 }
 return Aim

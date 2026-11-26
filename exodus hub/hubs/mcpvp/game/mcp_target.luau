@@ -2,15 +2,15 @@
 --!optimize 2
 local Target = {}
 local native, tuning, players
-local current, attempt, owner, health
-local contact, holdUntil, clickAt, hurtAt, hitAt = 0, 0, -math.huge, -math.huge, -math.huge
+local current, attempt, owner, health, engaged
+local clickAt, hurtAt, hitAt = -math.huge, -math.huge, -math.huge
 function Target.setup(deps)
   native, tuning, players = deps.Native, deps.Options.tuning, game:GetService("Players")
   return true
 end
 function Target.reset()
-  current, attempt, owner, health = nil, nil, nil, nil
-  contact, holdUntil, clickAt, hurtAt, hitAt = 0, 0, -math.huge, -math.huge, -math.huge
+  current, attempt, owner, health, engaged = nil, nil, nil, nil, false
+  clickAt, hurtAt, hitAt = -math.huge, -math.huge, -math.huge
 end
 local function candidate(player, snap)
   if player == snap.player or player.Parent ~= players or player:GetAttribute("ArenaProtected") == true or player:GetAttribute("InArena") == false then
@@ -23,7 +23,7 @@ local function candidate(player, snap)
     return nil
   end
   local distance = (root.Position - snap.root.Position).Magnitude
-  if distance > tuning.chaseRange then
+  if distance > tuning.focusRange then
     return nil
   end
   return { player = player, character = char, root = root, humanoid = human, distance = distance }
@@ -37,25 +37,17 @@ function Target.observe(snap)
     hurtAt = snap.now
   end
   health = snap.humanoid.Health
-  if attempt and snap.now - attempt.time > 0.7 then
+  if attempt and snap.now - attempt > 0.7 then
     attempt = nil
   end
 end
-function Target.noteAttack(snap, chosen)
-  attempt = { target = chosen, time = snap.now }
-  if current and current.character == chosen.character then
-    contact = snap.now
-  end
-end
+function Target.noteAttack(snap, _chosen) attempt = snap.now end
 function Target.confirmHit(now)
-  if not attempt or now - attempt.time > 0.7 then
+  if not attempt or now - attempt > 0.7 then
     return
   end
-  local chosen = attempt.target
-  if chosen.character.Parent and chosen.humanoid.Health > 0 then
-    current, contact, hitAt = chosen, now, now
-  end
-  attempt = nil
+  -- A late confirmation must never restore a target that has already fled.
+  hitAt, attempt = now, nil
 end
 function Target.manual(snap)
   Target.observe(snap)
@@ -76,47 +68,38 @@ function Target.manual(snap)
   if not best then
     return nil
   end
-  current, contact, holdUntil = best, snap.now, 0
+  current, engaged = best, true
   Target.noteAttack(snap, best)
   return best
 end
 function Target.get(snap)
+  if not engaged then
+    return nil
+  end
+  local nearest, distance
+  for _, player in ipairs(players:GetPlayers()) do
+    local value = candidate(player, snap)
+    if not value then
+      continue
+    end
+    if not native.visible(snap, value.root.Position, value.character) then
+      continue
+    end
+    if not distance or value.distance < distance then
+      nearest, distance = value, value.distance
+    end
+  end
+  current = nearest
   if not current then
-    return nil
+    engaged, attempt = false, nil
   end
-  local fresh = candidate(current.player, snap)
-  if not fresh or fresh.character ~= current.character then
-    current, attempt, holdUntil = nil, nil, 0
-    return nil
-  end
-  if fresh.distance <= (native.stats(snap.tool).reach or 9.6) * 3 then
-    contact = snap.now
-  end
-  if snap.now > holdUntil and snap.now - contact > tuning.targetMemory then
-    current, attempt = nil, nil
-    return nil
-  end
-  current = fresh
-  if native.aerialMace(snap, fresh) then
-    return nil
-  end
-  return fresh
-end
-function Target.hold(char, untilTime)
-  if current and current.character == char then
-    holdUntil = math.min(os.clock() + 7, untilTime)
-  end
-end
-function Target.release(char)
-  if current and current.character == char then
-    holdUntil = 0
-  end
+  return current
 end
 function Target.quiet(snap, duration) return snap.now - math.max(clickAt, hurtAt, hitAt) >= (duration or 4) end
 Target.__contract = {
-  provides = { "setup", "reset", "observe", "manual", "get", "noteAttack", "confirmHit", "hold", "release", "quiet" },
+  provides = { "setup", "reset", "observe", "manual", "get", "noteAttack", "confirmHit", "quiet" },
   requires = { Native = "mcpnative", Options = "mcpoptions" },
-  requiresMethods = { Native = { "stats", "blocked", "aimDirection", "hitDistance", "aerialMace" } },
+  requiresMethods = { Native = { "blocked", "aimDirection", "hitDistance", "visible" } },
   requiresData = { Options = { "tuning" } },
 }
 return Target

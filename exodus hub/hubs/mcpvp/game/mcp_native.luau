@@ -317,6 +317,80 @@ function Native.equip(snap, tool)
   snap.humanoid:EquipTool(tool)
   return true
 end
+function Native.crystalJumpRisk(snap)
+  local folder = world:FindFirstChild("EndCrystals")
+  local crystals = game:GetService("CollectionService"):GetTagged("EndCrystal")
+  if folder then
+    for _, crystal in ipairs(folder:GetChildren()) do
+      crystals[#crystals + 1] = crystal
+    end
+  end
+  if #crystals == 0 then
+    return false
+  end
+  local seen, params = {}, RaycastParams.new()
+  params.FilterType, params.RespectCanCollide = Enum.RaycastFilterType.Exclude, true
+  local ignored = { snap.character, snap.camera }
+  for _, crystal in ipairs(crystals) do
+    ignored[#ignored + 1] = crystal
+  end
+  params.FilterDescendantsInstances = ignored
+  local motion = snap.root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+  -- Native movement: 26.88 jump speed, 0.05 s ticks, then (vy - 5.12) * 0.98.
+  local trajectory, height, vertical = {}, 0, 26.88
+  for tick = 1, 20 do
+    height += vertical * 0.05
+    if height < 0 then
+      break
+    end
+    trajectory[#trajectory + 1] = snap.root.Position - Vector3.new(0, 4, 0) + motion * (tick * 0.05) + Vector3.new(0, height, 0)
+    vertical = (vertical - 5.12) * 0.98
+  end
+  for _, crystal in ipairs(crystals) do
+    if seen[crystal] or not crystal.Parent then
+      continue
+    end
+    seen[crystal] = true
+    local origin = crystal:GetAttribute("CrystalFeet")
+    if typeof(origin) ~= "Vector3" then
+      continue
+    end
+    for _, feet in ipairs(trajectory) do
+      -- Narrow client estimate: feet at/above the crystal in its immediate one-block space,
+      -- with full body exposure. The server's exact damage formula is not replicated.
+      if feet.Y < origin.Y or (feet - origin).Magnitude > 3.2 then
+        continue
+      end
+      local exposed = true
+      for _, heightOffset in ipairs({ 0.15, 3.2, 6.2 }) do
+        for _, side in ipairs({ Vector3.zero, Vector3.new(-0.9, 0, -0.9), Vector3.new(-0.9, 0, 0.9), Vector3.new(0.9, 0, -0.9), Vector3.new(0.9, 0, 0.9) }) do
+          local from = origin + Vector3.new(0, 0.05, 0)
+          local destination = feet + side + Vector3.new(0, heightOffset, 0)
+          if world:Raycast(from, destination - from, params) then
+            exposed = false
+            break
+          end
+        end
+        if not exposed then
+          break
+        end
+      end
+      if exposed then
+        return true
+      end
+    end
+  end
+  return false
+end
+function Native.requestJump(snap)
+  if Native.blocked(snap) or snap.humanoid.Health <= 0 then
+    return false
+  end
+  snap.humanoid.Jump = true
+  -- The game's VoxelAirMovement listens to the native Jumping state as well as Jump.
+  snap.humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+  return true
+end
 function Native.prepareCritical()
   if os.clock() < criticalAt then
     return
@@ -393,6 +467,8 @@ Native.__contract = {
     "blocked",
     "isDispatching",
     "prepareCritical",
+    "requestJump",
+    "crystalJumpRisk",
     "useItem",
     "aerialMace",
   },

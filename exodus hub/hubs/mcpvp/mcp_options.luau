@@ -25,7 +25,7 @@ Options.__config = {
     MCAutoTotem = "boolean",
   },
 }
-Options.tuning = { targetMemory = 4, chaseRange = 205 }
+Options.tuning = { focusRange = 16 }
 function Options.setup() return true end
 Options.__contract = { provides = { "setup" }, data = { "tuning" }, requires = {} }
 return Options

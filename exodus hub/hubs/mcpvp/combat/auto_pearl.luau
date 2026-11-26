@@ -1,11 +1,11 @@
 -- [[ autopearl ]]
 --!optimize 2
 local Pearl = {}
-local native, target, ballistics
+local native, ballistics, tuning
 local shot, retryAt = nil, 0
 local speed, gravity, drag = 96, 38.4, 0.99
 function Pearl.setup(deps)
-  native, target, ballistics = deps.Native, deps.Target, deps.Ballistics
+  native, ballistics, tuning = deps.Native, deps.Ballistics, deps.Options.tuning
   return true
 end
 local function restore(snap)
@@ -21,7 +21,6 @@ local function restore(snap)
 end
 function Pearl.reset()
   if shot then
-    target.release(shot.target)
     restore(native.snapshot())
   end
   shot = nil
@@ -63,11 +62,14 @@ local function plan(snap, chosen)
   local flight = math.clamp((chosen.root.Position - snap.eye).Magnitude / speed, 0.1, 5)
   for _ = 1, 5 do
     local prediction = chosen.root.Position + motion * flight
+    if (prediction - snap.root.Position).Magnitude > tuning.focusRange then
+      return nil
+    end
     local floor = workspace:Raycast(prediction + Vector3.new(0, 2, 0), Vector3.new(0, -64, 0), params)
-    if not floor then
+    if not floor or (floor.Position - snap.root.Position).Magnitude > tuning.focusRange then
       break
     end
-    local direction, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
+    local direction, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 0.75, drag)
     if not direction then
       break
     end
@@ -76,26 +78,22 @@ local function plan(snap, chosen)
     end
     flight = (flight + duration) * 0.5
   end
-  -- A bounded intermediate landing must make progress toward the opponent.
-  local delta = (chosen.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)
-  if delta.Magnitude < 8 then
-    return nil
-  end
-  for _, fraction in ipairs({ 0.8, 0.6, 0.4 }) do
-    local point = snap.root.Position + delta * fraction
-    local floor = workspace:Raycast(point + Vector3.new(0, 16, 0), Vector3.new(0, -64, 0), params)
-    if floor and (floor.Position - chosen.root.Position).Magnitude + 8 < (snap.root.Position - chosen.root.Position).Magnitude then
-      local direction, duration = ballistics.solve(snap.eye, floor.Position, speed, gravity, params, 6, drag)
-      if direction then
-        return direction, duration
-      end
-    end
-  end
+
   return nil
 end
 function Pearl.step(snap, chosen)
-  if shot and shot.character ~= snap.character then
+  if
+    shot
+    and (
+      shot.character ~= snap.character
+      or not chosen
+      or chosen.character ~= shot.target
+      or (chosen.root.Position - snap.root.Position).Magnitude > tuning.focusRange
+    )
+  then
     Pearl.reset()
+    retryAt = snap.now + 0.3
+    return false
   end
   if shot then
     if shot.phase == "equip" then
@@ -117,7 +115,6 @@ function Pearl.step(snap, chosen)
       end
       shot.count = tonumber(shot.tool:GetAttribute("Count")) or 1
       shot.phase, shot.deadline, shot.arrival = "confirm", snap.now + 1, snap.now + duration + 0.5
-      target.hold(chosen.character, shot.arrival)
       if not native.usePearl(snap, shot.tool, direction) then
         Pearl.reset()
         return false
@@ -143,7 +140,15 @@ function Pearl.step(snap, chosen)
     retryAt = snap.now + 0.2
     return false
   end
-  if not chosen or snap.now < retryAt or native.blocked(snap) or not native.pearlReady() or native.canHit(snap, chosen) or native.aerialMace(snap, chosen) then
+  if
+    not chosen
+    or (chosen.root.Position - snap.root.Position).Magnitude > tuning.focusRange
+    or snap.now < retryAt
+    or native.blocked(snap)
+    or not native.pearlReady()
+    or native.canHit(snap, chosen)
+    or native.aerialMace(snap, chosen)
+  then
     return false
   end
   retryAt = snap.now + 0.3
@@ -172,10 +177,10 @@ function Pearl.step(snap, chosen)
 end
 Pearl.__contract = {
   provides = { "setup", "reset", "busy", "step", "observeProjectile" },
-  requires = { Native = "mcpnative", Target = "mcptarget", Ballistics = "mcpballistics" },
+  requires = { Native = "mcpnative", Options = "mcpoptions", Ballistics = "mcpballistics" },
+  requiresData = { Options = { "tuning" } },
   requiresMethods = {
     Native = { "snapshot", "findSword", "equip", "findPearl", "usePearl", "pearlReady", "pearlCooldown", "blocked", "canHit", "aerialMace" },
-    Target = { "hold", "release" },
     Ballistics = { "solve" },
   },
 }
