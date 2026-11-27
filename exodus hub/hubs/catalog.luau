@@ -53,7 +53,7 @@ return {
       { name = "mm2state", path = "hubs/mm2/game/mm2_state.luau", hash = "dfdc0b755e242022a279d31ef62c3635833e7b8f995fb2063822acbca1e865b5" },
       { name = "mm2world", path = "hubs/mm2/game/mm2_world.luau", hash = "f24fb2909cd659ddc337959c39889acb38a1473fd33d414c23e3918b09e64e20" },
       { name = "gameruntime", path = "hubs/mm2/game_runtime.luau", hash = "57f9897b4bea1ae776bfd65e17038d66c0c97c31cfdb22cbe160bddcd7c17526" },
-      { name = "gameui", path = "ui/games/mm2/game_ui.luau", hash = "ae9d667db49e295108c27a80911c2f638d6f315e964e9575f13ec74f6cb1ccab" },
+      { name = "gameui", path = "ui/games/mm2/game_ui.luau", hash = "a11333092fef734449de84dd00adfec4bd0f6b487b7ce8c7d62dbf80d838c2ef" },
       { name = "mm2visuals", path = "ui/games/mm2/mm2_visuals.luau", hash = "a501a2064a767c677ad7b18424b348bd98ebfc73b265801461479b4527d7ebbd" },
     },
   },

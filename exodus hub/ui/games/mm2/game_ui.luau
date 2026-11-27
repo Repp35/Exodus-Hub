@@ -18,7 +18,7 @@ GameUI.definition = {
           components = {
             { kind = "toggle", key = "MM2AutoFarm", title = "Auto Farm" },
             { kind = "toggle", key = "MM2AvoidMurderer", title = "Avoid Coins Near Murderer", parentKey = "MM2AutoFarm" },
-            { kind = "toggle", key = "MM2ResetFull", title = "Reset When Full", description = "Resets only while innocent.", parentKey = "MM2AutoFarm" },
+            { kind = "toggle", key = "MM2ResetFull", title = "Reset When Full", description = "Reseta somente quando você é inocente.", parentKey = "MM2AutoFarm" },
             { kind = "slider", key = "MM2FarmSpeed", title = "Speed", min = 5, max = 100, step = 1, parentKey = "MM2AutoFarm" },
           },
         },
@@ -41,7 +41,7 @@ GameUI.definition = {
             { kind = "button", title = "Shoot Murder", action = "mm2Shoot", parentKey = "MM2ManualShoot" },
             { kind = "toggle", key = "MM2AutoShoot", title = "Auto Shoot Murder" },
             { kind = "slider", key = "MM2AutoAccuracy", title = "Accuracy", min = 0, max = 100, step = 1, parentKey = "MM2AutoShoot" },
-            { kind = "toggle", key = "MM2LegitSheriff", title = "Wait for Knife", description = "Also applies to manual shots.", parentKey = "MM2AutoShoot" },
+            { kind = "toggle", key = "MM2LegitSheriff", title = "Wait for Knife", description = "Também se aplica aos disparos manuais.", parentKey = "MM2AutoShoot" },
           },
         },
         {
