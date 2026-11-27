@@ -67,6 +67,41 @@ function Weapons.shoot(automatic)
   shoot:FireServer(origin, CFrame.new(point))
   return true
 end
+function Weapons.throw(automatic)
+  if not Utils.isActive() or Native.busy() then
+    return false
+  end
+  local snap = State.live(Utils.getLocalPlayer(), true)
+  if not snap or snap.role ~= "Murderer" or snap.character:GetAttribute("Zombie") == true then
+    return false
+  end
+  local knife = equip(snap, "Knife")
+  if not knife then
+    return false
+  end
+  local now = os.clock()
+  local charge = math.clamp(tonumber(knife:GetAttribute("ThrowSpeed")) or 0.5, 0.05, 3)
+  if now - lastThrow < charge * 2 or now - lastStab < 0.4 then
+    return false
+  end
+  local target = Targeting.select(snap, Utils.getConfigValue("MM2ThrowTargets") or "Aim", 250, Utils.getConfigValue("MM2ThrowFOV"))
+  local handle = knife:FindFirstChild("Handle")
+  if not target or not handle or not handle:IsA("BasePart") then
+    return false
+  end
+  local point = Targeting.predict(handle.Position, target, 100)
+  if not Targeting.clear(snap, target, handle.Position, point) then
+    return false
+  end
+  local accepted, reason = Native.throw(snap, knife, CFrame.new(point), function()
+    local live = State.live(target.player, true)
+    return (not automatic or Utils.getConfigValue("MM2AutoThrow")) and live ~= nil and live.character == target.character
+  end)
+  if accepted then
+    lastThrow = now
+  end
+  return accepted, reason
+end
 function Weapons.step()
   Native.step()
   if Native.busy() then
@@ -85,7 +120,7 @@ function Weapons.step()
   if not snap or snap.role ~= "Murderer" then
     return
   end
-  if not Utils.getConfigValue("MM2AutoStab") and not Utils.getConfigValue("MM2AutoThrow") then
+  if not Utils.getConfigValue("MM2AutoStab") and not Utils.getConfigValue("MM2AutoThrow") and not Utils.getConfigValue("MM2ManualThrow") then
     return
   end
   local knife = equip(snap, "Knife")
@@ -107,25 +142,12 @@ function Weapons.step()
       end
     end
   end
-  if Utils.getConfigValue("MM2AutoThrow") and snap.character:GetAttribute("Zombie") ~= true and now - lastThrow >= charge * 2 and now - lastStab >= 0.4 then
-    local target = Targeting.select(snap, Utils.getConfigValue("MM2ThrowTargets"), 250)
-    local handle = knife:FindFirstChild("Handle")
-    if target and handle and handle:IsA("BasePart") then
-      local point = Targeting.predict(handle.Position, target, 100)
-      if Targeting.clear(snap, target, handle.Position, point) then
-        local accepted = Native.throw(snap, knife, CFrame.new(point), function()
-          local live = State.live(target.player, true)
-          return Utils.getConfigValue("MM2AutoThrow") and live ~= nil and live.character == target.character
-        end)
-        if accepted then
-          lastThrow = now
-        end
-      end
-    end
+  if Utils.getConfigValue("MM2AutoThrow") then
+    Weapons.throw(true)
   end
 end
 Weapons.__contract = {
-  provides = { "setup", "reset", "shoot", "step" },
+  provides = { "setup", "reset", "shoot", "throw", "step" },
   requires = { State = "mm2state", Targeting = "mm2targeting", Utils = "utils", Native = "mm2native" },
   requiresMethods = {
     State = { "live", "findRole", "tool" },

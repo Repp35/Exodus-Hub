@@ -109,6 +109,7 @@ function Runtime.createAPI(modules)
       return {
         callbacks = {
           mm2Shoot = function() return modules.mm2weapons.shoot(false) end,
+          mm2Throw = function() return modules.mm2weapons.throw(false) end,
           mm2Map = checked(modules.mm2maptools.map),
           mm2Lobby = checked(modules.mm2maptools.lobby),
           mm2Murderer = checked(function() return modules.mm2maptools.role("Murderer") end),
@@ -119,7 +120,10 @@ function Runtime.createAPI(modules)
         },
       }
     end,
-    controls = { onMM2Shoot = function() return modules.mm2weapons.shoot(false) end },
+    controls = {
+      onMM2Shoot = function() return modules.mm2weapons.shoot(false) end,
+      onMM2Throw = function() return modules.mm2weapons.throw(false) end,
+    },
     getChoices = function(name)
       if name == "mm2Players" then
         return modules.mm2maptools.players()

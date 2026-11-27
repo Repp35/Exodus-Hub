@@ -53,6 +53,11 @@ function Mini.install(context)
         end
       end
     end
+    function handle.setAppearance(scale, square)
+      scale = math.clamp(tonumber(scale) or 1, 0.5, 2)
+      local size = definition.size or UDim2.fromOffset(112, 96)
+      root.Size = UDim2.fromOffset((square and size.Y.Offset or size.X.Offset) * scale, size.Y.Offset * scale)
+    end
     function handle.setVisible(value)
       root.Visible = value == true
       if not root.Visible then

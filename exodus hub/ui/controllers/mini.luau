@@ -21,6 +21,10 @@ function Panels.create(context, definitions)
       end,
     })
     local function refresh()
+      handle.setAppearance(
+        definition.scaleKey and utils.getConfigValue(definition.scaleKey) or 1,
+        definition.squareKey and utils.getConfigValue(definition.squareKey) == true
+      )
       local view = context.viewport()
       local scale = math.max(0.01, context.refs.responsiveScale.Scale)
       local width, height = handle.Root.Size.X.Offset, handle.Root.Size.Y.Offset

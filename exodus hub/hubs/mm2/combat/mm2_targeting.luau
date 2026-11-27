@@ -23,8 +23,13 @@ function Targeting.clear(snap, target, origin, point)
   local hit = workspace:Raycast(origin, delta, parameters)
   return not hit or hit.Instance:IsDescendantOf(target.character)
 end
-function Targeting.select(snap, mode, maxDistance)
+function Targeting.select(snap, mode, maxDistance, aimAngle)
   local best, distance, rank = nil, maxDistance or math.huge, math.huge
+  local camera = workspace.CurrentCamera
+  if mode == "Aim" and not camera then
+    return nil
+  end
+  local limit = math.cos(math.rad(math.clamp(tonumber(aimAngle) or 60, 10, 90)))
   for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
     if player == snap.player then
       continue
@@ -39,6 +44,19 @@ function Targeting.select(snap, mode, maxDistance)
     end
     local delta = (snap.root.Position - candidate.root.Position).Magnitude
     local priority = mode == "Auto" and (armed and 0 or 1) or 0
+    if mode == "Aim" then
+      local offset = candidate.root.Position - camera.CFrame.Position
+      if offset.Magnitude < 0.01 then
+        continue
+      end
+      local alignment = camera.CFrame.LookVector:Dot(offset.Unit)
+      if alignment < limit then
+        continue
+      end
+      priority = 1 - alignment
+    elseif mode == "Random" then
+      priority = math.random()
+    end
     if delta <= (maxDistance or math.huge) and (priority < rank or priority == rank and delta < distance) then
       if Targeting.clear(snap, candidate, snap.root.Position, candidate.root.Position) then
         best, distance, rank = candidate, delta, priority
