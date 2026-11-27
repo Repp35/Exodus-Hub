@@ -6,7 +6,7 @@ local Noclip = {}
 local controller, rootScope, physicsScope, bindingScope
 local utils, lifetime, scheduler, player, character
 local owners, parts = {}, {}
-local CONFIG = { schema = { UniversalNoclip = "boolean" }, defaults = { UniversalNoclip = false } }
+local CONFIG = { persistent = { UniversalNoclip = false }, schema = { UniversalNoclip = "boolean" }, defaults = { UniversalNoclip = false } }
 
 local function restorePart(part)
   local entry = parts[part]
@@ -158,10 +158,7 @@ function Noclip.setup(deps)
   controller = scheduler.create(utils, lifetime, {
     key = "UniversalNoclip",
     start = function() return Noclip.acquire(Noclip) end,
-    stop = function()
-      table.clear(owners)
-      stopPhysics()
-    end,
+    stop = function() Noclip.release(Noclip) end,
   })
   return controller.sync()
 end

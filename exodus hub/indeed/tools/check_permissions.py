@@ -13,9 +13,6 @@ def main():
     args = parser.parse_args()
     info = ROOT / 'hubs' / args.hub / 'hub.json'
     profile = json.loads(info.read_text()) if info.exists() else {}
-    if not profile.get('permissions', False):
-        print('No permission policy enabled for this integration')
-        return 0
     binary = os.environ.get('LUAU_BIN') or shutil.which('luau')
     if not binary:
         raise SystemExit('Luau required to verify the active internal permission policy')

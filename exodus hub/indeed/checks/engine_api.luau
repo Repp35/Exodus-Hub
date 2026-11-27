@@ -38,6 +38,7 @@ local function node(name)
   function object:GetAttributeChangedSignal() return signal() end
   function object:GetPropertyChangedSignal() return signal() end
   function object:GetChildren() return {} end
+  function object:GetDescendants() return {} end
   function object:IsA(kind) return kind == self.Name end
   function object:GetServerTimeNow() return os.clock() end
   return object
@@ -58,7 +59,7 @@ services.RunService = node("RunService")
 for _, name in ipairs({ "Heartbeat", "PostSimulation", "PreSimulation", "PreRender", "RenderStepped", "Stepped" }) do
   services.RunService[name] = signal()
 end
-local game = { PlaceId = 0 }
+local game = { PlaceId = 0, JobId = "api-check", GameId = 0 }
 function game:GetService(name)
   if not services[name] then
     services[name] = node(name)
@@ -83,7 +84,7 @@ local Enum = setmetatable({}, {
     if not enumCache[group] then
       enumCache[group] = setmetatable({}, {
         __index = function(self, key)
-          local item = { Name = key, EnumType = self, __kind = "EnumItem" }
+          local item = { Name = key, Value = 0, EnumType = self, __kind = "EnumItem" }
           rawset(self, key, item)
           return item
         end,
@@ -111,6 +112,15 @@ local function warn() end
 local loaded = {}
 local nativeTypeof = typeof
 local function typeof(value) return type(value) == "table" and value.__kind or nativeTypeof(value) end
+local nativeLibraries = {
+  VoxelWeapons = { Block = 3.2, Stats = function() return {} end },
+  VoxelMeleeGeometry = { Hit = function() end, Box = function() end, Eye = function() end },
+}
+local storage = game:GetService("ReplicatedStorage")
+function storage:FindFirstChild(name) return nativeLibraries[name] and { Name = name, api = nativeLibraries[name] } end
+local function require(source) return assert(source.api, "Missing native API fixture") end
+function services.RunService:BindToRenderStep() end
+function services.RunService:UnbindFromRenderStep() end
 local environment = getfenv()
 local environmentMeta = table.clone(getmetatable(environment) or {})
 environmentMeta.__newindex = function(_, key) error("Module assigned an undeclared global: " .. tostring(key)) end

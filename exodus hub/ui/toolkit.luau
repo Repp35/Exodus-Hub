@@ -7,23 +7,17 @@ local UIKit = {}
 local Theme
 local Runtime
 local Icons
-local Display
-local ControlComponents
-local Inputs
-local Selection
-local Dropdown
 local Appearance
-local Mini
+local Installers = {}
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 -- configuration
 
 -- setup
+function UIKit.configure(installers) Installers = table.clone(installers) end
 function UIKit.setup(deps)
   Theme, Runtime, Icons, Appearance = deps.Theme.tokens, deps.Runtime, deps.Icons, deps.Appearance
-  Mini = deps.Mini
-  Display, ControlComponents, Inputs, Selection, Dropdown = deps.Display, deps.ControlComponents, deps.Inputs, deps.Selection, deps.Dropdown
   return true
 end
 
@@ -560,12 +554,16 @@ function UIKit.create(options)
     popup = popup,
   }
 
-  Display.install(context)
-  ControlComponents.install(context)
-  Inputs.install(context)
-  Selection.install(context)
-  Dropdown.install(context)
-  Mini.install(context)
+  for _, installer in ipairs(Installers) do
+    local previous = table.clone(components)
+    installer.install(context)
+    for name, factory in pairs(previous) do
+      assert(components[name] == factory, "Component already registered: " .. name)
+    end
+    for name, factory in pairs(components) do
+      assert(type(name) == "string" and type(factory) == "function", "Invalid component factory")
+    end
+  end
   components.tabs = components.segmented
   components.click = components.button
   components.scroll = components.slider
@@ -579,30 +577,19 @@ end
 
 -- contract
 UIKit.__contract = {
-  provides = { "setup", "create" },
+  access = { methods = { configure = "infrastructure.write" } },
+  provides = { "configure", "setup", "create" },
   requires = {
     Theme = "uitheme",
     Appearance = "uiappearance",
     Runtime = "uiruntime",
     Icons = "uiicons",
-    Display = "uidisplay",
-    ControlComponents = "uicontrols",
-    Inputs = "uiinputs",
-    Selection = "uiselection",
-    Dropdown = "uidropdown",
-    Mini = "uimini",
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
     Appearance = { "borderColor", "interactionColor", "borderGradient" },
     Runtime = { "scope", "motion", "isVisible", "bindDrag", "mountLayer" },
     Icons = { "create" },
-    Display = { "install" },
-    ControlComponents = { "install" },
-    Inputs = { "install" },
-    Selection = { "install" },
-    Dropdown = { "install" },
-    Mini = { "install" },
   },
 }
 

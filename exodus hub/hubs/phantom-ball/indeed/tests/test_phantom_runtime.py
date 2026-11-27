@@ -15,8 +15,6 @@ def helper():
 
 class PhantomRuntime(unittest.TestCase):
     def test_optional_permissions(self):
-        if not json.loads((HUB / 'hub.json').read_text()).get('checkPermissions', False):
-            self.skipTest('Permissions check not requested by this game')
         result = subprocess.run(['python3', str(ROOT / 'indeed/tools/check_permissions.py'), '--hub', 'phantom-ball'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -32,8 +30,8 @@ class PhantomRuntime(unittest.TestCase):
 local spamUtils = policy.resolve("autospam", loaded).Utils
 local enabledOption = loaded.utils.getConfigValue("AutoSpam")
 assert(not pcall(function() spamUtils.setConfig({ AutoSpam = false }) end), "AutoSpam changed its UI option")
-spamUtils.setAutoSpamActive(true)
-spamUtils.setAutoSpamActive(false)
+policy.resolve("autospam", loaded).InputState.setAutoSpamActive(true)
+policy.resolve("autospam", loaded).InputState.setAutoSpamActive(false)
 assert(loaded.utils.getConfigValue("AutoSpam") == enabledOption, "Runtime state changed UI option")
 local state = { value = 7, nested = { value = 8 } }
 local uiChanged = false
@@ -43,7 +41,7 @@ local newAPI = { getUnrelatedData = function() return state end,
   __contract = { provides = { "getUnrelatedData", "hideMenu", "setOption" }, requires = {},
     access = { methods = { hideMenu = "ui.write", setOption = "config.write" }, scoped = { "setOption" } } } }
 local reader = { __contract = { provides = {}, requires = { API = "brandNewAPI" }, requiresMethods = { API = { "getUnrelatedData" } } } }
-local feature = { __config = { schema = { OwnOption = "boolean" } }, __contract = { provides = {}, requires = { API = "brandNewAPI" } } }
+local feature = { __config = { schema = { OwnOption = "boolean" } }, __contract = { provides = {}, requires = { API = "brandNewAPI" }, requiresMethods = { API = { "setOption" } } } }
 policy.validate("brandNewAPI", newAPI, "hubs/phantom-ball/game/brand_new_api.luau")
 policy.validate("unrelatedCombat", reader, "hubs/phantom-ball/combat/unrelated.luau")
 policy.validate("independentFeature", feature, "universal/independent.luau")

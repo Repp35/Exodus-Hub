@@ -29,7 +29,7 @@ local function surface(context, parent, definition)
     return button, button, button, radius, outline
   end
   local root = inst("CanvasGroup", {
-    Name = definition.name or "ExodusSpamMini",
+    Name = definition.name or "MiniPanel",
     Visible = false,
     GroupTransparency = 1,
     Size = UDim2.fromOffset(context.Theme.MINI_W, context.Theme.MINI_H),
@@ -50,7 +50,7 @@ local function surface(context, parent, definition)
   local outline = kit.stroke(root, nil, 1.5)
   local header = inst("Frame", {
     Size = UDim2.new(1, 0, 0.22, 0),
-    BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+    BackgroundColor3 = C.card,
     BackgroundTransparency = 0.05,
     ZIndex = 16,
   }, root)
@@ -58,7 +58,7 @@ local function surface(context, parent, definition)
   inst("Frame", {
     Size = UDim2.new(1, 0, 0, 12),
     Position = UDim2.new(0, 0, 1, -12),
-    BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+    BackgroundColor3 = C.card,
     BackgroundTransparency = 0.05,
     ZIndex = 16,
   }, header)
@@ -75,7 +75,7 @@ local function surface(context, parent, definition)
     Size = UDim2.new(1, -16, 1, 0),
     Position = UDim2.fromOffset(8, 0),
     BackgroundTransparency = 1,
-    Text = definition.title or "Spam",
+    Text = definition.title or "Ação",
     TextColor3 = C.subtext,
     TextScaled = true,
     TextXAlignment = Enum.TextXAlignment.Center,
@@ -83,7 +83,7 @@ local function surface(context, parent, definition)
     ZIndex = 17,
   }, header)
   local button = inst("TextButton", {
-    Name = "SpamButton",
+    Name = "ActionButton",
     Size = UDim2.new(1, -12, 0.78, -8),
     Position = UDim2.new(0, 6, 0.22, 3),
     BackgroundColor3 = C.red,
@@ -119,7 +119,7 @@ function Mini.install(context)
       clickScale = context.inst("UIScale", { Scale = 1 }, button)
     end
     local current, shown, invisible, revision = nil, false, false, 0
-    local shape = "round"
+    local shape
     local width = definition.panel and context.Theme.MINI_W or (definition.size or context.Theme.CLASH_SIZE)
     local height = definition.panel and context.Theme.MINI_H or width
     local target = definition.position or UDim2.fromOffset(14, 160)
@@ -381,5 +381,5 @@ function Mini.install(context)
     return handle
   end
 end
-Mini.__contract = { provides = { "setup", "install" }, requires = {} }
+Mini.__contract = { component = true, provides = { "setup", "install" }, requires = {} }
 return Mini

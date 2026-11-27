@@ -8,6 +8,7 @@ local Theme = {}
 -- configuration
 local CONFIG = {
   COLORS = {
+    icon = Color3.fromRGB(220, 230, 255),
     bg = Color3.fromRGB(8, 8, 22),
     header = Color3.fromRGB(14, 14, 34),
     card = Color3.fromRGB(20, 20, 44),

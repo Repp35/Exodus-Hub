@@ -18,7 +18,8 @@ python3 'exodus hub/indeed/formatter.py' --check 'exodus hub'
 ```
 
 Formate os módulos antes de gerar os catálogos: seus hashes correspondem ao
-conteúdo final dos arquivos. O CI só valida; não modifica arquivos nem cria commits.
+conteúdo final dos arquivos. O CI gera e valida os arquivos; na main, registra arquivos gerados se houver diferenças.
+Gere tudo antes do commit para evitar uma alteração adicional de geração.
 Não há publicação de site nem ofuscação.
 
 `--hub universal` e `--hub phantom-ball` selecionam suítes individuais. Os testes
@@ -29,15 +30,10 @@ cliente Roblox e no executor usado.
 
 ## Contratos e recursos
 
-Declare dependências em `__contract.requires` e APIs necessárias em
-`requiresMethods`/`requiresData`. Exporte funções em `provides`. Use `teardown`
-para desfazer alterações, inclusive as feitas antes de uma falha no `setup`.
-`lifetime.scope()` libera recursos na ordem inversa, uma única vez.
-
-A política opcional de permissões fica no `hub.json`. `__contract.access`
-classifica operações; `config.own` limita escritas às chaves do próprio módulo.
-Resultados de leitura e APIs são imutáveis. Essa política organiza o acesso
-interno; não isola scripts do ambiente Roblox ou do executor.
+Leia [Arquitetura](architecture.md) antes de mudar fronteiras ou adicionar módulos.
+A política interna é obrigatória para todos os jogos. Dependências expõem apenas
+membros declarados. `__config` define propriedade, validação e persistência; a
+API `options` oferece leitura e observação sem permissão de escrita.
 
 ## Diretivas Luau
 
@@ -77,7 +73,6 @@ Disclosures compõem a transparência dos ancestrais sem sobrescrever a aparênc
 original dos títulos e descrições. Colunas visíveis são sempre posicionadas da
 esquerda para a direita, inclusive após filtros e atualização de readouts.
 
-Os downloads usam um único worker e um intervalo mínimo global de um segundo
-entre requisições. Atualizações verificam a revisão a cada cinco minutos.
-O prazo de download mede 60 segundos sem progresso, em vez de limitar a duração
+Os downloads usam um único worker e compartilham o controle de requisições. Atualizações verificam a revisão a cada cinco minutos.
+O prazo de download mede cinco segundos sem progresso, em vez de limitar a duração
 total de uma fila lenta. Uma requisição pendente impede a abertura da próxima.

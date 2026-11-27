@@ -4,11 +4,11 @@
 local Assists = {}
 function Assists.setup() return true end
 function Assists.create(context)
-  local utils, gameInfo = context.deps.Utils, context.deps.Hub
+  local utils, gameInfo = context.deps.State, context.deps.Model
   local elapsed, automatic = 0, {}
   local function refresh()
     context.floating.refreshAbilities()
-    local rules = not context.state.desktop and gameInfo.getMiniVisibility() or {}
+    local rules = not context.state.desktop and gameInfo.getVisibility() or {}
     local changed = false
     for key, visible in pairs(rules) do
       if automatic[key] ~= visible then

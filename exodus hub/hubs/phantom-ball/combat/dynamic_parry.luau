@@ -2,6 +2,7 @@
 --!optimize 2
 
 -- code
+local inputState
 local Dynamic = {}
 local utils
 local gameInfo
@@ -33,7 +34,7 @@ end
 local function stop()
   active, session = false, nil
   if utils then
-    utils.setDynamicSpamActive(false)
+    inputState.setDynamicSpamActive(false)
   end
 end
 local function finite(x) return type(x) == "number" and x == x and x > -math.huge and x < math.huge end
@@ -107,7 +108,7 @@ local function press(input)
     local ping = gameInfo.getAveragePing()
     protectedUntil = os.clock() + 0.3 + math.max(0, tonumber(ping) or 0)
     active = true
-    utils.setDynamicSpamActive(true)
+    inputState.setDynamicSpamActive(true)
   end)
 end
 local function release(input)
@@ -143,6 +144,10 @@ local function attach(ability)
   local view = nativeAbility.create(ability, {
     name = "ExodusDynamicParry",
     animations = gameInfo.getNativeButtonAnimations(),
+    read = utils.getConfigValue,
+    observe = utils.observeConfig,
+    scaleKey = "DynamicMiniScale",
+    squareKey = "DynamicMiniSquare",
     onPress = function(input)
       if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
         press(input)
@@ -168,7 +173,7 @@ function Dynamic.canSend()
   if not active then
     return false
   end
-  if not enabled() or not utils.isDynamicSpamActive() then
+  if not enabled() or not inputState.isDynamicSpamActive() then
     stop()
     return false
   end
@@ -194,6 +199,7 @@ function Dynamic.canSend()
   return true
 end
 function Dynamic.setup(deps)
+  inputState = deps.InputState
   Dynamic.teardown()
   utils, gameInfo, cooldownInfo, remote = deps.Utils, deps.GameInfo, deps.Cooldown, deps.Remote
   nativeAbility = deps.NativeAbility
@@ -292,6 +298,7 @@ end
 Dynamic.__contract = {
   access = { methods = { canSend = "combat.runtime" } },
   requires = {
+    InputState = "inputstate",
     Utils = "utils",
     GameInfo = "gameinfo",
     Cooldown = "cooldown",
@@ -299,7 +306,8 @@ Dynamic.__contract = {
     NativeAbility = "uinativeability",
   },
   requiresMethods = {
-    Utils = { "setDynamicSpamActive", "isDynamicSpamActive", "getConfigValue", "isActive", "getLocalPlayer", "getPlayers", "getRunService", "observeConfig" },
+    InputState = { "isDynamicSpamActive", "setDynamicSpamActive" },
+    Utils = { "getConfigValue", "isActive", "getLocalPlayer", "getPlayers", "getRunService", "observeConfig" },
     GameInfo = { "getDeflectAbility", "getAveragePing", "getNativeButtonAnimations", "getSnapshotAt", "getBallSpeedLimits", "getPlayerMotion" },
     Cooldown = { "getDeflectCooldownState" },
     Remote = { "fireNativeParry" },

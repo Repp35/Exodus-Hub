@@ -5,7 +5,7 @@
 local Controller = {}
 function Controller.setup() return true end
 function Controller.create(context)
-  local utils, controls = context.deps.Utils, context.deps.Controls
+  local utils, controls = context.deps.State, context.deps.Controls
   local entries, order, automatic = {}, {}, {}
   local controller = {}
   local function call(name, ...)
@@ -23,18 +23,21 @@ function Controller.create(context)
     local d, handle = entry.definition, entry.handle
     if d.read and controls[d.read] then
       handle.setValue(controls[d.read]())
-    elseif d.key then
-      handle.setValue(utils.getConfigValue(d.key) == true)
+    elseif d.key or d.option then
+      handle.setValue(utils.getConfigValue(d.key or d.option) == true)
     end
-    if not d.panel and (d.scaleKey or d.squareKey) then
-      handle.setAppearance(d.scaleKey and utils.getConfigValue(d.scaleKey) or 1, d.squareKey and utils.getConfigValue(d.squareKey) == true)
+    if d.scaleKey or d.squareKey then
+      handle.setAppearance(
+        d.scaleKey and utils.getConfigValue(d.scaleKey) or 1,
+        d.squareKey and utils.getConfigValue(d.squareKey) == true or not d.squareKey and d.shape == "square"
+      )
     end
     local visible = (not d.visibleKey and d.visible ~= false) or utils.getConfigValue(d.visibleKey) == true or automatic[d.visibleKey] == true
     if d.mobileOnly == true and context.state.desktop then
       visible = false
     end
     if d.ability then
-      visible = visible and context.deps.Hub.getAbilityAvailability(d.ability) == true
+      visible = visible and context.deps.Model.getAvailability(d.ability) == true
     end
     if not context.state.initializing then
       handle.setVisible(visible)
@@ -74,8 +77,9 @@ function Controller.create(context)
         if d.modeKey and utils.getConfigValue(d.modeKey) == "Hold" then
           return
         end
-        if d.key then
-          context.setConfigValue(d.key, utils.getConfigValue(d.key) ~= true)
+        if d.key or d.option then
+          local key = d.key or d.option
+          context.setConfigValue(key, utils.getConfigValue(key) ~= true)
         elseif d.action then
           call(d.action, not handle.getValue())
         end
@@ -132,9 +136,9 @@ function Controller.create(context)
       if d.xKey and d.yKey then
         utils.setConfig({ [d.xKey] = handle.Root.Position.X.Offset, [d.yKey] = handle.Root.Position.Y.Offset })
       end
-    end, false)
+    end, false, nil, nil, handle.scope)
     function entry.layout()
-      local factor = d.scaleKey and tonumber(utils.getConfigValue(d.scaleKey)) or 1
+      local factor = math.clamp(d.scaleKey and tonumber(utils.getConfigValue(d.scaleKey)) or 1, 0.5, 2)
       local size = (d.size or context.theme.CLASH_SIZE) * factor
       local scale = math.max(0.01, context.refs.responsiveScale.Scale)
       local raw = context.viewport()
@@ -150,7 +154,7 @@ function Controller.create(context)
         defaultX, defaultY, offscreen = view.X - width - 14, view.Y / 2 - height / 2, view.X + 30
         handle.setDimensions(width, height)
       elseif d.defaultX then
-        defaultX, defaultY = d.defaultX, raw.Y / 2 + (d.offsetY or 0)
+        defaultX, defaultY = d.defaultX, view.Y / 2 + (d.offsetY or 0)
       else
         local gap, rows = size + 8, math.ceil(#order / 2)
         defaultX = 14 + ((index - 1) % 2) * gap
@@ -189,13 +193,13 @@ function Controller.create(context)
       end
     end
   end
-  function controller.setSpam(value)
-    context.state.spamOn = value == true
+  function controller.setPrimaryActive(value)
+    context.state.primaryActive = value == true
     local primary = context.inputDefinition.primary
     call(primary and primary.write, value == true)
     controller.sync()
   end
-  function controller.showMini(value)
+  function controller.showPrimary(value)
     local primary = context.inputDefinition.primary
     if primary and primary.visibleKey then
       utils.setConfig({ [primary.visibleKey] = value == true })

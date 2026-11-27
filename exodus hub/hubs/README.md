@@ -1,58 +1,55 @@
 # Adicionar um jogo
 
-Crie `hubs/<jogo>/hub.json` com IDs reais:
+Crie `hubs/<id>/hub.json` com `title` e pelo menos um grupo de IDs reais:
 
 ```json
 {
   "title": "Nome do jogo",
   "placeIds": [123456789],
   "universeIds": [987654321],
-  "permissions": false
+  "version": "1.0.0"
 }
 ```
 
-Um dos grupos de IDs basta. A pasta identifica a integração. `author`,
-`notification` e `dataFolder` são opcionais. O armazenamento padrão fica em
-`Exodus Hub/hubs/<jogo>`; use `dataFolder` apenas para preservar um local existente.
+`id`, quando informado, deve coincidir com a pasta. `author`, `notification` e
+`developers` são opcionais. Permissões e diretórios de armazenamento são definidos
+pela base; o manifesto não os redefine.
 
-Arquivos `.luau` fora de `indeed/` entram no catálogo automaticamente. A chave é o
-nome do arquivo sem sublinhados: `auto_parry.luau` vira `autoparry`. Chaves devem
-ser únicas e não podem substituir módulos compartilhados.
+Arquivos `.luau` entram recursivamente no catálogo, exceto `indeed/`. O nome do
+arquivo sem `_` identifica o módulo. Não pode haver colisões com outros arquivos
+da integração ou com módulos compartilhados. Cada arquivo exporta `__contract`,
+`setup` e, quando possui recursos, `teardown`. O catálogo não é editado à mão.
 
-Cada módulo declara `__contract`, dependências, `setup` e, se possuir recursos,
-`teardown`. Um `setup` bem-sucedido retorna `true`. Recursos ligados ao personagem
-usam `bindCharacter` e `detachCharacter`, com `bindCharacter = true` no contrato.
+`game_runtime.luau` exporta `bind(loaded)` e `createAPI(loaded)`. A composição recebe
+as APIs próprias e os serviços públicos permitidos, não o contexto bruto do hub.
+Pode devolver estes campos opcionais:
 
-`game_runtime.luau` exporta `bind` e `createAPI(loaded)`. Este último retorna o
-adaptador consumido pela base. Todos os campos são opcionais:
+- `getUIConfig`: declarações de páginas e Mini UIs pela API do Exodus.
+- `controls`: callbacks de ações do jogo; nomes reservados do hub são proibidos.
+- `createActions(context)`: callbacks/estados e resolvers restritos aos controles do jogo.
+- `observeState`: observação dos estados transitórios de suas ações.
+- `readouts`: indicadores, com identificador e leitura.
+- `updateBlockers`: leitores que impedem uma atualização durante uma ação em andamento.
+- `miniVisibility`: regras de visibilidade que não alteram a escolha salva nem ativam a função.
+- `migrateConfig`: recebe e altera somente chaves próprias/legadas da integração.
+- `getJumpButton`: referência ao botão nativo de pulo, quando necessária.
+- `getChoices`, `getGameContext` e os leitores de disponibilidade de habilidades.
 
-- `getUIConfig`: definição de páginas, opções e capacidades.
-- `controls`: callbacks das ações da interface.
-- `createActions(context)`: ações e estados adicionais; recebe o escopo da UI.
-- `readouts`: indicadores com `id`, `key`, `anchor`, `position` e função `read`.
-- `updateBlockers`: funções que retornam `true` enquanto uma atualização deve esperar.
-- `miniVisibility`: mapa de chave de configuração para regra de visibilidade.
-- `migrateConfig(data)`: migração dos arquivos antigos da integração.
-- `getJumpButton`: controle nativo adicional de pulo, quando necessário.
-- Métodos de habilidades e adaptação visual usados pela integração.
+Configurações de controles podem ficar no próprio módulo ou em `game_ui.luau`,
+na pasta do jogo. Também é possível usar `UI.addPage`, `page.addSection` e os
+componentes retornados, como `section.toggle`. Só a biblioteca cria os elementos
+visuais; o consumidor declara suas opções e callbacks.
 
-A atualização automática consulta a revisão a cada 120 segundos, prepara os arquivos e
-aguarda 0,4 segundo contínuo sem bloqueios antes de substituir a sessão. Uma
-falha na regra bloqueia a atualização. Desativar a atualização automática cancela uma troca
-pendente. O botão de atualização e uma nova execução do loadstring forçam a troca.
+Páginas de jogo não renomeiam, reordenam ou substituem páginas compartilhadas.
+`pageOrder` ordena apenas as páginas da própria integração. Uma extensão da página
+Universal usa `additions` com `page = "indeed"` e `sectionTitle`; ela é uma seção
+nova, sem modificar controles existentes. Os schemas pertencem aos respectivos
+módulos e podem escolher `persistent` apenas para suas próprias configurações.
 
-As regras de Mini UI complementam a escolha do usuário sem salvar alterações:
-a UI aparece quando a regra ou a opção manual está ativa e faz a transição de
-saída quando ambas deixam de estar ativas. Elas não ativam a função do botão.
+Uma extensão que depende de um universal usa `options.get/isEnabled/observe`.
+Veja `hubs/phantom-ball/game/performance.luau`: o jogo acompanha Anti Lag e administra
+seus próprios recursos, enquanto o universal continua independente do jogo.
 
-Módulos compartilhados declaram suas chaves após o título e as diretivas, por exemplo
-`-- @modules exemplo`. Bundles listam todas as chaves separadas por vírgulas.
-Depois de adicionar arquivos, gere os catálogos com os comandos de
-[desenvolvimento](../../docs/development.md). Não edite os catálogos à mão.
-
-Testes ficam em `indeed/tests/`; diagnósticos, em `indeed/diagnostics/`.
-Use o Phantom Ball como referência para uma integração completa.
-
-A versão da integração fica em `hub.json`, no campo `version`. `developers` lista
-seus responsáveis. A versão da base fica separada em `core/session.luau`.
-A execução ao entrar é independente da atualização; veja [Auto Execute](../../docs/auto-execute.md).
+A referência dos limites e exemplos está em [Arquitetura](../../docs/architecture.md).
+Execute os comandos de [desenvolvimento](../../docs/development.md) para gerar e
+validar runtime, permissões, contratos e catálogos.

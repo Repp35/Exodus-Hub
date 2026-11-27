@@ -14,17 +14,6 @@ local function createOptimizer(services, initialConfig)
   local Lighting = services.Lighting
   local roots = services.Roots or { Workspace, Lighting }
   local CollectionService = services.CollectionService
-  local Heartbeat = services.RunService.Heartbeat
-  local phase = 0
-  local function waitPhase()
-    if services.PhasesPerFrame == 2 then
-      phase = 1 - phase
-      local signal = phase == 1 and services.RunService.PreSimulation or services.RunService.PostSimulation
-      signal:Wait()
-    else
-      Heartbeat:Wait()
-    end
-  end
   local options = table.clone(initialConfig)
   local controller = {}
   local enabled, alive, destroying = false, true, false
@@ -35,6 +24,7 @@ local function createOptimizer(services, initialConfig)
   local dirty = {}
   local delayed = false
   local workerRunning = false
+  local driver
   local generation = 0
   local unsupported = {}
   local unsupportedCount, restoreFailures, runtimeFailures = 0, 0, 0
@@ -123,7 +113,7 @@ local function createOptimizer(services, initialConfig)
         target.Enabled, target.LocalTransparencyModifier = false, 1
       end
     elseif object:IsA("Highlight") then
-      if options.LegacyEffects then
+      if options.LegacyEffects and object:GetAttribute("UIComponent") ~= true then
         target.Enabled = false
       end
     elseif object:IsA("ForceField") or object:IsA("Explosion") then
@@ -156,8 +146,26 @@ local function createOptimizer(services, initialConfig)
           target[property] = options.FlatSkyTexture
         end
       end
+    elseif object:IsA("Decal") or object:IsA("Texture") then
+      if options.RemoveTextures then
+        target.Transparency = 1
+      end
+    elseif object:IsA("SpecialMesh") then
+      if options.RemoveTextures then
+        target.TextureId = ""
+      end
+    elseif object:IsA("SurfaceAppearance") then
+      if options.RemoveTextures then
+        target.ColorMap, target.NormalMap, target.MetalnessMap, target.RoughnessMap = "", "", "", ""
+      end
     elseif object:IsA("BasePart") then
       watch = false
+      if object:IsA("MeshPart") then
+        target.RenderFidelity = Enum.RenderFidelity.Performance
+        if options.RemoveTextures then
+          target.TextureID = ""
+        end
+      end
       if options.Shadows then
         target.CastShadow = false
       end
@@ -293,7 +301,7 @@ local function createOptimizer(services, initialConfig)
       if current ~= value then
         local previous = saved.applied
         saved.applied = value
-        if not shared.apply(saved, object, property, value, 0) then
+        if not shared.apply(saved, object, property, value, 100) then
           saved.applied = previous
           unavailable(object, property)
           if saved.original == current then
@@ -303,7 +311,7 @@ local function createOptimizer(services, initialConfig)
           end
         end
       else
-        shared.apply(saved, object, property, value, 0)
+        shared.apply(saved, object, property, value, 100)
         saved.applied = value
       end
     end
@@ -348,68 +356,68 @@ local function createOptimizer(services, initialConfig)
   local function workAvailable() return if enabled then head <= tail or #scan > 0 else #records > 0 end
   local function finishDestroy()
     alive = false
+    if driver then
+      driver:Disconnect()
+      driver = nil
+    end
+    workerRunning = false
     for _, connection in ipairs(connections) do
       connection:Disconnect()
     end
     connections, dirty, pending, queued, scan = {}, {}, {}, {}, {}
+  end
+  local function disconnectDriver()
+    if driver then
+      driver:Disconnect()
+      driver = nil
+    end
+    workerRunning = false
+  end
+  local function work()
+    if not alive then
+      disconnectDriver()
+      return
+    end
+    local phases = services.PhasesPerFrame or 2
+    local deadline = os.clock() + options.BudgetMs / (1000 * phases)
+    local limit = math.max(1, math.floor(options.MaxItemsPerFrame / phases))
+    for count = 1, limit do
+      if not workAvailable() or os.clock() >= deadline then
+        break
+      end
+      if not enabled then
+        restoreEntry(records[#records])
+      else
+        local object
+        if count % 2 == 0 then
+          object = popPending() or nextScan()
+        else
+          object = nextScan() or popPending()
+        end
+        if object then
+          local ok, message = pcall(process, object)
+          if not ok then
+            runtimeFailures += 1
+            if runtimeFailures <= 3 then
+              warn("[AntiLag] " .. tostring(message))
+            end
+          end
+        end
+      end
+    end
+    if not workAvailable() then
+      disconnectDriver()
+      if destroying and not enabled then
+        finishDestroy()
+      end
+    end
   end
   scheduleWorker = function()
     if workerRunning or not alive then
       return
     end
     workerRunning = true
-    task.defer(function()
-      local ok, reason = pcall(function()
-        while alive and workAvailable() do
-          local bootstrap = #scan > 0 or not enabled
-          local phases = services.PhasesPerFrame or 1
-          local deadline = os.clock() + (bootstrap and 6 or options.BudgetMs) / (1000 * phases)
-          local count = 0
-          local limit = math.max(1, math.floor((bootstrap and 4096 or options.MaxItemsPerFrame) / phases))
-          repeat
-            if not enabled then
-              local entry = records[#records]
-              if entry then
-                restoreEntry(entry)
-              end
-            else
-              local object
-              if count % 2 == 0 then
-                object = popPending() or nextScan()
-              else
-                object = nextScan() or popPending()
-              end
-              if object then
-                local ok, message = pcall(process, object)
-                if not ok then
-                  runtimeFailures += 1
-                  if runtimeFailures <= 3 then
-                    warn("[AntiLag] " .. tostring(message))
-                  end
-                end
-              end
-            end
-            count += 1
-          until count >= limit or os.clock() >= deadline or not workAvailable()
-          if workAvailable() then
-            waitPhase()
-          end
-        end
-      end)
-      workerRunning = false
-      if not ok then
-        runtimeFailures += 1
-        enabled = false
-        pending, queued, scan, dirty, head, tail = {}, {}, {}, {}, 1, 0
-        while #records > 0 do
-          restoreEntry(records[#records])
-        end
-        warn("[Exodus AntiLag] Restored after worker failure: " .. tostring(reason))
-      end
-      if destroying and not enabled and #records == 0 then
-        finishDestroy()
-      end
-    end)
+    driver = services.ConnectPhysics(work)
   end
   enqueue = function(object)
     if not alive or not enabled or queued[object] then
@@ -491,6 +499,8 @@ local function createOptimizer(services, initialConfig)
       scheduleWorker()
     end
   end
+  local batching = false
+  local needsScan = false
   function controller:SetOption(key, value)
     if not alive or destroying or options[key] == nil then
       return false
@@ -511,8 +521,8 @@ local function createOptimizer(services, initialConfig)
       value = math.clamp(value, 0.1, 2)
     end
     local bounds = {
-      CullDistance = { 300, 1200 },
-      CullKeepNear = { 8, 128 },
+      CullDistance = { 128, 6000 },
+      CullKeepNear = { 64, 512 },
       CullViewPadding = { 0, 100 },
       CullViewDegrees = { 2, 30 },
       CullHideDelay = { 0.05, 2 },
@@ -540,9 +550,28 @@ local function createOptimizer(services, initialConfig)
       or string.sub(key, 1, 4) == "Cull"
       or key == "HideLobbyInMatch"
     if enabled and not noScan then
-      restartScan()
+      if batching then
+        needsScan = true
+      else
+        restartScan()
+      end
     end
     return true
+  end
+  function controller:SetOptions(values)
+    batching = true
+    local accepted = true
+    for key, value in pairs(values) do
+      if not self:SetOption(key, value) then
+        accepted = false
+      end
+    end
+    batching = false
+    if needsScan then
+      needsScan = false
+      restartScan()
+    end
+    return accepted
   end
   function controller:GetOption(key) return options[key] end
   function controller:GetStatus()

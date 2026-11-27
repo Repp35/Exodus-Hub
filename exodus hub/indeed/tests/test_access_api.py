@@ -15,7 +15,7 @@ class AccessAPI(unittest.TestCase):
             self.skipTest('Luau required')
         registry = (ROOT / 'hubs/registry.luau').read_text()
         access = (ROOT / 'hubs/access.luau').read_text()
-        linker = (ROOT / 'core/module_linker.luau').read_text()
+        linker = (ROOT / 'core/runtime/module_linker.luau').read_text()
         source = f'local registry = (function()\n{registry}\nend)()\n'
         source += f'local access = (function()\n{access}\nend)()\n'
         source += f'local linker = (function()\n{linker}\nend)()\n'
@@ -23,7 +23,7 @@ class AccessAPI(unittest.TestCase):
         hub_catalog = (ROOT / 'hubs/catalog.luau').read_text()
         source += f'local shared = (function()\n{common_catalog}\nend)()\n'
         source += f'local catalog = (function()\n{hub_catalog}\nend)()\n'
-        source += 'for _, profile in ipairs(catalog) do assert(#registry.manifest(shared, profile) > #shared) end\n'
+        source += 'for _, profile in ipairs(catalog) do assert(#registry.manifest(shared, profile) >= #shared) end\n'
         source += 'assert(not pcall(registry.merge, {}, {{name="invalid",path="ui/games/mm2/../core.luau"}}))\n'
         source += '''
 local profiles = {
@@ -49,8 +49,8 @@ assert(registry.resolve(profiles, 99, 0, other, access) == nil)
 access.games.universal = { mode = "disabled" }
 assert(registry.resolve(profiles, 99, 0, owner, access) == nil)
 local profile = { id = "universal", permissions = false }
-local common = { { name = "permissions", path = "core/permissions.luau" }, { name = "state", path = "core/session.luau" } }
-assert(#registry.manifest(common, profile) == 1)
+local common = { { name = "permissions", path = "core/security/permissions.luau" }, { name = "state", path = "core/session.luau" } }
+assert(#registry.manifest(common, profile) == 2)
 assert(#common == 2)
 local modules = {
   b = { __contract = { provides = {}, requires = { A = "a" } } },

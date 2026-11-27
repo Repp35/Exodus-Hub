@@ -23,6 +23,7 @@ local bindings = {
   [Enum.KeyCode.LeftControl] = { "Down", -1 },
 }
 local CONFIG = {
+  persistent = { UniversalFly = false },
   schema = { UniversalFly = "boolean", UniversalFlySpeed = "rate" },
   defaults = { UniversalFly = false, UniversalFlySpeed = 1 },
 }

@@ -12,7 +12,7 @@ function Header.create(context, parent)
     Position = UDim2.fromOffset(T.PAD, (T.TITLE_H - 28) / 2),
     Size = UDim2.fromOffset(28, 28),
     BackgroundTransparency = 1,
-    ImageColor3 = Color3.new(1, 1, 1),
+    ImageColor3 = context.theme.COLORS.icon,
     ScaleType = Enum.ScaleType.Fit,
     Visible = false,
     ZIndex = 7,

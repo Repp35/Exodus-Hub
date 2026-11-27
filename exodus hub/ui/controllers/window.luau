@@ -12,7 +12,7 @@ function Controller.setup() return true end
 
 -- controller
 function Controller.create(context)
-  local Utils = context.deps.Utils
+  local Utils = context.deps.State
   local UIState = context.state
   local CONFIG = context.theme
   local C = context.theme.COLORS
@@ -201,7 +201,13 @@ function Controller.create(context)
   _spawn(function()
     while context.scope.alive and context.refs.configPanel == particlePanel and particlePanel.Parent do
       _wait(math.random() * 0.6 + 0.15)
-      if context.refs.configPanel == particlePanel and particlePanel.Parent and particlePanel.Visible and not UIState.closing then
+      if
+        context.refs.configPanel == particlePanel
+        and particlePanel.Parent
+        and particlePanel.Visible
+        and not UIState.closing
+        and (not context.options.effectsEnabled or context.options.effectsEnabled())
+      then
         spawnParticle()
       end
     end
@@ -244,64 +250,36 @@ function Controller.create(context)
       togglePanel()
     end
   end))
-  local settingsButton = inst("TextButton", {
-    Name = "HubSettingsButton",
-    Size = UDim2.new(0, 30, 0, 30),
-    Position = UDim2.new(1, -PAD - 66, 0.5, -15),
-    BackgroundColor3 = C.btnDark,
-    BackgroundTransparency = 0.3,
-    Text = "",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 18,
-    Font = Enum.Font.GothamBold,
-    ZIndex = 9,
-    Parent = header.buttons,
-  })
-  settingsButton.LayoutOrder = 3
-  corner(settingsButton, 8)
-  stroke(settingsButton, nil, 1)
-  context.kit.icon(settingsButton, "settings")
-  local infoButton = inst("TextButton", {
-    Name = "HubInformationButton",
-    Size = UDim2.fromOffset(30, 30),
-    Position = UDim2.new(1, -PAD - 102, 0.5, -15),
-    BackgroundColor3 = C.btnDark,
-    BackgroundTransparency = 0.3,
-    Text = "",
-    AutoLocalize = false,
-    Font = Enum.Font.GothamBold,
-    TextColor3 = C.text,
-    TextSize = 16,
-    ZIndex = 9,
-    Parent = header.buttons,
-  })
-  infoButton.LayoutOrder = 2
-  corner(infoButton, 8)
-  stroke(infoButton, nil, 1)
-  context.kit.icon(infoButton, "information")
-  trackConn(infoButton.Activated:Connect(function() context.pages.toggle("information") end))
-  local assistsButton = inst("TextButton", {
-    Name = "HubAssistsButton",
-    Visible = context.combatUI ~= false,
-    Size = UDim2.fromOffset(30, 30),
-    Position = UDim2.new(1, -PAD - 138, 0.5, -15),
-    BackgroundColor3 = C.btnDark,
-    BackgroundTransparency = 0.3,
-    Text = "",
-    ZIndex = 9,
-    Parent = header.buttons,
-  })
-  assistsButton.LayoutOrder = 1
-  corner(assistsButton, 8)
-  stroke(assistsButton, nil, 1)
-  context.kit.icon(assistsButton, "assists")
-  trackConn(assistsButton.Activated:Connect(function() context.pages.toggle("assists") end))
+  local pageButtons = {}
+  for index, definition in ipairs(context.options.headerButtons or {}) do
+    local item = inst("TextButton", {
+      Name = "Header_" .. tostring(definition.id or index),
+      Size = UDim2.fromOffset(30, 30),
+      BackgroundColor3 = C.btnDark,
+      BackgroundTransparency = 0.3,
+      Text = "",
+      ZIndex = 9,
+      LayoutOrder = index,
+      Parent = header.buttons,
+    })
+    corner(item, 8)
+    stroke(item, nil, 1)
+    context.kit.icon(item, definition.icon)
+    trackConn(item.Activated:Connect(function()
+      if definition.page then
+        context.pages.toggle(definition.page)
+      elseif definition.onClick then
+        definition.onClick()
+      end
+    end))
+    pageButtons[#pageButtons + 1] = { button = item, page = definition.page }
+  end
   context.refs.killBtn = inst("TextButton", {
     Size = UDim2.new(0, 124, 0, 26),
     Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
     BackgroundColor3 = C.redDark,
     BackgroundTransparency = 0.15,
-    Text = "Close Script",
+    Text = context.options.closeText or "Fechar",
     TextColor3 = Color3.fromRGB(255, 200, 200),
     TextSize = 11,
     Font = Enum.Font.GothamBold,
@@ -312,7 +290,8 @@ function Controller.create(context)
   stroke(context.refs.killBtn, nil, 1)
   trackConn(context.refs.killBtn.Activated:Connect(function() context.lifecycle.animateClose("close") end))
   context.refs.reloadButton = makeBtn("Reload", 0, 0, 124, 26, context.refs.configPanel, C.btnBlue)
-  context.refs.reloadButton.Name = "ReloadHub"
+  context.refs.reloadButton.Name = "ReloadWindow"
+  context.refs.reloadButton.Visible = type(context.deps.Controls.onReload) == "function"
   context.refs.reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26)
   context.refs.reloadButton.TextSize = 11
   trackConn(context.refs.reloadButton.Activated:Connect(function() context.lifecycle.animateClose("reload") end))
@@ -333,7 +312,7 @@ function Controller.create(context)
     Size = UDim2.new(0, 82, 0, 26),
     Position = UDim2.new(0, PAD + 34, 1, -PAD - 26),
     BackgroundTransparency = 1,
-    Text = "1/5 Main",
+    Text = "",
     TextColor3 = C.text,
     TextSize = 9,
     Font = Enum.Font.GothamBold,
@@ -357,7 +336,6 @@ function Controller.create(context)
   local previousIcon = context.kit.icon(previous, "chevron", { Rotation = 90 })
   local nextIcon = context.kit.icon(nextPage, "chevron", { Rotation = -90 })
   local function updateNavigation(state)
-    assistsButton.BackgroundColor3 = state.id == "assists" and C.accent or C.btnDark
     pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title
     previous.Visible = not state.utility
     nextPage.Visible = not state.utility
@@ -367,9 +345,10 @@ function Controller.create(context)
     nextPage.Selectable = nextPage.Active
     previousIcon.ImageTransparency = previous.Active and 0 or 0.7
     nextIcon.ImageTransparency = nextPage.Active and 0 or 0.7
-    settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
+    for _, entry in ipairs(pageButtons) do
+      entry.button.BackgroundColor3 = state.id == entry.page and C.accent or C.btnDark
+    end
   end
-  trackConn(settingsButton.Activated:Connect(function() context.pages.toggle("config") end))
   trackConn(previous.Activated:Connect(function() context.pages.step(-1) end))
   trackConn(nextPage.Activated:Connect(function() context.pages.step(1) end))
   local iconGeneration = 0
@@ -379,7 +358,7 @@ function Controller.create(context)
     Position = UDim2.fromScale(0.5, 0.5),
     Size = UDim2.fromScale(0.68, 0.68),
     BackgroundTransparency = 1,
-    ImageColor3 = Color3.new(1, 1, 1),
+    ImageColor3 = C.icon,
     ScaleType = Enum.ScaleType.Fit,
     Visible = false,
     ZIndex = 11,

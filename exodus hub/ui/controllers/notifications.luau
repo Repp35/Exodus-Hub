@@ -32,18 +32,18 @@ local __part_uinotificationview = (function()
 
   function Controller.setup() return true end
   function Controller.create(context)
-    local Utils, UIState = context.deps.Utils, context.state
+    local Utils, UIState = context.deps.State, context.state
     local Appearance, Policy = context.deps.Appearance, context.deps.NotificationPolicy
     local surface = context.deps.Surface.create(Appearance)
     local function key(value) return tostring(value or "general"):gsub("[^%w_%-]", "_") end
     local layer, show, clear = surface.layer, surface.show, surface.clear
     local function persistent(message, id, kind, duration)
       id = key(id or message)
-      local category = (id == "update" or id == "closing" or id == "loading") and "lifecycle" or (kind == "critical" and "critical" or "system")
+      local category = kind == "critical" and "critical" or "system"
       if not Policy.shouldShow(Utils.getConfig(), UIState.desktop, { category = category, topic = id }) then
         return false
       end
-      if duration == nil and id ~= "dumper" then
+      if duration == nil then
         duration = 2.5
       end
       return show(message, id, kind, duration)

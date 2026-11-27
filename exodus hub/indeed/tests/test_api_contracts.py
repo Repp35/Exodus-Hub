@@ -45,7 +45,7 @@ def load_contracts() -> dict[str, dict]:
     contracts = {}
     for name, path in MANIFEST:
         source = source_for(name, path)
-        module_name = re.search(r"^local\s+(\w+)\s*=\s*\{\s*\}", source, re.MULTILINE)
+        module_name = re.search(r"^local\s+(\w+)\s*=\s*\{", source, re.MULTILINE)
         if not module_name:
             raise AssertionError(f"{name}: could not identify module table")
         module_name = module_name.group(1)

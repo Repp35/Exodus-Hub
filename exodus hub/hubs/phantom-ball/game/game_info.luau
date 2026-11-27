@@ -1542,6 +1542,7 @@ GameInfo.__contract = {
     BallSync = { "create" },
     Targeting = { "create" },
     Utils = {
+      "isFiniteNumber",
       "now",
       "apiVersion",
       "getPlayers",

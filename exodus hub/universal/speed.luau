@@ -3,8 +3,9 @@
 -- @modules speed
 
 local Speed = {}
-local controller, binding, defaultsScope
+local controller, binding
 local CONFIG = {
+  persistent = { UniversalSpeedEnabled = false },
   schema = { UniversalSpeedEnabled = "boolean", UniversalSpeed = "rate" },
   defaults = { UniversalSpeedEnabled = false },
   resolveDefaults = function(context)
@@ -28,10 +29,6 @@ function Speed.setValue(value)
   return controller.setValue(value)
 end
 function Speed.teardown()
-  if defaultsScope then
-    defaultsScope.destroy()
-    defaultsScope = nil
-  end
   if controller then
     controller.destroy()
     controller = nil
@@ -45,50 +42,6 @@ end
 function Speed.setup(deps)
   Speed.teardown()
   local utils = deps.Utils
-  local selected, writing, characterScope = false, false, nil
-  defaultsScope = deps.Lifetime.scope()
-  local cleanup = { Disconnect = defaultsScope.destroy }
-  utils.trackGlobal(cleanup)
-  defaultsScope.add(function() utils.untrackGlobal(cleanup) end)
-  defaultsScope.add(utils.observeConfig(function(changes)
-    if changes.UniversalSpeed ~= nil and not writing then
-      selected = true
-    end
-  end))
-  local function watch(character)
-    if characterScope then
-      characterScope.destroy()
-    end
-    characterScope = defaultsScope.child()
-    if not character then
-      return
-    end
-    local humanoid
-    local function attach()
-      local found = character:FindFirstChildOfClass("Humanoid")
-      if not found or found == humanoid then
-        return
-      end
-      humanoid = found
-      local function baseline()
-        if not selected and not utils.getConfigValue("UniversalSpeedEnabled") and humanoid.Parent then
-          writing = true
-          utils.setConfig({ UniversalSpeed = humanoid.WalkSpeed })
-          writing = false
-        end
-      end
-      characterScope.connect(humanoid:GetPropertyChangedSignal("WalkSpeed"), baseline)
-      baseline()
-    end
-    characterScope.connect(character.ChildAdded, attach)
-    attach()
-  end
-  local player = utils.getLocalPlayer()
-  if player then
-    defaultsScope.connect(player.CharacterAdded, watch)
-    defaultsScope.connect(player.CharacterRemoving, function() watch(nil) end)
-    watch(player.Character)
-  end
   binding = deps.Properties.create(utils, function(humanoid)
     local value = math.clamp(tonumber(utils.getConfigValue("UniversalSpeed")) or 16, 0, 200)
     return { WalkSpeed = value }

@@ -64,6 +64,7 @@ function Runtime.bind(loaded)
   end
   api = {
     Roblox = services,
+    UI = loaded.ui,
     Player = loaded.utils.getLocalPlayer(),
     Runtime = owner,
     Config = { MapRefreshInterval = 1 },

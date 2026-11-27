@@ -15,6 +15,82 @@ local function createGameAdapter(services, getOption)
   local stats = { DroppedVFX = 0, DroppedAudio = 0, RestoreConflicts = 0, Failures = 0 }
   local Workspace = services.Workspace
   local player = services.Player
+  local audio, scan, audioDriver = {}, {}, nil
+  local audioOwner = {}
+  local function audioValue(object)
+    if not active then
+      return nil
+    end
+    if object:IsA("SoundGroup") and object.Parent and object.Parent.Name == "Master" then
+      if
+        object.Name == "Music" and getOption("GameMuteMusic")
+        or object.Name == "Emotes" and getOption("GameCosmeticAudio")
+        or object.Name == "Ambience" and getOption("GameMuteMusic")
+      then
+        return 0
+      end
+    elseif object:IsA("Sound") then
+      local kind = object:GetAttribute("SFXKind")
+      if
+        getOption("GameSwordSounds") == false and (kind == "SwordSounds" or kind == "KillSounds")
+        or object.Name == "PB_LobbyTheme_Christmas" and getOption("GameMuteMusic")
+      then
+        return 0
+      end
+    end
+    return nil
+  end
+  local function restoreAudio(object)
+    if audio[object] then
+      services.Binding.release(audioOwner, object, "Volume")
+      audio[object] = nil
+    end
+  end
+  local function applyAudio(object)
+    local desired = audioValue(object)
+    if desired == nil then
+      restoreAudio(object)
+    else
+      if services.Binding.apply(audioOwner, object, "Volume", desired, 100) then
+        audio[object] = true
+      end
+    end
+  end
+  local function scanAudio(object)
+    if not active or not alive or not services.Binding then
+      return
+    end
+    scan[#scan + 1] = { items = { object }, index = 1 }
+    if audioDriver then
+      return
+    end
+    audioDriver = services.ConnectPhysics(function()
+      local deadline, count = os.clock() + 0.0002, 0
+      while #scan > 0 and count < 32 and os.clock() < deadline do
+        local frame = scan[#scan]
+        local current = frame.items[frame.index]
+        if not current then
+          scan[#scan] = nil
+        else
+          frame.index += 1
+          count += 1
+          if current.Parent then
+            if current:IsA("Sound") or current:IsA("SoundGroup") then
+              applyAudio(current)
+            end
+            local children = current:GetChildren()
+            if #children > 0 then
+              scan[#scan + 1] = { items = children, index = 1 }
+            end
+          end
+        end
+      end
+      if #scan == 0 then
+        audioDriver:Disconnect()
+        audioDriver = nil
+      end
+    end)
+  end
   local function enabledOption(key) return active and getOption(key) == true end
   local function deferRefresh()
     if scheduled or not alive then
@@ -146,6 +222,13 @@ local function createGameAdapter(services, getOption)
         end
       end
     end
+    if services.Binding then
+      for object in pairs(audio) do
+        applyAudio(object)
+      end
+      scanAudio(services.Workspace)
+      scanAudio(services.SoundService)
+    end
     local noVFX = enabledOption("GameNoVFX")
     local quiet = enabledOption("GameCosmeticAudio")
     local reducedUI = enabledOption("GameReducedUI")
@@ -214,6 +297,16 @@ local function createGameAdapter(services, getOption)
       return
     end
     active = value
+    if not active then
+      if audioDriver then
+        audioDriver:Disconnect()
+        audioDriver = nil
+      end
+      scan = {}
+      for object in pairs(audio) do
+        restoreAudio(object)
+      end
+    end
     refresh()
   end
   function adapter:Refresh()
@@ -273,7 +366,7 @@ local function createGameAdapter(services, getOption)
       local script = branch and branch:FindFirstChild(spec[1])
       if script and script:IsA("ModuleScript") and not loading[script] then
         loading[script] = true
-        task.spawn(function()
+        services.Scope.defer(function()
           local ok, result = pcall(require, script)
           if alive and ok and type(result) == "table" then
             adapter:SetModule(spec[1], spec[3] and result[spec[3]] or result)
@@ -283,7 +376,17 @@ local function createGameAdapter(services, getOption)
     end
   end
   if services.ReplicatedStorage then
-    connections[#connections + 1] = services.ReplicatedStorage.DescendantAdded:Connect(discover)
+    connections[#connections + 1] = services.ReplicatedStorage.DescendantAdded:Connect(function(object)
+      if not object:IsA("ModuleScript") then
+        return
+      end
+      for _, spec in ipairs(specs) do
+        if object.Name == spec[1] then
+          discover()
+          break
+        end
+      end
+    end)
   end
   if services.PlayerScripts then
     connections[#connections + 1] = services.PlayerScripts.DescendantAdded:Connect(function(object)
@@ -292,58 +395,20 @@ local function createGameAdapter(services, getOption)
       end
     end)
   end
+  if services.Binding then
+    for _, root in ipairs({ services.Workspace, services.SoundService }) do
+      connections[#connections + 1] = root.DescendantAdded:Connect(function(object)
+        if object:IsA("Sound") or object:IsA("SoundGroup") then
+          scanAudio(object)
+        end
+      end)
+      connections[#connections + 1] = root.DescendantRemoving:Connect(restoreAudio)
+    end
+  end
   discover()
   return adapter
 end
-local function applyGamePolicy(object, target, watch, options)
-  if options.GameKeepIndicators then
-    local critical = false
-    if object:IsA("Highlight") then
-      critical = object.Name == "PlayerBallHighlight" or object.Name == "LocalBlockCharacterHighlight"
-      local parent = object.Parent
-      if parent then
-        critical = critical or parent.Name == "GameBall" or parent.Name == "TrainingBall" or parent.Name == "ResilienceHitbox"
-      end
-    elseif object:IsA("Beam") then
-      critical = object.Name == "PossessTether" or object.Name == "DarkForceChain"
-    end
-    if critical then
-      target.Enabled, target.Transparency = nil, nil
-      watch = false
-    end
-  end
-  if object:IsA("BasePart") then
-    local ancestor = object
-    while ancestor do
-      if ancestor.Name == "GameBall" or ancestor.Name == "TrainingBall" then
-        target.Material, target.MaterialVariant, target.Reflectance = nil, nil, nil
-        target.LocalTransparencyModifier = nil
-        break
-      end
-      ancestor = ancestor.Parent
-    end
-  elseif object:IsA("SoundGroup") then
-    if object.Parent and object.Parent.Name == "Master" then
-      local mute = object.Name == "Music" and options.GameMuteMusic
-        or object.Name == "Emotes" and options.GameCosmeticAudio
-        or object.Name == "Ambience" and options.GameMuteAmbience
-      if mute then
-        target.Volume = 0
-        watch = options.MaintainEffects
-      end
-    end
-  elseif object:IsA("Sound") then
-    local kind = object:GetAttribute("SFXKind")
-    local swordMuted = options.GameSwordSounds == false and (kind == "SwordSounds" or kind == "KillSounds")
-    if swordMuted or object.Name == "PB_LobbyTheme_Christmas" and options.GameMuteMusic then
-      target.Volume = 0
-      watch = options.MaintainEffects
-    end
-  end
-  return target, watch
-end
 Adapter.create = createGameAdapter
-Adapter.apply = applyGamePolicy
-Adapter.__contract = { requires = {}, provides = { "setup", "create", "apply" } }
+Adapter.__contract = { requires = {}, provides = { "setup", "create" } }
 
 return Adapter

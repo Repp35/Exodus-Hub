@@ -1,6 +1,6 @@
 # Ferramentas
 
-- `tests/`: contratos e testes de comportamento da infraestrutura.
+- `tests/`: contratos e verificações essenciais de APIs.
 - `checks/`: serviços simulados e verificação das APIs em Luau.
 - `tools/`: catálogos, permissões, ícones e execução das suítes.
 - `diagnostics/`: inspeção manual no cliente Roblox.

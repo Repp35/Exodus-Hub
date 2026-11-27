@@ -34,7 +34,7 @@ function AutoJump.setup(deps)
   })
   return controller.sync()
 end
-AutoJump.__config = { schema = { AutoJump = "boolean" }, defaults = { AutoJump = false } }
+AutoJump.__config = { persistent = { AutoJump = false }, schema = { AutoJump = "boolean" }, defaults = { AutoJump = false } }
 AutoJump.__contract = {
   requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller" },
   requiresMethods = {

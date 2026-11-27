@@ -68,7 +68,7 @@ function Notification.create(context)
     options = options or {}
     if
       not context.deps.NotificationPolicy.shouldShow(
-        context.deps.Utils.getConfig(),
+        context.deps.State.getConfig(),
         context.state.desktop,
         { category = options.important and "critical" or "system", topic = options.id }
       )

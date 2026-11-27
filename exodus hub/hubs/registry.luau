@@ -15,10 +15,6 @@ export type HubProfile = {
   universeIds: { number }?,
   fingerprint: { all: { any }, any: { any } }?,
   modules: { ModuleEntry }?,
-  permissions: boolean?,
-  checkPermissions: boolean?,
-  permissionPolicy: { [string]: any }?,
-  dataFolder: string?,
 }
 
 export type Identity = { userId: number?, username: string? }
@@ -135,13 +131,11 @@ function Registry.resolve(
   return profile, nil
 end
 function Registry.manifest(common: { ModuleEntry }, profile: HubProfile): { ModuleEntry }
-  local entries: { ModuleEntry } = {}
-  for _, entry in ipairs(common) do
-    if entry.name ~= "permissions" or profile.permissions == true then
-      entries[#entries + 1] = entry
-    end
+  for _, entry in ipairs(profile.modules or {}) do
+    local root = "hubs/" .. profile.id .. "/"
+    assert(entry.path:sub(1, #root) == root, "Game module belongs to another integration")
   end
-  return Registry.merge(entries, profile.modules)
+  return Registry.merge(common, profile.modules)
 end
 function Registry.merge(common: { ModuleEntry }, profile: { ModuleEntry }?): { ModuleEntry }
   local result: { ModuleEntry } = {}
@@ -154,7 +148,7 @@ function Registry.merge(common: { ModuleEntry }, profile: { ModuleEntry }?): { M
   local seen: { [string]: boolean } = {}
   for _, entry in ipairs(profile or {}) do
     assert(type(entry.name) == "string" and type(entry.path) == "string" and not seen[entry.name], "Invalid or duplicate hub module")
-    assert((entry.path:match("^hubs/[%w%-]+/") or entry.path:match("^ui/games/[%w%-]+/")) and not entry.path:find("..", 1, true), "Invalid hub path")
+    assert(entry.path:match("^hubs/[%w%-]+/") and not entry.path:find("..", 1, true), "Invalid hub path")
     assert(entry.name ~= "permissions" and entry.name ~= "gamecontext" and entry.name ~= "hubapi", "Reserved base module")
     assert(not positions[entry.name], "Game module duplicates shared module: " .. entry.name)
     seen[entry.name] = true

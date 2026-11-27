@@ -17,12 +17,12 @@ function Context.create(deps, deviceDesktop)
   local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H
   local UIS, RunService, Players = game:GetService("UserInputService"), game:GetService("RunService"), game:GetService("Players")
   local TweenService = game:GetService("TweenService")
-  local Utils = deps.Utils
+  local Utils = deps.State
   local UIState = {
     connections = {},
     panelOpen = false,
     initializing = true,
-    spamOn = false,
+    primaryActive = false,
     clashBallOn = false,
     btnIsDragging = function() return false end,
     panelTween = nil,
@@ -71,18 +71,7 @@ function Context.create(deps, deviceDesktop)
       o.Parent = parent
     end
     local buttonName = props and props.Name
-    if
-      cls == "TextButton"
-      and pulseButton
-      and buttonName ~= "CardHitbox"
-      and buttonName ~= "SpamButton"
-      and buttonName ~= "ExodusFloatingButton"
-      and buttonName ~= "ExodusClashBall"
-      and buttonName ~= "ExodusParryBall"
-      and buttonName ~= "ExodusDarkBall"
-      and buttonName ~= "ExodusJumpBall"
-      and buttonName ~= "ExodusUpDashBall"
-    then
+    if cls == "TextButton" and pulseButton and buttonName ~= "CardHitbox" and buttonName ~= "SpamButton" and buttonName ~= "ExodusFloatingButton" then
       pulseButton(o)
     end
     return o
@@ -119,7 +108,7 @@ function Context.create(deps, deviceDesktop)
     return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
   end
   local function canUseAbility(name)
-    local available, reason = deps.Hub.getAbilityAvailability(name)
+    local available, reason = deps.Model.getAvailability(name)
     if not available and context.notifications then
       context.notifications.toast(reason)
     end
@@ -153,7 +142,9 @@ function Context.create(deps, deviceDesktop)
       end))
     end))
   end
-  local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordinateScale, onDragMove)
+  local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordinateScale, onDragMove, lifetime)
+    local scope = lifetime or context.scope
+    local function trackConn(connection) return scope.add(connection) end
     local dragInput, dragOffX, dragOffY = nil, 0, 0
     local state, wasDragged, startX, startY = "Idle", false, 0, 0
     local THRESH_SQ = CONFIG.DRAG_THRESHOLD_SQ
@@ -226,6 +217,9 @@ function Context.create(deps, deviceDesktop)
         end
       end)
     end
+    scope.add(function()
+      state, dragInput, wasDragged = "Idle", nil, false
+    end)
     trackConn(UIS.InputEnded:Connect(function(input)
       if input == dragInput then
         releaseDrag()
@@ -287,7 +281,7 @@ function Context.create(deps, deviceDesktop)
     write = setConfigValue,
     observe = Utils.observeConfig,
     notify = function(...) return context.notifications.toast(...) end,
-    choices = deps.Hub.getChoices,
+    choices = deps.Model.getChoices,
     validateShortcut = function(key, binding) return context.actions.validateShortcut(key, binding) end,
     onCapture = function(active) UIState.keyCapture = active end,
   })

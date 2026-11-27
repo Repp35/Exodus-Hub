@@ -24,11 +24,18 @@ for _, name in ipairs({ "mm2coin", "mm2map", "mm2match", "mm2drops", "mm2farm", 
 end
 local configured = loaded.uiconfig.getPages(definition)
 for _, page in ipairs(configured) do
-  if page.id == "config" then assert(page.title == "Settings" and page.utility == false) end
+  if page.id == "config" then assert(page.title == "Configurações" and page.utility == true) end
 end
 local defaults = loaded.config.defaults()
 assert(defaults.ShootMiniSquare == true and defaults.KnifeMiniSquare == true)
 assert(loaded.config.validatePatch({ AutoKnifeThrow = true, KnifeCone = 35, ShootMiniScale = 1.25 }))
+local boundary = loaded.gamescope.create(loaded, loaded.gamecontext.getProfile())
+local page = boundary.modules.ui.addPage({ id = "api-contract", title = "API", columns = 1, sections = {} })
+local section = page.addSection({ title = "Own controls" })
+assert(type(section.toggle({ title = "Shoot", key = "ManualShootMurder" }).setValue) == "function")
+assert(not pcall(section.toggle, { title = "Foreign", key = "UniversalFly" }))
+assert(not pcall(boundary.modules.utils.setConfig, { UniversalFly = true }))
+
 """)
 
 if __name__ == "__main__":

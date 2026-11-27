@@ -3,9 +3,9 @@
 -- @modules uinativeability
 
 local Ability = {}
-local UIKit, Utils
+local UIKit
 function Ability.setup(deps)
-  UIKit, Utils = deps.UIKit, deps.Utils
+  UIKit = deps.UIKit
   return true
 end
 function Ability.create(ability, options)
@@ -17,12 +17,12 @@ function Ability.create(ability, options)
   end
   local kit = UIKit.create({
     parent = original.Parent,
-    read = Utils.getConfigValue,
-    observe = Utils.observeConfig,
+    read = options.read,
+    observe = options.observe,
   })
   local view = kit.Components.mini(original.Parent, {
-    scaleKey = "MiniUIScale",
-    squareKey = "MiniUISquare",
+    scaleKey = options.scaleKey,
+    squareKey = options.squareKey,
     name = options.name,
     onText = "ON",
     offText = "OFF",
@@ -59,7 +59,7 @@ end
 Ability.__contract = {
   access = { methods = { create = "ui.use", reveal = "ui.use" } },
   provides = { "setup", "create", "reveal" },
-  requires = { UIKit = "uikit", Utils = "utils" },
-  requiresMethods = { UIKit = { "create" }, Utils = { "getConfigValue", "observeConfig" } },
+  requires = { UIKit = "uikit" },
+  requiresMethods = { UIKit = { "create" } },
 }
 return Ability

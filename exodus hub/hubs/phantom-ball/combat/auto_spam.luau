@@ -2,6 +2,7 @@
 --!optimize 2
 
 -- module
+local inputState
 local AutoSpam = {}
 local utils
 local gameInfo
@@ -104,7 +105,7 @@ local function deactivate(state, reason, time)
   state.cooldownSince, state.cooldownInitialRemaining = nil, nil
   state.reactivateAt = time + CONFIG.ACTIVATION.REACTIVATION_COOLDOWN
   lastStopReason, lastStopAt = reason, time
-  utils.setAutoSpamActive(false)
+  inputState.setAutoSpamActive(false)
   utils.recordTransition("AutoSpam", "active", "idle", reason)
   return true
 end
@@ -348,7 +349,7 @@ local function activate(state, candidate, s, time)
   lastActivationReason, lastActivationAt = candidate.reason, time
   clashStatsModule.begin(candidate.partner, time)
   utils.recordTransition("AutoSpam", "idle", "active", candidate.reason)
-  utils.setAutoSpamActive(true)
+  inputState.setAutoSpamActive(true)
 end
 local function autoStop(state, s, time)
   local reason = autoHardStop(state, s)
@@ -578,6 +579,7 @@ local function detach(reason)
   disconnectPool(state, state.connections)
 end
 function AutoSpam.setup(deps)
+  inputState = deps.InputState
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown or not deps.DeflectGeometry then
     return false, "dependências ausentes"
   end
@@ -752,7 +754,7 @@ function AutoSpam.canSendManual()
   return state ~= nil
     and utils ~= nil
     and utils.isActive()
-    and utils.isManualSpamActive()
+    and inputState.isManualSpamActive()
     and state.root.Parent ~= nil
     and state.character.Parent ~= nil
     and playerIsAlive(localPlayer.UserId)
@@ -836,6 +838,7 @@ end
 AutoSpam.__contract = {
   access = { methods = { canSend = "combat.runtime", canSendManual = "combat.runtime", stopSpam = "combat.runtime" } },
   requires = {
+    InputState = "inputstate",
     DeflectGeometry = "deflectgeometry",
     Utils = "utils",
     GameInfo = "gameinfo",
@@ -843,6 +846,7 @@ AutoSpam.__contract = {
     Cooldown = "cooldown",
   },
   requiresMethods = {
+    InputState = { "isManualSpamActive", "setAutoSpamActive" },
     DeflectGeometry = {
       "getAutoParryGeometry",
       "getPlayerRawRadius",
@@ -857,8 +861,7 @@ AutoSpam.__contract = {
       "getRunService",
       "isActive",
       "getConfigValue",
-      "isManualSpamActive",
-      "setAutoSpamActive",
+
       "trackCharacter",
       "untrackCharacter",
       "recordTransition",

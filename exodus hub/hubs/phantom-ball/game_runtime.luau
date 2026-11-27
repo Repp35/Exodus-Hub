@@ -212,6 +212,7 @@ end
 function Runtime.createAPI(loaded)
   local info, utils = loaded.gameinfo, loaded.utils
   return {
+    observeState = loaded.inputstate.observeSpam,
     readouts = loaded.telemetry.create(loaded),
     createActions = function(context) return loaded.inventoryactions.create(loaded, context) end,
     getJumpButton = function()
@@ -229,11 +230,9 @@ function Runtime.createAPI(loaded)
     observeAbilityMode = info.observeAbilityMode,
     hasClashPrediction = loaded.autospam.hasClashPrediction,
     resetState = loaded.spam.resetState,
-    createVisualAdapter = loaded.nativevisuals.create,
-    applyVisualPolicy = loaded.nativevisuals.apply,
     controls = {
-      setManualSpam = utils.setManualSpamActive,
-      isManualSpamActive = utils.isManualSpamActive,
+      setManualSpam = loaded.inputstate.setManualSpamActive,
+      isManualSpamActive = loaded.inputstate.isManualSpamActive,
       onAutoDarkChanged = loaded.autodark.sync,
       onUpDash = function()
         local ok, err = loaded.movement.upDash()
@@ -243,7 +242,7 @@ function Runtime.createAPI(loaded)
       end,
       onPanic = function()
         utils.setConfig({ AutoParry = false, AutoSpam = false })
-        utils.stopAllSpam()
+        loaded.inputstate.stopAllSpam()
         loaded.autospam.stopSpam()
       end,
     },

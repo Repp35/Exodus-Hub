@@ -60,20 +60,28 @@ class RuntimeAPI(unittest.TestCase):
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         helper.smoke(binary, universal=True)
+        for info in sorted((ROOT / 'hubs').glob('*/hub.json')):
+            with self.subTest(hub=info.parent.name):
+                helper.smoke(binary, hub_id=info.parent.name)
 
-    def test_ui_shape_migration_api(self):
+    def test_option_scope_and_schema_api(self):
         binary = self.binary('LUAU_BIN', 'luau')
         spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         helper.smoke(binary, assertions="""
-assert(loaded.config.defaults().MiniUISquare == false)
-local saved = { MiniUISquare = true }
+assert(loaded.options.describe("UniversalFly").scope == "hub")
+assert(not loaded.config.isPersistentKey("UniversalFly"))
+assert(loaded.config.isPersistentKey("UniversalFlySpeed"))
+assert(loaded.config.validatePatch({ AntiLagKeepNear = 128 }))
+assert(not loaded.config.validatePatch({ AntiLagKeepNear = 0 }))
+assert(not loaded.config.validatePatch({ AntiLagRenderDistance = math.huge }))
+assert(not loaded.config.validatePatch({ MiniUIScale = 1 }))
+local saved = { MiniUIScale = 1.5, AntiLagFloorCull = true }
 assert(loaded.hubapi.migrateConfig(saved))
-assert(saved.MiniUISquare == false)
-saved.MiniUISquare = true
-assert(loaded.hubapi.migrateConfig(saved) == false)
-assert(saved.MiniUISquare == true)
+assert(saved.MiniUIScale == nil and saved.AntiLagFloorCull == nil)
+assert(type(loaded.options.observe("AntiLagEnabled", function() end).Disconnect) == "function")
+assert(not pcall(loaded.options.get, "unknown"))
 """)
 
     def test_universal_property_and_scheduler_api(self):

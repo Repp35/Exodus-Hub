@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 GUI_CLASSES = {
     'ScreenGui', 'BillboardGui', 'SurfaceGui', 'Frame', 'CanvasGroup',
     'ScrollingFrame', 'TextLabel', 'TextButton', 'TextBox', 'ImageLabel',
-    'ImageButton', 'ViewportFrame', 'VideoFrame',
+    'ImageButton', 'ViewportFrame', 'VideoFrame', 'Highlight',
 }
 
 
@@ -24,6 +24,12 @@ def violations(root=ROOT):
             kind = match[1]
             if kind in GUI_CLASSES or kind.startswith('UI'):
                 errors.append(f'{relative}: {kind} construction belongs to ui/')
+        if re.search(r'Instance\s*\.\s*new\s*\(\s*[^"\'\s]', source):
+            errors.append(f'{relative}: dynamic Instance construction cannot establish UI ownership')
+        if re.search(r':\s*Clone\s*\(', source):
+            errors.append(f'{relative}: cloning visual/native UI belongs to ui/')
+        if relative.parts[0] == 'hubs' and re.search(r'_G\s*\.\s*Exodus(?:\s*\.|\s*\[)', source):
+            errors.append(f'{relative}: consume declared APIs instead of the global hub context')
         if re.search(r'\bDrawing\s*\.\s*new\s*\(', source):
             errors.append(f'{relative}: Drawing construction belongs to ui/')
     return errors

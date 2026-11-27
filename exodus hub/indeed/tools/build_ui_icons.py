@@ -36,11 +36,45 @@ def validate_png(image: bytes, name: str) -> None:
         raise ValueError(f'{name}: incomplete PNG image')
 
 
+def monochrome_png(image: bytes) -> bytes:
+    """Normalize the RGB mask; ImageColor3 then applies the exact theme tint."""
+    width, height, depth, color, _, _, interlace = struct.unpack_from('>IIBBBBB', image, 16)
+    if (depth, color, interlace) != (8, 6, 0):
+        raise ValueError('Icons must use non-interlaced 8-bit RGBA PNG')
+    compressed, offset = bytearray(), 8
+    while offset < len(image):
+        length = struct.unpack_from('>I', image, offset)[0]
+        if image[offset + 4:offset + 8] == b'IDAT': compressed.extend(image[offset + 8:offset + 8 + length])
+        offset += length + 12
+    raw = zlib.decompress(compressed)
+    stride, previous, rows = width * 4, bytearray(width * 4), bytearray()
+    def paeth(a, b, c):
+        p = a + b - c
+        distances = (abs(p - a), abs(p - b), abs(p - c))
+        return (a, b, c)[distances.index(min(distances))]
+    for y in range(height):
+        pos = y * (stride + 1)
+        mode, row = raw[pos], bytearray(raw[pos + 1:pos + 1 + stride])
+        if mode > 4: raise ValueError('Invalid PNG filter')
+        for x in range(stride):
+            left, up, diagonal = row[x - 4] if x >= 4 else 0, previous[x], previous[x - 4] if x >= 4 else 0
+            prediction = (0, left, up, (left + up) // 2, paeth(left, up, diagonal))[mode]
+            row[x] = (row[x] + prediction) & 255
+        previous = row
+        rows.append(0)
+        for x in range(0, stride, 4): rows.extend((255, 255, 255, row[x + 3]))
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+    header = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b'')
+
+
 def generated(source: str) -> str:
     fingerprint = hashlib.sha256()
     for name in NAMES:
         image = (ROOT / 'ui/assets' / f'{name}.png').read_bytes()
         validate_png(image, name)
+        image = monochrome_png(image)
         fingerprint.update(name.encode() + b'\0' + image)
         encoded = base64.b64encode(image).decode()
         pattern = rf'(\b{name}\s*=\s*\{{\s*png\s*=\s*")[^"]*(")'

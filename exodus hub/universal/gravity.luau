@@ -6,6 +6,7 @@ local Gravity = {}
 local controller, binding
 local Workspace = game:GetService("Workspace")
 local CONFIG = {
+  persistent = { UniversalGravityEnabled = false },
   schema = { UniversalGravityEnabled = "boolean", UniversalGravity = "rate" },
   defaults = { UniversalGravityEnabled = false },
   resolveDefaults = function() return { UniversalGravity = Workspace.Gravity or 196.2 } end,

@@ -1,6 +1,7 @@
 -- [[ spam ]]
 --!optimize 2
 
+local inputState
 local Spam = {}
 
 local Utils
@@ -122,22 +123,24 @@ end
 -- engine
 local function run(token, mode, rate, U, R, G, A, D)
   local heartbeat = U.getRunService().Heartbeat
-  local function active() return token == generation and U.isActive() and (U.isManualSpamActive() or U.isAutoSpamActive() or U.isDynamicSpamActive()) end
+  local function active()
+    return token == generation and U.isActive() and (inputState.isManualSpamActive() or inputState.isAutoSpamActive() or inputState.isDynamicSpamActive())
+  end
   local function canSend()
     if not active() then
       return false
     end
-    if U.isDynamicSpamActive() then
+    if inputState.isDynamicSpamActive() then
       return D.canSend()
     end
-    if U.isManualSpamActive() then
+    if inputState.isManualSpamActive() then
       return A.canSendManual()
     end
     return A.canSend()
   end
   local prepared = type(R.prepareParry) == "function" and R.prepareParry(canSend) or function() return R.fireParry(1, canSend) end
   local function dispatch()
-    if U.isDynamicSpamActive() then
+    if inputState.isDynamicSpamActive() then
       return R.fireNativeParry(canSend)
     end
     return prepared()
@@ -169,7 +172,7 @@ local function run(token, mode, rate, U, R, G, A, D)
       else
         reportError(U, detail or "Remote.fireParry indisponível")
       end
-      if detail == "Deflect cancelado" and not U.isManualSpamActive() then
+      if detail == "Deflect cancelado" and not inputState.isManualSpamActive() then
         break
       end
     end
@@ -284,7 +287,7 @@ local function sync()
     return
   end
   local mode, rate = getRate()
-  local enabled = Utils.isActive() and rate > 0 and (Utils.isManualSpamActive() or Utils.isAutoSpamActive() or Utils.isDynamicSpamActive())
+  local enabled = Utils.isActive() and rate > 0 and (inputState.isManualSpamActive() or inputState.isAutoSpamActive() or inputState.isDynamicSpamActive())
   if not enabled then
     if running then
       stop("spam_disabled")
@@ -323,6 +326,7 @@ end
 
 -- lifecycle
 function Spam.setup(deps)
+  inputState = deps.InputState
   if type(deps) ~= "table" then
     return false, "dependências inválidas"
   end
@@ -343,7 +347,7 @@ function Spam.setup(deps)
   GameInfo = deps.GameInfo
   AutoSpam = deps.AutoSpam
   DynamicParry = deps.DynamicParry
-  spamObserver = Utils.observeSpam(sync)
+  spamObserver = inputState.observeSpam(sync)
   configObserver = Utils.observeConfig(function(changes)
     if changes and (changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil or changes.MS ~= nil) then
       sync()
@@ -355,6 +359,7 @@ function Spam.setup(deps)
   return true
 end
 function Spam.resetState()
+  inputState.setAutoSpamActive(false)
   stop("reset")
   status.lastError = nil
   status.lastErrorAt = -math.huge
@@ -404,6 +409,7 @@ end
 Spam.__contract = {
   access = { methods = { resetState = "combat.runtime" } },
   requires = {
+    InputState = "inputstate",
     Remote = "remote",
     Utils = "utils",
     GameInfo = "gameinfo",
@@ -411,6 +417,7 @@ Spam.__contract = {
     DynamicParry = "dynamicparry",
   },
   requiresMethods = {
+    InputState = { "setAutoSpamActive", "isManualSpamActive", "isAutoSpamActive", "isDynamicSpamActive", "observeSpam" },
     Remote = {
       "fireParry",
       "prepareParry",
@@ -432,10 +439,7 @@ Spam.__contract = {
       "getConfigValue",
       "getRunService",
       "isActive",
-      "isManualSpamActive",
-      "isAutoSpamActive",
-      "isDynamicSpamActive",
-      "observeSpam",
+
       "observeConfig",
       "trackGlobal",
       "untrackGlobal",

@@ -11,6 +11,7 @@ local requested = false
 
 -- configuration
 local CONFIG = {
+  persistent = { UniversalInfiniteJump = false },
   schema = { UniversalInfiniteJump = "boolean" },
   defaults = { UniversalInfiniteJump = false },
 }

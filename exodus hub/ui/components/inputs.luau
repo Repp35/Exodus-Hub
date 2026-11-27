@@ -165,6 +165,6 @@ function Components.install(context)
 end
 
 -- contract
-Components.__contract = { provides = { "setup", "install" }, requires = {} }
+Components.__contract = { component = true, provides = { "setup", "install" }, requires = {} }
 
 return Components

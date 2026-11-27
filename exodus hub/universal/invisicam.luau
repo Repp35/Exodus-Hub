@@ -4,7 +4,7 @@
 
 local Invisicam = {}
 local controller, assist
-local CONFIG = { schema = { UniversalInvisicam = "boolean" }, defaults = { UniversalInvisicam = false } }
+local CONFIG = { persistent = { UniversalInvisicam = false }, schema = { UniversalInvisicam = "boolean" }, defaults = { UniversalInvisicam = false } }
 local function create(utils, connectPhysics)
   local Player = utils.getLocalPlayer()
   local Workspace = game:GetService("Workspace")

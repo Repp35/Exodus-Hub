@@ -99,7 +99,7 @@ function Surface.create(appearance, options)
     card.Visible = true
     reflow()
     if duration == nil then
-      duration = id == "dumper" and 0 or 2.5
+      duration = 2.5
     end
     if duration > 0 then
       task.delay(entering + duration, function()

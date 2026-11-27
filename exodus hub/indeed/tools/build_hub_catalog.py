@@ -13,7 +13,7 @@ def shared(root=ROOT):
     entries, seen = [], set()
     for folder in ('core', 'ui', 'universal'):
         for path in sorted((root / folder).rglob('*.luau')):
-            if path.name == 'catalog.luau' or path.is_relative_to(root / 'ui/games'): continue
+            if path.name == 'catalog.luau': continue
             source = path.read_text()
             marker = re.search(r'^-- @modules ([\w, ]+)$', source, re.M)
             if not marker: raise ValueError(f'{path}: @modules declaration required')
@@ -28,6 +28,8 @@ def discover(root=ROOT):
     reserved = {entry["name"] for entry in shared(root)}
     for info in sorted((root / 'hubs').glob('*/hub.json')):
         profile = json.loads(info.read_text())
+        forbidden = {'permissions', 'checkPermissions', 'permissionPolicy', 'dataFolder'} & profile.keys()
+        if forbidden: raise ValueError(f'{info}: host-owned fields: {sorted(forbidden)}')
         ident = profile.get('id', info.parent.name)
         if ident != info.parent.name or not re.fullmatch(r'[a-z0-9-]+', ident) or ident == 'universal' or ident in ids:
             raise ValueError(f'{info}: invalid or duplicate ID')
@@ -48,7 +50,7 @@ def discover(root=ROOT):
         if not isinstance(defaults, dict) or any(not re.fullmatch(r'[A-Za-z_]\w*', key) or type(value) not in (int, float, bool, str) or isinstance(value, float) and not math.isfinite(value) for key, value in defaults.items()):
             raise ValueError(f'{info}: invalid defaults')
         modules, seen = [], set()
-        for path in sorted([*info.parent.rglob('*.luau'), *(root / 'ui/games' / ident).rglob('*.luau')]):
+        for path in sorted(info.parent.rglob('*.luau')):
             if "indeed" in path.relative_to(root).parts: continue
             name = path.stem.replace("_", "")
             if not re.fullmatch(r'\w+', name) or name in seen or name in reserved:

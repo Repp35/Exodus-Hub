@@ -5,7 +5,7 @@
 local Controller = {}
 function Controller.setup() return true end
 function Controller.create(context)
-  local inst, utils = context.inst, context.deps.Utils
+  local inst, utils = context.inst, context.deps.State
   local gui = inst("ScreenGui", {
     Name = "ExodusInformationOverlay",
     DisplayOrder = context.theme.DISPLAY_ORDER,
@@ -18,7 +18,7 @@ function Controller.create(context)
   context.refs.informationGui = gui
   local textService = game:GetService("TextService")
   local entries = {}
-  for _, definition in ipairs(context.deps.Hub.getReadouts()) do
+  for _, definition in ipairs(context.deps.Model.getReadouts()) do
     local label = inst("TextLabel", {
       Name = definition.id,
       Size = UDim2.fromOffset(1, 1),

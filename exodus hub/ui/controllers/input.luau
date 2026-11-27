@@ -12,7 +12,7 @@ function Controller.setup() return true end
 
 -- controller
 function Controller.create(context)
-  local Utils = context.deps.Utils
+  local Utils = context.deps.State
   local UIState = context.state
   local UIS = context.services.UIS
   local inputDefinition = context.inputDefinition or {}
@@ -60,16 +60,15 @@ function Controller.create(context)
       if UIState.closing then
         return
       end
-      local config = Utils.getConfig() or {}
       for _, reserved in ipairs(inputDefinition.reserved or {}) do
-        if config[reserved.enabledKey] == true and isKey(input, config[reserved.bindingKey]) then
+        if Utils.getConfigValue(reserved.enabledKey) == true and isKey(input, Utils.getConfigValue(reserved.bindingKey)) then
           return
         end
       end
-      if isKey(input, config.Keybind) then
-        actions.triggerShortcut(inputBinding(input))
-      elseif primary and isKey(input, config[primary.bindingKey]) then
-        if config[primary.modeKey] == "Hold" then
+      if actions.triggerShortcut(inputBinding(input), true) then
+        return
+      elseif primary and isKey(input, Utils.getConfigValue(primary.bindingKey)) then
+        if Utils.getConfigValue(primary.modeKey) == "Hold" then
           if not UIState.manualHoldInput then
             UIState.manualHoldInput = input
             writePrimary(true)

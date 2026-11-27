@@ -2,6 +2,7 @@
 --!optimize 2
 
 -- code
+local inputState
 local AutoParry = {}
 local utils
 local gameInfo
@@ -280,7 +281,7 @@ local function dispatch(value, now)
     if generation ~= state.generation or cycle ~= state.cycle or not live() then
       return false
     end
-    if mode ~= "training" and utils.isSpamActive() then
+    if mode ~= "training" and inputState.isSpamActive() then
       return false
     end
     local current = gameInfo.getParrySnapshot(clock(), true, false, state.tracker.floor)
@@ -355,7 +356,7 @@ local function tick()
   end
   local targeted = observe(value, now)
   state.clash = state.mode ~= "training" and gameInfo.isNativeClash()
-  if state.mode ~= "training" and utils.isSpamActive() then
+  if state.mode ~= "training" and inputState.isSpamActive() then
     state.wasSpamActive = true
     phase("spam_active")
     return false
@@ -443,12 +444,13 @@ function AutoParry.isDeadlineDue()
   local t = state.timing
   return live()
     and state.reason == "outside_window"
-    and not utils.isSpamActive()
+    and not inputState.isSpamActive()
     and t ~= nil
     and finite(t.timeToTrigger)
     and clock() >= (state.timingAt or clock()) + t.timeToTrigger
 end
 function AutoParry.setup(deps)
+  inputState = deps.InputState
   AutoParry.teardown()
   utils, gameInfo, geometry, cooldown, remote, targeting = deps.Utils, deps.GameInfo, deps.DeflectGeometry, deps.Cooldown, deps.Remote, deps.Targeting
   state.tracker = targeting.createParryTracker()
@@ -617,6 +619,7 @@ function AutoParry.getStatus()
 end
 AutoParry.__contract = {
   requires = {
+    InputState = "inputstate",
     Utils = "utils",
     GameInfo = "gameinfo",
     DeflectGeometry = "deflectgeometry",
@@ -625,6 +628,7 @@ AutoParry.__contract = {
     Targeting = "targeting",
   },
   requiresMethods = {
+    InputState = { "isSpamActive" },
     Targeting = { "createParryTracker" },
     Utils = {
       "getWorkspace",
@@ -632,7 +636,7 @@ AutoParry.__contract = {
       "getRunService",
       "getConfigValue",
       "isActive",
-      "isSpamActive",
+
       "trackCharacter",
       "untrackCharacter",
       "recordError",

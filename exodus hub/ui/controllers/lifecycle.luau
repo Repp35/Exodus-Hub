@@ -61,11 +61,10 @@ function Controller.create(context)
       end
       return
     end
-    _G.ExodusShutdownReason = "close"
     if controls.onClose then
       controls.onClose()
     else
-      context.deps.Utils.stop()
+      context.destroy()
     end
   end
   return { restore = restore, fade = fade, animateClose = animateClose }

@@ -5,6 +5,7 @@
 local JumpPower = {}
 local controller, binding
 local CONFIG = {
+  persistent = { UniversalJumpPowerEnabled = false },
   schema = { UniversalJumpPowerEnabled = "boolean", UniversalJumpPower = "rate" },
   defaults = { UniversalJumpPowerEnabled = false },
   resolveDefaults = function(context)
