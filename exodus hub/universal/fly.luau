@@ -3,37 +3,15 @@
 -- @modules fly
 
 local Fly = {}
-
-local Utils
-local controller
-
--- configuration
-local CONFIG = {
-  schema = {
-    UniversalFly = "boolean",
-    UniversalFlySpeed = "rate",
-  },
-  defaults = {
-    UniversalFly = false,
-    UniversalFlySpeed = 1,
-  },
-}
-
+local utils, controller, activation
 local Workspace = game:GetService("Workspace")
 local UIS = game:GetService("UserInputService")
-local states = { Fly = false }
-local epoch = 0
-local flyCharacter
-local flyHumanoid
-local flyRoot
-local flyVelocity
-local flyGyro
-local flyPlatformStand
-local flyAutoRotate
-local playerControls
-local playerControlsModule
-local pressedKeys = {}
-local controls = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
+local enabled, generation = false, 0
+local character, humanoid, root, velocity, gyro, saved
+local attachThread, pendingCharacter, controlsThread, controlModule, controlSource
+local retryAt, controlRetryAt, lastErrorAt = 0, 0, -math.huge
+local pressed = {}
+local directionKeys = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
 local bindings = {
   [Enum.KeyCode.W] = { "Forward", 1 },
   [Enum.KeyCode.S] = { "Backward", -1 },
@@ -44,20 +22,14 @@ local bindings = {
   [Enum.KeyCode.Space] = { "Up", 1 },
   [Enum.KeyCode.LeftControl] = { "Down", -1 },
 }
-
-local connections = {}
-local connectionPool
-local function disconnect(name)
-  if connectionPool then
-    connectionPool.disconnect(name)
-  end
-end
-local function connect(name, signal, callback) return connectionPool.connect(name, signal, callback) end
-local function disconnectPrefix(prefix)
-  for name in pairs(connections) do
-    if name:sub(1, #prefix) == prefix then
-      disconnect(name)
-    end
+local CONFIG = {
+  schema = { UniversalFly = "boolean", UniversalFlySpeed = "rate" },
+  defaults = { UniversalFly = false, UniversalFlySpeed = 1 },
+}
+local function clearControls()
+  table.clear(pressed)
+  for key in pairs(directionKeys) do
+    directionKeys[key] = 0
   end
 end
 local function destroy(object)
@@ -65,169 +37,201 @@ local function destroy(object)
     pcall(object.Destroy, object)
   end
 end
-local function clearControls()
-  table.clear(pressedKeys)
-  for key in pairs(controls) do
-    controls[key] = 0
+local function cancelAttach()
+  local thread = attachThread
+  attachThread, pendingCharacter = nil, nil
+  if thread then
+    pcall(task.cancel, thread)
   end
 end
-local function detachFly()
-  if flyRoot and flyRoot.Parent then
-    pcall(function() flyRoot.AssemblyLinearVelocity = Vector3.zero end)
-  end
-  destroy(flyVelocity)
-  destroy(flyGyro)
-  if flyHumanoid and flyHumanoid.Parent then
+local function detach()
+  destroy(velocity)
+  destroy(gyro)
+  if root and root.Parent then
     pcall(function()
-      if flyPlatformStand ~= nil then
-        flyHumanoid.PlatformStand = flyPlatformStand
-      end
-      if flyAutoRotate ~= nil then
-        flyHumanoid.AutoRotate = flyAutoRotate
-      end
+      root.AssemblyLinearVelocity = Vector3.zero
+      root.AssemblyAngularVelocity = Vector3.zero
     end)
   end
-  flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro = nil, nil, nil, nil, nil
-  flyPlatformStand, flyAutoRotate = nil, nil
+  if humanoid and humanoid.Parent and saved then
+    pcall(function()
+      humanoid.PlatformStand = saved.PlatformStand
+      humanoid.AutoRotate = saved.AutoRotate
+    end)
+  end
+  character, humanoid, root, velocity, gyro, saved = nil, nil, nil, nil, nil, nil
 end
-local function flyCharacterReady()
-  local player = Utils.getLocalPlayer()
-  local character = player and player.Character
-  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-  local root = character and character:FindFirstChild("HumanoidRootPart")
-  if not character or not humanoid or humanoid.Health <= 0 or not root then
-    detachFly()
-    return nil
+local function report(reason)
+  if utils and os.clock() - lastErrorAt >= 5 then
+    lastErrorAt = os.clock()
+    utils.recordError("Fly", tostring(reason))
   end
-  if flyCharacter ~= character or flyHumanoid ~= humanoid or flyRoot ~= root then
-    detachFly()
-    flyCharacter, flyHumanoid, flyRoot = character, humanoid, root
-    flyPlatformStand, flyAutoRotate = humanoid.PlatformStand, humanoid.AutoRotate
-  end
-  if not flyVelocity or not flyVelocity.Parent then
-    flyVelocity = Instance.new("BodyVelocity")
-    flyVelocity.Name = "ExodusFlyVelocity"
-    flyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    flyVelocity.P = 9e4
-    flyVelocity.Parent = root
-  end
-  if not flyGyro or not flyGyro.Parent then
-    flyGyro = Instance.new("BodyGyro")
-    flyGyro.Name = "ExodusFlyGyro"
-    flyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    flyGyro.P = 9e4
-    flyGyro.D = 1000
-    flyGyro.Parent = root
-  end
-  return humanoid
 end
-local function getPlayerControls()
-  if playerControls and playerControlsModule and playerControlsModule.Parent then
-    return playerControls
+local function attach(model, human, part)
+  detach()
+  character, humanoid, root = model, human, part
+  saved = { PlatformStand = human.PlatformStand, AutoRotate = human.AutoRotate }
+  destroy(part:FindFirstChild("ExodusFlyVelocity"))
+  destroy(part:FindFirstChild("ExodusFlyGyro"))
+  velocity = Instance.new("BodyVelocity")
+  velocity.Name = "ExodusFlyVelocity"
+  velocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+  velocity.P = 9e4
+  velocity.Velocity = Vector3.zero
+  velocity.Parent = part
+  gyro = Instance.new("BodyGyro")
+  gyro.Name = "ExodusFlyGyro"
+  gyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+  gyro.P, gyro.D = 9e4, 1000
+  gyro.CFrame = part.CFrame
+  gyro.Parent = part
+  human.PlatformStand, human.AutoRotate = true, false
+end
+local function queueAttach(model)
+  if not enabled or not model or not activation or not activation.alive or pendingCharacter == model and attachThread then
+    return
   end
-  local player = Utils.getLocalPlayer()
-  local scripts = player and player:FindFirstChild("PlayerScripts")
-  local module = scripts and scripts:FindFirstChild("PlayerModule")
-  if not module then
-    return nil
-  end
-  local owner = epoch
-  local ok, value = pcall(require, module)
-  if owner ~= epoch or not Utils or not states.Fly then
-    return nil
-  end
-  if ok and type(value) == "table" and type(value.GetControls) == "function" then
-    local ready, result = pcall(value.GetControls, value)
-    if owner == epoch and Utils and states.Fly and ready and result and type(result.GetMoveVector) == "function" then
-      playerControls, playerControlsModule = result, module
+  generation += 1
+  local token, owner = generation, activation
+  cancelAttach()
+  pendingCharacter = model
+  local thread
+  thread = task.defer(function()
+    local part = model:FindFirstChild("HumanoidRootPart") or model:WaitForChild("HumanoidRootPart", 10)
+    local human = model:FindFirstChildOfClass("Humanoid") or model:WaitForChild("Humanoid", 10)
+    if attachThread == thread then
+      attachThread, pendingCharacter = nil, nil
     end
-  end
-  return playerControls
-end
-local function updateFly()
-  if not Utils or not states.Fly then
-    return
-  end
-  local owner = epoch
-  local humanoid = flyCharacterReady()
-  local camera = Workspace.CurrentCamera
-  if not humanoid or not camera then
-    return
-  end
-  local direction
-  local typing = UIS:GetFocusedTextBox() ~= nil
-  if typing then
-    clearControls()
-  end
-  if typing then
-    direction = Vector3.zero
-  elseif UIS.TouchEnabled and UIS:GetLastInputType() == Enum.UserInputType.Touch then
-    local controller = getPlayerControls()
-    if controller then
-      local movement = controller:GetMoveVector()
-      direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
-    else
-      direction = humanoid.MoveDirection
-    end
-  else
-    direction = camera.CFrame.LookVector * (controls.Forward + controls.Backward)
-      + camera.CFrame.RightVector * (controls.Left + controls.Right)
-      + Vector3.new(0, controls.Up + controls.Down, 0)
-  end
-  if owner ~= epoch or not states.Fly or not Utils or humanoid ~= flyHumanoid or not flyRoot or not flyRoot.Parent then
-    return
-  end
-  if direction.Magnitude > 1 then
-    direction = direction.Unit
-  end
-  local speed = math.clamp(tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10)
-  local velocity = direction * speed * 50
-  if not flyVelocity or not flyVelocity.Parent or not flyGyro or not flyGyro.Parent then
-    return
-  end
-  flyVelocity.Velocity = velocity
-  flyRoot.AssemblyLinearVelocity = velocity
-  flyGyro.CFrame = camera.CFrame
-  humanoid.PlatformStand = true
-  humanoid.AutoRotate = false
-end
-local function startFly(scope, connectPhysics)
-  connect("FlyBegan", UIS.InputBegan, function(input, processed)
-    if processed then
+    if not enabled or not owner.alive or generation ~= token or utils.getLocalPlayer().Character ~= model then
       return
     end
-    local binding = bindings[input.KeyCode]
-    if binding then
-      pressedKeys[input.KeyCode] = true
-      controls[binding[1]] = binding[2]
+    if not part or not part:IsA("BasePart") or not human or not human:IsA("Humanoid") or human.Health <= 0 then
+      return
+    end
+    local ok, reason = pcall(attach, model, human, part)
+    if not ok then
+      detach()
+      retryAt = os.clock() + 0.5
+      report(reason)
     end
   end)
-  connect("FlyEnded", UIS.InputEnded, function(input)
-    local binding = bindings[input.KeyCode]
-    if binding then
-      pressedKeys[input.KeyCode] = nil
-      controls[binding[1]] = 0
-      for key in pairs(pressedKeys) do
-        local held = bindings[key]
-        if held and held[1] == binding[1] then
-          controls[held[1]] = held[2]
-          break
-        end
+  attachThread = thread
+end
+local function loadControls()
+  if controlsThread or os.clock() < controlRetryAt or not activation or not activation.alive then
+    return
+  end
+  if controlModule and controlSource and controlSource.Parent then
+    return
+  end
+  controlModule, controlSource = nil, nil
+  controlRetryAt = os.clock() + 0.5
+  local owner = activation
+  local thread
+  thread = task.defer(function()
+    local player = utils and utils.getLocalPlayer()
+    local scripts = player and player:FindFirstChild("PlayerScripts")
+    local module = scripts and scripts:FindFirstChild("PlayerModule")
+    local source = module and module:FindFirstChild("ControlModule")
+    local ok, result = false, nil
+    if source and source:IsA("ModuleScript") then
+      ok, result = pcall(require, source)
+    elseif module and module:IsA("ModuleScript") then
+      source = module
+      local ready, api = pcall(require, module)
+      if ready and type(api) == "table" and type(api.GetControls) == "function" then
+        ok, result = pcall(api.GetControls, api)
       end
     end
+    if controlsThread == thread then
+      controlsThread = nil
+    end
+    if owner.alive and activation == owner and ok and source and source.Parent and type(result) == "table" and type(result.GetMoveVector) == "function" then
+      controlModule, controlSource = result, source
+    end
   end)
-  connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
-  connectPhysics(scope, updateFly)
-  updateFly()
-  return true
+  controlsThread = thread
 end
-local function stopFly()
-  epoch += 1
-  disconnectPrefix("Fly")
+local function direction(camera)
+  if UIS:GetFocusedTextBox() then
+    clearControls()
+    return Vector3.zero
+  end
+  local vertical = Vector3.new(0, directionKeys.Up + directionKeys.Down, 0)
+  if UIS.TouchEnabled or UIS.GamepadEnabled then
+    loadControls()
+    if controlModule then
+      local ok, move = pcall(controlModule.GetMoveVector, controlModule)
+      if ok and typeof(move) == "Vector3" then
+        return camera.CFrame.RightVector * move.X - camera.CFrame.LookVector * move.Z + vertical
+      end
+      controlModule, controlSource = nil, nil
+    end
+    if humanoid and humanoid.MoveDirection.Magnitude > 0 then
+      return humanoid.MoveDirection + vertical
+    end
+  end
+  return camera.CFrame.LookVector * (directionKeys.Forward + directionKeys.Backward)
+    + camera.CFrame.RightVector * (directionKeys.Left + directionKeys.Right)
+    + vertical
+end
+local function update()
+  if not enabled or not utils then
+    return
+  end
+  local model = utils.getLocalPlayer().Character
+  if
+    model ~= character
+    or not root
+    or root.Parent ~= model
+    or not humanoid
+    or humanoid.Parent ~= model
+    or humanoid.Health <= 0
+    or not velocity
+    or not velocity.Parent
+    or not gyro
+    or not gyro.Parent
+  then
+    detach()
+    if model and not attachThread and os.clock() >= retryAt then
+      local human = model:FindFirstChildOfClass("Humanoid")
+      if not human or human.Health > 0 then
+        queueAttach(model)
+      end
+    end
+    return
+  end
+  local camera = Workspace.CurrentCamera
+  if not camera then
+    velocity.Velocity = Vector3.zero
+    return
+  end
+  local move = direction(camera)
+  if move.Magnitude > 1 then
+    move = move.Unit
+  end
+  local speed = math.clamp(tonumber(utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10)
+  velocity.Velocity = move * speed * 50
+  gyro.CFrame = camera.CFrame
+  if not humanoid.PlatformStand then
+    humanoid.PlatformStand = true
+  end
+  if humanoid.AutoRotate then
+    humanoid.AutoRotate = false
+  end
+end
+local function stop()
+  enabled = false
+  generation += 1
+  cancelAttach()
+  local thread = controlsThread
+  controlsThread = nil
+  if thread then
+    pcall(task.cancel, thread)
+  end
+  detach()
   clearControls()
-  detachFly()
-  playerControls, playerControlsModule = nil, nil
-  return true
+  activation, controlModule, controlSource = nil, nil, nil
 end
 function Fly.setEnabled(value)
   if not controller then
@@ -246,48 +250,76 @@ function Fly.teardown()
     controller.destroy()
     controller = nil
   end
-  stopFly()
-  states.Fly = false
-  if connectionPool then
-    connectionPool.destroy()
-    connectionPool = nil
-  end
-  Utils = nil
+  stop()
+  utils = nil
   return true
 end
 function Fly.setup(deps)
   Fly.teardown()
-  Utils = deps.Utils
-  connectionPool = deps.Lifetime.connections(Utils)
-  connections = connectionPool.connections
-  controller = deps.Controller.create(Utils, deps.Lifetime, {
+  utils = deps.Utils
+  controller = deps.Controller.create(utils, deps.Lifetime, {
     key = "UniversalFly",
     valueKey = "UniversalFlySpeed",
     min = 0.1,
     max = 10,
     start = function(scope)
-      states.Fly = true
-      assert(startFly(scope, deps.Controller.connectPhysics), "sinal de física indisponível")
+      activation, enabled = scope, true
+      retryAt, controlRetryAt = 0, 0
+      scope.connect(UIS.InputBegan, function(input, processed)
+        local binding = bindings[input.KeyCode]
+        if not processed and binding then
+          pressed[input.KeyCode] = true
+          directionKeys[binding[1]] = binding[2]
+        end
+      end)
+      scope.connect(UIS.InputEnded, function(input)
+        local binding = bindings[input.KeyCode]
+        if binding then
+          pressed[input.KeyCode] = nil
+          directionKeys[binding[1]] = 0
+          for key in pairs(pressed) do
+            local held = bindings[key]
+            if held and held[1] == binding[1] then
+              directionKeys[held[1]] = held[2]
+              break
+            end
+          end
+        end
+      end)
+      scope.connect(UIS.WindowFocusReleased, clearControls)
+      local player = utils.getLocalPlayer()
+      scope.connect(player.CharacterAdded, queueAttach)
+      scope.connect(player.CharacterRemoving, function(model)
+        generation += 1
+        cancelAttach()
+        if model == character then
+          detach()
+        end
+        clearControls()
+      end)
+      deps.Controller.connectPhysics(scope, function()
+        local ok, reason = pcall(update)
+        if not ok then
+          detach()
+          retryAt = os.clock() + 0.5
+          report(reason)
+        end
+      end)
+      queueAttach(player.Character)
+      loadControls()
     end,
-    stop = function()
-      states.Fly = false
-      stopFly()
-    end,
-    update = updateFly,
+    stop = stop,
   })
   return controller.sync()
 end
 Fly.__config = CONFIG
-
--- contract
 Fly.__contract = {
   requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller" },
   requiresMethods = {
-    Lifetime = { "connections", "scope" },
-    Controller = { "create", "connectPhysics" },
     Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
+    Lifetime = { "scope" },
+    Controller = { "create", "connectPhysics" },
   },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
-
 return Fly

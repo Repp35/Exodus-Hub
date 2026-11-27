@@ -76,4 +76,36 @@ assert(loaded.hubapi.migrateConfig(saved) == false)
 assert(saved.MiniUISquare == true)
 """)
 
+    def test_universal_property_and_scheduler_api(self):
+        binary = self.binary('LUAU_BIN', 'luau')
+        spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        helper.smoke(binary, assertions="""
+local original = { Value = 70, Flag = true }
+local target = original
+local desired = { Value = 90, Flag = false }
+local binding = loaded.propertybinding.create(function() return target end, function() return desired end)
+binding.update()
+assert(original.Value == 90 and original.Flag == false)
+target = { Value = 80 }
+binding.update()
+assert(original.Value == 70 and original.Flag == true and target.Value == 90)
+target.Value = 85
+binding.update()
+binding.restore()
+assert(target.Value == 85)
+binding.restore()
+local scope = loaded.lifetime.scope()
+local calls = 0
+loaded.universalcontroller.connectPhysics(scope, function() calls += 1 end)
+services.RunService.PreSimulation:Fire(1 / 60)
+services.RunService.PostSimulation:Fire(1 / 60)
+assert(calls == 2)
+scope.destroy()
+services.RunService.PreSimulation:Fire(1 / 60)
+services.RunService.PostSimulation:Fire(1 / 60)
+assert(calls == 2)
+""")
+
 if __name__ == '__main__': unittest.main()

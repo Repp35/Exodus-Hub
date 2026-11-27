@@ -86,7 +86,7 @@ for _, page in ipairs(pages) do
     end
   end
 end
-for _, key in ipairs({ "AntiAFK", "ForcePCUI", "AntiLagEnabled", "AntiLagRenderDistance", "AntiLagRemoveEffects", "UniversalFly", "UniversalInfiniteZoom", "UniversalNoclip", "UniversalJumpPowerEnabled", "UniversalJumpPower", "UniversalSpeed" }) do assert(keys[key], key) end
+for _, key in ipairs({ "AntiAFK", "ForcePCUI", "AntiLagEnabled", "AntiLagRenderDistance", "AntiLagRemoveEffects", "UniversalFly", "UniversalInfiniteZoom", "UniversalNoclip", "UniversalJumpPowerEnabled", "UniversalJumpPower", "UniversalSpeed", "UniversalFOVEnabled", "UniversalFOV", "UniversalFullbright", "UniversalNoFog" }) do assert(keys[key], key) end
 for _, action in ipairs({ "dumper", "rejoin", "serverHop", "resetCharacter", "resetSettings" }) do assert(actions[action], action) end
 
 -- Filtering must never mutate the source definitions across UI rebuilds.

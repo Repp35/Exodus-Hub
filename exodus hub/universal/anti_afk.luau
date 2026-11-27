@@ -25,32 +25,65 @@ function AntiAFK.setup(deps)
     key = "AntiAFK",
     start = function(scope)
       local player = assert(utils.getLocalPlayer(), "LocalPlayer indisponível")
-      local lastError = -math.huge
-      local nextPulse = os.clock() + 20
-      local function pulse()
-        nextPulse = os.clock() + 20
-        local ok, reason = pcall(function()
-          local virtualUser = game:GetService("VirtualUser")
-          virtualUser:CaptureController()
-          virtualUser:ClickButton2(Vector2.zero)
+      local available, virtualUser = pcall(game.GetService, game, "VirtualUser")
+      virtualUser = available and virtualUser or nil
+      local pending, releaseThread
+      local idle, lastInput, lastError = false, -math.huge, -math.huge
+      local function release()
+        local value = pending
+        pending = nil
+        if value then
+          pcall(value.User.Button2Up, value.User, value.Position, value.Frame)
+        end
+      end
+      scope.add(function()
+        if releaseThread then
+          pcall(task.cancel, releaseThread)
+          releaseThread = nil
+        end
+        release()
+      end)
+      local function sendUser()
+        assert(virtualUser, "VirtualUser indisponível")
+        virtualUser:CaptureController()
+        if type(virtualUser.ClickButton2) == "function" then
+          local ok = pcall(virtualUser.ClickButton2, virtualUser, Vector2.zero)
+          if ok then
+            return
+          end
+        end
+        local camera = workspace.CurrentCamera
+        release()
+        local value = { User = virtualUser, Position = Vector2.zero, Frame = camera and camera.CFrame or CFrame.new() }
+        virtualUser:Button2Down(value.Position, value.Frame)
+        pending = value
+        releaseThread = task.delay(0.15, function()
+          releaseThread = nil
+          if pending == value then
+            release()
+          end
         end)
+      end
+      scope.connect(player.Idled, function() idle = true end)
+      deps.Controller.connectPhysics(scope, function()
+        if not idle or os.clock() - lastInput < 30 then
+          return
+        end
+        idle, lastInput = false, os.clock()
+        local ok, reason = pcall(sendUser)
         if ok then
           return
         end
+        release()
         local fallback, detail = pcall(function()
           local input = game:GetService("VirtualInputManager")
-          input:SendMouseButtonEvent(0, 0, 1, true, game, 0)
-          input:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+          local down, downError = pcall(input.SendMouseButtonEvent, input, 0, 0, 0, true, game, 0)
+          local up, upError = pcall(input.SendMouseButtonEvent, input, 0, 0, 0, false, game, 0)
+          assert(down and up, tostring(downError) .. " | " .. tostring(upError))
         end)
-        if not fallback and os.clock() - lastError >= 30 then
+        if not fallback and os.clock() - lastError >= 5 then
           lastError = os.clock()
           utils.recordError("AntiAFK", tostring(reason) .. " | " .. tostring(detail))
-        end
-      end
-      scope.connect(player.Idled, pulse)
-      deps.Controller.connectPhysics(scope, function()
-        if os.clock() >= nextPulse then
-          pulse()
         end
       end)
     end,

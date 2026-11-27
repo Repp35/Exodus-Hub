@@ -5,9 +5,8 @@
 local Invisicam = {}
 local controller, assist
 local CONFIG = { schema = { UniversalInvisicam = "boolean" }, defaults = { UniversalInvisicam = false } }
-local function create(utils, connectPhysics, lifetime)
+local function create(utils, connectPhysics)
   local Player = utils.getLocalPlayer()
-  local Services = { RunService = game:GetService("RunService") }
   local Workspace = game:GetService("Workspace")
   local Runtime = { ShuttingDown = false }
   local CameraAssist = {
@@ -22,7 +21,9 @@ local function create(utils, connectPhysics, lifetime)
     CurrentOccluders = {},
     OccluderTransparency = 0.82,
     CheckInterval = 0.1,
-    LastCheckAt = 0,
+    LastCheckAt = -math.huge,
+    LastCamera = nil,
+    LastCharacter = nil,
     LastWarningAt = -math.huge,
   }
 
@@ -171,10 +172,6 @@ local function create(utils, connectPhysics, lifetime)
       return
     end
     local now = os.clock()
-    if now - self.LastCheckAt < self.CheckInterval then
-      return
-    end
-    self.LastCheckAt = now
     if self.OcclusionModeManaged then
       local modeOk, currentMode = pcall(function() return Player.DevCameraOcclusionMode end)
       if modeOk and currentMode ~= OCCLUSION_MODE then
@@ -192,6 +189,28 @@ local function create(utils, connectPhysics, lifetime)
       self:_RestoreAllOccluders()
       return
     end
+    if self.LastCamera ~= camera or self.LastCharacter ~= character then
+      self:_RestoreAllOccluders()
+      self.LastCamera, self.LastCharacter = camera, character
+      self.LastCheckAt = -math.huge
+    end
+    if self.OcclusionModeManaged then
+      self:_RestoreAllOccluders()
+      return
+    end
+    for part in pairs(self.OriginalLocalTransparency) do
+      if part.Parent then
+        pcall(function()
+          if part.LocalTransparencyModifier ~= self.OccluderTransparency then
+            part.LocalTransparencyModifier = self.OccluderTransparency
+          end
+        end)
+      end
+    end
+    if now - self.LastCheckAt < self.CheckInterval then
+      return
+    end
+    self.LastCheckAt = now
     local ok, updateError = pcall(function() self:_UpdateOccluders(camera, character, humanoid, root) end)
     if not ok then
       self:_RestoreAllOccluders()
@@ -213,6 +232,7 @@ local function create(utils, connectPhysics, lifetime)
       return
     end
     self.Enabled = true
+    self.LastCheckAt = -math.huge
     local readOk, originalMode = pcall(function() return Player.DevCameraOcclusionMode end)
     if readOk then
       local setOk, setError = pcall(function() Player.DevCameraOcclusionMode = OCCLUSION_MODE end)
@@ -255,6 +275,7 @@ local function create(utils, connectPhysics, lifetime)
       pcall(function() Player.DevCameraOcclusionMode = self.SavedOcclusionMode end)
     end
     self.SavedOcclusionMode = nil
+    self.LastCamera, self.LastCharacter = nil, nil
     self.OcclusionModeManaged = false
     self:_RestoreAllOccluders()
     self.RaycastParams = nil
@@ -294,7 +315,7 @@ end
 function Invisicam.setup(deps)
   Invisicam.teardown()
   local utils = deps.Utils
-  assist = create(utils, deps.Controller.connectPhysics, deps.Lifetime)
+  assist = create(utils, deps.Controller.connectPhysics)
   controller = deps.Controller.create(utils, deps.Lifetime, {
     key = "UniversalInvisicam",
     isEnabled = function() return utils.getConfigValue("UniversalInvisicam") == true or assist:_HasActiveSource() end,

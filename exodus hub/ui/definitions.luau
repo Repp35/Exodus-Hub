@@ -70,6 +70,20 @@ local CONFIG = {
           components = {
             { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind" },
             { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
+            { kind = "toggle", title = "FOV", key = "UniversalFOVEnabled", feature = "FOV" },
+            {
+              kind = "scroll",
+              title = "Field of View",
+              key = "UniversalFOV",
+              feature = "FOV",
+              parentKey = "UniversalFOVEnabled",
+              min = 1,
+              max = 120,
+              increment = 1,
+              valueName = "°",
+            },
+            { kind = "toggle", title = "Fullbright", key = "UniversalFullbright", feature = "Fullbright" },
+            { kind = "toggle", title = "Remover neblina", key = "UniversalNoFog", feature = "NoFog" },
             { kind = "toggle", title = "Anti AFK", key = "AntiAFK", feature = "AntiAFK", shortcutKey = "AntiAFKKeybind" },
             {
               kind = "toggle",

@@ -7,7 +7,7 @@ local InfiniteJump = {}
 local Utils
 local hub
 local controller
-local requestedUntil = 0
+local requested = false
 
 -- configuration
 local CONFIG = {
@@ -16,7 +16,6 @@ local CONFIG = {
 }
 
 local UIS = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
 local states = { InfiniteJump = false }
 local connectionPool
 local function disconnect(name)
@@ -29,29 +28,25 @@ local jumpButton
 local lastJump = 0
 local function jumpInAir()
   if not Utils or not states.InfiniteJump or UIS:GetFocusedTextBox() then
+    requested = false
     return
   end
   local player = Utils.getLocalPlayer()
   local character = player and player.Character
   local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-  local root = character and character:FindFirstChild("HumanoidRootPart")
-  if not humanoid or humanoid.Health <= 0 or humanoid.Sit or not root or humanoid.FloorMaterial ~= Enum.Material.Air then
+  if not humanoid or humanoid.Health <= 0 or humanoid.Sit then
+    requested = false
     return
   end
   local now = os.clock()
-  if now - lastJump < 0.08 then
+  if now - lastJump < 0.05 then
     return
   end
-  local power = humanoid.UseJumpPower and humanoid.JumpPower or math.sqrt(math.max(0, 2 * Workspace.Gravity * humanoid.JumpHeight))
-  if power ~= power or power <= 0 or power == math.huge or root.Anchored then
-    return
-  end
+  requested = false
   lastJump = now
-  local velocity = root.AssemblyLinearVelocity
-  root.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z)
   humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 end
-local function requestJump() requestedUntil = os.clock() + 0.16 end
+local function requestJump() requested = true end
 local function attachJumpButton()
   if not Utils or not states.InfiniteJump then
     return
@@ -137,14 +132,14 @@ function InfiniteJump.setup(deps)
     start = function(scope)
       states.InfiniteJump = true
       deps.Controller.connectPhysics(scope, function()
-        if os.clock() <= requestedUntil then
+        if requested then
           jumpInAir()
         end
       end)
       assert(startInfiniteJump())
     end,
     stop = function()
-      requestedUntil = 0
+      requested = false
       states.InfiniteJump = false
       stopInfiniteJump()
     end,

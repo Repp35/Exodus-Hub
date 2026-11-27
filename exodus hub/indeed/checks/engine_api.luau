@@ -2,11 +2,22 @@
 
 -- code
 local function signal()
-  local event = {}
+  local event, listeners = {}, {}
   function event:Connect(callback)
     local connection = { Connected = true }
-    function connection:Disconnect() self.Connected = false end
+    listeners[connection] = callback
+    function connection:Disconnect()
+      self.Connected = false
+      listeners[self] = nil
+    end
     return connection
+  end
+  function event:Fire(...)
+    for connection, callback in pairs(listeners) do
+      if connection.Connected then
+        callback(...)
+      end
+    end
   end
   return event
 end

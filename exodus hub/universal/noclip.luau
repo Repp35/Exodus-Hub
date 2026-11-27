@@ -6,13 +6,12 @@ local Noclip = {}
 local controller, state, scope
 local CONFIG = { schema = { UniversalNoclip = "boolean" }, defaults = { UniversalNoclip = false } }
 local function create(utils, resources, connectPhysics)
-  local Services = { RunService = game:GetService("RunService") }
   local Player = utils.getLocalPlayer()
   local Runtime = {
     ShuttingDown = false,
     ConnectPhysics = function(_, callback)
       local physics = resources.child()
-      connectPhysics(physics, callback, Services.RunService.Stepped)
+      connectPhysics(physics, callback)
       return { Disconnect = physics.destroy }
     end,
     Track = function(_, connection) return resources.add(connection) end,
