@@ -13,6 +13,7 @@ local configuredIcon, iconOverride
 local Components = {}
 for _, name in ipairs({
   "mini",
+  "spam",
   "label",
   "button",
   "textInput",

@@ -7,6 +7,7 @@ function Panels.setup() return true end
 function Panels.create(context, definitions)
   local utils = context.deps.Utils
   for _, definition in ipairs(definitions or {}) do
+    local dragging
     local handle = context.kit.Components.mini(context.refs.screenGui, {
       name = definition.name,
       title = definition.title,
@@ -14,6 +15,9 @@ function Panels.create(context, definitions)
       visible = false,
       draggable = false,
       onActivate = function()
+        if dragging and dragging() then
+          return
+        end
         local action = context.deps.Controls[definition.action]
         if action then
           action()
@@ -34,9 +38,9 @@ function Panels.create(context, definitions)
       )
       handle.setVisible(utils.getConfigValue(definition.visibleKey) == true and (not definition.mobileOnly or not context.state.desktop))
       local invisible = definition.invisibleKey and utils.getConfigValue(definition.invisibleKey) == true
-      handle.Root.GroupTransparency = invisible and 1 or 0
+      handle.setInvisible(invisible)
     end
-    context.makeDraggable(
+    dragging = context.makeDraggable(
       handle.Header,
       handle.Root,
       function() utils.setConfig({ [definition.xKey] = handle.Root.Position.X.Offset, [definition.yKey] = handle.Root.Position.Y.Offset }) end

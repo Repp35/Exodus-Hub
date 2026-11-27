@@ -13,7 +13,7 @@ local Inputs
 local Selection
 local Dropdown
 local Appearance
-local Mini
+local Mini, Spam
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
@@ -22,7 +22,7 @@ local RunService = game:GetService("RunService")
 -- setup
 function UIKit.setup(deps)
   Theme, Runtime, Icons, Appearance = deps.Theme.tokens, deps.Runtime, deps.Icons, deps.Appearance
-  Mini = deps.Mini
+  Mini, Spam = deps.Mini, deps.Spam
   Display, ControlComponents, Inputs, Selection, Dropdown = deps.Display, deps.ControlComponents, deps.Inputs, deps.Selection, deps.Dropdown
   return true
 end
@@ -565,6 +565,7 @@ function UIKit.create(options)
   Selection.install(context)
   Dropdown.install(context)
   Mini.install(context)
+  Spam.install(context)
   components.tabs = components.segmented
   components.click = components.button
   components.scroll = components.slider
@@ -590,6 +591,7 @@ UIKit.__contract = {
     Selection = "uiselection",
     Dropdown = "uidropdown",
     Mini = "uimini",
+    Spam = "uispampanel",
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
@@ -602,6 +604,7 @@ UIKit.__contract = {
     Selection = { "install" },
     Dropdown = { "install" },
     Mini = { "install" },
+    Spam = { "install" },
   },
 }
 

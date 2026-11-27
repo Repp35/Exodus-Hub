@@ -89,7 +89,8 @@ function Controller.create(context)
     end
   end
   local function pulseBall(ball)
-    local shrink = twPlay(ball, "press", { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) })
+    local width, height = ball:GetAttribute("ExodusMiniWidth") or CLASH_SIZE, ball:GetAttribute("ExodusMiniHeight") or CLASH_SIZE
+    local shrink = twPlay(ball, "press", { Size = UDim2.fromOffset(width - 6, height - 6) })
     if not shrink then
       return
     end
@@ -98,7 +99,7 @@ function Controller.create(context)
       safeDisconnect(connection)
       untrackConn(connection)
       if playbackState == Enum.PlaybackState.Completed and ball and ball.Parent then
-        twPlay(ball, "feedback", { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) })
+        twPlay(ball, "feedback", { Size = UDim2.fromOffset(ball:GetAttribute("ExodusMiniWidth") or CLASH_SIZE, ball:GetAttribute("ExodusMiniHeight") or CLASH_SIZE) })
       end
     end))
   end
@@ -106,21 +107,14 @@ function Controller.create(context)
   local function createMovementBall(name, text, color, xKey, yKey, yOffset, onClick)
     local x = config[xKey] or (CLASH_SIZE + 22)
     local y = config[yKey] or (viewport().Y / 2 + yOffset)
-    local ball = inst("TextButton", {
-      Name = name,
-      Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
-      Position = UDim2.new(0, OFFSCREEN_X, 0, y),
-      BackgroundColor3 = color,
-      Text = text,
-      TextColor3 = Color3.new(1, 1, 1),
-      TextSize = 15,
-      Font = Enum.Font.GothamBold,
-      Active = true,
-      ZIndex = 8,
-      Parent = context.refs.screenGui,
-    })
-    corner(ball, 999)
-    stroke(ball, nil, 2)
+    local ball = context.kit.Components.mini(context.refs.screenGui, {
+      name = name,
+      text = text,
+      color = color,
+      size = UDim2.fromOffset(CLASH_SIZE, CLASH_SIZE),
+      position = UDim2.fromOffset(OFFSCREEN_X, y),
+      draggable = false,
+    }).Root
     local dragging = makeDraggable(ball, ball, function()
       setConfigValue(xKey, ball.Position.X.Offset)
       setConfigValue(yKey, ball.Position.Y.Offset)
@@ -373,21 +367,17 @@ function Controller.create(context)
       end))
     end
   end
-  context.refs.clashBall = inst("TextButton", {
-    Name = "ExodusClashBall",
-    Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
-    Position = UDim2.new(0, OFFSCREEN_X, 0.5, -CLASH_SIZE / 2),
-    BackgroundColor3 = C.red,
-    Text = "OFF",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 16,
-    Font = Enum.Font.GothamBold,
-    Active = true,
-    ZIndex = 8,
-    Parent = context.refs.screenGui,
-  })
-  corner(context.refs.clashBall, 999)
-  stroke(context.refs.clashBall, nil, 2)
+  context.refs.clashBall = context.kit.Components.mini(context.refs.screenGui, {
+    name = "ExodusClashBall",
+    scaleKey = "ClashMiniScale",
+    squareKey = "ClashMiniSquare",
+    size = UDim2.fromOffset(CLASH_SIZE, CLASH_SIZE),
+    position = UDim2.new(0, OFFSCREEN_X, 0.5, -CLASH_SIZE / 2),
+    color = C.red,
+    text = "OFF",
+    textSize = 16,
+    draggable = false,
+  }).Root
   UIState.clashBallOn = config.AutoSpam or false
   context.refs.clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
   context.refs.clashBall.TextSize = UIState.clashBallOn and 18 or 16
@@ -395,21 +385,17 @@ function Controller.create(context)
   paintClashBall()
 
   local parryY = config.ParryBallY or (viewport().Y / 2 - CLASH_SIZE - 40)
-  context.refs.parryBall = inst("TextButton", {
-    Name = "ExodusParryBall",
-    Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
-    Position = UDim2.new(0, OFFSCREEN_X, 0, parryY),
-    BackgroundColor3 = config.AutoParry and C.green or C.red,
-    Text = config.AutoParry and "PARRY\nON" or "PARRY\nOFF",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 14,
-    Font = Enum.Font.GothamBold,
-    Active = true,
-    ZIndex = 8,
-    Parent = context.refs.screenGui,
-  })
-  corner(context.refs.parryBall, 999)
-  stroke(context.refs.parryBall, nil, 2)
+  context.refs.parryBall = context.kit.Components.mini(context.refs.screenGui, {
+    name = "ExodusParryBall",
+    scaleKey = "ParryMiniScale",
+    squareKey = "ParryMiniSquare",
+    size = UDim2.fromOffset(CLASH_SIZE, CLASH_SIZE),
+    position = UDim2.fromOffset(OFFSCREEN_X, parryY),
+    color = config.AutoParry and C.green or C.red,
+    text = config.AutoParry and "PARRY\nON" or "PARRY\nOFF",
+    textSize = 14,
+    draggable = false,
+  }).Root
   paintParryBall(config.AutoParry == true)
   local isParryDragging = makeDraggable(context.refs.parryBall, context.refs.parryBall, function()
     setConfigValue("ParryBallX", context.refs.parryBall.Position.X.Offset)
@@ -484,7 +470,7 @@ function Controller.create(context)
   paintJumpBall(config.AutoJump == true)
   local _, miniY, miniWidth, miniHeight, miniScreenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
   local MINI_OFF_X = miniScreenWidth + 30
-  local miniComponent = context.kit.Components.mini(context.refs.screenGui, {
+  local miniComponent = context.kit.Components.spam(context.refs.screenGui, {
     name = "ExodusSpamMini",
     title = "Spam",
     size = UDim2.fromOffset(miniWidth, miniHeight),

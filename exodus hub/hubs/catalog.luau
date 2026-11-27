@@ -168,7 +168,7 @@ return {
         path = "hubs/phantom-ball/prediction/deflect_geometry.luau",
         hash = "99e0db6e8cca864da2d09c67a7e2feef5b3a442570707f34084b8cba55099cf7",
       },
-      { name = "gameui", path = "ui/games/phantom-ball/game_ui.luau", hash = "c5277913f1009b278576d56017c785c5e23d1d23c991e90182feb42c80cc34ce" },
+      { name = "gameui", path = "ui/games/phantom-ball/game_ui.luau", hash = "6071813b2ac2c8a2949a1bc84e3ec36c6e23379c2978413b964e8d3454eec47f" },
     },
   },
 }
