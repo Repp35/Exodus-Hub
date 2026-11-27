@@ -50,7 +50,7 @@ return {
   { name = "uiheader", path = "ui/header.luau", hash = "42751956de40288e2419a8319420a0db2e0b065922684b63283160d89da7e8b5" },
   { name = "uiicons", path = "ui/icons.luau", hash = "d391a379e0f347fe1c0c43d5dfbb34c76037f7c2b73842f89fc69be6bea8398f" },
   { name = "ui", path = "ui/interface.luau", hash = "fbab2b96e9b6e4e43b69bfed0add040eaa6edaadb8bba15c637364635c738d45" },
-  { name = "uipages", path = "ui/pages.luau", hash = "57a9901f2a233c832097d6bc8e060489d35a249629af118d887706062f835aab" },
+  { name = "uipages", path = "ui/pages.luau", hash = "586483d3f530c8e9086a763b4b6c203058fa9cfa9ab3bb1ffc1b3fec2230bed0" },
   { name = "uiruntime", path = "ui/runtime.luau", hash = "700b960ae911f28c8abf968e5e9ceb5e473a9873b96da4ca50178e070d4470ea" },
   { name = "uitheme", path = "ui/theme.luau", hash = "68843ec254afe204bd0cf91855ffc01a88014e75cb067107cf9d66a45abd135e" },
   { name = "uikit", path = "ui/toolkit.luau", hash = "b75c456e2f3e4debd9133403ac261af1c7225d040e2a08710ee3a0a3b167e993" },
