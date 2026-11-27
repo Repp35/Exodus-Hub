@@ -92,7 +92,12 @@ for _, action in ipairs({ "dumper", "rejoin", "serverHop", "resetCharacter", "re
 -- Filtering must never mutate the source definitions across UI rebuilds.
 assert(#loaded.uipages.forGame(loaded.uiconfig.pages, true) == #loaded.uiconfig.pages)
 -- PROFILE_ASSERTIONS
-assert(#loaded.utils.getDiagnostics().errors == 0, "Runtime API initialization errors")
+local initializationErrors = loaded.utils.getDiagnostics().errors
+local messages = {}
+for _, item in ipairs(initializationErrors) do
+  messages[#messages + 1] = tostring(item.source) .. ": " .. tostring(item.message)
+end
+assert(#initializationErrors == 0, "Runtime API initialization errors: " .. table.concat(messages, "\\n"))
 local scope = loaded.uiruntime.scope()
 assert(type(scope.destroy) == "function"); scope.destroy()
 for index = #order, 1, -1 do
