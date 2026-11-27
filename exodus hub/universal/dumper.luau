@@ -21,11 +21,7 @@ local status = {
 local CONFIG = {
   PREFIX = "SrcDump",
   PROGRESS_EVERY = 25,
-  MAX_SOURCE_ATTEMPTS = 11,
-  RETRY_BATCH = 8,
-  RETRY_DELAY = 1,
-  RETRY_MAX_DELAY = 3,
-  RETRY_TIME_BUDGET = 120,
+  ERROR_BATCH = 8,
   API_TIMEOUT = 10,
   INSTANCE_BATCH = 5000,
   SCRIPT_BATCH = 100,
@@ -244,14 +240,11 @@ local function sourceError(value)
   end
   return nil
 end
-local function timedCall(token, fn, argument, retryDeadline)
+local function timedCall(token, fn, argument)
   if token.cancelled then
     return false, "Dump canceled"
   end
-  local deadline = math.min(os.clock() + CONFIG.API_TIMEOUT, retryDeadline or math.huge)
-  if os.clock() >= deadline then
-    return false, "retry time budget exhausted"
-  end
+  local deadline = os.clock() + CONFIG.API_TIMEOUT
   local finished, success, result = false, false, nil
   local worker = task.defer(function()
     local ok, value = pcall(fn, argument)
@@ -328,8 +321,7 @@ local function run(token, callbacks)
   local createdFolders = {}
   local base = nextFolder(gameName)
   local status = token.status
-  local retryDeadline
-  local function callAPI(fn, argument) return timedCall(token, fn, argument, retryDeadline) end
+  local function callAPI(fn, argument) return timedCall(token, fn, argument) end
   local function save(path, content)
     if token.cancelled then
       return false, "Dump canceled"
@@ -511,7 +503,6 @@ local function run(token, callbacks)
       if token.cancelled then
         return nil, "Dump canceled"
       end
-      attempts[#attempts + 1] = "source attempt 1/" .. CONFIG.MAX_SOURCE_ATTEMPTS
       local sourceOk, directSource = pcall(function() return object.Source end)
       if sourceOk and type(directSource) == "string" and directSource:match("%S") and not sourceError(directSource) then
         source, method = directSource, "Source"
@@ -572,12 +563,10 @@ local function run(token, callbacks)
     local folder = folderFor(object)
     local filename = ("%s__%s_%04d"):format(safeFilename(objectName(object)), objectClass(object), index)
     local stem = folder ~= "" and folder .. "/" .. filename or filename
-    local bytecodeSaved = false
     if bytecode and CONFIG.SAVE_BYTECODE then
       local byteOk, byteError = save(base .. "/bytecode/" .. stem .. ".bin", bytecode)
       if byteOk then
         bytecodes += 1
-        bytecodeSaved = true
       else
         attempts[#attempts + 1] = "save bytecode: " .. tostring(byteError)
       end
@@ -600,10 +589,7 @@ local function run(token, callbacks)
       bytecode = bytecode,
       closure = closure,
       attempts = attempts,
-      context = context,
       source = source,
-      method = method,
-      bytecodeSaved = bytecodeSaved,
     }
 
     if source then
@@ -692,136 +678,6 @@ local function run(token, callbacks)
   if not infoOk then
     return nil, "cannot save game_info.txt: " .. tostring(infoError)
   end
-  local function retrySource(_, entry, round)
-    if token.cancelled then
-      return nil, "Dump canceled"
-    end
-    local recovered = entry.source or (entry.bytecode and sourceCache[entry.bytecode])
-    local recoveredMethod = entry.method or (recovered and "cached bytecode (later match)" or nil)
-    if recovered and not entry.source then
-      cacheHits += 1
-    end
-    entry.attempts[#entry.attempts + 1] = "source/save attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS
-    if not recovered and not token.cancelled and os.clock() < retryDeadline then
-      local object = entry.item.instance
-      local sourceOk, source = pcall(function() return object.Source end)
-      if sourceOk and type(source) == "string" and source:match("%S") and not sourceError(source) then
-        recovered, recoveredMethod = source, "Source (retry)"
-      end
-      if not recovered then
-        for _, reader in ipairs(readers) do
-          local ok, value = callAPI(reader.fn, object)
-          if ok and type(value) == "string" and #value > 0 then
-            entry.bytecode = value
-            if CONFIG.SAVE_BYTECODE then
-              local byteOk, byteError = save(base .. "/bytecode/" .. entry.stem .. ".bin", value)
-              if byteOk then
-                if not entry.bytecodeSaved then
-                  bytecodes += 1
-                  entry.bytecodeSaved = true
-                end
-              else
-                entry.attempts[#entry.attempts + 1] = "save bytecode: " .. tostring(byteError)
-              end
-            end
-            break
-          end
-        end
-      end
-      if not recovered and entry.bytecode and sourceCache[entry.bytecode] then
-        recovered, recoveredMethod = sourceCache[entry.bytecode], "cached bytecode (retry)"
-        cacheHits += 1
-      end
-      local function tryDecompile(argument, label)
-        if recovered or not decompiler or token.cancelled then
-          return
-        end
-        local ok, value = callAPI(decompiler, argument)
-        if ok and type(value) == "string" and #value > 0 and value:match("%S") and not sourceError(value) then
-          recovered, recoveredMethod = value, label .. " (retry)"
-        else
-          entry.attempts[#entry.attempts + 1] = label .. ": " .. (ok and errorText(value) or "error: " .. errorText(value))
-        end
-      end
-      tryDecompile(object, "decompile(instance)")
-      if entry.bytecode then
-        tryDecompile(entry.bytecode, "decompile(bytecode)")
-      end
-      if not recovered then
-        for _, reader in ipairs(closureReaders) do
-          local ok, closure = callAPI(reader.fn, object)
-          if ok and type(closure) == "function" then
-            tryDecompile(closure, "decompile(" .. reader.name .. ")")
-          end
-          if recovered or token.cancelled then
-            break
-          end
-        end
-      end
-      if recovered and entry.bytecode then
-        sourceCache[entry.bytecode] = recovered
-      end
-    end
-    if token.cancelled then
-      return nil, "Dump canceled"
-    end
-    if recovered then
-      entry.source, entry.method = recovered, recoveredMethod
-      local header = table.concat({
-        "-- SrcDump",
-        "-- index: " .. entry.index,
-        "-- class: " .. objectClass(entry.item.instance),
-        "-- path: " .. line(entry.item.path),
-        "-- discovered_by: " .. entry.item.origin,
-        "-- run_context: " .. entry.context,
-        "-- method: " .. recoveredMethod,
-        "",
-      }, "\n")
-      local ok, err = save(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
-      if ok then
-        saved += 1
-        failed -= 1
-        entry.saved = true
-        manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | " .. recoveredMethod .. " | scripts/" .. entry.stem .. ".lua"
-      else
-        entry.attempts[#entry.attempts + 1] = "save source: " .. tostring(err)
-      end
-    end
-    status.saved, status.failed, status.bytecode = saved, failed, bytecodes
-  end
-  local initialFailed, retryRounds = #unresolved, 0
-  status.initialFailed, status.recovered, status.retryRound = initialFailed, 0, 0
-  retryDeadline = os.clock() + CONFIG.RETRY_TIME_BUDGET
-  for round = 2, CONFIG.MAX_SOURCE_ATTEMPTS do
-    if #unresolved == 0 or token.cancelled or os.clock() >= retryDeadline then
-      break
-    end
-    local delayUntil = math.min(retryDeadline, os.clock() + math.min(CONFIG.RETRY_MAX_DELAY, CONFIG.RETRY_DELAY * (round - 1)))
-    while not token.cancelled and os.clock() < delayUntil do
-      task.wait(math.min(0.1, delayUntil - os.clock()))
-    end
-    if token.cancelled or os.clock() >= retryDeadline then
-      break
-    end
-    retryRounds = round - 1
-    status.retryRound = retryRounds
-    emit(callbacks, "onStatus", ("Retry %d/%d: %d scripts remaining..."):format(retryRounds, CONFIG.MAX_SOURCE_ATTEMPTS - 1, #unresolved))
-    local retried, retryError = concurrent(unresolved, function(index, entry) retrySource(index, entry, round) end, CONFIG.RETRY_BATCH)
-    if not retried then
-      return nil, retryError
-    end
-    local remaining = {}
-    for _, entry in ipairs(unresolved) do
-      if not entry.saved then
-        remaining[#remaining + 1] = entry
-      end
-    end
-    unresolved = remaining
-    status.recovered = initialFailed - #unresolved
-  end
-  if token.cancelled then
-    return nil, "Dump canceled"
-  end
   local function finalizeFailure(_, entry)
     if entry.source then
       manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | write failed"
@@ -859,9 +715,9 @@ local function run(token, callbacks)
     end
     status.saved, status.failed, status.bytecode = saved, failed, bytecodes
   end
-  local retried, retryError = concurrent(unresolved, finalizeFailure, CONFIG.RETRY_BATCH)
-  if not retried then
-    return nil, retryError
+  local finalized, finalizeError = concurrent(unresolved, finalizeFailure, CONFIG.ERROR_BATCH)
+  if not finalized then
+    return nil, finalizeError
   end
   if token.cancelled then
     return nil, "Dump canceled"
@@ -884,11 +740,6 @@ local function run(token, callbacks)
       "total_found=" .. #candidates,
       "decompiled_and_saved=" .. saved,
       "failed=" .. failed,
-      "initial_failed=" .. initialFailed,
-      "recovered_on_retry=" .. (initialFailed - failed),
-      "retry_rounds=" .. retryRounds,
-      "max_source_attempts=" .. CONFIG.MAX_SOURCE_ATTEMPTS,
-      "retry_budget_exhausted=" .. tostring(failed > 0 and os.clock() >= retryDeadline),
       "bytecode_saved=" .. bytecodes,
       "source_cache_hits=" .. cacheHits,
       "instances=" .. instanceCount,
@@ -900,16 +751,13 @@ local function run(token, callbacks)
   if not summaryOk then
     return nil, "cannot save summary.txt: " .. tostring(summaryError)
   end
-  log(("Finished: %d saved, %d failed (%d recovered on retry). Folder: %s"):format(saved, failed, initialFailed - failed, base))
+  log(("Finished: %d saved, %d failed. Folder: %s"):format(saved, failed, base))
   return {
     folder = base,
     total = #candidates,
     saved = saved,
     failed = failed,
     bytecode = bytecodes,
-    initialFailed = initialFailed,
-    recovered = initialFailed - failed,
-    retryRounds = retryRounds,
   }
 end
 
