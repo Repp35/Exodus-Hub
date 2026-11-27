@@ -29,7 +29,8 @@ function Persistence.create(deps)
     if key == "AutoExecuteOnJoin" or key == "AutoExecuteAllGames" then
       return false
     end
-    return type(key) == "string" and key:sub(1, #CONFIG.SESSION_ONLY_PREFIX) ~= CONFIG.SESSION_ONLY_PREFIX
+    local config = deps.getConfigModule()
+    return type(key) == "string" and (not config or config.isPersistentKey(key))
   end
   local function serializeConfig(config)
     local data = {}

@@ -66,7 +66,6 @@ local __part_utils = (function()
     AUTHOR = "deltapolinha_2915",
     FOLDER = "Exodus Hub",
     HISTORY_LIMIT = 32,
-    SESSION_ONLY_PREFIX = "Universal",
   }
 
   local function snapshot(value) return type(value) == "table" and stateModule.copy(value) or {} end
@@ -397,8 +396,9 @@ local __part_utils = (function()
       or type(module.validate) ~= "function"
       or type(module.validatePatch) ~= "function"
       or type(module.defaults) ~= "function"
+      or type(module.isPersistentKey) ~= "function"
     then
-      error("API interna ausente: Config.normalizePatch/validate/validatePatch/defaults", 2)
+      error("API interna ausente: Config.normalizePatch/validate/validatePatch/defaults/isPersistentKey", 2)
     end
     configModule = module
     return true

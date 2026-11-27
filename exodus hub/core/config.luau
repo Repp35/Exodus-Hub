@@ -6,6 +6,7 @@
 local Config = {}
 local Registry = {}
 local Keys = {}
+local SessionOnly = {}
 local ResolvedDefaults
 
 -- configuration
@@ -80,6 +81,9 @@ function Config.register(name, definition)
   if definition.resolveDefaults ~= nil and type(definition.resolveDefaults) ~= "function" then
     return false
   end
+  if definition.persistent ~= nil and type(definition.persistent) ~= "boolean" then
+    return false
+  end
   local schema = type(definition.schema) == "table" and definition.schema or {}
   local defaults = type(definition.defaults) == "table" and definition.defaults or {}
   for key, kind in pairs(schema) do
@@ -95,9 +99,15 @@ function Config.register(name, definition)
   end
   for key, kind in pairs(schema) do
     Keys[key] = kind
+    SessionOnly[key] = definition.persistent == false
   end
   ResolvedDefaults = nil
-  Registry[name] = { schema = copy(schema), defaults = copy(defaults), resolveDefaults = definition.resolveDefaults }
+  Registry[name] = {
+    schema = copy(schema),
+    defaults = copy(defaults),
+    resolveDefaults = definition.resolveDefaults,
+    persistent = definition.persistent ~= false,
+  }
   return true
 end
 
@@ -163,10 +173,11 @@ function Config.validate(config)
 end
 
 -- public-api
+function Config.isPersistentKey(key) return Keys[key] ~= nil and not SessionOnly[key] end
 function Config.getRegistry()
   local result = {}
   for name, definition in pairs(Registry) do
-    result[name] = { schema = copy(definition.schema), defaults = copy(definition.defaults) }
+    result[name] = { schema = copy(definition.schema), defaults = copy(definition.defaults), persistent = definition.persistent }
   end
   return result
 end
@@ -177,7 +188,7 @@ Config.__contract = {
     default = "internal.read",
     methods = { register = "infrastructure.write" },
   },
-  provides = { "register", "defaults", "validate", "validatePatch", "normalizePatch", "getRegistry" },
+  provides = { "register", "defaults", "validate", "validatePatch", "normalizePatch", "getRegistry", "isPersistentKey" },
   requires = {},
 }
 

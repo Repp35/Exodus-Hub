@@ -8,6 +8,7 @@ local current, lastApplied, lastFrame, nextPublish = 0, nil, 0, 0
 local mode, speed = "Fixed", 10
 local PREFIX = "UniversalPrisonTime"
 Runtime.__config = {
+  persistent = false,
   schema = {
     UniversalPrisonTimeEnabled = "boolean",
     UniversalPrisonTimeMinutes = "rate",
