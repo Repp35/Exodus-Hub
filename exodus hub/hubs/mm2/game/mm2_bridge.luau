@@ -176,6 +176,8 @@ function Bridge.create(modules)
       MM2AutoPickup = function(value) enabled(features.AutoGunPickup, value) end,
       MM2PickupSafety = function(value) features.AutoGunPickup:SetSafetyEnabled(value) end,
       MM2InvisibleShoot = function(value) features.ShootMurder:SetHudInvisible(value) end,
+      MM2MiniScale = function(value) features.ShootMurder:SetHudScale(value) end,
+      MM2ShootShape = function(value) features.ShootMurder:SetHudShape(value) end,
       MM2ManualShoot = function(value) features.ShootMurder:SetManualEnabled(value) end,
       MM2AutoShoot = function(value) features.ShootMurder:SetAutoEnabled(value) end,
       MM2ManualAccuracy = function(value) features.ShootMurder:SetManualAccuracy(value) end,

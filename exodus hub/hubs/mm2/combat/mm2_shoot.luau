@@ -29,6 +29,8 @@ function Factory.create(API)
     RoleDataAt = 0,
     NextRoleRefreshAt = 0,
     NextRoleWarningAt = 0,
+    HudScale = 1,
+    HudSquare = true,
     HudVisible = false,
     HudInvisible = false,
     HudGeneration = 0,
@@ -58,7 +60,7 @@ function Factory.create(API)
     local window = API.UI and API.UI.Window
     local library = window and window.OrionLib
     if library and type(library.MakeNotification) == "function" then
-      pcall(library.MakeNotification, library, { Name = "Shoot Murder", Content = content, Time = 4 })
+      pcall(library.MakeNotification, library, { Name = "Shoot no assassino", Content = content, Time = 4 })
     end
   end
   function ShootMurder:RefreshRoleData(force)
@@ -238,6 +240,27 @@ function Factory.create(API)
       tween:Play()
     end
   end
+  function ShootMurder:UpdateHudAppearance()
+    if not self.Button or not self.Corner then
+      return
+    end
+    local scale = self.HudScale
+    self.Button.Size = UDim2.fromOffset(65 * scale, 65 * scale)
+    self.Button.TextSize = 30 * scale
+    self.Corner.CornerRadius = self.HudSquare and UDim.new(0, 12 * scale) or UDim.new(0.5, 0)
+  end
+  function ShootMurder:SetHudScale(value)
+    local scale = tonumber(value) or 1
+    if scale ~= scale then
+      scale = 1
+    end
+    self.HudScale = math.clamp(scale, 0.5, 2)
+    self:UpdateHudAppearance()
+  end
+  function ShootMurder:SetHudShape(value)
+    self.HudSquare = value ~= "Round"
+    self:UpdateHudAppearance()
+  end
   function ShootMurder:EnsureHud()
     if self.ScreenGui and self.ScreenGui.Parent then
       return
@@ -282,6 +305,8 @@ function Factory.create(API)
     self.ScreenGui = screenGui
     self.Button = button
     self.Stroke = stroke
+    self.Corner = corner
+    self:UpdateHudAppearance()
     button.Active = true
     Runtime:Track(button.InputBegan:Connect(function(input)
       if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
@@ -484,6 +509,7 @@ function Factory.create(API)
     self.ScreenGui = nil
     self.Button = nil
     self.Stroke = nil
+    self.Corner = nil
   end
   Runtime:Track(Services.RunService.Heartbeat:Connect(function()
     if ShootMurder.Destroyed then

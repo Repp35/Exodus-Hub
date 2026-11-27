@@ -27,7 +27,8 @@ function Panels.create(context, definitions)
     local function refresh()
       handle.setAppearance(
         definition.scaleKey and utils.getConfigValue(definition.scaleKey) or 1,
-        definition.squareKey and utils.getConfigValue(definition.squareKey) == true
+        definition.shapeKey and utils.getConfigValue(definition.shapeKey) == "Square"
+          or not definition.shapeKey and definition.squareKey and utils.getConfigValue(definition.squareKey) == true
       )
       local view = context.viewport()
       local scale = math.max(0.01, context.refs.responsiveScale.Scale)

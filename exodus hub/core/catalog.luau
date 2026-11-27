@@ -42,7 +42,7 @@ return {
   { name = "uitelemetry", path = "ui/controllers/information.luau", hash = "b1e80abbe412d79990166ebd68a0d386784a4ad3c13a641e78ef3e081554620e" },
   { name = "uiinput", path = "ui/controllers/input.luau", hash = "0c994c0ce98b5a88f07774a9afe69245d1620c2275186b161010aafbe11249ad" },
   { name = "uilifecycle", path = "ui/controllers/lifecycle.luau", hash = "08701bc8fbd5ee36fa627beec566b6f47e9d9a0c3dcaa7d94b17750e61919998" },
-  { name = "uiminipanels", path = "ui/controllers/mini.luau", hash = "acd54a572c2ccb6923594d9b5e6f3878bdcfa4067094c4384efbcf600b8d470e" },
+  { name = "uiminipanels", path = "ui/controllers/mini.luau", hash = "31123dcb3c3f56d99c46a796100feb43539eba938c413805119fb64ddb71be5f" },
   { name = "uinotifications", path = "ui/controllers/notifications.luau", hash = "cdcee8259c0830c3b9b081c4d03980b0ea381d3d9806bec1f3a60a144aadbfce" },
   { name = "uinotificationview", path = "ui/controllers/notifications.luau", hash = "cdcee8259c0830c3b9b081c4d03980b0ea381d3d9806bec1f3a60a144aadbfce" },
   { name = "uiwindow", path = "ui/controllers/window.luau", hash = "08987e051854a84ec456cd97a960e9a856c1a21f6ece7c908d6dc361931070cf" },
