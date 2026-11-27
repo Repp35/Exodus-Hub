@@ -59,7 +59,7 @@ return {
     author = "deltapolinha_2915",
     notification = "Exodus Hub · Murder Mystery 2 / MMV carregado.",
     modules = {
-      { name = "gameruntime", path = "hubs/mm2/game_runtime.luau", hash = "8437764bdbda23dd4a894e372b9e273516439996dd6717e92136443496fc8463" },
+      { name = "gameruntime", path = "hubs/mm2/game_runtime.luau", hash = "3b30e738a3882dac12676128643567e8c4466cdedb6af744801e4effc89d960a" },
       { name = "mm2alerts", path = "hubs/mm2/mm2alerts.luau", hash = "74b5902769cfe8cdd7f62fa705c999841e5b96ab065e166d56cda25302ed4e64" },
       { name = "mm2coin", path = "hubs/mm2/mm2coin.luau", hash = "e5e15da18dd9dd6c6cac7410307f545e19ae032e92576cf0527a4df1a0f3b59e" },
       { name = "mm2combat", path = "hubs/mm2/mm2combat.luau", hash = "cb9e89953bfb284f96aa39e2f3383c56aec7b86354649213c3151cc25b24d5b5" },

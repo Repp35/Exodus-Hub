@@ -172,6 +172,19 @@ function Runtime.bind(loaded)
   scope.add(loaded.utils.observeConfig(function(changes)
     for key, value in pairs(changes) do
       apply(key, value)
+      if value == true and key == "ManualShootMurder" then
+        notify("Shoot Murder manual", "A Mini UI só aparece durante a partida quando você for Xerife ou Herói.", {
+          id = "mm2.manual-shoot-role",
+          duration = 5,
+          color = Color3.fromRGB(70, 155, 255),
+        })
+      elseif value == true and key == "ManualKnifeThrow" then
+        notify("Lançamento manual", "A Mini UI só aparece durante a partida quando você for Assassino.", {
+          id = "mm2.manual-knife-role",
+          duration = 5,
+          color = Color3.fromRGB(255, 65, 65),
+        })
+      end
     end
   end))
   local elapsed = 0
