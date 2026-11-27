@@ -1,0 +1,65 @@
+{
+  "id": "mm2",
+  "title": "Murder Mystery 2 / MMV",
+  "placeIds": [
+    142823291,
+    115744583613781,
+    89259651049585,
+    131563127340874,
+    137173049886119,
+    127066479584274,
+    12928877533
+  ],
+  "universeIds": [
+    66654135
+  ],
+  "permissions": false,
+  "version": "1.0.0",
+  "fingerprint": {
+    "all": [
+      {
+        "service": "ReplicatedStorage",
+        "path": [
+          "GetPlayerData"
+        ],
+        "recursive": true,
+        "class": "RemoteFunction"
+      },
+      {
+        "service": "ReplicatedStorage",
+        "path": [
+          "Remotes",
+          "Gameplay",
+          "RoundStart"
+        ],
+        "class": "RemoteEvent"
+      },
+      {
+        "service": "ReplicatedStorage",
+        "path": [
+          "Remotes",
+          "Gameplay",
+          "RoundEndFade"
+        ],
+        "class": "RemoteEvent"
+      }
+    ],
+    "any": [
+      {
+        "service": "Workspace",
+        "path": [
+          "RegularLobby"
+        ],
+        "class": "Model"
+      },
+      {
+        "service": "ReplicatedStorage",
+        "path": [
+          "Modules",
+          "ItemID"
+        ],
+        "class": "ModuleScript"
+      }
+    ]
+  }
+}

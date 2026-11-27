@@ -7,6 +7,7 @@ function Assists.create(context)
   local utils, gameInfo = context.deps.Utils, context.deps.Hub
   local elapsed, automatic = 0, {}
   local function refresh()
+    context.floating.refreshAbilities()
     local rules = not context.state.desktop and gameInfo.getMiniVisibility() or {}
     local changed = false
     for key, visible in pairs(rules) do

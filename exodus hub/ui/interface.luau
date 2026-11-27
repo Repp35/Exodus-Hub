@@ -20,6 +20,7 @@ for _, name in ipairs({
   "textInput",
   "number",
   "toggle",
+  "checkbox",
   "divider",
   "progressBar",
   "dropdown",

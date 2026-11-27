@@ -58,20 +58,46 @@ local __part_uicontrols = (function()
       end
       local handle = control(parent, definition, height)
       title(handle, definition, definition.shortcutKey and 120 or 58, height)
-      local track =
-        inst("Frame", { Size = UDim2.fromOffset(48, 30), Position = UDim2.new(1, -62, 0.5, -15), BackgroundColor3 = C.toggleOff, ZIndex = 8 }, handle.Root)
+      local checkbox = definition.kind == "checkbox"
+      local tint = definition.color or C.toggleOn
+      local track = inst("Frame", {
+        Size = checkbox and UDim2.fromOffset(28, 28) or UDim2.fromOffset(48, 30),
+        Position = checkbox and UDim2.new(1, -46, 0.5, -14) or UDim2.new(1, -62, 0.5, -15),
+        BackgroundColor3 = C.toggleOff,
+        ZIndex = 8,
+      }, handle.Root)
       if definition.expandedDescription and definition.description then
-        track.Position = UDim2.new(1, -62, 0, 8)
+        track.Position = UDim2.new(1, checkbox and -46 or -62, 0, 8)
       end
-      kit.corner(track, Theme.RADIUS.pill)
-      kit.stroke(track)
-      local thumb = inst("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = C.text, ZIndex = 9 }, track)
-      kit.corner(thumb, Theme.RADIUS.pill)
+      kit.corner(track, checkbox and 8 or Theme.RADIUS.pill)
+      kit.stroke(track, checkbox and tint or nil)
+      local thumb
+      if checkbox then
+        thumb = inst("TextLabel", {
+          Size = UDim2.fromScale(1, 1),
+          BackgroundTransparency = 1,
+          Text = "✓",
+          TextColor3 = C.text,
+          TextSize = 22,
+          TextTransparency = 1,
+          Font = Theme.FONT.strong,
+          ZIndex = 9,
+        }, track)
+      else
+        thumb = inst("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = C.text, ZIndex = 9 }, track)
+        kit.corner(thumb, Theme.RADIUS.pill)
+      end
+      local checkScale = checkbox and inst("UIScale", { Scale = 0.8 }, track) or nil
       local value = false
       function handle.setValue(nextValue)
         value = nextValue == true
-        handle.motion.play(track, "control", { BackgroundColor3 = value and C.toggleOn or C.toggleOff })
-        handle.motion.play(thumb, "control", { Position = UDim2.new(0, value and 24 or 4, 0.5, -10) })
+        handle.motion.play(track, "control", { BackgroundColor3 = value and tint or C.toggleOff })
+        if checkbox then
+          handle.motion.play(thumb, "control", { TextTransparency = value and 0 or 1 })
+          handle.motion.play(checkScale, "feedback", { Scale = value and 1 or 0.9 })
+        else
+          handle.motion.play(thumb, "control", { Position = UDim2.new(0, value and 24 or 4, 0.5, -10) })
+        end
       end
       function handle.getValue() return value end
       function handle.activate()
@@ -106,6 +132,7 @@ local __part_uicontrols = (function()
       bind(handle, definition.key, handle.setValue)
       return handle
     end
+    components.checkbox = components.toggle
   end
   Components.__contract = { provides = { "setup", "install" }, requires = {} }
   return Components

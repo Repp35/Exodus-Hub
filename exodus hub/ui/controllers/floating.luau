@@ -182,7 +182,11 @@ function Controller.create(context)
     automatic = rules or {}
     controller.sync()
   end
-  function controller.refreshAbilities() controller.sync() end
+  function controller.refreshAbilities()
+    for _, entry in ipairs(order) do
+      if entry.definition.ability then refresh(entry) end
+    end
+  end
   function controller.setSpam(value)
     context.state.spamOn = value == true
     local primary = context.inputDefinition.primary
