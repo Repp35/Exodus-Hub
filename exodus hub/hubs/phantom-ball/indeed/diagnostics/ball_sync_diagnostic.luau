@@ -1,4 +1,4 @@
--- [[ ball sync diagnostic ]]
+-- [[ ball_sync_diagnostic ]]
 
 -- configuration
 local CONFIG = {

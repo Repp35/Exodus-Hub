@@ -107,10 +107,6 @@ function Components.install(context)
     end
     function handle.getValue() return value end
     local function open()
-      if definition.choiceSource and options.choices then
-        choices = options.choices(definition.choiceSource)
-        handle.setValue(value)
-      end
       if not handle.enabled or kit.suspended or #choices == 0 or not options.parent or not Runtime.isVisible(handle.Root) then
         return
       end

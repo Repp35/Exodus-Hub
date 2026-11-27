@@ -1,4 +1,4 @@
--- [[ game ui ]]
+-- [[ gameui ]]
 --!optimize 2
 
 -- code
@@ -27,8 +27,6 @@ GameUI.definition = {
               key = "ParryBallVisible",
               mobileOnly = true,
             },
-            { kind = "slider", title = "Size", key = "ParryMiniScale", min = 0.5, max = 2, increment = 0.05, parentKey = "ParryBallVisible", mobileOnly = true },
-            { kind = "toggle", title = "Rounded Square", key = "ParryMiniSquare", parentKey = "ParryBallVisible", mobileOnly = true },
             {
               kind = "toggle",
               title = "Mini Clash UI",
@@ -36,8 +34,6 @@ GameUI.definition = {
               key = "ClashBallVisible",
               mobileOnly = true,
             },
-            { kind = "slider", title = "Size", key = "ClashMiniScale", min = 0.5, max = 2, increment = 0.05, parentKey = "ClashBallVisible", mobileOnly = true },
-            { kind = "toggle", title = "Rounded Square", key = "ClashMiniSquare", parentKey = "ClashBallVisible", mobileOnly = true },
           },
         },
         {
@@ -253,8 +249,6 @@ GameUI.__config = {
     AutoParryFactor08Applied = "boolean",
     AutoParryFactor03Applied = "boolean",
     ParryBallVisible = "boolean",
-    ParryMiniScale = "miniScale",
-    ParryMiniSquare = "boolean",
     ParryBallX = "position",
     ParryBallY = "position",
     AutoSpam = "boolean",
@@ -262,8 +256,6 @@ GameUI.__config = {
     AutoFierce = "boolean",
     AutoClashUpDash = "boolean",
     ClashBallVisible = "boolean",
-    ClashMiniScale = "miniScale",
-    ClashMiniSquare = "boolean",
     ClashDistanceVisible = "boolean",
     ClashTravelTimeVisible = "boolean",
     ClashGateInfoVisible = "boolean",
@@ -306,10 +298,6 @@ GameUI.__config = {
     MiniY = "position",
   },
   defaults = {
-    ClashMiniScale = 1,
-    ClashMiniSquare = false,
-    ParryMiniScale = 1,
-    ParryMiniSquare = false,
     AutoParry = true,
     AutoParryWindowFactor = 0.45,
     AutoParryFactor08Applied = true,

@@ -1,4 +1,4 @@
--- [[ mcp geometry ]]
+-- [[ mcpgeometry ]]
 --!optimize 2
 local Geometry = {}
 local units, world, players, weapons, boxes, shields, rules
@@ -90,14 +90,6 @@ function Geometry.visible(snap, point, character, origin)
   origin = origin or snap.eye
   local hit = world:Raycast(origin, point - origin, params(snap, false))
   return not hit or character and hit.Instance:IsDescendantOf(character)
-end
-function Geometry.inView(snap, target)
-  if not target or not target.root.Parent then
-    return false
-  end
-  local point = Geometry.point(target.character, target.root)
-  local projected, visible = snap.camera:WorldToViewportPoint(point)
-  return visible and projected.Z > 0 and Geometry.visible(snap, point, target.character, snap.camera.CFrame.Position)
 end
 function Geometry.point(character, root)
   local rear = Vector3.zero
@@ -219,6 +211,7 @@ function Geometry.criticalWindow(snap)
   if room < 3 / 64 then
     return nil
   end
+  -- Under a low ceiling, charge first: the head collision creates a much shorter fall window.
   return room >= 1.3 - 1 / 320 and 0.28 or 0
 end
 function Geometry.jumpRisk(snap)
@@ -243,6 +236,17 @@ function Geometry.jumpRisk(snap)
       origins[#origins + 1] = units.toBlocks(feet)
     end
   end
+  local overlap = OverlapParams.new()
+  overlap.FilterType, overlap.FilterDescendantsInstances = Enum.RaycastFilterType.Exclude, ignored
+  for _, block in ipairs(world:GetPartBoundsInBox(CFrame.new(snap.root.Position), units.offset(5, 6, 5), overlap)) do
+    local key = string.lower(tostring(block:GetAttribute("BlockKey") or block.Name))
+    if key == "obsidian" then
+      local top = block.Position + Vector3.new(0, block.Size.Y / 2, 0)
+      if not world:Raycast(top + units.offset(0, 1 / 64, 0), units.offset(0, 2, 0), ray) then
+        origins[#origins + 1] = units.toBlocks(top)
+      end
+    end
+  end
   local start = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0)
   local motion = units.toBlocks(snap.root.AssemblyLinearVelocity) * Vector3.new(1, 0, 1)
   for _, origin in ipairs(origins) do
@@ -250,6 +254,7 @@ function Geometry.jumpRisk(snap)
     for tick = 0, 12 do
       local predicted = start + motion * (tick * 0.05) + Vector3.new(0, height, 0)
       local delta = predicted - origin
+      -- Local estimate only: the server's maximum-damage formula is absent from the dump.
       if delta.Y >= -1 / 64 and delta.Y <= 2 and math.abs(delta.X) <= 1.3 and math.abs(delta.Z) <= 1.3 then
         local exposed = true
         for _, y in ipairs({ 3 / 64, 1, 1.95 }) do
@@ -281,7 +286,6 @@ Geometry.__contract = {
     "grounded",
     "falling",
     "visible",
-    "inView",
     "point",
     "hit",
     "direction",

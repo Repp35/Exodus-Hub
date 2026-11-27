@@ -1,4 +1,4 @@
--- [[ game info ]]
+-- [[ gameinfo ]]
 --!optimize 2
 
 -- module

@@ -50,7 +50,7 @@ local __part_uicontrols = (function()
       function handle.setText(value) handle.Root.Title.Text = tostring(value) end
       return handle
     end
-    local function booleanControl(parent, definition, checkbox)
+    function components.toggle(parent, definition)
       definition = definition or {}
       local height = definition.description and Theme.CARD_H + 22 or Theme.CARD_H
       if definition.expandedDescription and definition.description then
@@ -58,53 +58,20 @@ local __part_uicontrols = (function()
       end
       local handle = control(parent, definition, height)
       title(handle, definition, definition.shortcutKey and 120 or 58, height)
-      local track = inst("Frame", {
-        Name = checkbox and "Checkbox" or "Track",
-        Size = UDim2.fromOffset(checkbox and 30 or 48, 30),
-        Position = UDim2.new(1, checkbox and -44 or -62, 0.5, -15),
-        BackgroundColor3 = definition.offColor or C.toggleOff,
-        ZIndex = 8,
-      }, handle.Root)
+      local track =
+        inst("Frame", { Size = UDim2.fromOffset(48, 30), Position = UDim2.new(1, -62, 0.5, -15), BackgroundColor3 = C.toggleOff, ZIndex = 8 }, handle.Root)
       if definition.expandedDescription and definition.description then
-        track.Position = UDim2.new(1, checkbox and -44 or -62, 0, 8)
+        track.Position = UDim2.new(1, -62, 0, 8)
       end
-      kit.corner(track, checkbox and 7 or Theme.RADIUS.pill)
+      kit.corner(track, Theme.RADIUS.pill)
       kit.stroke(track)
-      local thumb, check
-      if checkbox then
-        check = inst("Frame", { Name = "Check", Size = UDim2.fromOffset(18, 14), Position = UDim2.new(0.5, -9, 0.5, -7), BackgroundTransparency = 1, ZIndex = 9 }, track)
-        for _, segment in ipairs({ { 7, 4, 8, 45 }, { 13, 11, 6, -45 } }) do
-          local line = inst("Frame", {
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Size = UDim2.fromOffset(segment[1], 2),
-            Position = UDim2.fromOffset(segment[2], segment[3]),
-            Rotation = segment[4],
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BorderSizePixel = 0,
-            ZIndex = 9,
-          }, check)
-          kit.corner(line, 1)
-        end
-      else
-        thumb = inst("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = C.text, ZIndex = 9 }, track)
-        kit.corner(thumb, Theme.RADIUS.pill)
-      end
+      local thumb = inst("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = C.text, ZIndex = 9 }, track)
+      kit.corner(thumb, Theme.RADIUS.pill)
       local value = false
-      local activeColor = definition.color or definition.onColor or (checkbox and C.accent or C.toggleOn)
       function handle.setValue(nextValue)
         value = nextValue == true
-        handle.motion.play(track, "control", { BackgroundColor3 = value and activeColor or definition.offColor or C.toggleOff })
-        if checkbox then
-          check.Visible = value
-        else
-          handle.motion.play(thumb, "control", { Position = UDim2.new(0, value and 24 or 4, 0.5, -10) })
-        end
-      end
-      function handle.setColor(color)
-        if typeof(color) == "Color3" then
-          activeColor = color
-          handle.setValue(value)
-        end
+        handle.motion.play(track, "control", { BackgroundColor3 = value and C.toggleOn or C.toggleOff })
+        handle.motion.play(thumb, "control", { Position = UDim2.new(0, value and 24 or 4, 0.5, -10) })
       end
       function handle.getValue() return value end
       function handle.activate()
@@ -139,8 +106,6 @@ local __part_uicontrols = (function()
       bind(handle, definition.key, handle.setValue)
       return handle
     end
-    function components.toggle(parent, definition) return booleanControl(parent, definition, false) end
-    function components.checkbox(parent, definition) return booleanControl(parent, definition, true) end
   end
   Components.__contract = { provides = { "setup", "install" }, requires = {} }
   return Components

@@ -1,4 +1,4 @@
--- [[ mcp supplies ]]
+-- [[ mcpsupplies ]]
 --!optimize 2
 local Supplies = {}
 local inventory, native, utils
@@ -10,6 +10,7 @@ local function identity(tool)
   return alive(tool) and tool.Name .. "|" .. tostring(tool:GetAttribute("ClassItem")) .. "|" .. tostring(tool:GetAttribute("BlockKey")) or nil
 end
 local function destination(slots, wanted)
+  -- An exhausted stack still owns its slot. Backup items cannot claim it.
   for slot = 1, 9 do
     if not alive(slots[slot]) and wanted and layout[slot] == wanted then
       return slot
@@ -39,9 +40,7 @@ local function finish(snap)
   if not inventory.close() then
     return
   end
-  if not native.restore(snap, potion.previous) then
-    return
-  end
+  native.restore(snap, potion.previous)
   awaiting[potion.effect] = snap.now + (potion.confirmed and 0.5 or 1)
   potion = nil
 end
@@ -145,6 +144,7 @@ function Supplies.step(snap, allowBackground)
     if alive(tool) then
       layout[slot] = identity(tool)
     elseif alive(seen[slot]) then
+      -- A live stack moved by the player is not an exhausted stack.
       layout[slot] = nil
     end
     seen[slot] = alive(tool) and tool or nil
@@ -154,6 +154,7 @@ function Supplies.step(snap, allowBackground)
       return
     end
   end
+  -- All depleted items are restored before considering an extra hotbar totem.
   if enabled("MCAutoRefill") and not refill(snap, slots) then
     return
   end

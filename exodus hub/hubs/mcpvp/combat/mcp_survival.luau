@@ -1,4 +1,4 @@
--- [[ mcp survival ]]
+-- [[ mcpsurvival ]]
 --!optimize 2
 local Survival = {}
 local native, geometry, target, pearl, inventory, units, utils
@@ -23,9 +23,6 @@ end
 function Survival.reset()
   local snap = native.snapshot()
   if apple and snap and owner == snap.character and snap.character:GetAttribute("EatingApple") then
-    escape, routeJob, episode = nil, nil, true
-    generation += 1
-    stopWalking(snap)
     return
   end
   native.holdUse(nil, false)
@@ -88,9 +85,11 @@ local function eat(snap)
       return true
     end
     if active and expired then
+      -- Cancel a stale native hold, never a still-running first apple.
       finishApple(snap)
       return true
     end
+    -- No synthetic release or equipment change while the native eating action is active.
     if snap.tool ~= tool or apple.ack or snap.now - apple.started > 2.5 then
       finishApple(snap)
     end
@@ -145,6 +144,7 @@ local function escapeRoute(snap)
   end
   local search = escape.search
   local threat = escape.position and units.toBlocks(escape.position)
+  -- Bound trajectory work per frame, including a completely enclosed hole.
   for _ = 1, 4 do
     local distance = ESCAPE_DISTANCES[math.floor((search.index - 1) / #ESCAPE_ANGLES) + 1]
     if not distance then
@@ -296,8 +296,8 @@ function Survival.step(snap, available)
     episode = false
   end
   local value = target.current(snap)
-  local threat = value or target.threat(snap)
-  if not escape and not episode and threat and not hasTotem and snap.humanoid.Health <= snap.humanoid.MaxHealth * 0.5 then
+  if not escape and not episode and not hasTotem and snap.humanoid.Health <= snap.humanoid.MaxHealth * 0.5 then
+    local threat = value or target.threat(snap)
     escape = {
       foe = threat and threat.root,
       position = threat and threat.root.Position,
@@ -320,6 +320,7 @@ function Survival.step(snap, available)
     escape.progressPosition, escape.progressAt = snap.root.Position, snap.now
   end
   if snap.now - escape.progressAt >= 3 and not pearl.busy() then
+    -- An impossible retreat must return control instead of disabling combat forever.
     escape, routeJob, episode = nil, nil, true
     generation += 1
     stopWalking(snap)
@@ -367,6 +368,7 @@ function Survival.step(snap, available)
     stopWalking(snap)
     return false
   end
+  -- A failed landing or a closing opponent permits another escape route.
   if escape.launched and not pearl.pending() and not far and (escape.position or not moved) then
     escape.launched = false
   end

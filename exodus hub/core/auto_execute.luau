@@ -1,4 +1,4 @@
--- [[ auto execute ]]
+-- [[ executor startup and teleport execution ]]
 --!optimize 2
 -- @modules autoexecute
 

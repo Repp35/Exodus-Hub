@@ -1,4 +1,4 @@
--- [[ engine api ]]
+-- [[ API smoke environment; no gameplay emulation ]]
 
 -- code
 local function signal()
@@ -34,7 +34,6 @@ end
 local services = {}
 local player = node("Player")
 player.UserId = 1
-player.Idled = signal()
 player.CharacterAdded = signal()
 player.CharacterRemoving = signal()
 services.Players = node("Players")
@@ -61,10 +60,6 @@ end
 function input:GetFocusedTextBox() return nil end
 local teleport = game:GetService("TeleportService")
 teleport.TeleportInitFailed = signal()
-local collection = game:GetService("CollectionService")
-function collection:GetTagged() return {} end
-function collection:GetInstanceAddedSignal() return signal() end
-function collection:GetInstanceRemovedSignal() return signal() end
 local workspace = game:GetService("Workspace")
 local enumCache = {}
 local Enum = setmetatable({}, {
@@ -92,7 +87,6 @@ local NumberSequence = { new = constructor }
 local ColorSequence = { new = constructor }
 local ColorSequenceKeypoint = { new = constructor }
 local NumberRange = { new = constructor }
-local Random = { new = constructor }
 local TweenInfo = { new = constructor }
 local _G = {}
 local task = { delay = function() end, defer = function() end, spawn = function() end }

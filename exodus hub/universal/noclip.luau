@@ -3,224 +3,168 @@
 -- @modules noclip
 
 local Noclip = {}
-local controller, state, scope
-local CONFIG = { schema = { UniversalNoclip = "boolean" }, defaults = { UniversalNoclip = false } }
-local function create(utils, resources, connectPhysics)
-  local Services = { RunService = game:GetService("RunService") }
-  local Player = utils.getLocalPlayer()
-  local Runtime = {
-    ShuttingDown = false,
-    ConnectPhysics = function(_, callback)
-      local physics = resources.child()
-      connectPhysics(physics, callback, Services.RunService.Stepped)
-      return { Disconnect = physics.destroy }
-    end,
-    Track = function(_, connection) return resources.add(connection) end,
-    OnShutdown = function(_, cleanup) resources.add(cleanup) end,
-  }
-  local State = {
-    Enabled = false,
-    Owners = {},
-    Character = nil,
-    SteppedConnection = nil,
-    DescendantConnection = nil,
-    OriginalCanCollide = {},
-    BindGeneration = 0,
-    BindThread = nil,
-  }
 
-  local function hasOwners() return next(State.Owners) ~= nil end
-  local function disconnect(connection)
-    if connection then
-      pcall(function() connection:Disconnect() end)
-    end
-  end
-  local function cancelPendingBind()
-    local thread = State.BindThread
-    State.BindThread = nil
-    if thread then
-      pcall(task.cancel, thread)
-    end
-  end
-  local function disablePart(part)
-    if not part:IsA("BasePart") then
-      return
-    end
-    local readOk, canCollide = pcall(function() return part.CanCollide end)
-    if not readOk then
-      return
-    end
-    if State.OriginalCanCollide[part] == nil then
-      State.OriginalCanCollide[part] = canCollide
-    end
-    pcall(function() part.CanCollide = false end)
-  end
-  function State:_RestoreBinding()
-    cancelPendingBind()
-    disconnect(self.SteppedConnection)
-    self.SteppedConnection = nil
-    disconnect(self.DescendantConnection)
-    self.DescendantConnection = nil
-    for part, canCollide in pairs(self.OriginalCanCollide) do
-      if part.Parent then
-        pcall(function() part.CanCollide = canCollide end)
-      end
-    end
-    table.clear(self.OriginalCanCollide)
-    self.Character = nil
-  end
-  function State:_BindCharacter(character)
-    self.BindGeneration += 1
-    local generation = self.BindGeneration
-    if character and self.Character == character then
-      return
-    end
-    self:_RestoreBinding()
-    if not character or not hasOwners() then
-      return
-    end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-      local thread
-      thread = task.defer(function()
-        local candidate = character:WaitForChild("Humanoid", 10)
-        if self.BindThread == thread then
-          self.BindThread = nil
-        end
-        if candidate and candidate:IsA("Humanoid") and self.BindGeneration == generation and hasOwners() and Player.Character == character then
-          self:_BindCharacter(character)
-        end
-      end)
-      self.BindThread = thread
-      return
-    end
-    if humanoid.Health <= 0 then
-      return
-    end
-    self.Character = character
-    for _, descendant in ipairs(character:GetDescendants()) do
-      disablePart(descendant)
-    end
-    self.DescendantConnection = character.DescendantAdded:Connect(function(descendant)
-      if self.Character == character and hasOwners() then
-        disablePart(descendant)
-      end
-    end)
-    self.SteppedConnection = Runtime:ConnectPhysics(function()
-      if self.Character ~= character or not hasOwners() then
-        self:_RestoreBinding()
-        return
-      end
-      if Player.Character ~= character then
-        return
-      end
-      for part in pairs(self.OriginalCanCollide) do
-        if part.Parent then
-          pcall(function() part.CanCollide = false end)
-        else
-          self.OriginalCanCollide[part] = nil
-        end
-      end
-    end)
-  end
-  function State:Acquire(owner)
-    if owner == nil then
-      return false
-    end
-    self.Owners[owner] = true
-    self:_BindCharacter(Player.Character)
-    return true
-  end
-  function State:Release(owner)
-    if owner ~= nil then
-      self.Owners[owner] = nil
-    end
-    if not hasOwners() then
-      self:_RestoreBinding()
-    elseif not self.Character then
-      self:_BindCharacter(Player.Character)
-    end
-  end
-  function State:Start()
-    if self.Enabled or Runtime.ShuttingDown then
-      return
-    end
-    self.Enabled = true
-    self:Acquire(self)
-  end
-  function State:Stop()
-    self.Enabled = false
-    self:Release(self)
-  end
-  Runtime:Track(Player.CharacterAdded:Connect(function(character)
-    if hasOwners() then
-      State:_BindCharacter(character)
-    end
-  end))
-  Runtime:Track(Player.CharacterRemoving:Connect(function(character)
-    if State.Character == character or State.BindThread then
-      State:_BindCharacter(nil)
-    end
-  end))
-  Runtime:OnShutdown(function() State:Stop() end)
+local Utils
+local configObserver
 
-  resources.add(function()
-    Runtime.ShuttingDown = true
-    table.clear(State.Owners)
-    State:_BindCharacter(nil)
-  end)
-  return State
+-- configuration
+local CONFIG = {
+  schema = { UniversalNoclip = "boolean" },
+  defaults = { UniversalNoclip = false },
+}
+
+local RunService = game:GetService("RunService")
+local savedCollision = setmetatable({}, { __mode = "k" })
+local noclipCharacter
+local characterParts = {}
+local partIndexes = {}
+local enabledState = false
+local connectionPool
+local function disconnect(name)
+  if connectionPool then
+    connectionPool.disconnect(name)
+  end
 end
-function Noclip.setEnabled(value)
-  if not controller then
+local function connect(name, signal, callback) return connectionPool.connect(name, signal, callback) end
+local function restoreCollision()
+  disconnect("NoclipAdded")
+  disconnect("NoclipRemoving")
+  table.clear(characterParts)
+  table.clear(partIndexes)
+  for part, value in pairs(savedCollision) do
+    if part.Parent then
+      pcall(function() part.CanCollide = value end)
+    end
+    savedCollision[part] = nil
+  end
+  noclipCharacter = nil
+end
+local function applyNoclip()
+  if not Utils or not enabledState then
+    return
+  end
+  local player = Utils.getLocalPlayer()
+  local character = player and player.Character
+  if character ~= noclipCharacter then
+    restoreCollision()
+    noclipCharacter = character
+    if character then
+      local function addPart(part)
+        if not part:IsA("BasePart") or partIndexes[part] then
+          return
+        end
+        characterParts[#characterParts + 1] = part
+        partIndexes[part] = #characterParts
+      end
+      local function removePart(part)
+        local index = partIndexes[part]
+        if not index then
+          return
+        end
+        local last = characterParts[#characterParts]
+        characterParts[index] = last
+        characterParts[#characterParts] = nil
+        partIndexes[part] = nil
+        if last and last ~= part then
+          partIndexes[last] = index
+        end
+        local original = savedCollision[part]
+        savedCollision[part] = nil
+        if original ~= nil then
+          pcall(function() part.CanCollide = original end)
+        end
+      end
+      connect("NoclipAdded", character.DescendantAdded, addPart)
+      connect("NoclipRemoving", character.DescendantRemoving, removePart)
+      for _, part in ipairs(character:GetDescendants()) do
+        addPart(part)
+      end
+    end
+  end
+  if not character or not character.Parent then
+    return
+  end
+  for _, part in ipairs(characterParts) do
+    if savedCollision[part] == nil then
+      savedCollision[part] = part.CanCollide
+    end
+    if part.CanCollide then
+      part.CanCollide = false
+    end
+  end
+end
+local function startNoclip()
+  connect("Noclip", RunService.Stepped, applyNoclip)
+  applyNoclip()
+  return true
+end
+local function stopNoclip()
+  disconnect("Noclip")
+  restoreCollision()
+  return true
+end
+function Noclip.setEnabled(enabled)
+  if not Utils then
     return false, "recurso indisponível"
   end
-  return controller.setEnabled(value)
-end
-function Noclip.acquire(owner) return state and state:Acquire(owner) or false end
-function Noclip.release(owner)
-  if not state then
-    return false
+  local value = enabled == true
+  if not Utils.setConfig({ UniversalNoclip = value }) then
+    return false, "configuração rejeitada"
   end
-  state:Release(owner)
+  if enabledState == value then
+    return true
+  end
+  enabledState = value
+  local ok, result, detail = pcall(value and startNoclip or stopNoclip)
+  if not ok or result == false then
+    pcall(stopNoclip)
+    enabledState = false
+    Utils.setConfig({ UniversalNoclip = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+  end
   return true
 end
 function Noclip.teardown()
-  if controller then
-    controller.destroy()
-    controller = nil
+  if configObserver then
+    configObserver:Disconnect()
+    configObserver = nil
   end
-  if scope then
-    scope.destroy()
-    scope = nil
+  stopNoclip()
+  enabledState = false
+  if connectionPool then
+    connectionPool.destroy()
+    connectionPool = nil
   end
-  state = nil
+  Utils = nil
   return true
 end
 function Noclip.setup(deps)
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
+    return false, "dependência ausente: Utils"
+  end
   Noclip.teardown()
-  local utils = deps.Utils
-  scope = deps.Lifetime.scope()
-  state = create(utils, scope, deps.Controller.connectPhysics)
-  local cleanup = { Disconnect = scope.destroy }
-  utils.trackGlobal(cleanup)
-  scope.add(function() utils.untrackGlobal(cleanup) end)
-  controller = deps.Controller.create(utils, deps.Lifetime, {
-    key = "UniversalNoclip",
-    start = function() state:Start() end,
-    stop = function() state:Stop() end,
-  })
-  return controller.sync()
+  Utils = deps.Utils
+  connectionPool = deps.Lifetime.connections(Utils)
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalNoclip ~= nil then
+      Noclip.setEnabled(changes.UniversalNoclip == true)
+    end
+  end)
+  if Utils.getConfigValue("UniversalNoclip") == true then
+    return Noclip.setEnabled(true)
+  end
+  return true
 end
 Noclip.__config = CONFIG
+
+-- contract
 Noclip.__contract = {
-  access = { methods = { acquire = "world.write", release = "world.write" } },
-  requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller" },
+  requires = { Utils = "utils", Lifetime = "lifetime" },
   requiresMethods = {
-    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
-    Lifetime = { "scope" },
-    Controller = { "create", "connectPhysics" },
+    Lifetime = { "connections" },
+    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" },
   },
-  provides = { "setup", "teardown", "setEnabled", "acquire", "release" },
+  provides = { "setup", "teardown", "setEnabled" },
 }
+
 return Noclip

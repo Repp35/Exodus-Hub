@@ -1,9 +1,10 @@
--- [[ server location ]]
+-- [[ server location sources ]]
 --!optimize 2
 -- @modules serverlocation
 
 local Location = {}
 local scope, result, failure
+-- Region codes identify the datacenter area, not precise street coordinates.
 local regions = {
   AMS = { "Países Baixos", "Amsterdã" },
   BOM = { "Índia", "Mumbai" },
@@ -107,6 +108,7 @@ function Location.setup(deps)
       return
     end
     resolving, peer = true, ip
+    -- Always pass the verified peer address. An empty URL would locate the user.
     for _, url in ipairs({ "https://ipwho.is/" .. ip, "https://ipapi.co/" .. ip .. "/json/" }) do
       task.spawn(function()
         if not owner.alive then
@@ -164,6 +166,8 @@ function Location.setup(deps)
       local network = game:GetService("NetworkClient")
       owner.connect(network.ConnectionAccepted, function(peer) resolve(peer) end)
     end)
+    -- Logs are useful only when they identify this exact session. Never use an
+    -- arbitrary IP from output, an old join, player country, or a join-ticket API.
     pcall(function()
       local logs = game:GetService("LogService"):GetLogHistory()
       local current = false
@@ -192,6 +196,7 @@ function Location.setup(deps)
       end
     end)
   end
+  -- Client geolocation is only a fallback country hint, never server-city evidence.
   local function estimate()
     if not owner.alive or (result.country and not result.estimated) then
       return

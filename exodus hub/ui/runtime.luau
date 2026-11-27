@@ -1,4 +1,4 @@
--- [[ runtime ]]
+-- [[ uiruntime ]]
 --!optimize 2
 -- @modules uiruntime
 
@@ -15,6 +15,9 @@ local UIS = game:GetService("UserInputService")
 
 -- configuration
 local CONFIG = { DEFAULT_MOTION = "control" }
+-- A descendant may be animated by more than one controller. Keep its original
+-- appearance outside individual motion scopes so a hidden state never becomes
+-- the baseline for its next entrance.
 local faded = setmetatable({}, { __mode = "k" })
 
 -- setup
@@ -27,6 +30,7 @@ end
 -- lifetime
 function Runtime.scope() return lifetime.scope() end
 
+-- PlayerGui stays below Roblox CoreGui. Equal display orders use insertion order.
 local function reorderLayers()
   if reorderQueued or not layerScope or not layerScope.alive then
     return

@@ -6,7 +6,7 @@ local InfiniteJump = {}
 
 local Utils
 local hub
-local controller
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -55,13 +55,6 @@ local function attachJumpButton()
     return
   end
   local button = hub.getJumpButton()
-  if not button then
-    local player = Utils.getLocalPlayer()
-    local gui = player and player:FindFirstChildOfClass("PlayerGui")
-    local touch = gui and gui:FindFirstChild("TouchGui")
-    local frame = touch and touch:FindFirstChild("TouchControlFrame")
-    button = frame and frame:FindFirstChild("JumpButton")
-  end
   if button == jumpButton then
     return
   end
@@ -106,16 +99,31 @@ local function stopInfiniteJump()
   jumpButton = nil
   return true
 end
-function InfiniteJump.setEnabled(value)
-  if not controller then
+function InfiniteJump.setEnabled(enabled)
+  if not Utils then
     return false, "recurso indisponível"
   end
-  return controller.setEnabled(value)
+  local value = enabled == true
+  if not Utils.setConfig({ UniversalInfiniteJump = value }) then
+    return false, "configuração rejeitada"
+  end
+  if states.InfiniteJump == value then
+    return true
+  end
+  states.InfiniteJump = value
+  local ok, result, detail = pcall(value and startInfiniteJump or stopInfiniteJump)
+  if not ok or result == false then
+    pcall(stopInfiniteJump)
+    states.InfiniteJump = false
+    Utils.setConfig({ UniversalInfiniteJump = false })
+    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
+  end
+  return true
 end
 function InfiniteJump.teardown()
-  if controller then
-    controller.destroy()
-    controller = nil
+  if configObserver then
+    configObserver:Disconnect()
+    configObserver = nil
   end
   stopInfiniteJump()
   states.InfiniteJump = false
@@ -123,36 +131,35 @@ function InfiniteJump.teardown()
     connectionPool.destroy()
     connectionPool = nil
   end
-  Utils, hub = nil, nil
+  Utils = nil
   return true
 end
 function InfiniteJump.setup(deps)
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
+    return false, "dependência ausente: Utils"
+  end
   InfiniteJump.teardown()
   Utils, hub = deps.Utils, deps.Hub
   connectionPool = deps.Lifetime.connections(Utils)
-  controller = deps.Controller.create(Utils, deps.Lifetime, {
-    key = "UniversalInfiniteJump",
-    start = function()
-      states.InfiniteJump = true
-      assert(startInfiniteJump())
-    end,
-    stop = function()
-      states.InfiniteJump = false
-      stopInfiniteJump()
-    end,
-  })
-  return controller.sync()
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalInfiniteJump ~= nil then
+      InfiniteJump.setEnabled(changes.UniversalInfiniteJump == true)
+    end
+  end)
+  if Utils.getConfigValue("UniversalInfiniteJump") == true then
+    return InfiniteJump.setEnabled(true)
+  end
+  return true
 end
 InfiniteJump.__config = CONFIG
 
 -- contract
 InfiniteJump.__contract = {
-  requires = { Utils = "utils", Lifetime = "lifetime", Hub = "hubapi", Controller = "universalcontroller" },
+  requires = { Utils = "utils", Lifetime = "lifetime", Hub = "hubapi" },
   requiresMethods = {
     Hub = { "getJumpButton" },
-    Lifetime = { "connections", "scope" },
-    Controller = { "create" },
-    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
+    Lifetime = { "connections" },
+    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" },
   },
   provides = { "setup", "teardown", "setEnabled" },
 }

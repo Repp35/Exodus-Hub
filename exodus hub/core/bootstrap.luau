@@ -1,4 +1,4 @@
--- [[ bootstrap ]]
+-- [[ session bootstrap ]]
 --!optimize 2
 -- @modules bootstrap
 
@@ -21,7 +21,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     end
   end
   utils.setConfigModule(loaded.config)
-  utils.setConfig(loaded.config.defaults({ player = utils.getLocalPlayer(), profile = profile }))
+  utils.setConfig(loaded.config.defaults())
   utils.loadConfig()
   utils.setModuleURLs(urls)
   local binds = {}
@@ -40,6 +40,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
       if name == "character" then
         deps.characterBinds = binds
       end
+      -- Register before setup so partial initialization is also cleaned up.
       if type(module.teardown) == "function" then
         local cleanup = { Connected = true }
         function cleanup:Disconnect()

@@ -1,4 +1,4 @@
--- [[ profile runtime ]]
+-- [[ bounded runtime capture; execute during the same clash scenario on each revision ]]
 
 -- code
 local CONFIG = {

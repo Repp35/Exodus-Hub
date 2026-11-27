@@ -1,4 +1,4 @@
--- [[ persistence ]]
+-- [[ configuration persistence and recovery ]]
 --!optimize 2
 -- @modules persistence
 

@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PATTERN = r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"(?:,\s*hash\s*=\s*"[a-f0-9]+")?\s*\}'
 def common(): return re.findall(PATTERN, (ROOT / 'core/catalog.luau').read_text())
 def hub_entries(folder):
-    return [(path.stem.replace("_", ""), path.relative_to(ROOT).as_posix()) for path in sorted([*(ROOT / 'hubs' / folder).rglob('*.luau'), *(ROOT / 'ui/games' / folder).rglob('*.luau')]) if 'indeed' not in path.relative_to(ROOT).parts]
+    return [(path.stem.replace("_", ""), path.relative_to(ROOT).as_posix()) for path in sorted((ROOT / 'hubs' / folder).rglob('*.luau')) if 'indeed' not in path.relative_to(ROOT / 'hubs' / folder).parts]
 def all_entries():
     return common() + [entry for info in sorted((ROOT / 'hubs').glob('*/hub.json')) for entry in hub_entries(info.parent.name)]
 def manifest(universal=True, hub_id="universal"):

@@ -1,56 +1,35 @@
--- [[ mcp aim ]]
+-- [[ mcpaim ]]
 --!optimize 2
 local Aim = {}
-local geometry, native, utils, units, tuning, input, gui, world, scope, players, base
-local held, lastLook, lastCamera
-local recent, recentUntil, heldUntil, scanAt = nil, 0, 0, 0
-local resumeAt, stick = 0, false
-local manualSerial, checkedSerial, manualUntil = 0, 0, 0
-local ignored = setmetatable({}, { __mode = "k" })
-local yielded = setmetatable({}, { __mode = "k" })
+local geometry, utils, units, tuning, input, gui, world, scope
+local humanoids, held, lastLook, lastCamera = {}, nil, nil, nil
+local manualAt, resumeAt, stick = -math.huge, 0, false
+local manualSerial, checkedSerial = 0, 0
+local lockRoot, lockSide
 function Aim.reset()
   held, lastLook, lastCamera, resumeAt = nil, nil, nil, 0
-  recent, recentUntil, heldUntil, scanAt = nil, 0, 0, 0
   checkedSerial = manualSerial
-end
-function Aim.remember(character, now, explicit)
-  if explicit then
-    yielded[character] = nil
-    ignored[character] = nil
-  end
-  recent, recentUntil = character, now + tuning.assistMemorySeconds
-end
-function Aim.dismiss(character)
-  ignored[character] = true
-  if recent == character then
-    recent, recentUntil = nil, 0
-  end
-  if held == character then
-    held = nil
-  end
+  lockRoot, lockSide = nil, nil
 end
 function Aim.teardown()
   if scope then
     scope.destroy()
     scope = nil
   end
-  stick, ignored, base = false, setmetatable({}, { __mode = "k" }), nil
-  yielded = setmetatable({}, { __mode = "k" })
+  humanoids, stick = {}, false
   Aim.reset()
 end
 function Aim.setup(deps)
   Aim.teardown()
-  geometry, native, utils, units, tuning = deps.Geometry, deps.Native, deps.Utils, deps.Units, deps.Options.tuning
-  players = game:GetService("Players")
+  geometry, utils, units, tuning = deps.Geometry, deps.Utils, deps.Units, deps.Options.tuning
   input, gui, world = game:GetService("UserInputService"), game:GetService("GuiService"), utils.getWorkspace()
   scope = deps.Lifetime.scope()
   local source = game:GetService("ReplicatedStorage"):FindFirstChild("MobileAimAssist")
-  local ok, value = pcall(function() return source and require(source) end)
-  base = ok and type(value) == "table" and value or nil
+  local ok, base = pcall(function() return source and require(source) end)
   if ok and type(base) == "table" and type(base.Adjust) == "function" then
     local original = base.Adjust
     local function adjust(frame)
-      if utils.isActive() and (utils.getConfigValue("MCAimAssist") or utils.getConfigValue("MCAimLock")) then
+      if utils.isActive() and utils.getConfigValue("MCAimAssist") then
         return frame
       end
       return original(frame)
@@ -62,17 +41,30 @@ function Aim.setup(deps)
       end
     end)
   end
+  local function add(value)
+    if value:IsA("Humanoid") then
+      humanoids[value] = true
+    end
+  end
+  scope.connect(world.DescendantAdded, add)
+  scope.connect(world.DescendantRemoving, function(value) humanoids[value] = nil end)
+  for _, value in ipairs(world:GetDescendants()) do
+    add(value)
+  end
   scope.connect(input.InputChanged, function(event, processed)
     if event.KeyCode == Enum.KeyCode.Thumbstick2 then
       stick = event.Position.Magnitude > 0.12
-    elseif event.UserInputType == Enum.UserInputType.MouseMovement and event.Delta.Magnitude > 0.05 then
-      manualSerial += 1
-      manualUntil = os.clock() + tuning.aimInputGraceSeconds
-    elseif event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.05 then
+    elseif
+      not processed
+      and event.UserInputType == Enum.UserInputType.MouseMovement
+      and event.Delta.Magnitude > 0.5
+      and (input.MouseBehavior ~= Enum.MouseBehavior.Default or input:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
+    then
+      manualAt, manualSerial = os.clock(), manualSerial + 1
+    elseif not processed and event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.1 then
       local camera = world.CurrentCamera
       if camera and event.Position.X >= camera.ViewportSize.X * 0.5 then
-        manualSerial += 1
-        manualUntil = os.clock() + tuning.aimInputGraceSeconds
+        manualAt, manualSerial = os.clock(), manualSerial + 1
       end
     end
   end)
@@ -87,16 +79,95 @@ function Aim.looking(snap, value)
   if not value or not value.root.Parent then
     return false
   end
+  -- Direction only: terrain and trees do not count as looking away.
   local point = snap.camera:WorldToViewportPoint(value.root.Position)
   local size = snap.camera.ViewportSize
   local margin = tuning.pursuitScreenMargin
   return point.Z > 0 and point.X >= -size.X * margin and point.X <= size.X * (1 + margin) and point.Y >= -size.Y * margin and point.Y <= size.Y * (1 + margin)
 end
-function Aim.yielding(snap) return stick or manualSerial ~= checkedSerial or snap.now < manualUntil end
-function Aim.pause(snap) resumeAt = math.max(resumeAt, snap.now + tuning.aimInputGraceSeconds) end
+function Aim.canTurn(snap, direction, margin)
+  if snap.now < resumeAt then
+    return false
+  end
+  local localDirection = snap.camera.CFrame:VectorToObjectSpace(direction)
+  if localDirection.Z >= -1e-5 then
+    return false
+  end
+  local size = snap.camera.ViewportSize
+  local vertical = math.tan(math.rad(snap.camera.FieldOfView) / 2) * (1 + 2 * (margin or 0))
+  return math.abs(localDirection.Y / -localDirection.Z) <= vertical * 0.98
+    and math.abs(localDirection.X / -localDirection.Z) <= vertical * size.X / math.max(1, size.Y) * 0.98
+end
+local function intent(snap, value)
+  local manual = manualSerial ~= checkedSerial or stick
+  if not manual or not value or lastCamera ~= snap.camera or not lastLook then
+    return 0
+  end
+  local delta = value.root.Position - snap.camera.CFrame.Position
+  if delta.Magnitude < 0.001 then
+    return 0
+  end
+  local desired, look = delta.Unit, snap.camera.CFrame.LookVector
+  if lastLook:Dot(look) > math.cos(math.rad(0.1)) then
+    return 0
+  end
+  checkedSerial = manualSerial
+  local before = math.acos(math.clamp(lastLook:Dot(desired), -1, 1))
+  local after = math.acos(math.clamp(look:Dot(desired), -1, 1))
+  if after > before + math.rad(0.35) then
+    return 1
+  end
+  if after < before - math.rad(0.35) then
+    return -1
+  end
+  return 0
+end
+function Aim.yielding(snap, value) return intent(snap, value) == 1 end
+function Aim.returning(snap, value) return intent(snap, value) == -1 end
+function Aim.paused(snap) return snap.now < resumeAt end
+function Aim.pause(snap)
+  Aim.reset()
+  resumeAt = snap.now + 0.75
+  checkedSerial = manualSerial
+end
+function Aim.turn(snap, desired, dt, emergency, margin)
+  if snap.now < resumeAt or not emergency and not Aim.canTurn(snap, desired, margin) then
+    return false
+  end
+  local frame = snap.camera.CFrame
+  local angle = math.acos(math.clamp(frame.LookVector:Dot(desired), -1, 1))
+  local turn = math.min(angle, math.rad(360) * math.clamp(dt or 1 / 60, 0, 1 / 15))
+  local axis = frame.LookVector:Cross(desired)
+  if axis.Magnitude < 1e-6 and angle > 0.001 then
+    axis = frame.UpVector
+  end
+  if axis.Magnitude > 1e-6 then
+    snap.camera.CFrame = CFrame.new(frame.Position) * CFrame.fromAxisAngle(axis.Unit, turn) * frame.Rotation
+  end
+  lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
+  return lastLook:Dot(desired) >= math.cos(math.rad(0.75))
+end
 function Aim.observe(snap)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
-  checkedSerial = manualSerial
+end
+local function lockPoint(snap, focus)
+  local root = focus.root
+  local forward = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+  if forward.Magnitude < 1e-5 then
+    return geometry.point(focus.character, root)
+  end
+  forward = forward.Unit
+  local facing = units.toBlocks(snap.root.Position - root.Position):Dot(forward)
+  if lockRoot ~= root then
+    lockRoot, lockSide = root, facing >= 0 and 1 or -1
+  elseif facing > 0.5 then
+    lockSide = 1
+  elseif facing < -0.5 then
+    lockSide = -1
+  end
+  local side = geometry.blocking(focus.character) and -1 or lockSide
+  -- Keep the torso point inside the body, without chasing its lateral edges.
+  return root.Position + units.offset(0, focus.character:GetAttribute("Sneaking") and 3 / 64 or 5 / 32, 0) + forward * units.toWorld(side / 8)
 end
 local function direction(snap, model, range, point)
   local human = model and model:FindFirstChildOfClass("Humanoid")
@@ -126,189 +197,101 @@ local function direction(snap, model, range, point)
   if delta.Magnitude < 0.001 then
     return nil
   end
-  return delta.Unit, distance
+  local projected, visible = snap.camera:WorldToViewportPoint(point)
+  return delta.Unit, distance, visible and projected.Z > 0
 end
-local TOUCH = { Cone = math.rad(30), MaxSpeed = math.rad(72), Pull = 9, LockBias = math.rad(3) }
-local GAMEPAD = { Cone = math.rad(12), MaxSpeed = math.rad(20), Pull = 2.5, LockBias = math.rad(1) }
-local function profile()
-  if base and type(base.Profile) == "function" then
-    local ok, value = pcall(base.Profile, input.PreferredInput, true)
-    if ok and type(value) == "table" then
-      return value
-    end
+local function assist(snap)
+  if snap.now < resumeAt then
+    return nil
   end
-  return input.PreferredInput == Enum.PreferredInput.Gamepad and GAMEPAD or TOUCH
-end
-local function assist(snap, settings, focus)
   local look = snap.camera.CFrame.LookVector
-  local best, desired, score
-  local function consider(model)
-    if not model or ignored[model] or yielded[model] then
-      return
-    end
-    local aim = direction(snap, model, tuning.assistRangeBlocks)
-    if not aim then
-      return
-    end
-    local angle = math.acos(math.clamp(look:Dot(aim), -1, 1))
-    if angle > settings.Cone then
-      return
-    end
-    local rank = angle - (model == held and settings.LockBias or 0)
-    if not score or rank < score then
-      best, desired, score = model, aim, rank
-    end
-  end
-  consider(focus and focus.character)
-  consider(recent)
-  consider(held)
-  if snap.now >= scanAt then
-    scanAt = snap.now + 0.1
-    for _, player in ipairs(players:GetPlayers()) do
-      if player ~= snap.player then
-        consider(player.Character)
+  if held then
+    local aim, distance, visible = direction(snap, held, tuning.assistRangeBlocks)
+    if aim then
+      local manual = snap.now - manualAt < 0.15 or input.PreferredInput == Enum.PreferredInput.Gamepad and stick
+      if manual and lastCamera == snap.camera and lastLook then
+        local before = math.acos(math.clamp(lastLook:Dot(aim), -1, 1))
+        if math.acos(math.clamp(look:Dot(aim), -1, 1)) > before + math.rad(0.2) then
+          held, resumeAt = nil, snap.now + 0.35
+          return nil
+        end
+      end
+      if distance <= tuning.focusRangeBlocks or visible and look:Dot(aim) >= math.cos(math.rad(20)) then
+        return aim
       end
     end
-    local bots = world:FindFirstChild("ArenaPvPBots")
-    if bots then
-      for _, model in ipairs(bots:GetChildren()) do
-        consider(model)
-      end
+    held = nil
+  end
+  local best, score
+  for human in pairs(humanoids) do
+    local aim, _, visible = direction(snap, human.Parent, tuning.assistRangeBlocks)
+    local rank = aim and look:Dot(aim)
+    if visible and rank >= math.cos(math.rad(20)) and (not score or rank > score) then
+      held, best, score = human.Parent, aim, rank
     end
   end
-  if best then
-    if held ~= best then
-      heldUntil = 0
-    end
-    held = best
-    if look:Dot(desired) >= math.cos(settings.Cone) then
-      heldUntil = snap.now + tuning.assistMemorySeconds
-    end
-  else
-    held, heldUntil = nil, 0
-  end
-  return desired
+  return best
 end
-local function aimingAtCrystal(snap, settings)
-  local folder = world:FindFirstChild("EndCrystals")
-  if not folder then
-    return false
-  end
-  local frame = snap.camera.CFrame
-  for _, crystal in ipairs(folder:GetChildren()) do
-    if crystal:IsA("PVInstance") then
-      local delta = crystal:GetPivot().Position - frame.Position
-      if
-        delta.Magnitude > 0.1
-        and units.distance(crystal:GetPivot().Position, frame.Position) <= 6
-        and frame.LookVector:Dot(delta.Unit) >= math.cos(settings.Cone)
-      then
-        return true
-      end
-    end
-  end
-  return false
-end
-local function nudge(snap, desired, dt, settings)
-  local frame = snap.camera.CFrame
-  local angle = math.acos(math.clamp(frame.LookVector:Dot(desired), -1, 1))
-  if angle < math.rad(0.35) then
-    return
-  end
-  local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 15)
-  local turn = math.min(angle * (1 - math.exp(-settings.Pull * elapsed)), settings.MaxSpeed * elapsed)
-  local axis = frame.LookVector:Cross(desired)
-  if axis.Magnitude < 1e-6 then
-    axis = frame.UpVector
-  end
-  local rotation = CFrame.fromAxisAngle(axis.Unit, turn)
-  snap.camera.CFrame = CFrame.new(frame.Position) * rotation * (frame - frame.Position)
-end
-function Aim.step(snap, focus, dt)
+function Aim.step(snap, focus, dt, recovery)
   local lock, enabled = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
-  if Aim.yielding(snap) then
-    local look = snap.camera.CFrame.LookVector
-    local function manual(model)
-      local root = model and model:FindFirstChild("HumanoidRootPart")
-      if not root then
-        return
-      end
-      local delta = root.Position - snap.camera.CFrame.Position
-      if delta.Magnitude < 0.001 then
-        return
-      end
-      local toward = lastCamera == snap.camera and lastLook and look:Dot(delta.Unit) > lastLook:Dot(delta.Unit) + 1e-6
-      yielded[model] = not toward and true or nil
-    end
-    manual(focus and focus.character)
-    manual(held)
-    manual(recent)
-    for model in pairs(yielded) do
-      manual(model)
-    end
-    held, heldUntil = nil, 0
-    resumeAt = math.max(resumeAt, snap.now + tuning.aimInputGraceSeconds)
-    Aim.observe(snap)
-    return
-  end
   if snap.now < resumeAt then
     return
   end
-  if
-    not (lock or enabled)
-    or input:GetFocusedTextBox()
-    or gui.MenuIsOpen
-    or snap.camera.CameraType ~= Enum.CameraType.Custom
-    or snap.character:FindFirstChildOfClass("ForceField")
-    or snap.player:GetAttribute("ThirdPersonCamera") == true and snap.player:GetAttribute("CameraViewMode") == 2
-  then
+  if not (lock or enabled) or input:GetFocusedTextBox() or gui.MenuIsOpen then
     Aim.reset()
     return
   end
-  if focus then
-    ignored[focus.character] = nil
-    local weapon = native.weapon(snap, focus) or snap.tool
-    if focus.distance <= tuning.focusRangeBlocks and geometry.direction(snap, focus, weapon) then
-      Aim.remember(focus.character, snap.now)
-      if lock then
-        local desired = direction(snap, focus.character, tuning.focusRangeBlocks)
-        local settings = profile()
-        local look = snap.camera.CFrame.LookVector
-        if desired and not yielded[focus.character] and look:Dot(desired) >= math.cos(settings.Cone) and not aimingAtCrystal(snap, settings) then
-          nudge(snap, desired, dt, {
-            Pull = settings.Pull * tuning.aimLockMultiplier,
-            MaxSpeed = math.min(settings.MaxSpeed * tuning.aimLockMultiplier, math.rad(120)),
-          })
-          held, heldUntil = focus.character, snap.now + tuning.assistMemorySeconds
-          Aim.observe(snap)
-          return
-        end
+  local aim, pull, speed, radius
+  if lock and focus then
+    local point = lockPoint(snap, focus)
+    local distance
+    aim, distance = direction(snap, focus.character, tuning.focusRangeBlocks, point)
+    if aim then
+      held, pull = focus.character, 24
+      -- Close crossings must not whip the camera around and redirect forward input into an orbit.
+      speed = math.rad(360) * math.clamp((distance - 0.45) / 1.55, 0, 1)
+      radius = math.atan(0.1 / math.max(0.1, units.distance(point, snap.camera.CFrame.Position)))
+    end
+  else
+    lockRoot, lockSide = nil, nil
+  end
+  if not aim and enabled then
+    if recovery then
+      if snap.now - manualAt < 0.15 or stick then
+        return
       end
+      local root = recovery:FindFirstChild("HumanoidRootPart")
+      local delta = root and geometry.point(recovery, root) - snap.camera.CFrame.Position
+      aim = delta and delta.Magnitude > 0.001 and delta.Unit or nil
+      radius = math.rad(6)
+    else
+      aim = assist(snap)
+    end
+    pull, speed = 10, math.rad(84)
+    if input.PreferredInput == Enum.PreferredInput.Gamepad then
+      pull, speed = 2.9, math.rad(24)
     end
   end
-  local weaponHeld = snap.tool and (snap.tool:GetAttribute("VoxelWeapon") == true or snap.tool.Name == "Bow")
-  if enabled and weaponHeld then
-    local settings = profile()
-    if aimingAtCrystal(snap, settings) then
-      held, heldUntil = nil, 0
-      Aim.observe(snap)
-      return
+  local frame = snap.camera.CFrame
+  if aim then
+    local angle = math.acos(math.clamp(frame.LookVector:Dot(aim), -1, 1))
+    local elapsed = math.clamp(dt or 1 / 60, 0, 1 / 15)
+    local turn = math.min(math.max(0, angle - (radius or 0)) * (1 - math.exp(-pull * elapsed)), speed * elapsed)
+    local axis = frame.LookVector:Cross(aim)
+    if axis.Magnitude < 1e-6 then
+      axis = frame.UpVector
     end
-    local desired = assist(snap, settings, focus)
-    if desired then
-      nudge(snap, desired, dt, settings)
-    end
+    snap.camera.CFrame = CFrame.new(frame.Position) * CFrame.fromAxisAngle(axis.Unit, turn) * frame.Rotation
   end
-  Aim.observe(snap)
+  lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
 end
 Aim.__contract = {
-  provides = { "setup", "reset", "step", "teardown", "looking", "yielding", "pause", "observe", "dismiss", "remember" },
-  requires = { Geometry = "mcpgeometry", Native = "mcpnative", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
+  provides = { "setup", "reset", "step", "teardown", "looking", "canTurn", "yielding", "pause", "turn", "observe", "returning", "paused" },
+  requires = { Geometry = "mcpgeometry", Utils = "utils", Units = "mcpunits", Options = "mcpoptions", Lifetime = "lifetime" },
   requiresMethods = {
-    Geometry = { "point", "visible", "direction" },
-    Native = { "weapon" },
+    Geometry = { "point", "visible", "blocking" },
     Utils = { "getWorkspace", "isActive", "getConfigValue" },
-    Units = { "distance" },
+    Units = { "distance", "toBlocks", "toWorld", "offset" },
     Lifetime = { "scope" },
   },
   requiresData = { Options = { "tuning" } },

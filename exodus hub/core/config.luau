@@ -6,7 +6,6 @@
 local Config = {}
 local Registry = {}
 local Keys = {}
-local ResolvedDefaults
 
 -- configuration
 local CONFIG = {
@@ -43,7 +42,6 @@ local function validKeyCode(value)
 end
 local validationErrors = CONFIG.ERRORS
 local validators = {
-  text = function(value) return type(value) == "string" and #value <= 256 end,
   boolean = function(value) return type(value) == "boolean" end,
   rate = function(value) return isFiniteNumber(value) and value >= CONFIG.RATE_MIN end,
   delay = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MAX end,
@@ -77,9 +75,6 @@ function Config.register(name, definition)
   if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then
     return false
   end
-  if definition.resolveDefaults ~= nil and type(definition.resolveDefaults) ~= "function" then
-    return false
-  end
   local schema = type(definition.schema) == "table" and definition.schema or {}
   local defaults = type(definition.defaults) == "table" and definition.defaults or {}
   for key, kind in pairs(schema) do
@@ -96,34 +91,18 @@ function Config.register(name, definition)
   for key, kind in pairs(schema) do
     Keys[key] = kind
   end
-  ResolvedDefaults = nil
-  Registry[name] = { schema = copy(schema), defaults = copy(defaults), resolveDefaults = definition.resolveDefaults }
+  Registry[name] = { schema = copy(schema), defaults = copy(defaults) }
   return true
 end
 
 -- defaults
-function Config.defaults(context)
-  if ResolvedDefaults then
-    return copy(ResolvedDefaults)
-  end
+function Config.defaults()
   local result = {}
   for _, definition in pairs(Registry) do
     for key, value in pairs(definition.defaults) do
       result[key] = value
     end
-    if definition.resolveDefaults then
-      local values = definition.resolveDefaults(context)
-      for key, value in pairs(values) do
-        assert(definition.schema[key] and validateValue(key, definition.schema[key], value), "Invalid dynamic default: " .. key)
-        result[key] = value
-      end
-    end
   end
-  for key, value in pairs(context and context.profile and context.profile.defaults or {}) do
-    assert(Keys[key] and validateValue(key, Keys[key], value), "Invalid game default: " .. tostring(key))
-    result[key] = value
-  end
-  ResolvedDefaults = copy(result)
   return result
 end
 

@@ -1,4 +1,4 @@
--- [[ game ui ]]
+-- [[ gameui ]]
 --!optimize 2
 local GameUI = {}
 local miniBalls = {
@@ -49,7 +49,7 @@ GameUI.definition = {
               kind = "toggle",
               title = "Auto Pearl",
               key = "MCAutoPearl",
-              description = "Persegue o alvo sem mover a câmera; respeita sua intenção de parar.",
+              description = "Usa pearl para alcançar o oponente e acompanhar fugas.",
             },
           },
         },
@@ -61,13 +61,13 @@ GameUI.definition = {
               kind = "toggle",
               title = "Aim Lock",
               key = "MCAimLock",
-              description = "Trava no oponente do seu PvP somente dentro do alcance de clique.",
+              description = "Mantém a mira no oponente próximo do PvP.",
             },
             {
               kind = "toggle",
               title = "Aim Assist",
               key = "MCAimAssist",
-              description = "Ajuda suavemente na mira próxima; acompanha brevemente o último oponente.",
+              description = "Ajuda a recuperar a mira no oponente próximo.",
             },
           },
         },

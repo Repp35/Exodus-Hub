@@ -1,4 +1,4 @@
--- [[ auto parry ]]
+-- [[ auto parry: ordered target episodes and native clash cadence ]]
 --!optimize 2
 
 -- code

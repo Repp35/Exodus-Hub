@@ -1,4 +1,4 @@
--- [[ mcp native ]]
+-- [[ mcpnative ]]
 --!optimize 2
 local Native = {}
 local utils, bridge, geometry, inventory, player, storage, controller, charge
@@ -97,9 +97,6 @@ function Native.equip(snap, tool)
   if dispatching and tool.Parent ~= snap.character then
     return false
   end
-  if snap.tool == tool then
-    return true
-  end
   expected = tool
   local slots = inventory.slots()
   if slots then
@@ -150,6 +147,7 @@ function Native.weapon(snap, target)
   if tool and not selectable(snap, tool) then
     tool = nil
   end
+  -- A manually selected Density mace suspends ground combos instead of forcing a sword.
   if tool and not geometry.melee(tool) then
     return nil
   end
@@ -200,8 +198,19 @@ function Native.charge(snap)
   end
   return current
 end
+function Native.realAim(snap)
+  local direction = player:GetAttribute("FrontCameraAimDirection")
+  return typeof(direction) == "Vector3" and direction.Magnitude > 0.001 and direction.Unit or snap.camera.CFrame.LookVector
+end
 local function call(action, snap, direction)
   if Native.blocked(snap) then
+    return false
+  end
+  local visibleUse = action == "Use" and snap.tool and snap.tool:GetAttribute("ClassItem") == "Pearl"
+  if
+    visibleUse
+    and (snap.camera.CFrame.LookVector:Dot(direction) < math.cos(math.rad(0.75)) or Native.realAim(snap):Dot(direction) < math.cos(math.rad(0.75)))
+  then
     return false
   end
   local fn = bridge.get(action == "Attack" and "attack" or "use")
@@ -211,12 +220,13 @@ local function call(action, snap, direction)
     if restoreAim ~= restore then
       return
     end
+    -- Release ownership first, even if an attribute restoration fails.
     restoreAim, dispatching = nil, false
     local ok, reason = pcall(function()
-      if player:GetAttribute("FrontCameraAimDirection") == direction then
+      if not visibleUse and player:GetAttribute("FrontCameraAimDirection") == direction then
         player:SetAttribute("FrontCameraAimDirection", oldDirection)
       end
-      if aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
+      if not visibleUse and aimFrame and player:GetAttribute("FrontCameraAimCFrame") == aimFrame then
         player:SetAttribute("FrontCameraAimCFrame", oldFrame)
       end
     end)
@@ -227,9 +237,11 @@ local function call(action, snap, direction)
   restoreAim, dispatching, dispatchUntil = restore, true, os.clock() + 0.5
   local marker = snap.character:GetAttribute("LocalAttackSwing")
   local ok, accepted = pcall(function()
-    aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
-    player:SetAttribute("FrontCameraAimDirection", direction)
-    player:SetAttribute("FrontCameraAimCFrame", aimFrame)
+    if not visibleUse then
+      aimFrame = CFrame.lookAt(snap.eye, snap.eye + direction)
+      player:SetAttribute("FrontCameraAimDirection", direction)
+      player:SetAttribute("FrontCameraAimCFrame", aimFrame)
+    end
     if fn then
       return fn(direction) ~= false
     end
@@ -260,6 +272,8 @@ local function call(action, snap, direction)
     local config = library("GameConfig")
     local item = config and config.Items[class]
     local drinking = class == "InvisPotion" or item and item.effect and not item.splash
+    -- ItemClient returns nil for both rejection and success. Non-drinking uses
+    -- advance LocalAttackSwing only when the native function actually submits Use.
     if not drinking then
       return snap.character:GetAttribute("LocalAttackSwing") ~= marker
     end
@@ -277,6 +291,7 @@ function Native.useState(snap, action, effect)
   if effect and (tonumber(snap.character:GetAttribute("Effect_" .. effect)) or 0) > workspace:GetServerTimeNow() then
     return true
   end
+  -- Expiry is cancellation, never a fabricated consumption confirmation.
   if snap.now - action.requestAt >= 3 then
     return false
   end
@@ -286,15 +301,12 @@ function Native.attack(snap, target, direction)
   if snap.now - lastAttack < 1 / 7 or Native.blocked(snap) then
     return false
   end
-  direction = snap.camera.CFrame.LookVector
-  if not geometry.inView(snap, target) or not geometry.hit(snap, target, snap.tool, direction) then
+  direction = direction or geometry.direction(snap, target, snap.tool)
+  if not direction then
     return false
   end
-  local sent = call("Attack", snap, direction)
-  if sent then
-    lastAttack = snap.now
-  end
-  return sent
+  lastAttack = snap.now
+  return call("Attack", snap, direction)
 end
 function Native.use(snap, tool, direction)
   local class = tool and tool:GetAttribute("ClassItem")
@@ -423,6 +435,7 @@ Native.__contract = {
     "attack",
     "use",
     "useState",
+    "realAim",
     "jump",
     "sprint",
     "gate",
@@ -435,7 +448,7 @@ Native.__contract = {
   requiresMethods = {
     Utils = { "getLocalPlayer", "recordError" },
     Bridge = { "get" },
-    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking", "hit", "inView" },
+    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking" },
     Inventory = { "slots", "select" },
   },
 }

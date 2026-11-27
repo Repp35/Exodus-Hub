@@ -55,11 +55,6 @@
       ],
       "tools": [
         "tooling.execute"
-      ],
-      "interactiveCombat": [
-        "combat.execute",
-        "combat.runtime",
-        "ui.write"
       ]
     },
     "rules": [
@@ -108,8 +103,7 @@
       "remote": "combat",
       "movement": "combat",
       "cooldown": "combat",
-      "gameui": "presentation",
-      "dynamicparry": "interactiveCombat"
+      "gameui": "presentation"
     },
     "defaults": {
       "infrastructure": "infrastructure.write",
@@ -120,16 +114,12 @@
       "universal": "world.write",
       "render": "render.write",
       "view": "ui.write",
-      "tools": "tooling.execute",
-      "interactiveCombat": "combat.execute"
+      "tools": "tooling.execute"
     }
   },
   "dataFolder": "Exodus Hub",
   "version": "3.3.0",
   "developers": [
     "deltapolinha_2915"
-  ],
-  "defaults": {
-    "UniversalSpeed": 40
-  }
+  ]
 }

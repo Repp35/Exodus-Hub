@@ -1,4 +1,4 @@
--- [[ definitions ]]
+-- [[ uiconfig ]]
 --!optimize 2
 -- @modules uiconfig
 
@@ -70,8 +70,7 @@ local CONFIG = {
           components = {
             { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind" },
             { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
-            { kind = "toggle", title = "Anti AFK", key = "AntiAFK", feature = "AntiAFK", shortcutKey = "AntiAFKKeybind" },
-            { kind = "toggle", title = "Anti Fling", key = "UniversalAntiFling", feature = "AntiFling", shortcutKey = "AntiFlingKeybind" },
+            { kind = "toggle", title = "Anti AFK", key = "AntiAFK", action = "antiAFK", shortcutKey = "AntiAFKKeybind" },
             {
               kind = "toggle",
               title = "Infinite Zoom",
@@ -123,24 +122,6 @@ local CONFIG = {
             },
             {
               kind = "toggle",
-              title = "Jump Power",
-              key = "UniversalJumpPowerEnabled",
-              feature = "JumpPower",
-              shortcutKey = "JumpPowerKeybind",
-              description = "Altera a força do pulo.",
-            },
-            {
-              kind = "scroll",
-              title = "Jump Power",
-              key = "UniversalJumpPower",
-              feature = "JumpPower",
-              parentKey = "UniversalJumpPowerEnabled",
-              min = 0,
-              max = 300,
-              increment = 1,
-            },
-            {
-              kind = "toggle",
               title = "Gravity",
               description = "Usa a gravidade definida abaixo.",
               key = "UniversalGravityEnabled",
@@ -162,7 +143,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Invisicam",
-              description = "Torna transparentes os obstáculos entre a câmera e o personagem.",
+              description = "Evita que o personagem cubra a câmera.",
               key = "UniversalInvisicam",
               shortcutKey = "InvisicamKeybind",
               feature = "Invisicam",
@@ -230,6 +211,7 @@ local CONFIG = {
       DesktopShortcutNotifications = "boolean",
       ForcePCUI = "boolean",
       CameraSensitivity = "rate",
+      AntiAFK = "boolean",
       AutoJump = "boolean",
       JumpKeybind = "keyCode",
       BtnX = "position",
@@ -242,7 +224,8 @@ local CONFIG = {
       DesktopNotifications = true,
       DesktopShortcutNotifications = true,
       ForcePCUI = false,
-      CameraSensitivity = 1,
+      CameraSensitivity = 1.5,
+      AntiAFK = true,
       AutoJump = false,
       JumpKeybind = Enum.KeyCode.J,
     },
@@ -268,7 +251,6 @@ function UIConfig.getPages(definition)
   local pages, byId = {}, {}
   for _, source in ipairs(CONFIG.PAGES) do
     local page = table.clone(source)
-    page.title = (definition.pageTitles or {})[page.id] or page.title
     page.sections = {}
     for _, originalSection in ipairs(source.sections) do
       local section = table.clone(originalSection)

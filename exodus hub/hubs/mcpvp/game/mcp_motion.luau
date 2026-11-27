@@ -1,4 +1,4 @@
--- [[ mcp motion ]]
+-- [[ mcpmotion ]]
 --!optimize 2
 local Motion = {}
 local units, collision, surface
@@ -42,7 +42,7 @@ function Motion.sample(root, character, now, previous)
       position = position,
       velocity = reported,
       reported = reported,
-      control = reported.Magnitude <= 8 and reported * FLAT or Vector3.zero,
+      control = Vector3.zero,
       acceleration = Vector3.zero,
       at = now,
       revision = 0,
@@ -64,19 +64,14 @@ function Motion.sample(root, character, now, previous)
     or epoch ~= previous.epoch
     or offset.Magnitude > math.max(4, (reported.Magnitude + previous.velocity.Magnitude) * elapsed * 2 + 0.75)
   if discontinuity or elapsed > 0.35 then
-    local fresh = Motion.sample(root, character, now, nil)
-    if discontinuity then
-      fresh.velocity = Vector3.new(0, reported.Y, 0)
-      fresh.control = Vector3.zero
-      fresh.discontinuous = true
-    end
-    return fresh
+    return Motion.sample(root, character, now, nil)
   end
   if offset.Magnitude < 0.001 and not changed and reported.Magnitude > 0.1 then
     return previous
   end
   local observed = offset / elapsed
   local velocity = reported.Magnitude > 0.1 and reported or (finite(observed) and observed or reported)
+  -- Prefer fresh positional evidence when a turn arrives before its velocity packet.
   if
     finite(observed)
     and observed.Magnitude > 1
@@ -129,17 +124,6 @@ function Motion.sample(root, character, now, previous)
   }
 end
 function Motion.actor(root, character, sample, latency, params, detailed)
-  if
-    sample
-    and (
-      sample.character ~= character
-      or os.clock() - sample.at > 0.2
-      or sample.teleport ~= character:GetAttribute("PearlTeleportAt")
-      or sample.epoch ~= character:GetAttribute("MovementCorrectionEpoch")
-    )
-  then
-    sample = nil
-  end
   local position = units.toBlocks(root.Position)
   local velocity = sample and sample.velocity or units.toBlocks(root.AssemblyLinearVelocity)
   if not finite(velocity) then
@@ -202,9 +186,11 @@ function Motion.actor(root, character, sample, latency, params, detailed)
       position += movement
     end
     if movementMode == "controlled" then
+      -- Sustained non-ballistic motion follows measured acceleration, not an invented jump.
       velocity += acceleration * (STEP * 0.85 ^ ticks)
     else
       local horizontal = control + (velocity * FLAT - control) * (grounded and groundDrag or AIR_DRAG)
+      -- Same move -> (vy - 1.6) * 0.98 tick used by VoxelAirMovement, in blocks.
       velocity = horizontal + Vector3.new(0, grounded and 0 or (velocity.Y - 1.6) * VERTICAL_DRAG, 0)
     end
     ticks += 1

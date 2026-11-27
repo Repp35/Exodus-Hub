@@ -1,4 +1,4 @@
--- [[ pages ]]
+-- [[ uipages ]]
 --!optimize 2
 -- @modules uipages
 
@@ -473,20 +473,13 @@ function Pages.create(kit, parent, definitions, context)
           occupied[column] = true
         end
       end
-      local nextColumn, count = 0, 0
+      local nextColumn = 0
       local pageWidth = page.definition.width or width
       local columnWidth = (pageWidth - T.GAP * (page.definition.columns - 1)) / page.definition.columns
       for _, column in ipairs(page.columns) do
-        if occupied[column] then
-          count += 1
-        end
-      end
-      local contentWidth = count * columnWidth + math.max(0, count - 1) * T.GAP
-      local left = (width - contentWidth) / 2
-      for _, column in ipairs(page.columns) do
         column.Visible = occupied[column] == true
         if column.Visible then
-          column.Position = UDim2.fromOffset(left + nextColumn * (columnWidth + T.GAP), 0)
+          column.Position = UDim2.fromOffset((width - pageWidth) / 2 + nextColumn * (columnWidth + T.GAP), 0)
           nextColumn += 1
         end
       end

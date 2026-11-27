@@ -1,4 +1,4 @@
--- [[ header ]]
+-- [[ bounded window header ]]
 --!optimize 2
 -- @modules uiheader
 

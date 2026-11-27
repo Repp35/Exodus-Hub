@@ -1,4 +1,4 @@
--- [[ game integration ]]
+-- [[ game_integration ]]
 --!optimize 2
 -- @modules gamecontext, hubapi, runtime
 
@@ -35,7 +35,6 @@ local __part_hubapi = (function()
     end
     return false, "Recurso indisponível neste jogo"
   end
-  function HubAPI.getChoices(name) return api.getChoices and api.getChoices(name) or {} end
   function HubAPI.getUIConfig() return api.getUIConfig and api.getUIConfig() or {} end
   function HubAPI.getGameContext() return api.getGameContext and api.getGameContext() or {} end
   function HubAPI.observeAbilityMode(callback)
@@ -116,7 +115,6 @@ local __part_hubapi = (function()
       "areAbilitiesEnabled",
       "getAbilityAvailability",
       "getUIConfig",
-      "getChoices",
       "getGameContext",
       "observeAbilityMode",
       "hasClashPrediction",

@@ -1,4 +1,4 @@
--- [[ game runtime ]]
+-- [[ runtime ]]
 --!optimize 2
 
 -- code

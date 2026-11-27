@@ -21,7 +21,6 @@ function Context.create(deps, deviceDesktop)
   local UIState = {
     connections = {},
     panelOpen = false,
-    initializing = true,
     spamOn = false,
     clashBallOn = false,
     btnIsDragging = function() return false end,
@@ -272,7 +271,6 @@ function Context.create(deps, deviceDesktop)
   context.playerGui = playerGui
   context.refs.screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
-    Enabled = false,
     DisplayOrder = CONFIG.DISPLAY_ORDER,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
@@ -286,7 +284,6 @@ function Context.create(deps, deviceDesktop)
     write = setConfigValue,
     observe = Utils.observeConfig,
     notify = function(...) return context.notifications.toast(...) end,
-    choices = deps.Hub.getChoices,
     validateShortcut = function(key, binding) return context.actions.validateShortcut(key, binding) end,
     onCapture = function(active) UIState.keyCapture = active end,
   })

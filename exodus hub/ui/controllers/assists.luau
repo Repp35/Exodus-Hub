@@ -1,4 +1,4 @@
--- [[ assists ]]
+-- [[ automatic floating visibility ]]
 --!optimize 2
 -- @modules uiassists
 local Assists = {}

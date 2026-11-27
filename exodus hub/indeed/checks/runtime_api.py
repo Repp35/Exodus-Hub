@@ -31,7 +31,10 @@ def smoke(binary, universal=True, hub_id=None, assertions="", bootstrap=False):
         code += f'loaded["{name}"] = files[{json.dumps(path)}].__bundle and files[{json.dumps(path)}].__bundle["{name}"] or files[{json.dumps(path)}]\n'
     permissions_enabled = not universal and profile.get("permissions", True) is not False
     if not permissions_enabled:
-        code += '\nloaded.permissions = loaded.modulelinker\n'
+        loader = (ROOT / 'loader.luau').read_text()
+        start = loader.index('local function basicLinker()')
+        end = loader.index('local function loadModules(', start)
+        code += '\n' + loader[start:end] + '\nloaded.permissions = basicLinker()\nloaded.permissions.__contract = { requires = {}, provides = { "validate", "resolve" } }\n'
     if permissions_enabled:
         code += '\nloaded.permissions.configure(profile.permissionPolicy)\n'
     for name, path in entries:
@@ -53,7 +56,7 @@ for name, module in pairs(loaded) do
   if module.__config then assert(loaded.config.register(name, module.__config), name) end
 end
 loaded.utils.setConfigModule(loaded.config)
-loaded.utils.setConfig(loaded.config.defaults({ player = services.Players.LocalPlayer, profile = profile }))
+loaded.utils.setConfig(loaded.config.defaults())
 loaded.utils.loadConfig()
 local initialized, order = {}, {}
 local function initialize(name)
@@ -86,7 +89,7 @@ for _, page in ipairs(pages) do
     end
   end
 end
-for _, key in ipairs({ "AntiAFK", "ForcePCUI", "AntiLagEnabled", "AntiLagRenderDistance", "AntiLagRemoveEffects", "UniversalFly", "UniversalInfiniteZoom", "UniversalNoclip", "UniversalAntiFling", "UniversalJumpPowerEnabled", "UniversalJumpPower", "UniversalSpeed" }) do assert(keys[key], key) end
+for _, key in ipairs({ "AntiAFK", "ForcePCUI", "AntiLagEnabled", "AntiLagRenderDistance", "AntiLagRemoveEffects", "UniversalFly", "UniversalInfiniteZoom", "UniversalNoclip" }) do assert(keys[key], key) end
 for _, action in ipairs({ "dumper", "rejoin", "serverHop", "resetCharacter", "resetSettings" }) do assert(actions[action], action) end
 
 -- Filtering must never mutate the source definitions across UI rebuilds.

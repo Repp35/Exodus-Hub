@@ -1,4 +1,4 @@
--- [[ mcp melee ]]
+-- [[ mcpmelee ]]
 --!optimize 2
 local Melee = {}
 local native, geometry, target, utils
@@ -36,17 +36,13 @@ local function chosen(snap)
     Melee.reset()
   end
   if cycle then
-    local current = target.near(snap)
-    if current and current.id == cycle.chosen.id then
-      cycle.chosen = current
-    end
-    return current
+    return cycle.chosen
   end
   return enabled("MCAutoSword") and target.near(snap) or nil
 end
 function Melee.prepare(snap)
   local value = chosen(snap)
-  if not value or not geometry.inView(snap, value) or native.blocked(snap) or snap.now < retryAt then
+  if not value or native.blocked(snap) or snap.now < retryAt then
     return
   end
   local tool
@@ -97,7 +93,8 @@ function Melee.prepare(snap)
       cycle.phase = "ground"
     end
   elseif cycle.phase == "air" and geometry.grounded(snap) then
-    cycle.phase = "ready"
+    -- A missed fall window must not leave the attack permanently pending.
+    cycle.phase = cycle.jumpAt and "ground" or "ready"
   end
   if cycle.phase == "air" or cycle.phase == "jump" then
     native.sprint(snap, true)
@@ -105,7 +102,7 @@ function Melee.prepare(snap)
 end
 function Melee.strike(snap)
   local value = chosen(snap)
-  if not value or not geometry.inView(snap, value) or native.blocked(snap) or snap.now < retryAt then
+  if not value or native.blocked(snap) or snap.now < retryAt then
     return
   end
   local tool
@@ -119,10 +116,9 @@ function Melee.strike(snap)
   end
   local direction = geometry.direction(snap, value, tool)
   if not direction then
-    return
-  end
-  local charged = native.charge(snap) + (geometry.stats(tool).speed or 1.6) * 0.025 >= 1
-  if not charged then
+    if cycle then
+      Melee.reset()
+    end
     return
   end
   if enabled("MCAutoCrit") then
@@ -132,12 +128,15 @@ function Melee.strike(snap)
     if cycle.phase == "jump" and not geometry.grounded(snap) then
       cycle.phase = "air"
     end
-    if not (cycle.phase == "ground" or geometry.falling(snap)) then
+    local charged = native.charge(snap) + (geometry.stats(tool).speed or 1.6) * 0.025 >= 1
+    if not charged or not (cycle.phase == "ground" or geometry.falling(snap)) then
       return
     end
+    -- Stop sprint immediately before the native attack; do not wait for replicated request flags.
     native.sprint(snap, true, true)
   end
   if native.attack(snap, value, direction) then
+    target.attacked(snap, value)
     native.sprint(snap, false)
     cycle, retryAt = nil, snap.now + 1 / 7
   end
@@ -147,8 +146,8 @@ Melee.__contract = {
   requires = { Native = "mcpnative", Geometry = "mcpgeometry", Target = "mcptarget", Utils = "utils" },
   requiresMethods = {
     Native = { "snapshot", "sprint", "blocked", "weapon", "equip", "charge", "jump", "attack" },
-    Geometry = { "grounded", "direction", "stats", "jumpRisk", "criticalWindow", "melee", "falling", "inView" },
-    Target = { "isCurrent", "near" },
+    Geometry = { "grounded", "direction", "stats", "jumpRisk", "criticalWindow", "melee", "falling" },
+    Target = { "isCurrent", "near", "attacked" },
     Utils = { "getConfigValue" },
   },
 }

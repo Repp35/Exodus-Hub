@@ -1,4 +1,4 @@
--- [[ mcp inventory ]]
+-- [[ mcpinventory ]]
 --!optimize 2
 local Inventory = {}
 local utils, bridge, cachedFn, values, lease, pending
@@ -74,6 +74,7 @@ function Inventory.select(snap, slot)
   if snap.tool == tool then
     return true
   end
+  -- EquipTool is a fallback only for an item already proved to be in the hotbar.
   if slots[slot] ~= tool or not owned(tool) then
     return false
   end
@@ -109,6 +110,7 @@ local function setOpen(value)
   if matches() then
     return true
   end
+  -- Use the real inventory binding when direct access is unavailable.
   if controller and type(controller.BeginTouch) == "function" and type(controller.EndTouch) == "function" and os.clock() >= nextToggle then
     nextToggle = os.clock() + 0.2
     pcall(function()
@@ -212,6 +214,7 @@ function Inventory.step(snap)
       restoreHand(snap, pending)
       Inventory.close(true)
     end
+    -- A yielding RPC may finish later; don't launch a duplicate while it is outstanding.
     if pending.done then
       pending, retryAt = nil, snap.now + 1
     end
@@ -259,6 +262,7 @@ function Inventory.totem(snap)
   }
   pending = operation
   task.spawn(function()
+    -- Never send a reserve transfer if the inventory closed before dispatch.
     if utils.getLocalPlayer().Character ~= operation.character or not operation.hand and not visible() then
       operation.done, operation.accepted = true, false
       return

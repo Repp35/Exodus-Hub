@@ -1,4 +1,4 @@
--- [[ details ]]
+-- [[ read-only information page ]]
 --!optimize 2
 -- @modules uidetails
 

@@ -1,4 +1,4 @@
--- [[ read current values ]]
+-- [[ read_current_values ]]
 
 -- configuration
 local CONFIG = {

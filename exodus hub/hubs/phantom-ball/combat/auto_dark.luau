@@ -1,4 +1,4 @@
--- [[ auto dark ]]
+-- [[ autodark ]]
 --!optimize 2
 
 -- module

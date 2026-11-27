@@ -1,4 +1,4 @@
--- [[ snapshots ]]
+-- [[ ball snapshot sampling ]]
 --!optimize 2
 
 -- code

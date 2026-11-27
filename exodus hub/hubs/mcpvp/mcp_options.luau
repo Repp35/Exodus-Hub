@@ -1,4 +1,4 @@
--- [[ mcp options ]]
+-- [[ mcpoptions ]]
 --!optimize 2
 local Options = {}
 Options.__config = {
@@ -31,19 +31,16 @@ Options.__config = {
 }
 Options.tuning = {
   focusRangeBlocks = 5,
-  assistRangeBlocks = 5,
-  assistMemorySeconds = 0.35,
-  aimInputGraceSeconds = 0.15,
-  aimLockMultiplier = 1.75,
-  pearlAttackMarginBlocks = 0.65,
-  pursuitAwayRangeBlocks = 10,
-  lookAwaySeconds = 6,
-  manualTurnSeconds = 0.75,
+  assistRangeBlocks = 6,
+  lookAwaySeconds = 3,
+  retaliationSeconds = 2.5,
+  pursuitResumeSeconds = 3,
   pursuitScreenMargin = 0.15,
   pearlTargetHeightBlocks = 2,
-  pearlExitHeightBlocks = 8,
   pearlLandingRadiusBlocks = 1.25,
   pearlMaxFlight = 6,
+  pearlLobRangeBlocks = 32,
+  pearlLowPitchDegrees = 8,
 }
 function Options.setup() return true end
 function Options.migrateConfig(data)

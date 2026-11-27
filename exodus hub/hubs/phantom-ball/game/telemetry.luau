@@ -1,4 +1,4 @@
--- [[ telemetry ]]
+-- [[ Phantom Ball readouts ]]
 --!optimize 2
 
 local Telemetry = {}

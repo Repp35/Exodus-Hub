@@ -36,7 +36,6 @@ local CONFIG = {
   RAW_CACHE_HEADERS = { ["Cache-Control"] = "no-cache, no-store" },
   RETRYABLE_HTTP_STATUS = { [408] = true, [425] = true, [429] = true },
   REGISTRY_PATH = "hubs/registry.luau",
-  ACCESS_PATH = "hubs/access.luau",
   CATALOG_PATH = "hubs/catalog.luau",
   MANIFEST_PATH = "core/catalog.luau",
   BUNDLE_PATH = "dist/runtime.json",
@@ -64,8 +63,9 @@ local function printStartup(message)
     print(message)
   end
 end
--- generated-start
+-- BEGIN GENERATED NOTIFICATION SURFACE
 local Appearance = (function()
+  -- [[ shared surface appearance ]]
   --!optimize 2
 
   local Appearance = {}
@@ -170,6 +170,7 @@ local Appearance = (function()
   end
   function Appearance.updateNotification(card, message, kind, viewport)
     local content = card:FindFirstChild("Content")
+    -- Replace cards created by older loaders rather than retain an incompatible layout.
     assert(content and content:IsA("ScrollingFrame"), "Unsupported notification surface")
     local label = content:FindFirstChild("Message")
     local maxWidth = math.max(24, math.min(280, viewport.X - 24))
@@ -206,8 +207,9 @@ local Appearance = (function()
   end
   Appearance.__contract = { provides = { "setup", "borderColor", "interactionColor", "borderGradient", "notification", "updateNotification" }, requires = {} }
   return Appearance
+
 end)()
--- generated-end
+-- END GENERATED NOTIFICATION SURFACE
 local function fallbackNotification(message, key, kind, duration)
   local player = game:GetService("Players").LocalPlayer
   local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
@@ -283,9 +285,9 @@ end
 local function clearPersistent(key)
   local clear = _G.ExodusClearPersistentNotification
   if type(clear) == "function" then
-    local ok, tween = pcall(clear, key)
+    local ok = pcall(clear, key)
     if ok then
-      return tween
+      return
     end
   end
   local player = game:GetService("Players").LocalPlayer
@@ -297,14 +299,12 @@ local function clearPersistent(key)
   if card then
     local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
     card:SetAttribute("ExodusNotificationGeneration", generation)
-    local tween = game:GetService("TweenService"):Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 })
-    tween:Play()
-    tween.Completed:Once(function(status)
-      if status == Enum.PlaybackState.Completed and card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
+    game:GetService("TweenService"):Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 }):Play()
+    task.delay(0.3, function()
+      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
         card:Destroy()
       end
     end)
-    return tween
   end
 end
 local function notifyCritical(moduleName)
@@ -372,6 +372,8 @@ local function getRequestFunction()
         end
       end
       reason = tostring(response)
+      -- HttpGet throws for HTTP failures. Do not retry a blocked host through
+      -- another executor API; let the source fallback honor its cooldown.
       if not ok then
         local code = tonumber(reason:match("[Hh][Tt][Tt][Pp]%s*:?%s*(%d%d%d)"))
         if code then
@@ -431,6 +433,7 @@ if type(requestState.pending) ~= "number" or requestState.pending < 0 then
 end
 if type(requestState.cooldowns) ~= "table" then
   requestState.cooldowns = {}
+  -- Migrate the former global cooldown without blocking independent CDNs.
   if type(requestState.retryAt) == "number" then
     requestState.cooldowns["api.github.com"] = requestState.retryAt
   end
@@ -448,6 +451,7 @@ local function requestOnce(url, headers)
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
   end
+  -- Reserve a global slot before yielding so updates and reloads share pacing.
   if type(task) == "table" and type(task.wait) == "function" then
     if requestState.pending >= CONFIG.MAX_PENDING_REQUESTS then
       return nil, "Transportes HTTP ocupados"
@@ -623,6 +627,7 @@ local function request(url, headers)
     },
     { url = "https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
     { url = "https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path },
+    -- Official jsDelivr testing endpoints are last-resort routes, never primary.
     { url = "https://fastly.jsdelivr.net/gh/" .. suffix },
     { url = "https://gcore.jsdelivr.net/gh/" .. suffix },
     { url = "https://testingcf.jsdelivr.net/gh/" .. suffix },
@@ -637,6 +642,7 @@ local function request(url, headers)
       break
     end
   end
+  -- Bound the fallback phase; hanging native requests cannot spawn an endless queue.
   local deadline = os.clock() + CONFIG.REQUEST_TIMEOUT
   for _, mirror in ipairs(mirrors) do
     if os.clock() >= deadline then
@@ -945,24 +951,23 @@ local function selectHub(revision)
     return false, catalogError
   end
   local catalog = execute("hub catalog", catalogChunk)
-  local accessChunk, accessError = loadModule("hub access", CONFIG.ACCESS_PATH, root .. CONFIG.ACCESS_PATH)
-  if not accessChunk then
-    return false, accessError
-  end
+  selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
   local player = game:GetService("Players").LocalPlayer
-  local selectionError
-  selectedHub, selectionError = registry.resolve(catalog, game.PlaceId, game.GameId, {
-    userId = player and player.UserId,
-    username = player and player.Name,
-  }, execute("hub access", accessChunk))
-  if not selectedHub then
-    return false, selectionError
+  if selectedHub.id == "mcpvp" and (not player or player.Name ~= "renannnhh") then
+    selectedHub = registry.select({}, game.PlaceId, game.GameId)
   end
   local manifestChunk, manifestError = loadModule("shared manifest", CONFIG.MANIFEST_PATH, root .. CONFIG.MANIFEST_PATH)
   if not manifestChunk then
     return false, manifestError
   end
-  MODULE_MANIFEST = registry.manifest(execute("shared manifest", manifestChunk), selectedHub)
+  local extra = selectedHub.modules or {}
+  local common = {}
+  for _, entry in ipairs(execute("shared manifest", manifestChunk)) do
+    if entry.name ~= "permissions" or selectedHub.permissions == true then
+      common[#common + 1] = entry
+    end
+  end
+  MODULE_MANIFEST = registry.merge(common, extra)
   table.clear(MODULE_ORDER)
   table.clear(MODULE_BY_NAME)
   for _, entry in ipairs(MODULE_MANIFEST) do
@@ -972,6 +977,70 @@ local function selectHub(revision)
     end
   end
   return true
+end
+local function orderModulesByDependencies(loaded)
+  local positions, state, ordered = {}, {}, {}
+  for index, name in ipairs(MODULE_ORDER) do
+    positions[name] = index
+  end
+  local function visit(name)
+    if state[name] == 2 then
+      return
+    end
+    if state[name] == 1 then
+      error("dependência circular entre módulos: " .. name, 2)
+    end
+    if not positions[name] or type(loaded[name]) ~= "table" then
+      error("dependência não inicializável: " .. tostring(name), 2)
+    end
+    state[name] = 1
+    local dependencies = {}
+    for _, source in pairs(loaded[name].__contract.requires or {}) do
+      if source ~= "permissions" then
+        dependencies[#dependencies + 1] = source
+      end
+    end
+    table.sort(dependencies, function(a, b) return (positions[a] or math.huge) < (positions[b] or math.huge) end)
+    for _, source in ipairs(dependencies) do
+      visit(source)
+    end
+    state[name] = 2
+    ordered[#ordered + 1] = name
+  end
+  for _, name in ipairs(MODULE_ORDER) do
+    visit(name)
+  end
+  table.clear(MODULE_ORDER)
+  for _, name in ipairs(ordered) do
+    if name ~= "character" then
+      MODULE_ORDER[#MODULE_ORDER + 1] = name
+    end
+  end
+  if loaded.character then
+    MODULE_ORDER[#MODULE_ORDER + 1] = "character"
+  end
+end
+local function basicLinker()
+  local linker = {}
+  function linker.validate(name, module)
+    assert(type(module.__contract) == "table", name .. ": missing API contract")
+    for _, method in ipairs(module.__contract.provides or {}) do
+      assert(type(module[method]) == "function", name .. ": missing " .. method)
+    end
+    return true
+  end
+  function linker.resolve(name, loaded)
+    local dependencies = {}
+    for alias, source in pairs(loaded[name].__contract.requires or {}) do
+      local provider = assert(loaded[source], "Missing dependency: " .. source)
+      for _, method in ipairs((loaded[name].__contract.requiresMethods or {})[alias] or {}) do
+        assert(type(provider[method]) == "function", source .. ": missing " .. method)
+      end
+      dependencies[alias] = provider
+    end
+    return dependencies
+  end
+  return linker
 end
 local activeLoaded
 local function loadModules(urls, prepared)
@@ -1026,9 +1095,7 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  local linker = execute("modulelinker", results.modulelinker.chunk)
-  results.modulelinker.module = linker
-  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or linker
+  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
   if results.permissions then
     permissions.configure(selectedHub.permissionPolicy)
     permissions.validate("permissions", permissions, MODULE_BY_NAME.permissions.path)
@@ -1042,7 +1109,7 @@ local function loadModules(urls, prepared)
       loaded[name] = module
     end
   end
-  MODULE_ORDER = loaded.modulelinker.order(MODULE_MANIFEST, loaded)
+  orderModulesByDependencies(loaded)
   return loaded
 end
 
@@ -1133,10 +1200,6 @@ local function startInternal()
   if not version then
     return false, "Loader", revisionError or "revisão atual indisponível"
   end
-  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
-  if not playerReady then
-    return false, "Loader", playerError
-  end
   local selected, selectionError = selectHub(version)
   if not selected then
     return false, "Loader", selectionError
@@ -1150,8 +1213,13 @@ local function startInternal()
   if not loaded then
     return false, moduleName, loadError
   end
+  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
+  if not playerReady then
+    return false, "Loader", playerError
+  end
   if type(requested) == "table" and requested.automatic and Exodus.Context then
     local previous = Exodus.Context
+    -- Release the start lock while waiting so an explicit loadstring can force a replacement.
     _G.ExodusLoaderStartToken = nil
     local safe = previous.updates.awaitSafe(function() return Exodus.Context == previous and previous.utils.getConfigValue("AutoExecute") == true end)
     if not safe or Exodus.Context ~= previous or _G.ExodusLoaderStartToken then
@@ -1185,10 +1253,6 @@ local function startInternal()
   local utils = loaded.utils
   Exodus.Runtime = runtime
   Exodus.Hub = table.clone(selectedHub)
-  local loadingExit = clearPersistent("loading")
-  if loadingExit then
-    loadingExit.Completed:Wait()
-  end
   notifyPersistent(
     selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."),
     "hub_loaded",
@@ -1236,7 +1300,7 @@ function Loader.start()
   if not ready then
     return false, "Loader", reason
   end
-  pcall(notifyPersistent, "Exodus · Carregando…", "loading", "info", 0)
+  pcall(notifyPersistent, "Exodus · Loading...", "loading", "info", 0)
   startLock = true
   startupPerformed = false
   _G.ExodusLoaderStartToken = startToken
@@ -1244,9 +1308,7 @@ function Loader.start()
   _G.Exodus = Exodus
   _G.ExodusModules = Modules
   local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
-  if not ok or started ~= true then
-    pcall(clearPersistent, "loading")
-  end
+  pcall(clearPersistent, "loading")
   startLock = false
   if _G.ExodusLoaderStartToken == startToken then
     _G.ExodusLoaderStartToken = nil

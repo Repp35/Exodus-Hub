@@ -1,4 +1,4 @@
--- [[ interface ]]
+-- [[ ui ]]
 --!optimize 2
 -- @modules ui
 
@@ -12,14 +12,11 @@ local configuredIcon, iconOverride
 -- public-components
 local Components = {}
 for _, name in ipairs({
-  "mini",
-  "spam",
   "label",
   "button",
   "textInput",
   "number",
   "toggle",
-  "checkbox",
   "divider",
   "progressBar",
   "dropdown",
@@ -73,9 +70,7 @@ function ExodusUI.setup(deps, preview)
   context.miniBalls = hubUI.miniBalls or {}
   context.notifications = deps.Notifications.create(context)
   context.notifications.layer()
-  context.cornerNotifications = deps.CornerNotifications.create(context)
   context.floating = deps.Floating.create(context)
-  deps.MiniPanels.create(context, hubUI.miniPanels)
   context.window = deps.Window.create(context)
   if iconOverride then
     context.window.setIcon(configuredIcon)
@@ -163,9 +158,6 @@ function ExodusUI.setup(deps, preview)
       rebuild()
     end
   end))
-  if not context.window.present() then
-    return false, "UI initialization canceled"
-  end
   if preview and preview.open then
     context.window.toggle()
   end
@@ -176,13 +168,6 @@ function ExodusUI.notify(...)
   if active and active.scope.alive then
     active.notifications.persistent(...)
   end
-end
-
-function ExodusUI.notifyCorner(title, message, options)
-  if active and active.scope.alive then
-    return active.cornerNotifications.show(title, message, options)
-  end
-  return false
 end
 
 function ExodusUI.setIcon(image)
@@ -218,9 +203,7 @@ ExodusUI.__contract = {
     Window = "uiwindow",
     Header = "uiheader",
     Floating = "uifloating",
-    MiniPanels = "uiminipanels",
     Notifications = "uinotificationview",
-    CornerNotifications = "uicornernotification",
     Telemetry = "uitelemetry",
     Input = "uiinput",
     Assists = "uiassists",
@@ -250,7 +233,6 @@ ExodusUI.__contract = {
     },
     Hub = {
       "getUIConfig",
-      "getChoices",
       "getReadouts",
       "hasClashPrediction",
       "getAbilityAvailability",
@@ -269,9 +251,7 @@ ExodusUI.__contract = {
     Window = { "create" },
     Header = { "create" },
     Floating = { "create" },
-    MiniPanels = { "create" },
     Notifications = { "create" },
-    CornerNotifications = { "create" },
     Telemetry = { "create" },
     Input = { "create" },
     Assists = { "create" },
@@ -281,7 +261,7 @@ ExodusUI.__contract = {
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },
-  provides = { "setup", "notify", "notifyCorner", "setIcon" },
+  provides = { "setup", "notify", "setIcon" },
 }
 
 return ExodusUI

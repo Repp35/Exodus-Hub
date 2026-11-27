@@ -17,12 +17,3 @@ Este arquivo registra a política solicitada pelo usuário.
 
 Faça as alterações diretamente na main, em um único commit por solicitação.
 Não crie branches ou pull requests sem pedido explícito.
-
-## Luau Comments
-
-Every `.luau` file must have exactly one `-- [[ name ]]` title on its first
-non-empty line. Source comments are limited to English section markers using
-one lowercase word (hyphens are allowed), in the form `-- section`, plus Luau
-and manifest directives (`--!…` and `-- @…`). Descriptive comments, inline
-comments, extra `-- [[…]]` blocks, non-English text, and any exception are
-forbidden. The formatter must reject every violation of this rule.

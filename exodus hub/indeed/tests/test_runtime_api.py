@@ -24,7 +24,7 @@ class RuntimeAPI(unittest.TestCase):
 
     def test_actual_luau_compilation(self):
         binary = self.binary('LUAU_COMPILE_BIN', 'luau-compile')
-        for path in [ROOT / 'loader.luau', *sorted((ROOT / 'hubs').glob('*.luau')), *[p for folder in ('core','universal','ui') for p in sorted((ROOT / folder).rglob('*.luau'))], *sorted((ROOT / 'indeed/checks').glob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]:
+        for path in [ROOT / 'loader.luau', ROOT / 'hubs/registry.luau', ROOT / 'hubs/catalog.luau', *[p for folder in ('core','universal','ui') for p in sorted((ROOT / folder).rglob('*.luau'))], *sorted((ROOT / 'indeed/checks').glob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]:
             with self.subTest(path=str(path.relative_to(ROOT))):
                 result = subprocess.run([binary, '--null', str(path)], capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -44,7 +44,7 @@ class RuntimeAPI(unittest.TestCase):
         import json
         binary = self.binary('LUAU_ANALYZE_BIN', 'luau-analyze')
         allowed = set(json.loads((CHECKS / 'roblox-globals.json').read_text()))
-        paths = [ROOT / 'loader.luau', *[p for folder in ('core','universal','ui') for p in sorted((ROOT / folder).rglob('*.luau'))], *sorted((ROOT / 'hubs').glob('*.luau')), *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]
+        paths = [ROOT / 'loader.luau', *[p for folder in ('core','universal','ui') for p in sorted((ROOT / folder).rglob('*.luau'))], ROOT / 'hubs/registry.luau', ROOT / 'hubs/catalog.luau', *sorted((ROOT / 'indeed/diagnostics').glob('*.luau'))]
         result = subprocess.run([binary, *map(str, paths)], capture_output=True, text=True, timeout=60)
         self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
         errors = []

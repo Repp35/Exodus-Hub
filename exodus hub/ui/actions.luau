@@ -1,4 +1,4 @@
--- [[ actions ]]
+-- [[ uiactions ]]
 --!optimize 2
 -- @modules uiactions
 
@@ -10,6 +10,7 @@ local Dumper
 
 -- configuration
 local CONFIG = {
+  AFK_INTERVAL = 20,
   CONFIRM_SECONDS = 3,
 }
 
@@ -24,6 +25,7 @@ function Actions.create(context)
   local scope, controls = context.scope, context.controls
   local shortcuts = {}
   local handles, callbacks, states = {}, {}, {}
+  local antiConnection, antiGeneration = nil, 0
   local resetPending, resetGeneration = false, 0
   local function notify(message, important)
     if scope.alive then
@@ -100,8 +102,8 @@ function Actions.create(context)
       onProgress = function(processed, total) persistent(("Dumping... %d/%d"):format(processed, total), "info") end,
       onComplete = function(result)
         persistent(
-          ("Dump completed: %d saved, %d failed, %d source warnings."):format(result.saved, result.failed, result.syntaxWarnings or 0),
-          (result.failed > 0 or (result.syntaxWarnings or 0) > 0) and "warning" or "success",
+          ("Dump completed: %d saved, %d failed (%d recovered)."):format(result.saved, result.failed, result.recovered or 0),
+          result.failed > 0 and "warning" or "success",
           5
         )
       end,
@@ -115,6 +117,56 @@ function Actions.create(context)
       warn("[Exodus Dumper] " .. tostring(reason))
       persistent("Dumper is already running.", "warning", 2)
     end
+  end
+  states.antiAFK = function() return antiConnection ~= nil end
+  callbacks.antiAFK = function(enabled)
+    if enabled == (antiConnection ~= nil) then
+      return true
+    end
+    antiGeneration += 1
+    if antiConnection then
+      scope.remove(antiConnection)
+      antiConnection = nil
+    end
+    if not enabled then
+      return true
+    end
+    local player = Utils.getLocalPlayer()
+    local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
+    if not player then
+      Utils.recordError("AntiAFK", "Player unavailable")
+      return false
+    end
+    local function pulse()
+      local inputOk, err = pcall(function()
+        if not ok or not virtualUser then
+          error("VirtualUser unavailable")
+        end
+        virtualUser:CaptureController()
+        virtualUser:ClickButton2(Vector2.new(0, 0))
+      end)
+      if not inputOk then
+        local fallback, fallbackErr = pcall(function()
+          local vim = game:GetService("VirtualInputManager")
+          vim:SendMouseButtonEvent(0, 0, 1, true, game, 0)
+          vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+        end)
+        if not fallback then
+          Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr))
+        end
+      end
+    end
+    antiConnection = scope.connect(player.Idled, pulse)
+    local generation = antiGeneration
+    task.spawn(function()
+      while scope.alive and generation == antiGeneration and Utils.isActive() do
+        task.wait(CONFIG.AFK_INTERVAL)
+        if scope.alive and generation == antiGeneration and Utils.isActive() then
+          pulse()
+        end
+      end
+    end)
+    return true
   end
   local gameActions = GameInfo.createActions(context)
   for name, callback in pairs(gameActions.callbacks or {}) do
@@ -166,7 +218,7 @@ function Actions.create(context)
       definition.getState = states[definition.action]
     end
     if definition.feature then
-      definition.onChange = function(value) invoke((definition.kind == "toggle" or definition.kind == "checkbox") and "onUniversalToggle" or "onUniversalValue", definition.feature, value) end
+      definition.onChange = function(value) invoke(definition.kind == "toggle" and "onUniversalToggle" or "onUniversalValue", definition.feature, value) end
     elseif after[definition.key] then
       definition.onChange = after[definition.key]
     end
@@ -215,7 +267,7 @@ function Actions.create(context)
         end
         if definition.action ~= "manualSpam" and definition.action ~= "upDash" then
           local message = definition.title
-          if (definition.kind == "toggle" or definition.kind == "checkbox") then
+          if definition.kind == "toggle" then
             message = message .. (handle.getValue() and " On" or " Off")
           end
           context.notify(message, false, { category = "shortcut", topic = definition.action or definition.key })
@@ -231,8 +283,15 @@ function Actions.create(context)
     end
   end
   scope.add(function()
+    antiGeneration += 1
     resetGeneration += 1
   end)
+  scope.add(Utils.observeConfig(function(changes)
+    if changes.AntiAFK ~= nil then
+      callbacks.antiAFK(changes.AntiAFK == true)
+    end
+  end))
+  callbacks.antiAFK(Utils.getConfigValue("AntiAFK") == true)
   return result
 end
 

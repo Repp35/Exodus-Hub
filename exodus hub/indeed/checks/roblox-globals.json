@@ -43,6 +43,5 @@
   "getcustomasset",
   "getsynasset",
   "version",
-  "OverlapParams",
-  "Random"
+  "OverlapParams"
 ]
