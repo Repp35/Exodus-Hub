@@ -22,6 +22,10 @@ local miniBalls = {
 }
 for _, mini in ipairs(miniBalls) do
   mini.mobileOnly = true
+  mini.textSize = 14
+  if mini.action == "onThrowPearl" then
+    mini.offColor, mini.pulse = "accent", true
+  end
   mini.id = mini.prefix
   mini.visibleKey = mini.prefix .. "Visible"
   mini.xKey, mini.yKey = mini.prefix .. "X", mini.prefix .. "Y"

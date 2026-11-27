@@ -29,7 +29,7 @@ return {
       { name = "mcpsupplies", path = "hubs/mcpvp/inventory/mcp_supplies.luau", hash = "ab6c7321e4744257c2a6655972a596e13adee74d92569e6f8ede591b882808b0" },
       { name = "mcpoptions", path = "hubs/mcpvp/mcp_options.luau", hash = "37e2368c8959f67441bada72d17d513858269ce91d21efa40f6c088ee0a846ba" },
       { name = "mcpsurvival", path = "hubs/mcpvp/survival/mcp_survival.luau", hash = "fbc97c267e7ec3c7ebe9ce70f72fc9a9dec2f93362bcedf4ad94137eb7465adb" },
-      { name = "gameui", path = "ui/games/mcpvp/game_ui.luau", hash = "65e7d9658543974a8cc1f153a8725826a099f9f2a648d00901c4c222b02b3260" },
+      { name = "gameui", path = "ui/games/mcpvp/game_ui.luau", hash = "ee41cb5f411f4787a45275f56f9479deea5f729273ec205ab832809d953afed6" },
     },
   },
   {
@@ -139,7 +139,7 @@ return {
         path = "hubs/phantom-ball/prediction/deflect_geometry.luau",
         hash = "62b858c9cea530b04a0dac4a6c2a88b906ad3df19614b38c8199ecc34fe9e841",
       },
-      { name = "gameui", path = "ui/games/phantom-ball/game_ui.luau", hash = "85ce14b28bdd1d323afcbda3bf1b55cbbe33dea09aef68a01f895e96a8d73953" },
+      { name = "gameui", path = "ui/games/phantom-ball/game_ui.luau", hash = "3c1f216493c541bd77abd3d0bd07be6a9c982e1d8d13a43c1671be3669d3d2c6" },
     },
   },
 }

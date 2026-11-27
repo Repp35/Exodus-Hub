@@ -19,13 +19,15 @@ end)()
 local __part_hubapi = (function()
   local HubAPI = {}
   local api = {}
+  local migrateUI
   function HubAPI.setup() return true end
   function HubAPI.configure(loaded)
     api = loaded.gameruntime and loaded.gameruntime.createAPI(loaded) or {}
+    migrateUI = loaded.uiconfig and loaded.uiconfig.migrateConfig
     return true
   end
   function HubAPI.teardown()
-    api = {}
+    api, migrateUI = {}, nil
     return true
   end
   function HubAPI.areAbilitiesEnabled() return api.areAbilitiesEnabled and api.areAbilitiesEnabled() or false end
@@ -86,10 +88,11 @@ local __part_hubapi = (function()
     return result
   end
   function HubAPI.migrateConfig(data)
+    local changed = migrateUI and migrateUI(data) or false
     if api.migrateConfig then
-      return api.migrateConfig(data)
+      return api.migrateConfig(data) or changed
     end
-    return false
+    return changed
   end
   HubAPI.__contract = {
     access = {

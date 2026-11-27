@@ -26,8 +26,8 @@ function Controller.create(context)
     elseif d.key then
       handle.setValue(utils.getConfigValue(d.key) == true)
     end
-    if d.scaleKey or d.squareKey then
-      handle.setAppearance(d.scaleKey and utils.getConfigValue(d.scaleKey) or 1, d.squareKey and utils.getConfigValue(d.squareKey) ~= false)
+    if not d.panel and (d.scaleKey or d.squareKey) then
+      handle.setAppearance(d.scaleKey and utils.getConfigValue(d.scaleKey) or 1, d.squareKey and utils.getConfigValue(d.squareKey) == true)
     end
     local visible = (not d.visibleKey and d.visible ~= false) or utils.getConfigValue(d.visibleKey) == true or automatic[d.visibleKey] == true
     if d.mobileOnly == true and context.state.desktop then
@@ -46,12 +46,27 @@ function Controller.create(context)
     local d = table.clone(definition)
     local id = assert(d.id or d.prefix, "Mini UI id required")
     assert(not entries[id], "Duplicate Mini UI: " .. id)
+    local function color(value) return type(value) == "string" and context.theme.COLORS[value] or value end
+    local caption = d.text or d.label or d.title
+    local action = d.action and not d.key and not d.read
     local handle
     handle = context.kit.Components.mini(context.refs.screenGui, {
       name = "Mini_" .. id,
       text = d.text or d.label or d.title,
       value = d.value,
-      color = d.color,
+      color = color(d.color),
+      onColor = color(d.onColor),
+      offColor = color(d.offColor),
+      onText = d.onText or (action and caption or nil),
+      offText = d.offText or (action and caption or nil),
+      textSize = d.textSize,
+      onTextSize = d.onTextSize,
+      offTextSize = d.offTextSize,
+      pulse = d.pulse == true,
+      panel = d.panel == true,
+      action = action == true,
+      title = d.title,
+      draggable = false,
       size = d.size,
       shape = d.shape,
       visible = false,
@@ -113,18 +128,36 @@ function Controller.create(context)
     end)
     context.refs[id] = handle.Root
     context.miniBallRefs[#context.miniBallRefs + 1] = id
+    handle.isDragging = context.makeDraggable(handle.Header, handle.Root, function()
+      if d.xKey and d.yKey then
+        utils.setConfig({ [d.xKey] = handle.Root.Position.X.Offset, [d.yKey] = handle.Root.Position.Y.Offset })
+      end
+    end, false)
     function entry.layout()
-      local size = (d.size or 64) * (d.scaleKey and tonumber(utils.getConfigValue(d.scaleKey)) or 1)
+      local factor = d.scaleKey and tonumber(utils.getConfigValue(d.scaleKey)) or 1
+      local size = (d.size or context.theme.CLASH_SIZE) * factor
       local scale = math.max(0.01, context.refs.responsiveScale.Scale)
-      local view = context.viewport() / scale
+      local raw = context.viewport()
+      local view = raw / scale
       local index = table.find(order, entry) or 1
       local x = d.xKey and utils.getConfigValue(d.xKey) or nil
       local y = d.yKey and utils.getConfigValue(d.yKey) or nil
-      local target = UDim2.fromOffset(
-        math.clamp(x or (14 + ((index - 1) % 2) * (size + 8)), 0, math.max(0, view.X - size)),
-        math.clamp(y or (view.Y / 2 - size + math.floor((index - 1) / 2) * (size + 8)), 0, math.max(0, view.Y - size))
-      )
-      context.twPlay(handle.Root, "control", { Position = target })
+      local width, height = size, size
+      local defaultX, defaultY, offscreen = 14, 0, -size - 40
+      if d.panel then
+        width = math.min(context.theme.MINI_W * factor * (d.widthKey and utils.getConfigValue(d.widthKey) or 1), view.X)
+        height = math.min(context.theme.MINI_H * factor * (d.heightKey and utils.getConfigValue(d.heightKey) or 1), view.Y)
+        defaultX, defaultY, offscreen = view.X - width - 14, view.Y / 2 - height / 2, view.X + 30
+        handle.setDimensions(width, height)
+      elseif d.defaultX then
+        defaultX, defaultY = d.defaultX, raw.Y / 2 + (d.offsetY or 0)
+      else
+        local gap, rows = size + 8, math.ceil(#order / 2)
+        defaultX = 14 + ((index - 1) % 2) * gap
+        defaultY = (view.Y - rows * gap) / 2 + math.floor((index - 1) / 2) * gap
+      end
+      local target = UDim2.fromOffset(math.clamp(x or defaultX, 0, math.max(0, view.X - width)), math.clamp(y or defaultY, 0, math.max(0, view.Y - height)))
+      handle.setPosition(target, offscreen)
     end
     entry.layout()
     refresh(entry)
@@ -137,6 +170,7 @@ function Controller.create(context)
   function controller.sync()
     for _, entry in ipairs(order) do
       refresh(entry)
+      entry.layout()
     end
   end
   function controller.layout()

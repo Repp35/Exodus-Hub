@@ -216,7 +216,7 @@ local CONFIG = {
             { kind = "button", title = "Resetar personagem", description = "Reinicia o personagem.", action = "resetCharacter" },
             { kind = "button", title = "Rejoin", description = "Volta ao mesmo servidor.", action = "rejoin" },
             { kind = "button", title = "Server Hop", description = "Busca outro servidor com ping até 100 ms.", action = "serverHop" },
-            { kind = "toggle", title = "Mini UI quadrada", key = "MiniUISquare", description = "Desative para usar o formato redondo." },
+            { kind = "toggle", title = "Mini UI mais quadrada", key = "MiniUISquare", description = "Opcional: muda apenas os cantos. O padrão é redondo." },
             { kind = "slider", title = "Tamanho da Mini UI", key = "MiniUIScale", min = 0.5, max = 2, increment = 0.05, valueName = "x", compact = true },
             { kind = "button", title = "Reset settings", action = "resetSettings" },
           },
@@ -230,6 +230,7 @@ local CONFIG = {
       DesktopNotifications = "boolean",
       DesktopShortcutNotifications = "boolean",
       MiniUISquare = "boolean",
+      MiniUIRoundDefaultRestored = "boolean",
       MiniUIScale = "miniScale",
       ForcePCUI = "boolean",
       CameraSensitivity = "rate",
@@ -243,7 +244,8 @@ local CONFIG = {
       MobileNotifications = true,
       DesktopNotifications = true,
       DesktopShortcutNotifications = true,
-      MiniUISquare = true,
+      MiniUISquare = false,
+      MiniUIRoundDefaultRestored = true,
       MiniUIScale = 1,
       ForcePCUI = false,
       CameraSensitivity = 1,
@@ -308,11 +310,20 @@ function UIConfig.getPages(definition)
   return ordered
 end
 
+function UIConfig.migrateConfig(data)
+  if data.MiniUIRoundDefaultRestored == true then
+    return false
+  end
+  data.MiniUISquare = false
+  data.MiniUIRoundDefaultRestored = true
+  return true
+end
+
 -- public-api
 UIConfig.pages = CONFIG.PAGES
 UIConfig.__config = CONFIG.SETTINGS
 
 -- contract
-UIConfig.__contract = { provides = { "getPages" }, data = { "pages" }, requires = {} }
+UIConfig.__contract = { provides = { "getPages", "migrateConfig" }, data = { "pages" }, requires = {} }
 
 return UIConfig

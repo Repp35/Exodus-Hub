@@ -61,4 +61,19 @@ class RuntimeAPI(unittest.TestCase):
         spec.loader.exec_module(helper)
         helper.smoke(binary, universal=True)
 
+    def test_ui_shape_migration_api(self):
+        binary = self.binary('LUAU_BIN', 'luau')
+        spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        helper.smoke(binary, assertions="""
+assert(loaded.config.defaults().MiniUISquare == false)
+local saved = { MiniUISquare = true }
+assert(loaded.hubapi.migrateConfig(saved))
+assert(saved.MiniUISquare == false)
+saved.MiniUISquare = true
+assert(loaded.hubapi.migrateConfig(saved) == false)
+assert(saved.MiniUISquare == true)
+""")
+
 if __name__ == '__main__': unittest.main()
