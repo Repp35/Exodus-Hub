@@ -5,6 +5,14 @@ local Binding = {}
 local targets = setmetatable({}, { __mode = "k" })
 local sequence = 0
 function Binding.setup() return true end
+function Binding.getOriginal(target, key)
+  local properties = targets[target]
+  local entry = properties and properties[key]
+  if entry then
+    return entry.original
+  end
+  return target[key]
+end
 local function winner(entry)
   local selected
   for _, layer in pairs(entry.layers) do
@@ -39,11 +47,14 @@ function Binding.apply(owner, target, key, value, priority)
     end
   end)
 end
-function Binding.release(owner, target, key)
+function Binding.release(owner, target, key, restoreValue)
   local properties = targets[target]
   local entry = properties and properties[key]
   if not entry or not entry.layers[owner] then
     return true
+  end
+  if restoreValue ~= nil then
+    entry.original = restoreValue
   end
   entry.layers[owner] = nil
   local selected = winner(entry)
@@ -113,7 +124,7 @@ function Binding.create(resolve, desired)
 end
 Binding.__contract = {
   access = { default = "lifetime.manage" },
-  provides = { "setup", "create", "apply", "release" },
+  provides = { "setup", "create", "apply", "release", "getOriginal" },
   requires = {},
 }
 return Binding

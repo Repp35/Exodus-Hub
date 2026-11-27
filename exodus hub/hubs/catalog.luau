@@ -182,7 +182,8 @@ return {
     author = "deltapolinha_2915",
     notification = "Exodus Hub · Prison Life carregado.",
     modules = {
-      { name = "gameruntime", path = "hubs/prison-life/game_runtime.luau", hash = "3521aaa5e221addf11206984e5ed00ecc80e6ea21f9f7be92f39540c863190d9" },
+      { name = "gameruntime", path = "hubs/prison-life/game_runtime.luau", hash = "1b7a10f2f73075f3d096724d3c657e1f930a7a6448bb72c87478a8edd36e80dc" },
+      { name = "prisonlighting", path = "hubs/prison-life/prison_lighting.luau", hash = "99e52668609f10e8cddf987e2bd7e0ced44398be7ecc704711136637f00c3998" },
       { name = "gameui", path = "ui/games/prison-life/game_ui.luau", hash = "9188e89401c53ac11398e8c23012bb4c33891ab6e423ae9cd3fd0cb53f2035a0" },
     },
   },

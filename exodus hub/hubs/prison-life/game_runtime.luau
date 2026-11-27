@@ -22,11 +22,8 @@ local function write(minutes)
   -- The native HUD reads GetMinutesAfterMidnight directly; keep whole minutes
   -- so its own formatter never displays fractional minutes.
   local value = math.floor(minutes) % 1440
-  if math.abs(lighting:GetMinutesAfterMidnight() - value) < 0.001 then
-    return
-  end
   writing, lastApplied = true, value
-  lighting:SetMinutesAfterMidnight(value)
+  loaded.prisonlighting.apply(value)
   writing = false
 end
 local function observeNative()
@@ -61,7 +58,10 @@ local function stop()
   enabled = false
   -- Latest replicated game time plus the observed native progression, rather
   -- than the old time from when the override was first enabled.
-  write((nativeMinutes + (os.clock() - nativeAt) * nativeRate) % 1440)
+  writing = true
+  loaded.prisonlighting.stop((nativeMinutes + (os.clock() - nativeAt) * nativeRate) % 1440)
+  lastApplied = lighting:GetMinutesAfterMidnight() % 1440
+  writing = false
 end
 function Runtime.teardown()
   if scope then
@@ -89,6 +89,7 @@ function Runtime.bind(modules)
     local requested = get(PREFIX .. "Enabled") == true
     if requested and not enabled then
       observeNative()
+      modules.prisonlighting.start()
       current = (tonumber(get(PREFIX .. "Minutes")) or nativeMinutes) % 1440
       enabled, lastFrame = true, os.clock()
     elseif not requested and enabled then
@@ -137,5 +138,9 @@ end
 function Runtime.createAPI(modules)
   return { getUIConfig = function() return modules.gameui.definition end }
 end
-Runtime.__contract = { provides = { "setup", "teardown", "bind", "createAPI" }, requires = {} }
+Runtime.__contract = {
+  provides = { "setup", "teardown", "bind", "createAPI" },
+  requires = { Lighting = "prisonlighting" },
+  requiresMethods = { Lighting = { "start", "apply", "stop" } },
+}
 return Runtime

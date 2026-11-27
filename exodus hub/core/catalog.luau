@@ -72,7 +72,7 @@ return {
   { name = "jumppower", path = "universal/jump_power.luau", hash = "d41e78e0e4c3a4abb4db96dde1fc4af326cb8059487737026a4af80ed4c2861b" },
   { name = "nofog", path = "universal/no_fog.luau", hash = "08d6fefd30dd53cef9cb35688f50f0182f0ea8bad7ed8e2110cc491c9cce8429" },
   { name = "noclip", path = "universal/noclip.luau", hash = "42fdab9487a90635329ac3b8dd6584d6af9897395019b52b2cb05d2674ffb253" },
-  { name = "propertybinding", path = "universal/property_binding.luau", hash = "a820c13542f597fda61d190d5149e068721ffbf0c54c6abdcafaf4e10abb8ccc" },
+  { name = "propertybinding", path = "universal/property_binding.luau", hash = "1a3b38ce831fdea4a83998ac7d83d12acdafb438c5de3e3096bbac7b62729d76" },
   { name = "servers", path = "universal/servers.luau", hash = "fb653e37b346bec3b2a6b9de0e8bba8cbc08061e0eafcf011f0f7c16e80d25f4" },
   { name = "speed", path = "universal/speed.luau", hash = "918a1f5d2cb9f734253a6f949f996fd552d58cd9374dfda4c4d64739c491810f" },
 }
