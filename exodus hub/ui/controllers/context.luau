@@ -330,12 +330,6 @@ function Context.create(deps, deviceDesktop)
   bindCamera()
   context.updateResponsiveScale = updateResponsiveScale
   function context.destroy()
-    if context.cornerNotifications then
-      context.cornerNotifications.destroy()
-    end
-    if context.notifications then
-      context.notifications.destroy()
-    end
     if not context.scope.alive then
       return
     end
@@ -354,6 +348,9 @@ function Context.create(deps, deviceDesktop)
     end
     if context.refs.informationGui then
       context.refs.informationGui:Destroy()
+    end
+    if context.notifications then
+      context.notifications.clear("closing")
     end
     table.clear(context.refs)
   end

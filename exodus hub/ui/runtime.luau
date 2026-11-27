@@ -204,9 +204,6 @@ function Runtime.motion(scope, reducedMotion)
     return tween
   end
   function motion.fade(root, preset, alpha, onComplete)
-    if root:IsA("CanvasGroup") then
-      return motion.group(root, preset, { GroupTransparency = alpha }, onComplete)
-    end
     root:SetAttribute("ExodusFadeAlpha", alpha)
     local objects = root:GetDescendants()
     table.insert(objects, 1, root)
@@ -258,18 +255,13 @@ function Runtime.motion(scope, reducedMotion)
     if goals.GroupTransparency ~= nil then
       for _, child in ipairs(object:GetChildren()) do
         if child:IsA("UIStroke") then
-          local surface = Instance.new("Frame")
-          surface.Name = "Outline"
-          surface.BackgroundTransparency = 1
-          surface.Size = UDim2.new(1, -2, 1, -2)
-          surface.Position = UDim2.fromOffset(1, 1)
-          surface.ZIndex = object.ZIndex + 1
-          local radius = object:FindFirstChildOfClass("UICorner")
-          if radius then
-            radius:Clone().Parent = surface
+          local base = child:GetAttribute("ExodusBaseTransparency")
+          if base == nil then
+            base = child.Transparency
+            child:SetAttribute("ExodusBaseTransparency", base)
           end
-          child.Parent = surface
-          surface.Parent = object
+          child.Transparency = base + (1 - base) * object.GroupTransparency
+          motion.play(child, preset, { Transparency = base + (1 - base) * goals.GroupTransparency })
         end
       end
     end

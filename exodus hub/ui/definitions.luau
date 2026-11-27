@@ -12,6 +12,7 @@ local CONFIG = {
       id = "information",
       title = "Informações",
       columns = 1,
+      width = 360,
       utility = true,
       sections = {
         { title = "Sessão", components = { { kind = "readout", info = "session" } } },
@@ -25,6 +26,7 @@ local CONFIG = {
       id = "antilag",
       title = "Anti Lag",
       columns = 1,
+      width = 360,
       sections = {
         {
           title = "Anti Lag",
@@ -50,6 +52,7 @@ local CONFIG = {
       id = "indeed",
       title = "Universals",
       columns = 1,
+      width = 360,
       sections = {
         {
           title = "Developer Tools",
@@ -180,6 +183,7 @@ local CONFIG = {
       id = "config",
       title = "Config",
       columns = 1,
+      width = 300,
       utility = true,
       sections = {
         {

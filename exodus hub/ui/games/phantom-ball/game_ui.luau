@@ -27,16 +27,7 @@ GameUI.definition = {
               key = "ParryBallVisible",
               mobileOnly = true,
             },
-            {
-              kind = "slider",
-              title = "Size",
-              key = "ParryMiniScale",
-              min = 0.5,
-              max = 2,
-              increment = 0.05,
-              parentKey = "ParryBallVisible",
-              mobileOnly = true,
-            },
+            { kind = "slider", title = "Size", key = "ParryMiniScale", min = 0.5, max = 2, increment = 0.05, parentKey = "ParryBallVisible", mobileOnly = true },
             { kind = "toggle", title = "Rounded Square", key = "ParryMiniSquare", parentKey = "ParryBallVisible", mobileOnly = true },
             {
               kind = "toggle",
@@ -45,16 +36,7 @@ GameUI.definition = {
               key = "ClashBallVisible",
               mobileOnly = true,
             },
-            {
-              kind = "slider",
-              title = "Size",
-              key = "ClashMiniScale",
-              min = 0.5,
-              max = 2,
-              increment = 0.05,
-              parentKey = "ClashBallVisible",
-              mobileOnly = true,
-            },
+            { kind = "slider", title = "Size", key = "ClashMiniScale", min = 0.5, max = 2, increment = 0.05, parentKey = "ClashBallVisible", mobileOnly = true },
             { kind = "toggle", title = "Rounded Square", key = "ClashMiniSquare", parentKey = "ClashBallVisible", mobileOnly = true },
           },
         },
@@ -230,6 +212,7 @@ GameUI.definition = {
       integrationOnly = true,
       title = "Assistências",
       columns = 1,
+      width = 360,
       utility = true,
       sections = {
         {

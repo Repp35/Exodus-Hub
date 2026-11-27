@@ -20,7 +20,7 @@ function Controller.create(context)
     retired, state.closing = true, true
     local service = game:GetService("TweenService")
     local profile = context.theme.MOTION.panel
-    for _, source in pairs({ context.refs.screenGui, context.refs.informationGui, context.notifications.state.gui }) do
+    for _, source in ipairs({ context.refs.screenGui, context.refs.informationGui }) do
       if source and source.Parent then
         local copy = source:Clone()
         copy.Name = "ExodusRetiringUI"
@@ -43,8 +43,7 @@ function Controller.create(context)
           Position = UDim2.fromOffset(0, 22),
         })
         tween:Play()
-        tween.Completed:Once(function() copy:Destroy() end)
-        game:GetService("Debris"):AddItem(copy, profile.duration + 0.1)
+        task.delay(profile.duration, function() copy:Destroy() end)
       end
     end
   end
