@@ -2,14 +2,15 @@
 --!optimize 2
 
 local Weapons = {}
-local State, Targeting, Utils
+local State, Targeting, Utils, Native
 local lastShot, lastStab, lastThrow, equipped, equippedAt = -math.huge, -math.huge, -math.huge, nil, 0
 local random = Random.new()
 function Weapons.setup(deps)
-  State, Targeting, Utils = deps.State, deps.Targeting, deps.Utils
+  State, Targeting, Utils, Native = deps.State, deps.Targeting, deps.Utils, deps.Native
   return true
 end
 function Weapons.reset()
+  Native.reset()
   equipped, equippedAt = nil, 0
   lastShot, lastStab, lastThrow = -math.huge, -math.huge, -math.huge
 end
@@ -67,6 +68,10 @@ function Weapons.shoot(automatic)
   return true
 end
 function Weapons.step()
+  Native.step()
+  if Native.busy() then
+    return
+  end
   if Utils.getConfigValue("MM2ManualShoot") then
     local snap = State.live(Utils.getLocalPlayer(), true)
     if snap and snap.role ~= "Murderer" and State.tool(snap, "Gun", false) then
@@ -88,36 +93,43 @@ function Weapons.step()
     return
   end
   local now = os.clock()
-  local events = knife:FindFirstChild("Events")
   local charge = math.clamp(tonumber(knife:GetAttribute("ThrowSpeed")) or 0.5, 0.05, 3)
-  if Utils.getConfigValue("MM2AutoStab") and now - lastStab >= 0.85 and now - lastThrow >= charge then
+  if Utils.getConfigValue("MM2AutoStab") and now - lastStab >= 0.85 and now - lastThrow >= charge * 2 then
     local target = Targeting.select(snap, Utils.getConfigValue("MM2StabTargets"), 6)
-    local stabbed, touched = event(events, "KnifeStabbed"), event(events, "HandleTouched")
-    if target and stabbed and touched then
-      lastStab = now
-      stabbed:FireServer()
-      touched:FireServer(target.character:FindFirstChild("UpperTorso") or target.character:FindFirstChild("Torso") or target.root)
-      return
+    if target then
+      local accepted = Native.stab(snap, knife, function()
+        local live = State.live(target.player, true)
+        return Utils.getConfigValue("MM2AutoStab") and live ~= nil and live.character == target.character
+      end)
+      if accepted then
+        lastStab = now
+        return
+      end
     end
   end
-  if Utils.getConfigValue("MM2AutoThrow") and snap.character:GetAttribute("Zombie") ~= true and now - lastThrow >= charge * 2 and now - lastStab >= 0.85 then
+  if Utils.getConfigValue("MM2AutoThrow") and snap.character:GetAttribute("Zombie") ~= true and now - lastThrow >= charge * 2 and now - lastStab >= 0.4 then
     local target = Targeting.select(snap, Utils.getConfigValue("MM2ThrowTargets"), 250)
-    local thrown = event(events, "KnifeThrown")
     local handle = knife:FindFirstChild("Handle")
-    if target and thrown and handle and handle:IsA("BasePart") then
+    if target and handle and handle:IsA("BasePart") then
       local point = Targeting.predict(handle.Position, target, 100)
       if Targeting.clear(snap, target, handle.Position, point) then
-        lastThrow = now
-        thrown:FireServer(handle.CFrame, CFrame.new(point))
+        local accepted = Native.throw(snap, knife, CFrame.new(point), function()
+          local live = State.live(target.player, true)
+          return Utils.getConfigValue("MM2AutoThrow") and live ~= nil and live.character == target.character
+        end)
+        if accepted then
+          lastThrow = now
+        end
       end
     end
   end
 end
 Weapons.__contract = {
   provides = { "setup", "reset", "shoot", "step" },
-  requires = { State = "mm2state", Targeting = "mm2targeting", Utils = "utils" },
+  requires = { State = "mm2state", Targeting = "mm2targeting", Utils = "utils", Native = "mm2native" },
   requiresMethods = {
     State = { "live", "findRole", "tool" },
+    Native = { "reset", "busy", "stab", "throw", "step" },
     Targeting = { "clear", "select", "predict" },
     Utils = { "isActive", "getConfigValue", "getLocalPlayer" },
   },
