@@ -64,7 +64,13 @@ function Motion.sample(root, character, now, previous)
     or epoch ~= previous.epoch
     or offset.Magnitude > math.max(4, (reported.Magnitude + previous.velocity.Magnitude) * elapsed * 2 + 0.75)
   if discontinuity or elapsed > 0.35 then
-    return Motion.sample(root, character, now, nil)
+    local fresh = Motion.sample(root, character, now, nil)
+    if discontinuity then
+      fresh.velocity = Vector3.new(0, reported.Y, 0)
+      fresh.control = Vector3.zero
+      fresh.discontinuous = true
+    end
+    return fresh
   end
   if offset.Magnitude < 0.001 and not changed and reported.Magnitude > 0.1 then
     return previous
@@ -123,6 +129,17 @@ function Motion.sample(root, character, now, previous)
   }
 end
 function Motion.actor(root, character, sample, latency, params, detailed)
+  if
+    sample
+    and (
+      sample.character ~= character
+      or os.clock() - sample.at > 0.2
+      or sample.teleport ~= character:GetAttribute("PearlTeleportAt")
+      or sample.epoch ~= character:GetAttribute("MovementCorrectionEpoch")
+    )
+  then
+    sample = nil
+  end
   local position = units.toBlocks(root.Position)
   local velocity = sample and sample.velocity or units.toBlocks(root.AssemblyLinearVelocity)
   if not finite(velocity) then

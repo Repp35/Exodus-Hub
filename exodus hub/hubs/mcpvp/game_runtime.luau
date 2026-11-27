@@ -37,8 +37,12 @@ function Runtime.bind(loaded)
   local function run(name, fn, ...)
     local ok, reason = pcall(fn, ...)
     if not ok then
-      if name == "pearl" then
+      if name == "pearl" or name == "frame" then
         pearl.reset()
+        local snap = native.snapshot()
+        if snap then
+          target.abandon(snap)
+        end
       elseif name == "melee" then
         melee.reset()
       elseif name == "aim" then
@@ -88,7 +92,7 @@ function Runtime.bind(loaded)
     synchronize(snap)
     local chosen
     if controller and controller.IsHeld("Attack") then
-      chosen = target.manual(snap, direction)
+      chosen = target.manual(snap, direction, false)
     else
       chosen = target.near(snap)
       direction = direction or snap.player:GetAttribute("FrontCameraAimDirection") or snap.camera.CFrame.LookVector
@@ -181,6 +185,7 @@ function Runtime.bind(loaded)
           return
         end
       end
+      pearl.prepare(snap, not survival.busy() and not supplies.busy())
       if survival.busy() then
         melee.reset()
         survival.step(snap, not native.busy())
@@ -213,7 +218,6 @@ function Runtime.bind(loaded)
       if not snap then
         return
       end
-      run("pearl", pearl.prepare, snap)
       if pearl.busy() or native.busy() then
         melee.reset()
         return

@@ -132,7 +132,7 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
     local solid = hit and hit.Distance / units.toWorld(offset.Magnitude) or math.huge
     for _, other in ipairs(others) do
       local earlier = actorHit(position, offset, other, time, STEP)
-      if earlier and earlier < solid then
+      if earlier and earlier < math.min(solid, fraction or math.huge) then
         return nil
       end
     end
@@ -140,9 +140,6 @@ local function hitsPlayer(origin, velocity, gravity, drag, duration, target, oth
       contact = time + STEP * fraction
     end
     if hit then
-      if not contact then
-        return nil
-      end
       local impact, impactTime = units.toBlocks(hit.Position), time + STEP * solid
       local expected = target.predict(impactTime)
       local gap = impact - expected

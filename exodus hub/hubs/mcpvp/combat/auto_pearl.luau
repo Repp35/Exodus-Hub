@@ -33,12 +33,15 @@ function Pearl.reset()
   restore(snap)
   shot, motion, retryAt = nil, nil, 0
 end
-function Pearl.busy() return shot ~= nil and shot.phase ~= "flight" end
+function Pearl.busy() return shot ~= nil and shot.phase ~= "flight" and not shot.restored end
 function Pearl.pending() return shot ~= nil end
 function Pearl.escaping() return shot ~= nil and shot.phase == "flight" and shot.escape == true end
 function Pearl.cancelPrepared(snap)
   if shot and shot.phase == "equip" then
     restore(snap)
+    if shot.chosen then
+      target.abandon(snap, shot.chosen)
+    end
     shot = nil
   end
 end
@@ -53,18 +56,24 @@ function Pearl.observe(snap)
     return
   end
   if shot.phase == "confirm" then
+    if not shot.restored and not native.blocked(snap) then
+      restore(snap)
+    end
     local state = native.useState(snap, shot)
     if state == nil and not shot.failed and not shot.calibrated then
       return
     end
     state = state == true or shot.calibrated == true
     if state == false then
+      if shot.chosen then
+        target.abandon(snap, shot.chosen)
+      end
       shot.failed, shot.restoreAt, shot.phase = true, snap.now, "restore"
     else
       shot.failed, shot.restoreAt, shot.phase = false, snap.now, "restore"
       shot.untilAt = math.max(snap.now + 0.2, shot.requestAt + shot.plan.duration + 0.7)
       if shot.chosen then
-        target.pursuing(snap, shot.untilAt + 2)
+        target.pursuing(snap, shot.untilAt, shot.chosen)
       end
     end
   end
@@ -82,6 +91,9 @@ function Pearl.observe(snap)
     local moved = units.distance(snap.root.Position, shot.requestRoot) >= 2
     local arrived = moved and units.distance(snap.root.Position, units.toWorld(shot.plan.landing)) < 3
     if arrived or snap.now >= shot.untilAt then
+      if shot.chosen then
+        target.arrived(snap, shot.chosen)
+      end
       shot, retryAt = nil, snap.now + 0.15
     end
   end
@@ -155,8 +167,26 @@ function Pearl.route(snap, position, elevated)
   local direction, duration = ballistics.solve(origin, landing, speed, gravity, ray, tuning.pearlMaxFlight, drag)
   return direction and { direction = direction, duration = duration, landing = landing, origin = origin } or nil
 end
+local function launchFloor(snap, ray)
+  local feet = units.toBlocks(snap.root.Position) - Vector3.new(0, 1.25, 0)
+  local heights = {}
+  for _, offset in ipairs({ Vector3.new(2.5, 0, 0), Vector3.new(-2.5, 0, 0), Vector3.new(0, 0, 2.5), Vector3.new(0, 0, -2.5) }) do
+    local point = feet + offset + Vector3.new(0, tuning.pearlExitHeightBlocks, 0)
+    local hit = workspace:Raycast(units.toWorld(point), units.offset(0, -tuning.pearlExitHeightBlocks - 2, 0), ray)
+    if hit and hit.Normal.Y >= 0.65 and hit.Material ~= Enum.Material.Water then
+      heights[#heights + 1] = units.toBlocks(hit.Position.Y)
+    end
+  end
+  if #heights < 3 then
+    return feet.Y
+  end
+  table.sort(heights)
+  return math.max(feet.Y, heights[math.ceil(#heights / 2)])
+end
 local function nearGround(snap, value, ray)
-  if units.toBlocks(value.root.Position.Y - snap.root.Position.Y) > tuning.pearlTargetHeightBlocks then
+  local height = units.toBlocks(value.root.Position.Y) - 1.25
+  local localFloor = units.toBlocks(snap.root.Position.Y) - 1.25
+  if height - localFloor > tuning.pearlTargetHeightBlocks and height - launchFloor(snap, ray) > tuning.pearlTargetHeightBlocks then
     return false
   end
   local feet = value.root.Position - units.offset(0, 1.25, 0)
@@ -184,6 +214,21 @@ local function plan(snap, value)
   end
   local latency = renderLead + (roundTrip or 0)
   local predicted = prediction.actor(value.root, value.character, motion, latency, ray, true)
+  local actual, origin = units.toBlocks(value.root.Position), units.toBlocks(snap.eye)
+  local predict = predicted.predict
+  local leadLimit = math.max(2, math.min(8, value.distance * 0.5))
+  predicted.predict = function(time)
+    local point = predict(time)
+    local offset = (point - actual) * Vector3.new(1, 0, 1)
+    if offset.Magnitude > leadLimit then
+      point = actual + offset.Unit * leadLimit + Vector3.new(0, point.Y - actual.Y, 0)
+    end
+    local toward, forecast = (actual - origin) * Vector3.new(1, 0, 1), (point - origin) * Vector3.new(1, 0, 1)
+    if toward:Dot(forecast) <= 0 then
+      return actual
+    end
+    return point
+  end
   local others = {}
   for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
     local character = player.Character
@@ -206,6 +251,13 @@ local function plan(snap, value)
     units.toBlocks(snap.root.Position),
     tuning.pearlLandingRadiusBlocks
   )
+  if route then
+    local toward = (actual - origin) * Vector3.new(1, 0, 1)
+    local launch = route.direction * Vector3.new(1, 0, 1)
+    if toward.Magnitude > 0.1 and toward:Dot(launch) <= 0 then
+      return nil, "direction"
+    end
+  end
   return route, reason
 end
 local function rangeAllows(snap)
@@ -218,9 +270,7 @@ local function rangeAllows(snap)
   end
   shot.chosen = current
   local weapon = native.weapon(snap, current) or shot.previous
-  return geometry.inView(snap, current)
-    and current.distance > (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks
-    and nearGround(snap, current, params(snap))
+  return current.distance > (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks
 end
 local function advance(snap)
   if not shot or shot.phase ~= "equip" then
@@ -231,28 +281,24 @@ local function advance(snap)
     return
   end
   if snap.now > shot.deadline then
-    restore(snap)
-    shot, retryAt = nil, snap.now + 0.2
+    Pearl.cancelPrepared(snap)
+    retryAt = snap.now + 0.2
     return
-  end
-  if shot.chosen then
-    if not target.isCurrent(snap, shot.chosen) then
-      Pearl.cancelPrepared(snap)
-      return
-    end
-    local fresh = plan(snap, shot.chosen)
-    if not fresh then
-      Pearl.cancelPrepared(snap)
-      return
-    end
-    shot.plan = fresh
   end
   shot.count, shot.requestAt = tonumber(shot.tool:GetAttribute("Count")) or 0, snap.now
   shot.requestRoot, shot.requestVelocity = snap.root.Position, units.toBlocks(snap.root.AssemblyLinearVelocity)
   shot.phase = "confirm"
   shot.failed = not native.use(snap, shot.tool, shot.plan.direction)
-  if not shot.failed and shot.chosen then
-    target.pursuing(snap, snap.now + shot.plan.duration + 2)
+  if shot.failed then
+    if shot.chosen then
+      target.abandon(snap, shot.chosen)
+    end
+    shot.phase, shot.restoreAt = "restore", snap.now
+  elseif shot.chosen then
+    target.pursuing(snap, snap.now + shot.plan.duration + 0.7, shot.chosen)
+  end
+  if not native.blocked(snap) then
+    restore(snap)
   end
 end
 function Pearl.launch(snap, route, escaping)
@@ -289,58 +335,40 @@ function Pearl.throw(snap)
   end
   shot.manual = true
   advance(snap)
+  if not shot or shot.failed then
+    return false, "O uso nativo da Pearl foi recusado."
+  end
   return true
 end
 function Pearl.advance(snap) advance(snap) end
 function Pearl.render(dt) renderLead = math.clamp(dt or 1 / 60, 0, 0.05) end
-function Pearl.prepare(snap)
+function Pearl.prepare(snap, available)
   if shot and shot.character ~= snap.character then
     shot, motion = nil, nil
   end
   Pearl.observe(snap)
-  if shot and shot.manual then
-    advance(snap)
-    return
-  end
-  local value = target.current(snap)
-  if shot and shot.phase ~= "equip" then
-    return
-  end
-  if not utils.getConfigValue("MCAutoPearl") or not value or not geometry.inView(snap, value) then
-    Pearl.cancelPrepared(snap)
-    return
-  end
-  local weapon = native.weapon(snap, value) or snap.tool
-  if value.distance <= (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks then
-    Pearl.cancelPrepared(snap)
-    return
-  end
-  if not motion then
-    Pearl.cancelPrepared(snap)
-    return
-  end
-  if shot then
-    if not shot.chosen or value.id ~= shot.chosen.id then
-      Pearl.cancelPrepared(snap)
-      return
+  local value = target.escape(snap)
+  if not value then
+    if shot and shot.manual then
+      advance(snap)
     end
-    advance(snap)
     return
   end
-  if snap.now < retryAt or native.blocked(snap) then
+  if not utils.getConfigValue("MCAutoPearl") or shot or available == false or native.blocked(snap) or snap.now < retryAt then
+    target.abandon(snap, value)
     return
   end
   if not native.find(snap, "Pearl", true) or (tonumber(snap.player:GetAttribute("ItemCooldown_Pearl")) or 0) > workspace:GetServerTimeNow() then
+    target.abandon(snap, value)
     return
   end
   local route = plan(snap, value)
-  if not route then
-    retryAt = snap.now + 0.2
+  if not route or not Pearl.launch(snap, route) then
+    target.abandon(snap, value)
     return
   end
-  if Pearl.launch(snap, route) then
-    shot.chosen = value
-  end
+  shot.chosen = value
+  advance(snap)
 end
 Pearl.__contract = {
   provides = {
@@ -372,7 +400,7 @@ Pearl.__contract = {
   requiresMethods = {
     Native = { "snapshot", "find", "weapon", "restore", "use", "useState", "blocked" },
     Geometry = { "stats", "inView" },
-    Target = { "current", "tracked", "isCurrent", "pursuing" },
+    Target = { "current", "tracked", "isCurrent", "pursuing", "escape", "abandon", "arrived" },
     Units = { "toBlocks", "toWorld", "offset", "distance" },
     Ballistics = { "solve", "intercept" },
     Utils = { "getConfigValue" },

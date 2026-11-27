@@ -5,14 +5,19 @@ local geometry, native, utils, units, tuning, input, gui, world, scope, players,
 local held, lastLook, lastCamera
 local recent, recentUntil, heldUntil, scanAt = nil, 0, 0, 0
 local resumeAt, stick = 0, false
-local manualSerial, checkedSerial = 0, 0
+local manualSerial, checkedSerial, manualUntil = 0, 0, 0
 local ignored = setmetatable({}, { __mode = "k" })
+local yielded = setmetatable({}, { __mode = "k" })
 function Aim.reset()
   held, lastLook, lastCamera, resumeAt = nil, nil, nil, 0
   recent, recentUntil, heldUntil, scanAt = nil, 0, 0, 0
   checkedSerial = manualSerial
 end
-function Aim.remember(character, now)
+function Aim.remember(character, now, explicit)
+  if explicit then
+    yielded[character] = nil
+    ignored[character] = nil
+  end
   recent, recentUntil = character, now + tuning.assistMemorySeconds
 end
 function Aim.dismiss(character)
@@ -30,6 +35,7 @@ function Aim.teardown()
     scope = nil
   end
   stick, ignored, base = false, setmetatable({}, { __mode = "k" }), nil
+  yielded = setmetatable({}, { __mode = "k" })
   Aim.reset()
 end
 function Aim.setup(deps)
@@ -59,17 +65,14 @@ function Aim.setup(deps)
   scope.connect(input.InputChanged, function(event, processed)
     if event.KeyCode == Enum.KeyCode.Thumbstick2 then
       stick = event.Position.Magnitude > 0.12
-    elseif
-      not processed
-      and event.UserInputType == Enum.UserInputType.MouseMovement
-      and event.Delta.Magnitude > 0.5
-      and (input.MouseBehavior ~= Enum.MouseBehavior.Default or input:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
-    then
+    elseif event.UserInputType == Enum.UserInputType.MouseMovement and event.Delta.Magnitude > 0.05 then
       manualSerial += 1
-    elseif not processed and event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.1 then
+      manualUntil = os.clock() + tuning.aimInputGraceSeconds
+    elseif event.UserInputType == Enum.UserInputType.Touch and event.Delta.Magnitude > 0.05 then
       local camera = world.CurrentCamera
       if camera and event.Position.X >= camera.ViewportSize.X * 0.5 then
         manualSerial += 1
+        manualUntil = os.clock() + tuning.aimInputGraceSeconds
       end
     end
   end)
@@ -89,38 +92,11 @@ function Aim.looking(snap, value)
   local margin = tuning.pursuitScreenMargin
   return point.Z > 0 and point.X >= -size.X * margin and point.X <= size.X * (1 + margin) and point.Y >= -size.Y * margin and point.Y <= size.Y * (1 + margin)
 end
-local function intent(snap, value)
-  local manual = manualSerial ~= checkedSerial or stick
-  if not manual or not value or lastCamera ~= snap.camera or not lastLook then
-    return 0
-  end
-  local delta = value.root.Position - snap.camera.CFrame.Position
-  if delta.Magnitude < 0.001 then
-    return 0
-  end
-  local desired, look = delta.Unit, snap.camera.CFrame.LookVector
-  if lastLook:Dot(look) > math.cos(math.rad(0.1)) then
-    return 0
-  end
-  checkedSerial = manualSerial
-  local before = math.acos(math.clamp(lastLook:Dot(desired), -1, 1))
-  local after = math.acos(math.clamp(look:Dot(desired), -1, 1))
-  if after > before + math.rad(0.35) then
-    return 1
-  end
-  if after < before - math.rad(0.35) then
-    return -1
-  end
-  return 0
-end
-function Aim.yielding(snap, value) return intent(snap, value) == 1 end
-function Aim.pause(snap)
-  Aim.reset()
-  resumeAt = snap.now + 0.75
-  checkedSerial = manualSerial
-end
+function Aim.yielding(snap) return stick or manualSerial ~= checkedSerial or snap.now < manualUntil end
+function Aim.pause(snap) resumeAt = math.max(resumeAt, snap.now + tuning.aimInputGraceSeconds) end
 function Aim.observe(snap)
   lastLook, lastCamera = snap.camera.CFrame.LookVector, snap.camera
+  checkedSerial = manualSerial
 end
 local function direction(snap, model, range, point)
   local human = model and model:FindFirstChildOfClass("Humanoid")
@@ -167,7 +143,7 @@ local function assist(snap, settings, focus)
   local look = snap.camera.CFrame.LookVector
   local best, desired, score
   local function consider(model)
-    if not model or ignored[model] then
+    if not model or ignored[model] or yielded[model] then
       return
     end
     local aim = direction(snap, model, tuning.assistRangeBlocks)
@@ -175,9 +151,7 @@ local function assist(snap, settings, focus)
       return
     end
     local angle = math.acos(math.clamp(look:Dot(aim), -1, 1))
-    local withinCone = angle <= settings.Cone
-    local remembered = focus and model == focus.character or model == recent and snap.now < recentUntil or model == held and snap.now < heldUntil
-    if not withinCone and not remembered then
+    if angle > settings.Cone then
       return
     end
     local rank = angle - (model == held and settings.LockBias or 0)
@@ -247,11 +221,36 @@ local function nudge(snap, desired, dt, settings)
   if axis.Magnitude < 1e-6 then
     axis = frame.UpVector
   end
-  local look = CFrame.fromAxisAngle(axis.Unit, turn):VectorToWorldSpace(frame.LookVector)
-  snap.camera.CFrame = CFrame.lookAt(frame.Position, frame.Position + look)
+  local rotation = CFrame.fromAxisAngle(axis.Unit, turn)
+  snap.camera.CFrame = CFrame.new(frame.Position) * rotation * (frame - frame.Position)
 end
 function Aim.step(snap, focus, dt)
   local lock, enabled = utils.getConfigValue("MCAimLock"), utils.getConfigValue("MCAimAssist")
+  if Aim.yielding(snap) then
+    local look = snap.camera.CFrame.LookVector
+    local function manual(model)
+      local root = model and model:FindFirstChild("HumanoidRootPart")
+      if not root then
+        return
+      end
+      local delta = root.Position - snap.camera.CFrame.Position
+      if delta.Magnitude < 0.001 then
+        return
+      end
+      local toward = lastCamera == snap.camera and lastLook and look:Dot(delta.Unit) > lastLook:Dot(delta.Unit) + 1e-6
+      yielded[model] = not toward and true or nil
+    end
+    manual(focus and focus.character)
+    manual(held)
+    manual(recent)
+    for model in pairs(yielded) do
+      manual(model)
+    end
+    held, heldUntil = nil, 0
+    resumeAt = math.max(resumeAt, snap.now + tuning.aimInputGraceSeconds)
+    Aim.observe(snap)
+    return
+  end
   if snap.now < resumeAt then
     return
   end
@@ -273,9 +272,13 @@ function Aim.step(snap, focus, dt)
       Aim.remember(focus.character, snap.now)
       if lock then
         local desired = direction(snap, focus.character, tuning.focusRangeBlocks)
-        if desired then
-          local frame = snap.camera.CFrame
-          snap.camera.CFrame = CFrame.lookAt(frame.Position, frame.Position + desired)
+        local settings = profile()
+        local look = snap.camera.CFrame.LookVector
+        if desired and not yielded[focus.character] and look:Dot(desired) >= math.cos(settings.Cone) and not aimingAtCrystal(snap, settings) then
+          nudge(snap, desired, dt, {
+            Pull = settings.Pull * tuning.aimLockMultiplier,
+            MaxSpeed = math.min(settings.MaxSpeed * tuning.aimLockMultiplier, math.rad(120)),
+          })
           held, heldUntil = focus.character, snap.now + tuning.assistMemorySeconds
           Aim.observe(snap)
           return

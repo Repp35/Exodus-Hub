@@ -41,7 +41,13 @@ function Target.tracked(snap)
   end
   local value = owner == snap.character and candidate(fight.player, snap, math.huge)
   if not value or value.character ~= fight.character then
+    aim.dismiss(fight.character)
+    aim.pause(snap)
     fight, swings = nil, {}
+    return nil
+  end
+  if fight.escapeTaken and snap.now >= (fight.pursueUntil or 0) then
+    Target.abandon(snap, { id = fight.id })
     return nil
   end
   value.id = fight.id
@@ -51,8 +57,34 @@ function Target.current(snap)
   local value = Target.tracked(snap)
   return value and not fight.awayAt and value or nil
 end
-function Target.pursuing(snap, untilAt)
-  if fight and owner == snap.character then
+function Target.escape(snap)
+  local value = Target.tracked(snap)
+  if value and fight.escapeAt and fight.awayAt then
+    Target.abandon(snap, value)
+    return nil
+  end
+  if not value or not fight.escapeAt or fight.escapeTaken then
+    return nil
+  end
+  fight.escapeTaken = true
+  fight.pursueUntil = snap.now + 0.05
+  return value
+end
+function Target.arrived(snap, value)
+  local current = Target.tracked(snap)
+  if not current or not value or current.id ~= value.id then
+    return false
+  end
+  local weapon = native.weapon(snap, current) or snap.tool
+  if current.distance > (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks then
+    Target.abandon(snap, current)
+    return false
+  end
+  fight.escapeAt, fight.escapeTaken, fight.pursueUntil = nil, nil, nil
+  return true
+end
+function Target.pursuing(snap, untilAt, value)
+  if fight and owner == snap.character and (not value or value.id == fight.id) then
     fight.pursueUntil = math.max(fight.pursueUntil or 0, untilAt)
   end
 end
@@ -64,14 +96,22 @@ function Target.abandon(snap, value)
   end
 end
 local function resume()
-  if fight.awayAt or fight.turnUntil then
-    aim.reset()
-  end
   fight.awayAt, fight.turnUntil = nil, nil
 end
 function Target.observeView(snap)
   local value = Target.tracked(snap)
   if not value then
+    return
+  end
+  if aim.yielding(snap, value) then
+    fight.turnUntil = snap.now + tuning.manualTurnSeconds
+    aim.pause(snap)
+    if not aim.looking(snap, value) then
+      fight.awayAt = fight.awayAt or snap.now
+    end
+    return
+  end
+  if fight.turnUntil and snap.now < fight.turnUntil then
     return
   end
   local delta = (value.root.Position - snap.root.Position) * Vector3.new(1, 0, 1)
@@ -84,9 +124,6 @@ function Target.observeView(snap)
     return
   end
   local looking = aim.looking(snap, value)
-  if aim.yielding(snap, value) then
-    fight.turnUntil = snap.now + tuning.manualTurnSeconds
-  end
   if looking then
     if fight.awayAt or not fight.turnUntil or snap.now >= fight.turnUntil then
       resume()
@@ -118,7 +155,7 @@ local function select(snap, value)
   aim.reset()
   value.id, swings = serial, {}
 end
-function Target.manual(snap, direction)
+function Target.manual(snap, direction, explicit)
   if owner ~= snap.character then
     Target.reset()
     owner = snap.character
@@ -139,13 +176,16 @@ function Target.manual(snap, direction)
     return nil
   end
   local current = Target.current(snap)
+  if explicit == false and (not current or current.character ~= chosen.character) then
+    return nil
+  end
   if not current or current.character ~= chosen.character then
     select(snap, chosen)
   else
     chosen.id = current.id
   end
   resume()
-  aim.remember(chosen.character, snap.now)
+  aim.remember(chosen.character, snap.now, explicit ~= false)
   return chosen
 end
 function Target.noteSwing(source)
@@ -190,6 +230,14 @@ function Target.observe(snap)
       swings[player] = nil
     end
   end
+  local value = Target.tracked(snap)
+  if value and not fight.escapeAt then
+    local weapon = native.weapon(snap, value) or snap.tool
+    local range = (geometry.stats(weapon).reach or 3) + tuning.pearlAttackMarginBlocks
+    if value.distance > range then
+      fight.escapeAt = snap.now
+    end
+  end
   Target.observeView(snap)
 end
 Target.__contract = {
@@ -207,6 +255,8 @@ Target.__contract = {
     "threat",
     "observeView",
     "pursuing",
+    "escape",
+    "arrived",
   },
   requires = { Geometry = "mcpgeometry", Native = "mcpnative", Units = "mcpunits", Options = "mcpoptions", Aim = "mcpaim" },
   requiresMethods = {
