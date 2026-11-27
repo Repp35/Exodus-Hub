@@ -997,7 +997,7 @@ local function selectHub(revision)
   selectedHub, selectionError = registry.resolve(catalog, game.PlaceId, game.GameId, {
     userId = player and player.UserId,
     username = player and player.Name,
-  }, execute("hub access", accessChunk))
+  }, execute("hub access", accessChunk), function(name) return game:GetService(name) end)
   if not selectedHub then
     return false, selectionError
   end

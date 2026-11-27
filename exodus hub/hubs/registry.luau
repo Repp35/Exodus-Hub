@@ -55,12 +55,12 @@ local function allowed(rule: AccessRule?, identity: Identity): boolean
   return rule.mode == "allowlist" and matches(rule.userIds, rule.usernames, identity)
 end
 
-local function matchesFingerprint(profile: HubProfile): boolean
+local function matchesFingerprint(profile: HubProfile, getService: (string) -> any): boolean
   local fingerprint = profile.fingerprint
   if not fingerprint or type(fingerprint.all) ~= "table" or #fingerprint.all < 3 then return false end
   local function exists(probe: any): boolean
     local ok, result = pcall(function()
-      local parent = game:GetService(probe.service)
+      local parent = getService(probe.service)
       for index, name in ipairs(probe.path) do
         parent = parent and parent:FindFirstChild(name, index == 1 and probe.recursive == true)
       end
@@ -78,7 +78,7 @@ local function matchesFingerprint(profile: HubProfile): boolean
 end
 
 local Registry = {}
-function Registry.select(profiles: { HubProfile }, placeId: number, universeId: number?): HubProfile
+function Registry.select(profiles: { HubProfile }, placeId: number, universeId: number?, getService: ((string) -> any)?): HubProfile
   for _, profile in ipairs(profiles) do
     if table.find(profile.placeIds or {}, placeId) then
       return table.clone(profile)
@@ -90,7 +90,7 @@ function Registry.select(profiles: { HubProfile }, placeId: number, universeId: 
     end
   end
   for _, profile in ipairs(profiles) do
-    if matchesFingerprint(profile) then return table.clone(profile) end
+    if getService and matchesFingerprint(profile, getService) then return table.clone(profile) end
   end
   return {
     id = "universal",
@@ -99,13 +99,13 @@ function Registry.select(profiles: { HubProfile }, placeId: number, universeId: 
     notification = "Universal carregado.",
   }
 end
-function Registry.resolve(profiles: { HubProfile }, placeId: number, universeId: number?, identity: Identity, access: AccessPolicy?): (HubProfile?, string?)
+function Registry.resolve(profiles: { HubProfile }, placeId: number, universeId: number?, identity: Identity, access: AccessPolicy?, getService: ((string) -> any)?): (HubProfile?, string?)
   local policy: AccessPolicy = access or { exodus = nil, games = nil }
   if not allowed(policy.exodus, identity) then
     return nil, "Conta sem acesso ao Exodus Hub"
   end
   local games = policy.games or {}
-  local profile = Registry.select(profiles, placeId, universeId)
+  local profile = Registry.select(profiles, placeId, universeId, getService)
   if not allowed(games[profile.id], identity) then
     profile = Registry.select({}, placeId, universeId)
   end
