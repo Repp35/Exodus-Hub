@@ -84,7 +84,7 @@ function Weapons.throw(automatic)
   if now - lastThrow < charge * 2 or now - lastStab < 0.4 then
     return false
   end
-  local target = Targeting.select(snap, Utils.getConfigValue("MM2ThrowTargets") or "Aim", 250, Utils.getConfigValue("MM2ThrowFOV"))
+  local target = Targeting.select(snap, Utils.getConfigValue(automatic and "MM2ThrowTargets" or "MM2ManualThrowTargets") or "Aim", 250, Utils.getConfigValue(automatic and "MM2ThrowFOV" or "MM2ManualThrowFOV"))
   local handle = knife:FindFirstChild("Handle")
   if not target or not handle or not handle:IsA("BasePart") then
     return false
