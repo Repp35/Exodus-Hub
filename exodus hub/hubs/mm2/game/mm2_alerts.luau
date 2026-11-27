@@ -2,15 +2,15 @@
 --!optimize 2
 
 -- module
-local Alerts = {}
-function Alerts.setup() return true end
+local Factory = {}
+function Factory.setup() return true end
 
 -- implementation
-function Alerts.create(deps)
-  local Player = deps.player
-  local Services = deps.services
-  local Runtime = deps.runtime
-  local MatchService = deps.match
+function Factory.create(API)
+  local Player = API.Player
+  local Services = API.Roblox
+  local Runtime = API.Runtime
+  local MatchService = API.Services.Match
   local Alerts = {
     RoleAndMurdererEnabled = true,
     GunDroppedEnabled = true,
@@ -22,7 +22,13 @@ function Alerts.create(deps)
     SeenGuns = setmetatable({}, { __mode = "k" }),
   }
 
-  local function notify(title, content) deps.notify(title, content) end
+  local function notify(title, content)
+    local window = API.UI and API.UI.Window
+    local library = window and window.OrionLib
+    if library and type(library.MakeNotification) == "function" then
+      pcall(library.MakeNotification, library, { Name = title, Content = content, Time = 5 })
+    end
+  end
   local function isAlive(target, profile)
     if not target or type(profile) ~= "table" or profile.Dead == true or profile.Killed == true or target:GetAttribute("Alive") ~= true then
       return false
@@ -150,5 +156,5 @@ function Alerts.create(deps)
 end
 
 -- contract
-Alerts.__contract = { provides = { "setup", "create" }, requires = {} }
-return Alerts
+Factory.__contract = { provides = { "setup", "create" }, requires = {} }
+return Factory

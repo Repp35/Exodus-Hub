@@ -2,15 +2,15 @@
 --!optimize 2
 
 -- module
-local Weapons = {}
-function Weapons.setup() return true end
+local Factory = {}
+function Factory.setup() return true end
 
 -- implementation
-function Weapons.create(deps)
-  local Services = deps.services
+function Factory.create(API)
+  local Services = API.Roblox
   local Players, Workspace = Services.Players, Services.Workspace
   local ReplicatedStorage, RunService = Services.ReplicatedStorage, Services.RunService
-  local Player, Runtime, MatchService = deps.player, deps.runtime, deps.match
+  local Player, Runtime, MatchService = API.Player, API.Runtime, API.Services.Match
   local CollectionService = Services.CollectionService
   local CONFIG = {
     MELEE_RANGE = 8,
@@ -26,10 +26,27 @@ function Weapons.create(deps)
     AutoThrow = false,
     AttackTargets = "All",
     ThrowTargets = "Auto",
+    RoleData = nil,
+    RoleDataAt = 0,
     Motion = setmetatable({}, { __mode = "k" }),
+    LastRemoteWarning = 0,
     Destroyed = false,
   }
 
+  local function warnRemote()
+    if os.clock() - Combat.LastRemoteWarning > 8 then
+      Combat.LastRemoteWarning = os.clock()
+      warn("[Exodus MM2] Não encontrei um remote compatível de lançamento de faca.")
+    end
+  end
+  local function getRoleData()
+    if os.clock() - Combat.RoleDataAt < 0.55 then
+      return Combat.RoleData
+    end
+    Combat.RoleDataAt = os.clock()
+    Combat.RoleData = MatchService:GetPlayerData()
+    return Combat.RoleData
+  end
   local function characterInfo(target, profile)
     if target == Player or type(profile) ~= "table" or profile.Dead or profile.Killed or target:GetAttribute("Alive") ~= true then
       return nil
@@ -47,7 +64,7 @@ function Weapons.create(deps)
     if not active then
       return nil
     end
-    local profiles = MatchService:GetPlayerData()
+    local profiles = getRoleData()
     local mine = profiles and profiles[Player.Name]
     if type(mine) ~= "table" or mine.Role ~= "Murderer" or mine.Dead or mine.Killed then
       return nil
@@ -64,7 +81,7 @@ function Weapons.create(deps)
     return character, humanoid, root, knife, profiles
   end
   local function acceptedRole(role, mode)
-    if mode == "All" or mode == "Nearest" or mode == "Auto" or mode == "Aim" or mode == "Random" then
+    if mode == "All" or mode == "Nearest" or mode == "Auto" then
       return role == "Sheriff" or role == "Hero" or role == "Innocent"
     end
     if mode == "Sheriff/Hero" then
@@ -227,7 +244,85 @@ function Weapons.create(deps)
     end
     return false
   end
-  local function chooseThrow(character, root, knife, profiles, mode, manual, angle)
+  local function chooseThrow(character, root, knife, profiles)
+    local mode = Combat.ThrowTargets
+    local origin = getOrigin(character, root, knife)
+    local _, _, coinContainer = MatchService:GetRoundContext()
+    local speed = getKnifeSpeed(knife)
+    local preferred, bestScore
+    for _, entry in ipairs(getTargets(root, profiles, mode)) do
+      if entry.Distance <= THROW_MAX_RANGE and (not Combat.AutoAttack or entry.Distance > getMeleeRange(knife, entry.Root)) then
+        local aimPart = entry.Character:FindFirstChild("UpperTorso") or entry.Character:FindFirstChild("Torso") or entry.Root
+        if visible(origin, aimPart, entry.Character, character, coinContainer) then
+          local velocity = getMotion(entry.Player, entry.Root)
+          local aim, flightTime = predictPosition(entry.Root, entry.Humanoid, velocity, origin, speed, character, coinContainer)
+          aim += aimPart.Position - entry.Root.Position
+          local blocked = raycast(origin, aim, character, coinContainer)
+          if not blocked or blocked.Instance:IsDescendantOf(entry.Character) then
+            local moving = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+            local score = entry.Distance * 0.045 + moving * 0.55 + math.abs(velocity.Y) * 0.25
+            if mode == "Nearest" then
+              score = entry.Distance
+            end
+            if mode == "Auto" and (entry.Role == "Sheriff" or entry.Role == "Hero") then
+              score -= 10000
+            end
+            if not bestScore or score < bestScore then
+              bestScore = score
+              preferred = { Entry = entry, Aim = aim, Origin = origin, Speed = speed, TravelTime = flightTime }
+            end
+          end
+        end
+      end
+    end
+    return preferred
+  end
+  local function simulateProjectile(origin, direction, speed, character, hitRemote)
+    local _, _, coinContainer = MatchService:GetRoundContext()
+    local traveled, last = 0, origin
+    while traveled < THROW_MAX_RANGE and character.Parent and hitRemote.Parent and not Runtime.ShuttingDown do
+      local dt = math.clamp(RunService.Heartbeat:Wait(), 0.001, 0.3)
+      local nextPosition = last + direction * (dt * speed)
+      local hit = raycast(last, nextPosition, character, coinContainer)
+      if hit then
+        hitRemote:FireServer(hit.Instance, hit.Position)
+        return
+      end
+      traveled += (nextPosition - last).Magnitude
+      last = nextPosition
+    end
+  end
+  local function tryThrow(knife, data, character)
+    if API.ThrowKnife then
+      return API.ThrowKnife(knife, data, character)
+    end
+    local direction = data.Aim - data.Origin
+    if direction.Magnitude < 1 then
+      return false
+    end
+    direction = direction.Unit
+    local throwStart = ReplicatedStorage:FindFirstChild("ThrowStart", true)
+    local throwHit = ReplicatedStorage:FindFirstChild("ThrowHit", true)
+    if throwStart and throwStart:IsA("RemoteEvent") and throwHit and throwHit:IsA("RemoteEvent") then
+      throwStart:FireServer(data.Origin, direction)
+      Runtime:TrackTask(task.spawn(simulateProjectile, data.Origin, direction, data.Speed, character, throwHit))
+      return true
+    end
+    local events = knife:FindFirstChild("Events")
+    local legacy = events and events:FindFirstChild("KnifeThrown")
+    if legacy and legacy:IsA("RemoteEvent") then
+      legacy:FireServer(CFrame.new(data.Origin), CFrame.new(data.Aim))
+      return true
+    end
+    local direct = knife:FindFirstChild("Throw")
+    if direct and direct:IsA("RemoteEvent") then
+      direct:FireServer(CFrame.new(data.Origin), data.Aim)
+      return true
+    end
+    warnRemote()
+    return false
+  end
+  local function chooseManualThrow(character, root, knife, profiles, mode, manual, angle)
     mode = mode or Combat.ThrowTargets
     local origin = getOrigin(character, root, knife)
     local _, _, coinContainer = MatchService:GetRoundContext()
@@ -273,7 +368,6 @@ function Weapons.create(deps)
     end
     return preferred
   end
-  local function tryThrow(knife, data, character) return deps.throwKnife(knife, data, character) end
   function Combat:Update()
     if self.Destroyed or not self.AutoAttack and not self.AutoThrow then
       return
@@ -303,7 +397,7 @@ function Weapons.create(deps)
     if not character or not knife or not profiles then
       return false
     end
-    local selected = chooseThrow(character, root, knife, profiles, mode or "Aim", true, math.clamp(tonumber(angle) or 60, 10, 90))
+    local selected = chooseManualThrow(character, root, knife, profiles, mode or "Aim", true, math.clamp(tonumber(angle) or 60, 10, 90))
     return selected and tryThrow(knife, selected, character) or false
   end
   function Combat:SetAutoAttack(value) self.AutoAttack = value == true end
@@ -322,6 +416,7 @@ function Weapons.create(deps)
     self.Destroyed = true
     self.AutoAttack = false
     self.AutoThrow = false
+    self.RoleData = nil
     table.clear(self.Motion)
   end
   Runtime:Track(RunService.Heartbeat:Connect(function()
@@ -338,5 +433,5 @@ function Weapons.create(deps)
 end
 
 -- contract
-Weapons.__contract = { provides = { "setup", "create" }, requires = {} }
-return Weapons
+Factory.__contract = { provides = { "setup", "create" }, requires = {} }
+return Factory

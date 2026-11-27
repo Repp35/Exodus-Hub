@@ -60,13 +60,14 @@ function Notification.create(context)
       AnchorPoint = Vector2.new(1, 1),
       Position = UDim2.new(1, 340, 1, -12),
       BackgroundColor3 = C.card,
+      BackgroundTransparency = 0.04,
       GroupTransparency = 1,
       ClipsDescendants = true,
       ZIndex = 110,
     }, layer)
     owner.add(function() root:Destroy() end)
-    context.corner(root, 12)
-    context.stroke(root, nil, 1)
+    context.corner(root, 10)
+    context.stroke(root, C.border, 1)
     local tint = options.kind == "warning" and C.red or options.kind == "success" and C.green or C.accent
     inst("Frame", { Size = UDim2.new(0, 3, 1, 0), BackgroundColor3 = tint, ZIndex = 111 }, root)
     inst("TextLabel", {

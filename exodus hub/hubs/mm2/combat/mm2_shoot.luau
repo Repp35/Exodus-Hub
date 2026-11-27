@@ -2,20 +2,45 @@
 --!optimize 2
 
 -- module
-local Shooting = {}
-function Shooting.setup() return true end
+local Factory = {}
+function Factory.setup() return true end
 
 -- implementation
-function Shooting.create(deps)
-  local Players = deps.services.Players
-  local Services = deps.services
-  local Workspace = deps.services.Workspace
-  local Player = deps.player
-  local Runtime = deps.runtime
-  local MatchService = deps.match
+function Factory.create(API)
+  local Players = API.Roblox.Players
+  local Services = API.Roblox
+  local TweenService = API.Roblox.TweenService
+  local Workspace = API.Roblox.Workspace
+  local Player = API.Player
+  local Runtime = API.Runtime
+  local MatchService = API.Services.Match
   local Randomizer = Random.new()
-  local ShootMurder =
-    { ManualEnabled = false, AutoEnabled = false, ManualAccuracy = 100, AutoAccuracy = 100, WaitForKnife = false, NextRoleWarningAt = 0, Destroyed = false }
+  local ROLE_REFRESH_INTERVAL = 0.45
+  local FADE_TIME = 0.16
+  local EFFECT_TIME = 0.2
+  local GUI_NAME = "ExodusManualShootMurder"
+  local ShootMurder = {
+    ManualEnabled = false,
+    AutoEnabled = false,
+    ManualAccuracy = 100,
+    AutoAccuracy = 100,
+    WaitForKnife = false,
+    RoleData = nil,
+    RoleDataAt = 0,
+    NextRoleRefreshAt = 0,
+    NextRoleWarningAt = 0,
+    HudVisible = false,
+    HudInvisible = false,
+    HudGeneration = 0,
+    EffectGeneration = 0,
+    Destroyed = false,
+    Dragging = false,
+    DragInput = nil,
+    DragStart = nil,
+    StartPosition = nil,
+    DragMoved = false,
+    Tweens = {},
+  }
 
   local function getAliveCharacter(target, profile)
     if type(profile) ~= "table" or profile.Dead == true or profile.Killed == true or not target or target:GetAttribute("Alive") ~= true then
@@ -29,14 +54,36 @@ function Shooting.create(deps)
     end
     return character, humanoid, root
   end
-  local function notify(content) deps.notify("Shoot Murder", content) end
-  function ShootMurder:RefreshRoleData()
-    self.RoleData = MatchService:GetPlayerData()
+  local function notify(content)
+    local window = API.UI and API.UI.Window
+    local library = window and window.OrionLib
+    if library and type(library.MakeNotification) == "function" then
+      pcall(library.MakeNotification, library, { Name = "Shoot Murder", Content = content, Time = 4 })
+    end
+  end
+  function ShootMurder:RefreshRoleData(force)
+    local now = os.clock()
+    if not force and now < self.NextRoleRefreshAt then
+      return self.RoleData
+    end
+    self.NextRoleRefreshAt = now + ROLE_REFRESH_INTERVAL
+    local ok, roleData = pcall(MatchService.GetPlayerData, MatchService)
+    if ok and type(roleData) == "table" and next(roleData) ~= nil then
+      self.RoleData = roleData
+      self.RoleDataAt = now
+    elseif not self.RoleData or now - self.RoleDataAt > 2 then
+      self.RoleData = nil
+      self.RoleDataAt = 0
+    end
     return self.RoleData
   end
   function ShootMurder:HasSheriffRole()
     local profile = self.RoleData and self.RoleData[Player.Name]
     return type(profile) == "table" and (profile.Role == "Sheriff" or profile.Role == "Hero") and profile.Dead ~= true and profile.Killed ~= true
+  end
+  function ShootMurder:IsLocalMurderer()
+    local profile = self.RoleData and self.RoleData[Player.Name]
+    return type(profile) == "table" and profile.Role == "Murderer"
   end
   function ShootMurder:WarnRoleRequired()
     local now = os.clock()
@@ -171,11 +218,180 @@ function Shooting.create(deps)
     end
     return hitPosition + direction.Unit * radius
   end
-  function ShootMurder:TryShoot(automatic)
-    if self.Destroyed or Runtime.ShuttingDown then
-      return false
+  function ShootMurder:CancelTweens()
+    for _, tween in ipairs(self.Tweens) do
+      pcall(function() tween:Cancel() end)
     end
-    self:RefreshRoleData()
+    table.clear(self.Tweens)
+  end
+  function ShootMurder:TweenHud(properties, duration)
+    local button = self.Button
+    local stroke = self.Stroke
+    if not button or not stroke then
+      return
+    end
+    self:CancelTweens()
+    local info = TweenInfo.new(duration or FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    for instance, goals in pairs({ [button] = properties.Button or {}, [stroke] = properties.Stroke or {} }) do
+      local tween = TweenService:Create(instance, info, goals)
+      table.insert(self.Tweens, tween)
+      tween:Play()
+    end
+  end
+  function ShootMurder:EnsureHud()
+    if self.ScreenGui and self.ScreenGui.Parent then
+      return
+    end
+    local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+      return
+    end
+    local oldGui = playerGui:FindFirstChild(GUI_NAME)
+    if oldGui then
+      oldGui:Destroy()
+    end
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = GUI_NAME
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.DisplayOrder = 100
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    local button = Instance.new("TextButton")
+    button.Name = "ShootMurderButton"
+    button.AnchorPoint = Vector2.new(1, 1)
+    button.Position = UDim2.new(1, -80, 1, -170)
+    button.Size = UDim2.fromOffset(65, 65)
+    button.BackgroundColor3 = Color3.fromRGB(70, 170, 100)
+    button.BackgroundTransparency = 1
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = true
+    button.Font = Enum.Font.GothamBold
+    button.Text = "🔫"
+    button.TextSize = 30
+    button.TextTransparency = 1
+    button.Parent = screenGui
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 15)
+    corner.Parent = button
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(105, 220, 140)
+    stroke.Thickness = 1.5
+    stroke.Transparency = 1
+    stroke.Parent = button
+    screenGui.Parent = playerGui
+    self.ScreenGui = screenGui
+    self.Button = button
+    self.Stroke = stroke
+    button.Active = true
+    Runtime:Track(button.InputBegan:Connect(function(input)
+      if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+      end
+      self.Dragging = true
+      self.DragMoved = false
+      self.DragStart = input.Position
+      self.StartPosition = button.Position
+      Runtime:Track(input.Changed:Connect(function()
+        if input.UserInputState == Enum.UserInputState.End then
+          self.Dragging = false
+        end
+      end))
+    end))
+    Runtime:Track(button.InputChanged:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        self.DragInput = input
+      end
+    end))
+    Runtime:Track(Services.UserInputService.InputChanged:Connect(function(input)
+      if not self.Dragging or input ~= self.DragInput or not self.DragStart or not self.StartPosition then
+        return
+      end
+      local delta = input.Position - self.DragStart
+      if math.abs(delta.X) + math.abs(delta.Y) > 6 then
+        self.DragMoved = true
+      end
+      button.Position =
+        UDim2.new(self.StartPosition.X.Scale, self.StartPosition.X.Offset + delta.X, self.StartPosition.Y.Scale, self.StartPosition.Y.Offset + delta.Y)
+    end))
+    Runtime:Track(button.Activated:Connect(function()
+      if not self.DragMoved and self.HudVisible and self.ManualEnabled then
+        self:TryShoot()
+      end
+    end))
+  end
+  function ShootMurder:SetHudVisible(visible)
+    if visible then
+      self:EnsureHud()
+      if not self.ScreenGui or not self.Button then
+        return
+      end
+      if self.HudVisible then
+        return
+      end
+      self.HudGeneration += 1
+      self.ScreenGui.Enabled = true
+      self.HudVisible = true
+      self:TweenHud({
+        Button = {
+          BackgroundTransparency = self.HudInvisible and 1 or 0.04,
+          TextTransparency = self.HudInvisible and 1 or 0,
+        },
+        Stroke = { Transparency = self.HudInvisible and 1 or 0.35 },
+      })
+      return
+    end
+    if not self.HudVisible then
+      return
+    end
+    self.HudVisible = false
+    self.HudGeneration += 1
+    self.EffectGeneration += 1
+    local generation = self.HudGeneration
+    self:TweenHud({
+      Button = { BackgroundTransparency = 1, TextTransparency = 1 },
+      Stroke = { Transparency = 1 },
+    })
+    task.delay(FADE_TIME, function()
+      if not self.Destroyed and generation == self.HudGeneration and self.ScreenGui then
+        self.ScreenGui.Enabled = false
+      end
+    end)
+  end
+  function ShootMurder:ShowShotEffect()
+    if not self.HudVisible or self.HudInvisible or not self.Button then
+      return
+    end
+    self.EffectGeneration += 1
+    local generation = self.EffectGeneration
+    self.Button.Text = "💥"
+    self.Button.TextTransparency = 1
+    self:TweenHud({ Button = { BackgroundTransparency = 0.04, TextTransparency = 0 }, Stroke = { Transparency = 0.35 } }, 0.07)
+    task.delay(EFFECT_TIME, function()
+      if self.Destroyed or generation ~= self.EffectGeneration or not self.HudVisible or not self.Button then
+        return
+      end
+      self.Button.TextTransparency = 1
+      self.Button.Text = "🔫"
+      self:TweenHud({ Button = { BackgroundTransparency = 0.04, TextTransparency = 0 }, Stroke = { Transparency = 0.35 } }, 0.08)
+    end)
+  end
+  function ShootMurder:SetHudInvisible(invisible)
+    self.HudInvisible = invisible == true
+    if not self.HudVisible or not self.Button then
+      return
+    end
+    self:TweenHud({
+      Button = {
+        BackgroundTransparency = self.HudInvisible and 1 or 0.04,
+        TextTransparency = self.HudInvisible and 1 or 0,
+      },
+      Stroke = { Transparency = self.HudInvisible and 1 or 0.35 },
+    })
+  end
+  function ShootMurder:TryShoot(automatic)
+    if not automatic then
+      self:RefreshRoleData(true)
+    end
     if not self:HasSheriffRole() then
       if not automatic then
         self:WarnRoleRequired()
@@ -211,14 +427,45 @@ function Shooting.create(deps)
     if not ok then
       return false
     end
+    self:ShowShotEffect()
     return true
   end
   function ShootMurder:Update()
-    if self.AutoEnabled and not self.Destroyed and not Runtime.ShuttingDown then
+    if self.Destroyed then
+      return
+    end
+    if not self.ManualEnabled and not self.AutoEnabled then
+      self.RoleData = nil
+      self.RoleDataAt = 0
+      self.NextRoleRefreshAt = 0
+      self:SetHudVisible(false)
+      return
+    end
+    local inRound = MatchService:GetRoundContext()
+    if not inRound then
+      self.RoleData = nil
+      self.RoleDataAt = 0
+      self.NextRoleRefreshAt = 0
+      self:SetHudVisible(false)
+      return
+    end
+    self:RefreshRoleData(false)
+    local localCharacter = self:GetLocalContext()
+    local canShoot = localCharacter ~= nil and self:HasSheriffRole()
+    self:SetHudVisible(self.ManualEnabled and not self:IsLocalMurderer())
+    if self.AutoEnabled and canShoot then
       self:TryShoot(true)
     end
   end
-  function ShootMurder:SetManualEnabled(value) self.ManualEnabled = value == true end
+  function ShootMurder:SetManualEnabled(enabled)
+    self.ManualEnabled = enabled == true
+    if not self.ManualEnabled then
+      self:SetHudVisible(false)
+      return
+    end
+    self:RefreshRoleData(true)
+    self:SetHudVisible(MatchService:GetRoundContext() ~= nil and not self:IsLocalMurderer())
+  end
   function ShootMurder:SetAutoEnabled(enabled) self.AutoEnabled = enabled == true end
   function ShootMurder:SetWaitForKnife(enabled) self.WaitForKnife = enabled == true end
   function ShootMurder:SetManualAccuracy(value) self.ManualAccuracy = math.clamp(tonumber(value) or 100, 0, 100) end
@@ -230,7 +477,13 @@ function Shooting.create(deps)
     self.Destroyed = true
     self.ManualEnabled = false
     self.AutoEnabled = false
-    self.RoleData = nil
+    self:CancelTweens()
+    if self.ScreenGui then
+      self.ScreenGui:Destroy()
+    end
+    self.ScreenGui = nil
+    self.Button = nil
+    self.Stroke = nil
   end
   Runtime:Track(Services.RunService.Heartbeat:Connect(function()
     if ShootMurder.Destroyed then
@@ -246,5 +499,5 @@ function Shooting.create(deps)
 end
 
 -- contract
-Shooting.__contract = { provides = { "setup", "create" }, requires = {} }
-return Shooting
+Factory.__contract = { provides = { "setup", "create" }, requires = {} }
+return Factory

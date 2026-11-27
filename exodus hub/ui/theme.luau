@@ -48,6 +48,7 @@ local CONFIG = {
   TITLE_H = 50,
   PAD = 14,
   GAP = 12,
+  SINGLE_COLUMN_W = 300,
   CARD_GAP = 8,
   CARD_H = 48,
   RATE_CARD_H = 64,

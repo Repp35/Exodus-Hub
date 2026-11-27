@@ -98,6 +98,11 @@ function Pages.create(kit, parent, definitions, context)
   local motion = kit.createMotion(lifetime)
   local bleed = T.CONTROL_BLEED
   local refreshDisclosure
+  local function columnLayout(definition, count)
+    count = math.max(1, count)
+    local available = math.min(width, count == 1 and T.SINGLE_COLUMN_W or definition.width or width)
+    return (available - T.GAP * (count - 1)) / count, (width - available) / 2
+  end
   local function list(parent, gap)
     return inst(
       "UIListLayout",
@@ -136,13 +141,12 @@ function Pages.create(kit, parent, definitions, context)
     if not definition.utility then
       normal[#normal + 1] = definition.id
     end
-    local pageWidth = definition.width or width
-    local columnWidth = (pageWidth - T.GAP * (definition.columns - 1)) / definition.columns
+    local columnWidth, left = columnLayout(definition, definition.columns)
     for column = 1, definition.columns do
       local scroll = inst("ScrollingFrame", {
         Name = "Column" .. column,
         Size = UDim2.fromOffset(columnWidth, height),
-        Position = UDim2.fromOffset((width - pageWidth) / 2 + (column - 1) * (columnWidth + T.GAP), 0),
+        Position = UDim2.fromOffset(left + (column - 1) * (columnWidth + T.GAP), 0),
         BackgroundTransparency = 1,
         CanvasSize = UDim2.new(),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -474,18 +478,16 @@ function Pages.create(kit, parent, definitions, context)
         end
       end
       local nextColumn, count = 0, 0
-      local pageWidth = page.definition.width or width
-      local columnWidth = (pageWidth - T.GAP * (page.definition.columns - 1)) / page.definition.columns
       for _, column in ipairs(page.columns) do
         if occupied[column] then
           count += 1
         end
       end
-      local contentWidth = count * columnWidth + math.max(0, count - 1) * T.GAP
-      local left = (width - contentWidth) / 2
+      local columnWidth, left = columnLayout(page.definition, count)
       for _, column in ipairs(page.columns) do
         column.Visible = occupied[column] == true
         if column.Visible then
+          column.Size = UDim2.fromOffset(columnWidth, height)
           column.Position = UDim2.fromOffset(left + nextColumn * (columnWidth + T.GAP), 0)
           nextColumn += 1
         end

@@ -2,15 +2,15 @@
 --!optimize 2
 
 -- module
-local MapTools = {}
-function MapTools.setup() return true end
+local Factory = {}
+function Factory.setup() return true end
 
 -- implementation
-function MapTools.create(deps)
-  local Player = deps.player
-  local Services = deps.services
-  local Runtime = deps.runtime
-  local MatchService = deps.match
+function Factory.create(API)
+  local Player = API.Player
+  local Services = API.Roblox
+  local Runtime = API.Runtime
+  local MatchService = API.Services.Match
   local MapTools = {
     FavoriteMaps = {},
     MoveGeneration = 0,
@@ -23,9 +23,15 @@ function MapTools.create(deps)
     LastAutoGun = nil,
   }
 
-  local function notify(content) deps.notify("Map", content) end
+  local function notify(content)
+    local window = API.UI and API.UI.Window
+    local library = window and window.OrionLib
+    if library and type(library.MakeNotification) == "function" then
+      pcall(library.MakeNotification, library, { Name = "Map", Content = content, Time = 4 })
+    end
+  end
   local function allowAntiFlingTeleport()
-    local antiFling = deps.antifling
+    local antiFling = API.Features.AntiFling
     if antiFling and type(antiFling.AllowTeleport) == "function" then
       antiFling:AllowTeleport(0.35)
     end
@@ -526,5 +532,5 @@ function MapTools.create(deps)
 end
 
 -- contract
-MapTools.__contract = { provides = { "setup", "create" }, requires = {} }
-return MapTools
+Factory.__contract = { provides = { "setup", "create" }, requires = {} }
+return Factory

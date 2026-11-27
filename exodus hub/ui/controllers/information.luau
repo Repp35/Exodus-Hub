@@ -11,7 +11,7 @@ function Controller.create(context)
     DisplayOrder = context.theme.DISPLAY_ORDER,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
-    ZIndexBehavior = Enum.ZIndexBehavior.Global,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = context.playerGui,
   })
   context.scope.add(context.deps.Runtime.mountLayer(gui, context.playerGui, context.theme.SCREEN_LAYERS.information))

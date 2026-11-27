@@ -19,7 +19,7 @@ GameUI.definition = {
     {
       id = "mm2-farm",
       title = "Auto Farm",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "Coin Collection",
@@ -42,32 +42,28 @@ GameUI.definition = {
     {
       id = "mm2-combat",
       title = "Combat",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "Shoot Murder",
           column = 1,
           components = {
             { kind = "toggle", key = "MM2ManualShoot", title = "Manual Shoot Murder" },
-            { kind = "slider", key = "MM2MiniScale", title = "Size", min = 0.5, max = 2, step = 0.05, parentKey = "MM2ManualShoot" },
-            { kind = "toggle", key = "MM2MiniSquare", title = "Rounded Square", parentKey = "MM2ManualShoot" },
             { kind = "toggle", key = "MM2InvisibleShoot", title = "Invisible Button", parentKey = "MM2ManualShoot" },
-            { kind = "slider", key = "MM2ManualAccuracy", title = "Accuracy", min = 0, max = 100, step = 1, parentKey = "MM2ManualShoot" },
-            { kind = "button", title = "Shoot Murder", action = "mm2Shoot", parentKey = "MM2ManualShoot" },
+            { kind = "slider", key = "MM2ManualAccuracy", title = "Accuracy", min = 0, max = 100, step = 5, parentKey = "MM2ManualShoot" },
             { kind = "toggle", key = "MM2AutoShoot", title = "Auto Shoot Murder" },
-            { kind = "slider", key = "MM2AutoAccuracy", title = "Accuracy", min = 0, max = 100, step = 1, parentKey = "MM2AutoShoot" },
+            { kind = "slider", key = "MM2AutoAccuracy", title = "Accuracy", min = 0, max = 100, step = 5, parentKey = "MM2AutoShoot" },
             {
               kind = "toggle",
               key = "MM2LegitSheriff",
               title = "Wait for Knife",
               description = "Também se aplica aos disparos manuais.",
-              parentKey = "MM2AutoShoot",
             },
           },
         },
         {
           title = "Murderer Combat",
-          column = 2,
+          column = 1,
           components = {
             { kind = "toggle", key = "MM2AutoStab", title = "Auto Stab" },
             {
@@ -102,7 +98,7 @@ GameUI.definition = {
         },
         {
           title = "Gun Pickup",
-          column = 2,
+          column = 1,
           components = {
             { kind = "toggle", key = "MM2AutoPickup", title = "Auto Pick Gun" },
             { kind = "toggle", key = "MM2PickupSafety", title = "Murderer Safety", parentKey = "MM2AutoPickup" },
@@ -113,7 +109,7 @@ GameUI.definition = {
     {
       id = "mm2-map",
       title = "Map",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "Teleport",
@@ -132,7 +128,7 @@ GameUI.definition = {
         },
         {
           title = "Map Voting",
-          column = 2,
+          column = 1,
           components = { { kind = "dropdown", key = "MM2FavoriteMap", title = "Favorite Map", options = { "None" }, choiceSource = "mm2Maps" } },
         },
       },
@@ -140,7 +136,7 @@ GameUI.definition = {
     {
       id = "mm2-visuals",
       title = "Visuals",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "ESP",
@@ -163,7 +159,7 @@ GameUI.definition = {
     {
       id = "mm2-alerts",
       title = "Alerts",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "Round Alerts",
@@ -177,19 +173,6 @@ GameUI.definition = {
     },
   },
   miniPanels = {
-    {
-      name = "ExodusShootMurder",
-      title = "Shoot Murder",
-      text = "SHOOT",
-      visibleKey = "MM2ManualShoot",
-      invisibleKey = "MM2InvisibleShoot",
-      xKey = "MM2ShootX",
-      yKey = "MM2ShootY",
-      scaleKey = "MM2MiniScale",
-      squareKey = "MM2MiniSquare",
-      action = "onMM2Shoot",
-    },
-
     {
       name = "ExodusThrowKnife",
       title = "Throw Knife",

@@ -82,18 +82,26 @@ function Bridge.create(modules)
   }) do
     services[name] = game:GetService(name)
   end
-  local deps = {
-    player = modules.utils.getLocalPlayer(),
-    services = services,
-    runtime = runtime,
-    noclip = {
-      Acquire = function(_, source) return modules.noclip.acquire(source) end,
-      Release = function(_, source) return modules.noclip.release(source) end,
-    },
-    antifling = { AllowTeleport = function(_, duration) modules.antifling.allowTeleport(duration) end },
-    notify = function(title, content) modules.ui.notifyCorner(title, content, { duration = 5 }) end,
+  local api = {
+    Player = modules.utils.getLocalPlayer(),
+    Roblox = services,
+    Runtime = runtime,
+    Config = { MapRefreshInterval = 1 },
+    Services = {},
+    Features = {},
+    UI = {},
   }
-  deps.throwKnife = function(knife, data, character)
+  api.Features.Noclip = {
+    Acquire = function(_, source) return modules.noclip.acquire(source) end,
+    Release = function(_, source) return modules.noclip.release(source) end,
+  }
+  api.Features.AntiFling = { AllowTeleport = function(_, duration) modules.antifling.allowTeleport(duration) end }
+  api.UI.Window = {
+    OrionLib = {
+      MakeNotification = function(_, options) return modules.ui.notifyCorner(options.Name or "MM2", options.Content or "", { duration = options.Time or 5 }) end,
+    },
+  }
+  api.ThrowKnife = function(knife, data, character)
     if runtime.ShuttingDown or modules.mm2native.busy() or not modules.utils.isActive() then
       return false
     end
@@ -118,18 +126,32 @@ function Bridge.create(modules)
   -- construction
   local features = {}
   local ok, reason = xpcall(function()
-    deps.util = factories.Util.create(deps)
-    deps.coin = factories.Coin.create(deps)
-    deps.match = factories.Match.create(deps)
-    deps.map = factories.Map.create(deps)
-    deps.camera = factories.Camera.create(deps)
-    features.ESP = factories.ESP.create(deps)
-    features.AutoFarm = factories.Farm.create(deps)
-    features.AutoGunPickup = factories.Pickup.create(deps)
-    features.MurderCombat = factories.Combat.create(deps)
-    features.ShootMurder = factories.Shoot.create(deps)
-    features.MapTools = factories.Tools.create(deps)
-    features.Alerts = factories.Alerts.create(deps)
+    api.Util = factories.Util.create(api)
+    api.Services.Coin = factories.Coin.create(api)
+    api.Services.Map = factories.Map.create(api)
+    api.Services.Match = factories.Match.create(api)
+    api.Features.Invisicam = factories.Camera.create(api)
+    features.ESP = factories.ESP.create(api)
+    features.AutoFarm = factories.Farm.create(api)
+    features.AutoGunPickup = factories.Pickup.create(api)
+    features.MurderCombat = factories.Combat.create(api)
+    features.ShootMurder = factories.Shoot.create(api)
+    features.MapTools = factories.Tools.create(api)
+    features.Alerts = factories.Alerts.create(api)
+    for name, feature in pairs(features) do
+      api.Features[name] = feature
+    end
+    local toggle = { Value = modules.utils.getConfigValue("MM2ESP") == true }
+    function toggle:Set(value)
+      self.Value = value == true
+      modules.utils.setConfig({ MM2ESP = self.Value })
+    end
+    api.UI.Registries = { Visuals = { ByFlag = { ESPEnabled = { Control = toggle } } } }
+    owner.add(modules.utils.observeConfig(function(changes)
+      if changes.MM2ESP ~= nil then
+        toggle.Value = changes.MM2ESP == true
+      end
+    end))
 
     -- settings
     local function get(key) return modules.utils.getConfigValue(key) end
@@ -153,6 +175,7 @@ function Bridge.create(modules)
       MM2ResetFull = function(value) features.AutoFarm:SetResetWhenBagFull(value) end,
       MM2AutoPickup = function(value) enabled(features.AutoGunPickup, value) end,
       MM2PickupSafety = function(value) features.AutoGunPickup:SetSafetyEnabled(value) end,
+      MM2InvisibleShoot = function(value) features.ShootMurder:SetHudInvisible(value) end,
       MM2ManualShoot = function(value) features.ShootMurder:SetManualEnabled(value) end,
       MM2AutoShoot = function(value) features.ShootMurder:SetAutoEnabled(value) end,
       MM2ManualAccuracy = function(value) features.ShootMurder:SetManualAccuracy(value) end,

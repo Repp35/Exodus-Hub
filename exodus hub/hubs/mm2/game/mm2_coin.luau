@@ -2,14 +2,16 @@
 --!optimize 2
 
 -- module
-local Coins = {}
-function Coins.setup() return true end
+local Factory = {}
+function Factory.setup() return true end
 
 -- implementation
-function Coins.create(deps)
+function Factory.create(API)
 
+  -- services
   local CoinService = {}
 
+  -- cointypes
   function CoinService:NormalizeKind(value)
     if type(value) ~= "string" then
       return nil
@@ -34,6 +36,7 @@ function Coins.create(deps)
     return part:FindFirstChild("CoinVisual") and "coin" or nil
   end
 
+  -- eligibility
   function CoinService:IsCollectable(part, container)
     if not part or not part:IsA("BasePart") or not part.Parent or not container then
       return false
@@ -65,6 +68,7 @@ function Coins.create(deps)
     return true
   end
 
+  -- enumeration
   function CoinService:GetCollectableParts(container)
     local parts = {}
     if not container then
@@ -81,5 +85,5 @@ function Coins.create(deps)
 end
 
 -- contract
-Coins.__contract = { provides = { "setup", "create" }, requires = {} }
-return Coins
+Factory.__contract = { provides = { "setup", "create" }, requires = {} }
+return Factory

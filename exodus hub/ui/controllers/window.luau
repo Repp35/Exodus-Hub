@@ -123,8 +123,8 @@ function Controller.create(context)
         twPlay(context.refs.floatingButton, "control", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) })
       if UIState.panelTween then
         local conn
-        conn = trackConn(UIState.panelTween.Completed:Connect(function()
-          if not UIState.panelOpen then
+        conn = trackConn(UIState.panelTween.Completed:Connect(function(status)
+          if status == Enum.PlaybackState.Completed and not UIState.panelOpen then
             context.refs.configPanel.Visible = false
             context.refs.configPanel.Size = UDim2.new(0, PW, 0, PH)
             context.refs.configPanel.GroupTransparency = 0

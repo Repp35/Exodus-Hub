@@ -33,11 +33,32 @@ local __part_uinotificationview = (function()
   function Controller.setup() return true end
   function Controller.create(context)
     local Utils, UIState = context.deps.Utils, context.state
+    local scope = context.scope.child()
     local Appearance, Policy = context.deps.Appearance, context.deps.NotificationPolicy
-    local state = { order = {}, tweens = {} }
+    local state = { order = {}, tweens = {}, timers = {} }
     local layerMount
+    local disposed = false
+    scope.add(function()
+      disposed = true
+      for _, tween in pairs(state.tweens) do
+        context.safeCancel(tween)
+      end
+      for _, timer in pairs(state.timers) do
+        pcall(task.cancel, timer)
+      end
+      if state.gui then
+        state.gui:Destroy()
+      end
+      state.gui, state.layer = nil, nil
+      table.clear(state.order)
+      table.clear(state.tweens)
+      table.clear(state.timers)
+    end)
     local function key(value) return tostring(value or "general"):gsub("[^%w_%-]", "_") end
     local function layer()
+      if disposed or not scope.alive then
+        return nil
+      end
       local player = context.services.Players.LocalPlayer
       local parent = player and player:FindFirstChildOfClass("PlayerGui")
       if not parent then
@@ -52,12 +73,12 @@ local __part_uinotificationview = (function()
           DisplayOrder = context.theme.DISPLAY_ORDER,
           ResetOnSpawn = false,
           IgnoreGuiInset = true,
-          ZIndexBehavior = Enum.ZIndexBehavior.Global,
+          ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
         }, parent)
       if layerMount then
-        context.scope.remove(layerMount)
+        scope.remove(layerMount)
       end
-      layerMount = context.scope.add(context.deps.Runtime.mountLayer(state.gui, parent, context.theme.SCREEN_LAYERS.notifications))
+      layerMount = scope.add(context.deps.Runtime.mountLayer(state.gui, parent, context.theme.SCREEN_LAYERS.notifications))
       state.layer = state.gui:FindFirstChild("NotificationLayer")
         or context.inst("Frame", {
           Name = "NotificationLayer",
@@ -65,7 +86,12 @@ local __part_uinotificationview = (function()
           BackgroundTransparency = 1,
           ZIndex = 100,
         }, state.gui)
+      state.gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
       for _, card in ipairs(state.layer:GetChildren()) do
+        if card.Name == "CornerNotifications" or card:GetAttribute("ExodusNotificationKey") and not card:FindFirstChild("Accent") then
+          card:Destroy()
+          continue
+        end
         local id = card:GetAttribute("ExodusNotificationKey")
         if id and not table.find(state.order, id) then
           state.order[#state.order + 1] = id
@@ -92,6 +118,10 @@ local __part_uinotificationview = (function()
     end
     local function clear(id)
       id = key(id)
+      if state.timers[id] then
+        pcall(task.cancel, state.timers[id])
+        state.timers[id] = nil
+      end
       if not layer() then
         return
       end
@@ -113,7 +143,7 @@ local __part_uinotificationview = (function()
       })
       local tween = state.tweens[id]
       local function finish()
-        if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
+        if not disposed and card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
           card:Destroy()
           state.tweens[id] = nil
           reflow(true)
@@ -121,8 +151,8 @@ local __part_uinotificationview = (function()
       end
       if tween then
         local connection
-        connection = context.scope.connect(tween.Completed, function(status)
-          context.scope.remove(connection)
+        connection = scope.connect(tween.Completed, function(status)
+          scope.remove(connection)
           if status == Enum.PlaybackState.Completed then
             finish()
           end
@@ -139,7 +169,7 @@ local __part_uinotificationview = (function()
       end
       id = key(id)
       local card = parent:FindFirstChild("Notification_" .. id)
-      if card and not card:FindFirstChild("Content") then
+      if card and (not card:FindFirstChild("Content") or not card:FindFirstChild("Accent")) then
         card:Destroy()
         card = nil
       end
@@ -156,9 +186,14 @@ local __part_uinotificationview = (function()
         state.order[#state.order + 1] = id
       end
       reflow(true)
+      if state.timers[id] then
+        pcall(task.cancel, state.timers[id])
+        state.timers[id] = nil
+      end
       if duration and duration > 0 then
-        task.delay(duration, function()
-          if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
+        state.timers[id] = task.delay(duration, function()
+          state.timers[id] = nil
+          if not disposed and card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
             clear(id)
           end
         end)
@@ -186,7 +221,7 @@ local __part_uinotificationview = (function()
     end
     layer()
     if state.layer then
-      context.scope.connect(state.layer:GetPropertyChangedSignal("AbsoluteSize"), function()
+      scope.connect(state.layer:GetPropertyChangedSignal("AbsoluteSize"), function()
         for _, id in ipairs(state.order) do
           local card = state.layer:FindFirstChild("Notification_" .. id)
           local message = card and card:GetAttribute("ExodusNotificationMessage")
@@ -197,7 +232,7 @@ local __part_uinotificationview = (function()
         reflow(false)
       end)
     end
-    return { toast = toast, persistent = persistent, clear = clear, layer = layer, state = state }
+    return { toast = toast, persistent = persistent, clear = clear, layer = layer, state = state, destroy = scope.destroy }
   end
   Controller.__contract = { provides = { "setup", "create" }, requires = {} }
   return Controller

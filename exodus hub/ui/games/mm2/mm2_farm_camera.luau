@@ -2,14 +2,14 @@
 --!optimize 2
 
 -- module
-local Camera = {}
-function Camera.setup() return true end
+local Factory = {}
+function Factory.setup() return true end
 
 -- implementation
-function Camera.create(deps)
-  local Services = deps.services
-  local Player = deps.player
-  local Runtime = deps.runtime
+function Factory.create(API)
+  local Services = API.Roblox
+  local Player = API.Player
+  local Runtime = API.Runtime
   local Workspace = Services.Workspace
   local CameraAssist = {
     Enabled = false,
@@ -29,6 +29,7 @@ function Camera.create(deps)
 
   local OCCLUSION_MODE = Enum.DevCameraOcclusionMode.Invisicam
 
+  -- diagnostics
   function CameraAssist:_Warn(message)
     local now = os.clock()
     if now - self.LastWarningAt < 5 then
@@ -38,6 +39,7 @@ function Camera.create(deps)
     warn("[Exodus MM2] Invisicam: " .. message)
   end
 
+  -- visibility
   function CameraAssist:_FadeOccluder(part)
     if self.OcclusionModeManaged or not part:IsA("BasePart") then
       return
@@ -198,6 +200,7 @@ function Camera.create(deps)
     end
   end
 
+  -- lifecycle
   function CameraAssist:_HasActiveSource()
     for _, active in pairs(self.Sources) do
       if active then
@@ -281,5 +284,5 @@ function Camera.create(deps)
 end
 
 -- contract
-Camera.__contract = { provides = { "setup", "create" }, requires = {} }
-return Camera
+Factory.__contract = { provides = { "setup", "create" }, requires = {} }
+return Factory
