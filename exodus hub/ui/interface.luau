@@ -163,6 +163,9 @@ function ExodusUI.setup(deps, preview)
       rebuild()
     end
   end))
+  if not context.window.present() then
+    return false, "UI initialization canceled"
+  end
   if preview and preview.open then
     context.window.toggle()
   end

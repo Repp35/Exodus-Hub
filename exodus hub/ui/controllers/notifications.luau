@@ -111,13 +111,26 @@ local __part_uinotificationview = (function()
         GroupTransparency = 1,
         Position = UDim2.new(0.5, 0, 1, card.Position.Y.Offset + 14),
       })
-      task.delay(0.35, function()
+      local tween = state.tweens[id]
+      local function finish()
         if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
           card:Destroy()
           state.tweens[id] = nil
           reflow(true)
         end
-      end)
+      end
+      if tween then
+        local connection
+        connection = context.scope.connect(tween.Completed, function(status)
+          context.scope.remove(connection)
+          if status == Enum.PlaybackState.Completed then
+            finish()
+          end
+        end)
+      else
+        finish()
+      end
+      return tween
     end
     local function show(message, id, kind, duration)
       local parent = layer()

@@ -283,9 +283,9 @@ end
 local function clearPersistent(key)
   local clear = _G.ExodusClearPersistentNotification
   if type(clear) == "function" then
-    local ok = pcall(clear, key)
+    local ok, tween = pcall(clear, key)
     if ok then
-      return
+      return tween
     end
   end
   local player = game:GetService("Players").LocalPlayer
@@ -297,12 +297,14 @@ local function clearPersistent(key)
   if card then
     local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
     card:SetAttribute("ExodusNotificationGeneration", generation)
-    game:GetService("TweenService"):Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 }):Play()
-    task.delay(0.3, function()
-      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
+    local tween = game:GetService("TweenService"):Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 })
+    tween:Play()
+    tween.Completed:Once(function(status)
+      if status == Enum.PlaybackState.Completed and card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
         card:Destroy()
       end
     end)
+    return tween
   end
 end
 local function notifyCritical(moduleName)
@@ -1183,6 +1185,10 @@ local function startInternal()
   local utils = loaded.utils
   Exodus.Runtime = runtime
   Exodus.Hub = table.clone(selectedHub)
+  local loadingExit = clearPersistent("loading")
+  if loadingExit then
+    loadingExit.Completed:Wait()
+  end
   notifyPersistent(
     selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."),
     "hub_loaded",
@@ -1230,7 +1236,7 @@ function Loader.start()
   if not ready then
     return false, "Loader", reason
   end
-  pcall(notifyPersistent, "Exodus · Loading...", "loading", "info", 0)
+  pcall(notifyPersistent, "Exodus · Carregando…", "loading", "info", 0)
   startLock = true
   startupPerformed = false
   _G.ExodusLoaderStartToken = startToken
@@ -1238,7 +1244,9 @@ function Loader.start()
   _G.Exodus = Exodus
   _G.ExodusModules = Modules
   local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
-  pcall(clearPersistent, "loading")
+  if not ok or started ~= true then
+    pcall(clearPersistent, "loading")
+  end
   startLock = false
   if _G.ExodusLoaderStartToken == startToken then
     _G.ExodusLoaderStartToken = nil

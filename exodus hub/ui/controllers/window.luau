@@ -91,6 +91,7 @@ function Controller.create(context)
   local function togglePanel()
     if
       UIState.closing
+      or UIState.initializing
       or not context.refs.configPanel
       or not context.refs.configPanel.Parent
       or not context.refs.floatingButton
@@ -140,6 +141,8 @@ function Controller.create(context)
   end
   context.refs.floatingButton = inst("TextButton", {
     Name = "ExodusFloatingButton",
+    Visible = false,
+    AutoLocalize = false,
     Size = UDim2.fromOffset(BTN_SIZE * 0.7, BTN_SIZE * 0.7),
     Position = btnPos(),
     BackgroundColor3 = C.header,
@@ -161,12 +164,6 @@ function Controller.create(context)
       :GetPropertyChangedSignal("BackgroundTransparency")
       :Connect(function() context.refs.floatingButtonStroke.Transparency = context.refs.floatingButton.BackgroundTransparency end)
   )
-  task.defer(function()
-    if not context.refs.floatingButton or not context.refs.floatingButton.Parent then
-      return
-    end
-    twPlay(context.refs.floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) })
-  end)
   UIState.btnIsDragging = makeDraggable(context.refs.floatingButton, context.refs.floatingButton, function()
     context.setConfigValue("BtnX", context.refs.floatingButton.Position.X.Offset)
     context.setConfigValue("BtnY", context.refs.floatingButton.Position.Y.Offset)
@@ -392,8 +389,10 @@ function Controller.create(context)
       :GetPropertyChangedSignal("TextTransparency")
       :Connect(function() floatingIcon.ImageTransparency = context.refs.floatingButton.TextTransparency end)
   )
+  local iconPending = false
   local function setIcon(image)
     iconGeneration += 1
+    iconPending = type(image) == "string" and image ~= ""
     local generation = iconGeneration
     local function apply(value)
       floatingIcon.Image, floatingIcon.Visible = value or "", value ~= nil
@@ -402,7 +401,7 @@ function Controller.create(context)
       header.setIcon(value)
     end
     apply(nil)
-    if not image then
+    if not iconPending then
       return
     end
     floatingIcon.Image, header.icon.Image = image, image
@@ -411,8 +410,12 @@ function Controller.create(context)
       if ready or failed or generation ~= iconGeneration or not context.scope.alive then
         return
       end
-      ready = true
+      ready, iconPending = true, false
       apply(image)
+      if UIState.initializing then
+        header.icon.ImageTransparency = 0
+        return
+      end
       floatingIcon.ImageTransparency, header.icon.ImageTransparency = 1, 1
       twPlay(floatingIcon, "control", { ImageTransparency = context.refs.floatingButton.TextTransparency })
       twPlay(header.icon, "control", { ImageTransparency = 0 })
@@ -421,7 +424,7 @@ function Controller.create(context)
       if failed or generation ~= iconGeneration or not context.scope.alive then
         return
       end
-      failed = true
+      failed, iconPending = true, false
       apply(nil)
       Utils.recordError("UI.Icon", "Image failed to load: " .. image)
       context.notifications.toast("Ícone: não foi possível carregar a imagem.", true)
@@ -451,7 +454,43 @@ function Controller.create(context)
       end
     end)
   end
-  return { toggle = togglePanel, updateNavigation = updateNavigation, setIcon = setIcon }
+  local function present()
+    local runService = game:GetService("RunService")
+    while iconPending and context.scope.alive do
+      runService.Heartbeat:Wait()
+    end
+    if not context.scope.alive then
+      return false
+    end
+    local button = context.refs.floatingButton
+    button.Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE)
+    button.Visible = true
+    runService.Heartbeat:Wait()
+    if not context.scope.alive then
+      return false
+    end
+    context.updateResponsiveScale()
+    local position = button.Position
+    button.Position = position + UDim2.fromOffset(0, 12)
+    button.Size = UDim2.fromOffset(BTN_SIZE * 0.7, BTN_SIZE * 0.7)
+    button.BackgroundTransparency, button.TextTransparency = 1, 1
+    context.refs.screenGui.Enabled = true
+    UIState.btnTween = twPlay(button, "panel", {
+      Position = position,
+      Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE),
+      BackgroundTransparency = 0.1,
+      TextTransparency = 0,
+    })
+    if UIState.btnTween then
+      UIState.btnTween.Completed:Wait()
+    end
+    if not context.scope.alive then
+      return false
+    end
+    UIState.initializing = false
+    return true
+  end
+  return { toggle = togglePanel, updateNavigation = updateNavigation, setIcon = setIcon, present = present }
 end
 
 -- contract

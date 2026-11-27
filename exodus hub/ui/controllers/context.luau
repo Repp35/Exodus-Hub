@@ -21,6 +21,7 @@ function Context.create(deps, deviceDesktop)
   local UIState = {
     connections = {},
     panelOpen = false,
+    initializing = true,
     spamOn = false,
     clashBallOn = false,
     btnIsDragging = function() return false end,
@@ -271,6 +272,7 @@ function Context.create(deps, deviceDesktop)
   context.playerGui = playerGui
   context.refs.screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
+    Enabled = false,
     DisplayOrder = CONFIG.DISPLAY_ORDER,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
