@@ -30,7 +30,7 @@ return {
   { name = "uiselection", path = "ui/components/basic.luau", hash = "d2f32e9ff8543a695e25342031e853e4d275381dad736972f2bd952f9780bb4a" },
   { name = "uidropdown", path = "ui/components/dropdown.luau", hash = "153b2e135364b28c6e98e5fa346f717cdce40945bd250f924d35fd8927910ac6" },
   { name = "uiinputs", path = "ui/components/inputs.luau", hash = "1f742d9362cc7eda8ea0d9a5c26f1ec89aa1eeded7ac27f433c0d1918d1ea4cf" },
-  { name = "uimini", path = "ui/components/mini.luau", hash = "d0bff937ebc00487fcb1209248eb47dae890a7a96c176b470e4fe782b62e4778" },
+  { name = "uimini", path = "ui/components/mini.luau", hash = "741002129e1b8d3a6b8b1120a04c153e1238f5dfa1572e2144bba808e728c1e2" },
   { name = "uinativeability", path = "ui/components/native_ability.luau", hash = "7da2014ca282d40ecffc16ba1b0f341b96cf06647ab7291ef38707c4ad902f05" },
   { name = "uicornernotification", path = "ui/components/notification.luau", hash = "8616b267d92b34b902d446e0b693c96288eb7e9c15af3232494eaf045063c8e3" },
   { name = "uiassists", path = "ui/controllers/assists.luau", hash = "5dd26df9d3d242909bacb64cfa66ce0c310db3ecbda1a9b3da2da93266538bea" },

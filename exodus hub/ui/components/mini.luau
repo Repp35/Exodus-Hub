@@ -200,7 +200,7 @@ function Mini.install(context)
         return
       end
       shape = value
-      motion.play(radius, "control", { CornerRadius = UDim.new(0, shape == "round" and 999 or 12) })
+      motion.play(radius, "control", { CornerRadius = shape == "round" and UDim.new(0.5, 0) or UDim.new(0.25, 0) })
     end
     function handle.setAppearance(scale, square)
       scale = math.clamp(tonumber(scale) or 1, 0.5, 2)
