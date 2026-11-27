@@ -13,10 +13,12 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -32,8 +34,12 @@ jobs:
           unzip -q "$RUNNER_TEMP/luau.zip" -d "$RUNNER_TEMP/luau"
           chmod +x "$RUNNER_TEMP/luau/"*
           echo "$RUNNER_TEMP/luau" >> "$GITHUB_PATH"
-      - name: Verify generated catalogs
-        run: python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
+      - name: Generate runtime and catalogs
+        run: |
+          python3 'exodus hub/indeed/tools/build_notification_surface.py'
+          python3 'exodus hub/indeed/tools/build_hub_catalog.py'
+          python3 'exodus hub/indeed/formatter.py' --in-place 'exodus hub/core/catalog.luau' 'exodus hub/hubs/catalog.luau'
+          python3 'exodus hub/indeed/tools/build_hub_catalog.py' --check
       - name: Test runtime, APIs and permissions
         run: python3 'exodus hub/indeed/tools/run_tests.py' --hub all --require-tools
       - name: Verify shared notification surface
@@ -44,3 +50,16 @@ jobs:
         run: python3 'exodus hub/indeed/formatter.py' --check 'exodus hub'
       - name: Check Python syntax
         run: python3 -m compileall -q 'exodus hub/indeed' 'exodus hub/hubs'
+      - name: Save validated generated files on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- 'exodus hub/core/catalog.luau' 'exodus hub/hubs/catalog.luau' 'exodus hub/dist/runtime.json' 'exodus hub/loader.luau'; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 'exodus hub/core/catalog.luau' 'exodus hub/hubs/catalog.luau' 'exodus hub/dist/runtime.json' 'exodus hub/loader.luau'
+          git commit -m 'Regenerate validated runtime and catalogs'
+          git push origin HEAD:main

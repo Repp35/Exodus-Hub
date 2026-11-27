@@ -232,6 +232,8 @@ function Runtime.createAPI(loaded)
     createVisualAdapter = loaded.nativevisuals.create,
     applyVisualPolicy = loaded.nativevisuals.apply,
     controls = {
+      setManualSpam = utils.setManualSpamActive,
+      isManualSpamActive = utils.isManualSpamActive,
       onAutoDarkChanged = loaded.autodark.sync,
       onAutoJumpChanged = loaded.autojump.sync,
       onUpDash = function()

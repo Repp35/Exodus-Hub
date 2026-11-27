@@ -36,6 +36,7 @@ local CONFIG = {
   RAW_CACHE_HEADERS = { ["Cache-Control"] = "no-cache, no-store" },
   RETRYABLE_HTTP_STATUS = { [408] = true, [425] = true, [429] = true },
   REGISTRY_PATH = "hubs/registry.luau",
+  ACCESS_PATH = "hubs/access.luau",
   CATALOG_PATH = "hubs/catalog.luau",
   MANIFEST_PATH = "core/catalog.luau",
   BUNDLE_PATH = "dist/runtime.json",
@@ -63,7 +64,7 @@ local function printStartup(message)
     print(message)
   end
 end
--- BEGIN GENERATED NOTIFICATION SURFACE
+-- generated-start
 local Appearance = (function()
   -- [[ shared surface appearance ]]
   --!optimize 2
@@ -209,104 +210,146 @@ local Appearance = (function()
   return Appearance
 
 end)()
--- END GENERATED NOTIFICATION SURFACE
-local function fallbackNotification(message, key, kind, duration)
-  local player = game:GetService("Players").LocalPlayer
-  local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-  if not playerGui then
-    return
+local Surface = (function()
+  -- [[ notification surface ]]
+  --!optimize 2
+
+  local Surface = {}
+  local Appearance
+  function Surface.setup(deps)
+    Appearance = deps.Appearance
+    return true
   end
-  local gui = playerGui:FindFirstChild("ExodusPersistentNotifications")
-  if not gui then
-    gui = Instance.new("ScreenGui")
-    gui.Name, gui.DisplayOrder = "ExodusPersistentNotifications", CONFIG.NOTIFICATIONS.DISPLAY_ORDER
-    gui.ResetOnSpawn, gui.IgnoreGuiInset = false, true
-    gui.ZIndexBehavior, gui.Parent = Enum.ZIndexBehavior.Global, playerGui
-  end
-  local layer = gui:FindFirstChild("NotificationLayer")
-  if not layer then
-    layer = Instance.new("Frame")
-    layer.Name, layer.Size, layer.BackgroundTransparency, layer.Parent = "NotificationLayer", UDim2.fromScale(1, 1), 1, gui
-  end
-  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_")
-  local card = layer:FindFirstChild("Notification_" .. safeKey)
-  if card and not card:FindFirstChild("Content") then
-    card:Destroy()
-    card = nil
-  end
-  if not card then
-    card = Appearance.notification(layer, "Notification_" .. safeKey)
-    card:SetAttribute("ExodusNotificationKey", safeKey)
-  end
-  local camera = workspace.CurrentCamera
-  Appearance.updateNotification(card, message, kind, camera and camera.ViewportSize or Vector2.new(1920, 1080))
-  if duration == nil and key ~= "dumper" then
-    duration = CONFIG.NOTIFICATIONS.DEFAULT_DURATION
-  end
-  card.GroupTransparency, card.Visible = 1, true
-  local offset = 24
-  for _, item in ipairs(layer:GetChildren()) do
-    if item:IsA("CanvasGroup") and item:GetAttribute("ExodusNotificationKey") then
-      game
-        :GetService("TweenService")
-        :Create(item, TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {
-          GroupTransparency = 0,
-          Position = UDim2.new(0.5, 0, 1, -offset),
-        })
-        :Play()
-      offset += item.Size.Y.Offset + 8
+  function Surface.create(appearance, options)
+    appearance, options = appearance or Appearance, options or {}
+    local service = game:GetService("TweenService")
+    local entering = 0.32
+    local function layer()
+      local player = game:GetService("Players").LocalPlayer
+      local parent = player and player:FindFirstChildOfClass("PlayerGui")
+      if not parent then
+        return nil
+      end
+      local gui = parent:FindFirstChild("ExodusPersistentNotifications")
+      if not gui then
+        gui = Instance.new("ScreenGui")
+        gui.Name, gui.DisplayOrder = "ExodusPersistentNotifications", options.displayOrder or 2147483647
+        gui.ResetOnSpawn, gui.IgnoreGuiInset = false, true
+        gui.ZIndexBehavior, gui.Parent = Enum.ZIndexBehavior.Global, parent
+      end
+      local frame = gui:FindFirstChild("NotificationLayer")
+      if not frame then
+        frame = Instance.new("Frame")
+        frame.Name, frame.Size, frame.BackgroundTransparency, frame.Parent = "NotificationLayer", UDim2.fromScale(1, 1), 1, gui
+      end
+      return frame
     end
-  end
-  local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
-  card:SetAttribute("ExodusNotificationGeneration", generation)
-  if duration and duration > 0 then
-    task.delay(duration, function()
-      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
-        game:GetService("TweenService"):Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 }):Play()
-        task.delay(0.3, function()
-          if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
-            card:Destroy()
+    local function key(value) return tostring(value or "general"):gsub("[^%w_%-]", "_") end
+    local function animate(card, goals, done)
+      local tween = service:Create(card, TweenInfo.new(entering, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), goals)
+      if done then
+        tween.Completed:Once(function(status)
+          if status == Enum.PlaybackState.Completed then
+            done()
           end
         end)
       end
-    end)
-  end
-end
-local function notifyPersistent(message, key, kind, duration)
-  local show = _G.ExodusShowPersistentNotification
-  if type(show) == "function" then
-    local ok = pcall(show, message, key, kind, duration)
-    if ok then
-      return
+      tween:Play()
+      return tween
     end
-  end
-  fallbackNotification(message, key, kind, duration)
-end
-local function clearPersistent(key)
-  local clear = _G.ExodusClearPersistentNotification
-  if type(clear) == "function" then
-    local ok = pcall(clear, key)
-    if ok then
-      return
-    end
-  end
-  local player = game:GetService("Players").LocalPlayer
-  local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-  local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications")
-  local layer = gui and gui:FindFirstChild("NotificationLayer")
-  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_")
-  local card = layer and layer:FindFirstChild("Notification_" .. safeKey)
-  if card then
-    local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
-    card:SetAttribute("ExodusNotificationGeneration", generation)
-    game:GetService("TweenService"):Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 }):Play()
-    task.delay(0.3, function()
-      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
-        card:Destroy()
+    local function reflow()
+      local parent = layer()
+      if not parent then
+        return
       end
-    end)
+      local offset = 24
+      for _, card in ipairs(parent:GetChildren()) do
+        if card:IsA("CanvasGroup") and card:GetAttribute("ExodusNotificationKey") and not card:GetAttribute("ExodusNotificationExiting") then
+          if card.GroupTransparency > 0 then
+            card:SetAttribute("ExodusNotificationEnteredAt", os.clock() + entering)
+          end
+          animate(card, { Position = UDim2.new(0.5, 0, 1, -offset), GroupTransparency = 0 })
+          offset += card.Size.Y.Offset + 8
+        end
+      end
+    end
+    local function clear(id)
+      local parent = layer()
+      local card = parent and parent:FindFirstChild("Notification_" .. key(id))
+      if not card then
+        return nil
+      end
+      local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
+      card:SetAttribute("ExodusNotificationGeneration", generation)
+      card:SetAttribute("ExodusNotificationExiting", true)
+      return animate(card, { GroupTransparency = 1, Position = card.Position + UDim2.fromOffset(0, 12) }, function()
+        if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
+          card:Destroy()
+          reflow()
+        end
+      end)
+    end
+    local function show(message, id, kind, duration)
+      local parent = layer()
+      if not parent then
+        return false
+      end
+      id = key(id)
+      local card = parent:FindFirstChild("Notification_" .. id)
+      if not card then
+        card = appearance.notification(parent, "Notification_" .. id)
+        card:SetAttribute("ExodusNotificationEnteredAt", os.clock() + entering)
+      end
+      card:SetAttribute("ExodusNotificationKey", id)
+      card:SetAttribute("ExodusNotificationMessage", tostring(message))
+      card:SetAttribute("ExodusNotificationKind", kind or "info")
+      card:SetAttribute("ExodusNotificationExiting", false)
+      local camera = workspace.CurrentCamera
+      appearance.updateNotification(card, message, kind, camera and camera.ViewportSize or Vector2.new(1920, 1080))
+      local generation = (card:GetAttribute("ExodusNotificationGeneration") or 0) + 1
+      card:SetAttribute("ExodusNotificationGeneration", generation)
+      card.Visible = true
+      reflow()
+      if duration == nil then
+        duration = id == "dumper" and 0 or 2.5
+      end
+      if duration > 0 then
+        task.delay(entering + duration, function()
+          if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
+            clear(id)
+          end
+        end)
+      end
+      return true
+    end
+    local function finish(id)
+      local parent = layer()
+      local card = parent and parent:FindFirstChild("Notification_" .. key(id))
+      if card then
+        local remaining = (card:GetAttribute("ExodusNotificationEnteredAt") or 0) - os.clock()
+        if remaining > 0 then
+          task.wait(remaining)
+        end
+        local tween = clear(id)
+        if tween then
+          tween.Completed:Wait()
+        end
+      end
+    end
+    return { show = show, clear = clear, finish = finish, layer = layer }
   end
-end
+  Surface.__contract = {
+    provides = { "setup", "create" },
+    requires = { Appearance = "uiappearance" },
+    requiresMethods = { Appearance = { "notification", "updateNotification" } },
+  }
+  return Surface
+
+end)()
+-- generated-end
+local notificationSurface = Surface.create(Appearance, { displayOrder = CONFIG.NOTIFICATIONS.DISPLAY_ORDER })
+local function notifyPersistent(message, key, kind, duration) return notificationSurface.show(message, key, kind, duration) end
+local function clearPersistent(key) return notificationSurface.clear(key) end
 local function notifyCritical(moduleName)
   notifyPersistent(("Critical error in %s. Check the console."):format(tostring(moduleName or "the hub")), "critical", "critical")
 end
@@ -372,8 +415,6 @@ local function getRequestFunction()
         end
       end
       reason = tostring(response)
-      -- HttpGet throws for HTTP failures. Do not retry a blocked host through
-      -- another executor API; let the source fallback honor its cooldown.
       if not ok then
         local code = tonumber(reason:match("[Hh][Tt][Tt][Pp]%s*:?%s*(%d%d%d)"))
         if code then
@@ -433,7 +474,6 @@ if type(requestState.pending) ~= "number" or requestState.pending < 0 then
 end
 if type(requestState.cooldowns) ~= "table" then
   requestState.cooldowns = {}
-  -- Migrate the former global cooldown without blocking independent CDNs.
   if type(requestState.retryAt) == "number" then
     requestState.cooldowns["api.github.com"] = requestState.retryAt
   end
@@ -451,7 +491,6 @@ local function requestOnce(url, headers)
   if not requestFunction then
     return nil, "Nenhum serviço HTTP disponível"
   end
-  -- Reserve a global slot before yielding so updates and reloads share pacing.
   if type(task) == "table" and type(task.wait) == "function" then
     if requestState.pending >= CONFIG.MAX_PENDING_REQUESTS then
       return nil, "Transportes HTTP ocupados"
@@ -627,7 +666,6 @@ local function request(url, headers)
     },
     { url = "https://raw.githack.com/" .. prefix .. "/" .. revision .. "/" .. path },
     { url = "https://github.com/" .. prefix .. "/raw/" .. revision .. "/" .. path },
-    -- Official jsDelivr testing endpoints are last-resort routes, never primary.
     { url = "https://fastly.jsdelivr.net/gh/" .. suffix },
     { url = "https://gcore.jsdelivr.net/gh/" .. suffix },
     { url = "https://testingcf.jsdelivr.net/gh/" .. suffix },
@@ -642,7 +680,6 @@ local function request(url, headers)
       break
     end
   end
-  -- Bound the fallback phase; hanging native requests cannot spawn an endless queue.
   local deadline = os.clock() + CONFIG.REQUEST_TIMEOUT
   for _, mirror in ipairs(mirrors) do
     if os.clock() >= deadline then
@@ -951,23 +988,24 @@ local function selectHub(revision)
     return false, catalogError
   end
   local catalog = execute("hub catalog", catalogChunk)
-  selectedHub = registry.select(catalog, game.PlaceId, game.GameId)
+  local accessChunk, accessError = loadModule("hub access", CONFIG.ACCESS_PATH, root .. CONFIG.ACCESS_PATH)
+  if not accessChunk then
+    return false, accessError
+  end
   local player = game:GetService("Players").LocalPlayer
-  if selectedHub.id == "mcpvp" and (not player or player.Name ~= "renannnhh") then
-    selectedHub = registry.select({}, game.PlaceId, game.GameId)
+  local selectionError
+  selectedHub, selectionError = registry.resolve(catalog, game.PlaceId, game.GameId, {
+    userId = player and player.UserId,
+    username = player and player.Name,
+  }, execute("hub access", accessChunk))
+  if not selectedHub then
+    return false, selectionError
   end
   local manifestChunk, manifestError = loadModule("shared manifest", CONFIG.MANIFEST_PATH, root .. CONFIG.MANIFEST_PATH)
   if not manifestChunk then
     return false, manifestError
   end
-  local extra = selectedHub.modules or {}
-  local common = {}
-  for _, entry in ipairs(execute("shared manifest", manifestChunk)) do
-    if entry.name ~= "permissions" or selectedHub.permissions == true then
-      common[#common + 1] = entry
-    end
-  end
-  MODULE_MANIFEST = registry.merge(common, extra)
+  MODULE_MANIFEST = registry.manifest(execute("shared manifest", manifestChunk), selectedHub)
   table.clear(MODULE_ORDER)
   table.clear(MODULE_BY_NAME)
   for _, entry in ipairs(MODULE_MANIFEST) do
@@ -977,70 +1015,6 @@ local function selectHub(revision)
     end
   end
   return true
-end
-local function orderModulesByDependencies(loaded)
-  local positions, state, ordered = {}, {}, {}
-  for index, name in ipairs(MODULE_ORDER) do
-    positions[name] = index
-  end
-  local function visit(name)
-    if state[name] == 2 then
-      return
-    end
-    if state[name] == 1 then
-      error("dependência circular entre módulos: " .. name, 2)
-    end
-    if not positions[name] or type(loaded[name]) ~= "table" then
-      error("dependência não inicializável: " .. tostring(name), 2)
-    end
-    state[name] = 1
-    local dependencies = {}
-    for _, source in pairs(loaded[name].__contract.requires or {}) do
-      if source ~= "permissions" then
-        dependencies[#dependencies + 1] = source
-      end
-    end
-    table.sort(dependencies, function(a, b) return (positions[a] or math.huge) < (positions[b] or math.huge) end)
-    for _, source in ipairs(dependencies) do
-      visit(source)
-    end
-    state[name] = 2
-    ordered[#ordered + 1] = name
-  end
-  for _, name in ipairs(MODULE_ORDER) do
-    visit(name)
-  end
-  table.clear(MODULE_ORDER)
-  for _, name in ipairs(ordered) do
-    if name ~= "character" then
-      MODULE_ORDER[#MODULE_ORDER + 1] = name
-    end
-  end
-  if loaded.character then
-    MODULE_ORDER[#MODULE_ORDER + 1] = "character"
-  end
-end
-local function basicLinker()
-  local linker = {}
-  function linker.validate(name, module)
-    assert(type(module.__contract) == "table", name .. ": missing API contract")
-    for _, method in ipairs(module.__contract.provides or {}) do
-      assert(type(module[method]) == "function", name .. ": missing " .. method)
-    end
-    return true
-  end
-  function linker.resolve(name, loaded)
-    local dependencies = {}
-    for alias, source in pairs(loaded[name].__contract.requires or {}) do
-      local provider = assert(loaded[source], "Missing dependency: " .. source)
-      for _, method in ipairs((loaded[name].__contract.requiresMethods or {})[alias] or {}) do
-        assert(type(provider[method]) == "function", source .. ": missing " .. method)
-      end
-      dependencies[alias] = provider
-    end
-    return dependencies
-  end
-  return linker
 end
 local activeLoaded
 local function loadModules(urls, prepared)
@@ -1095,7 +1069,9 @@ local function loadModules(urls, prepared)
     end
     return results
   end
-  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or basicLinker()
+  local linker = execute("modulelinker", results.modulelinker.chunk)
+  results.modulelinker.module = linker
+  local permissions = results.permissions and execute("permissions", results.permissions.chunk) or linker
   if results.permissions then
     permissions.configure(selectedHub.permissionPolicy)
     permissions.validate("permissions", permissions, MODULE_BY_NAME.permissions.path)
@@ -1109,7 +1085,7 @@ local function loadModules(urls, prepared)
       loaded[name] = module
     end
   end
-  orderModulesByDependencies(loaded)
+  MODULE_ORDER = loaded.modulelinker.order(MODULE_MANIFEST, loaded)
   return loaded
 end
 
@@ -1200,6 +1176,10 @@ local function startInternal()
   if not version then
     return false, "Loader", revisionError or "revisão atual indisponível"
   end
+  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
+  if not playerReady then
+    return false, "Loader", playerError
+  end
   local selected, selectionError = selectHub(version)
   if not selected then
     return false, "Loader", selectionError
@@ -1213,13 +1193,8 @@ local function startInternal()
   if not loaded then
     return false, moduleName, loadError
   end
-  local playerReady, playerError = waitForLocalPlayer(CONFIG.PLAYER_TIMEOUT)
-  if not playerReady then
-    return false, "Loader", playerError
-  end
   if type(requested) == "table" and requested.automatic and Exodus.Context then
     local previous = Exodus.Context
-    -- Release the start lock while waiting so an explicit loadstring can force a replacement.
     _G.ExodusLoaderStartToken = nil
     local safe = previous.updates.awaitSafe(function() return Exodus.Context == previous and previous.utils.getConfigValue("AutoExecute") == true end)
     if not safe or Exodus.Context ~= previous or _G.ExodusLoaderStartToken then
@@ -1248,17 +1223,20 @@ local function startInternal()
     reload = reloadLatest,
     latest = resolveLatestRevision,
     prepare = function(revision) return loadModule("reload loader", CONFIG.ENTRY_POINT, BASE_URL .. revision .. "/" .. PROJECT_PATH .. CONFIG.ENTRY_POINT) end,
+    present = function()
+      notificationSurface.finish("loading")
+      notifyPersistent(
+        selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."),
+        "hub_loaded",
+        "info",
+        CONFIG.NOTIFICATIONS.HUB_LOADED_DURATION
+      )
+    end,
     report = printRawError,
   })
   local utils = loaded.utils
   Exodus.Runtime = runtime
   Exodus.Hub = table.clone(selectedHub)
-  notifyPersistent(
-    selectedHub.notification or ("Exodus Hub · " .. selectedHub.title .. " carregado."),
-    "hub_loaded",
-    "info",
-    CONFIG.NOTIFICATIONS.HUB_LOADED_DURATION
-  )
   Exodus.Context = loaded
   Exodus.UIReady = uiReady == true
   Exodus.UI = Modules.ui
@@ -1300,7 +1278,7 @@ function Loader.start()
   if not ready then
     return false, "Loader", reason
   end
-  pcall(notifyPersistent, "Exodus · Loading...", "loading", "info", 0)
+  pcall(notifyPersistent, "Exodus · Executando…", "loading", "info", 0)
   startLock = true
   startupPerformed = false
   _G.ExodusLoaderStartToken = startToken
@@ -1308,7 +1286,9 @@ function Loader.start()
   _G.Exodus = Exodus
   _G.ExodusModules = Modules
   local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
-  pcall(clearPersistent, "loading")
+  if not ok or started ~= true then
+    pcall(clearPersistent, "loading")
+  end
   startLock = false
   if _G.ExodusLoaderStartToken == startToken then
     _G.ExodusLoaderStartToken = nil

@@ -15,7 +15,8 @@
     "base": [
       "internal.read",
       "lifetime.manage",
-      "diagnostics.write"
+      "diagnostics.write",
+      "ui.use"
     ],
     "types": {
       "infrastructure": [

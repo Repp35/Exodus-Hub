@@ -1,4 +1,4 @@
--- [[ uipages ]]
+-- [[ pages ]]
 --!optimize 2
 -- @modules uipages
 
@@ -136,7 +136,7 @@ function Pages.create(kit, parent, definitions, context)
     if not definition.utility then
       normal[#normal + 1] = definition.id
     end
-    local pageWidth = definition.width or width
+    local pageWidth = definition.columns == 1 and math.min(width, T.SINGLE_COLUMN_W) or width
     local columnWidth = (pageWidth - T.GAP * (definition.columns - 1)) / definition.columns
     for column = 1, definition.columns do
       local scroll = inst("ScrollingFrame", {
@@ -473,15 +473,10 @@ function Pages.create(kit, parent, definitions, context)
           occupied[column] = true
         end
       end
-      local nextColumn = 0
-      local pageWidth = page.definition.width or width
-      local columnWidth = (pageWidth - T.GAP * (page.definition.columns - 1)) / page.definition.columns
-      for _, column in ipairs(page.columns) do
+      local columnWidth = page.definition.columns == 1 and math.min(width, T.SINGLE_COLUMN_W) or (width - T.GAP) / 2
+      for index, column in ipairs(page.columns) do
         column.Visible = occupied[column] == true
-        if column.Visible then
-          column.Position = UDim2.fromOffset((width - pageWidth) / 2 + nextColumn * (columnWidth + T.GAP), 0)
-          nextColumn += 1
-        end
+        column.Position = UDim2.fromOffset(page.definition.columns == 1 and (width - columnWidth) / 2 or (index - 1) * (columnWidth + T.GAP), 0)
       end
       for key, owner in pairs(page.keyed) do
         if owner.children then

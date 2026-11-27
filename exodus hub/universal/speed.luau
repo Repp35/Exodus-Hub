@@ -3,192 +3,116 @@
 -- @modules speed
 
 local Speed = {}
-
-local Utils
-local configObserver
-
--- configuration
+local controller, binding, defaultsScope
 local CONFIG = {
-  schema = {
-    UniversalSpeedEnabled = "boolean",
-    UniversalSpeed = "rate",
-  },
-  defaults = {
-    UniversalSpeedEnabled = false,
-    UniversalSpeed = 40,
-  },
+  schema = { UniversalSpeedEnabled = "boolean", UniversalSpeed = "rate" },
+  defaults = { UniversalSpeedEnabled = false },
+  resolveDefaults = function(context)
+    local player = context and context.player or game:GetService("Players").LocalPlayer
+    local character = player and player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local value = humanoid and humanoid.WalkSpeed or game:GetService("StarterPlayer").CharacterWalkSpeed
+    return { UniversalSpeed = type(value) == "number" and value or 16 }
+  end,
 }
-
-local RunService = game:GetService("RunService")
-local states = { Speed = false }
-local speedValue
-local connectionPool
-local function disconnect(name)
-  if connectionPool then
-    connectionPool.disconnect(name)
-  end
-end
-local function connect(name, signal, callback) return connectionPool.connect(name, signal, callback) end
-local speedHumanoid, speedRestore, speedApplied
-local applyingSpeed = false
-local function writeSpeed(humanoid, value)
-  if humanoid.WalkSpeed == value then
-    return
-  end
-  applyingSpeed = true
-  humanoid.WalkSpeed = value
-  applyingSpeed = false
-end
-local function currentHumanoid()
-  local player = Utils.getLocalPlayer()
-  local character = player and player.Character
-  return character and character:FindFirstChildOfClass("Humanoid")
-end
-local function applySpeed()
-  if not Utils or not states.Speed then
-    return true
-  end
-  local humanoid = currentHumanoid()
-  if humanoid ~= speedHumanoid then
-    disconnect("SpeedChanged")
-    if speedHumanoid and speedHumanoid.Parent and speedApplied ~= nil and speedHumanoid.WalkSpeed == speedApplied and speedRestore ~= nil then
-      writeSpeed(speedHumanoid, speedRestore)
-    end
-    speedHumanoid, speedApplied = humanoid, nil
-    speedRestore = humanoid and humanoid.WalkSpeed or nil
-    if humanoid then
-      connect("SpeedChanged", humanoid:GetPropertyChangedSignal("WalkSpeed"), function()
-        if not applyingSpeed and states.Speed and speedHumanoid == humanoid and humanoid.WalkSpeed ~= speedApplied then
-          speedRestore, speedApplied = humanoid.WalkSpeed, nil
-          if humanoid.WalkSpeed < speedValue then
-            speedApplied = speedValue
-            writeSpeed(humanoid, speedValue)
-          end
-        end
-      end)
-    end
-  end
-  local configured = tonumber(Utils.getConfigValue("UniversalSpeed"))
-  if configured and configured == configured and configured > -math.huge and configured < math.huge then
-    speedValue = math.clamp(configured, 0, 200)
-  end
-  if humanoid and humanoid.Health > 0 then
-    if speedApplied ~= nil and humanoid.WalkSpeed == speedApplied then
-      local desired = math.max(speedRestore or 0, speedValue)
-      if desired ~= speedApplied then
-        speedApplied = desired
-        writeSpeed(humanoid, desired)
-      end
-    elseif humanoid.WalkSpeed < speedValue then
-      speedRestore, speedApplied = humanoid.WalkSpeed, speedValue
-      writeSpeed(humanoid, speedValue)
-    end
-  end
-  return true
-end
-local function startSpeed()
-  local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
-  if not frameSignal then
-    return false
-  end
-  connect("SpeedFrame", frameSignal, applySpeed)
-  return applySpeed()
-end
-local function stopSpeed()
-  disconnect("SpeedStep")
-  disconnect("SpeedFrame")
-  disconnect("SpeedRender")
-  disconnect("SpeedChanged")
-  if speedHumanoid and speedHumanoid.Parent and speedApplied ~= nil and speedHumanoid.WalkSpeed == speedApplied and speedRestore ~= nil then
-    writeSpeed(speedHumanoid, speedRestore)
-  end
-  speedHumanoid, speedRestore, speedApplied = nil, nil, nil
-  return true
-end
-function Speed.setEnabled(enabled)
-  if not Utils then
+function Speed.setEnabled(value)
+  if not controller then
     return false, "recurso indisponível"
   end
-  local value = enabled == true
-  if not Utils.setConfig({ UniversalSpeedEnabled = value }) then
-    return false, "configuração rejeitada"
-  end
-  if states.Speed == value then
-    if value then
-      applySpeed()
-    end
-    return true
-  end
-  states.Speed = value
-  local ok, result, detail = pcall(value and startSpeed or stopSpeed)
-  if not ok or result == false then
-    pcall(stopSpeed)
-    states.Speed = false
-    Utils.setConfig({ UniversalSpeedEnabled = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
-  end
-  return true
+  return controller.setEnabled(value)
 end
 function Speed.setValue(value)
-  if not Utils then
-    return false, "controle inválido"
+  if not controller then
+    return false, "recurso indisponível"
   end
-  local number = tonumber(value)
-  if not number or number ~= number or math.abs(number) == math.huge then
-    return false, "valor inválido"
-  end
-  number = math.clamp(number, 0, 200)
-  if not Utils.setConfig({ UniversalSpeed = number, UniversalSpeedEnabled = true }) then
-    return false
-  end
-  speedValue = number
-  if not states.Speed then
-    return Speed.setEnabled(true)
-  end
-  return applySpeed()
+  return controller.setValue(value)
 end
 function Speed.teardown()
-  if configObserver then
-    configObserver:Disconnect()
-    configObserver = nil
+  if defaultsScope then
+    defaultsScope.destroy()
+    defaultsScope = nil
   end
-  stopSpeed()
-  states.Speed = false
-  if connectionPool then
-    connectionPool.destroy()
-    connectionPool = nil
+  if controller then
+    controller.destroy()
+    controller = nil
   end
-  Utils = nil
+  if binding then
+    binding.restore()
+    binding = nil
+  end
   return true
 end
 function Speed.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
-    return false, "dependência ausente: Utils"
-  end
   Speed.teardown()
-  Utils = deps.Utils
-  connectionPool = deps.Lifetime.connections(Utils)
-  configObserver = Utils.observeConfig(function(changes)
-    if changes.UniversalSpeedEnabled ~= nil then
-      Speed.setEnabled(changes.UniversalSpeedEnabled == true)
+  local utils = deps.Utils
+  local selected, writing, characterScope = false, false, nil
+  defaultsScope = deps.Lifetime.scope()
+  local cleanup = { Disconnect = defaultsScope.destroy }
+  utils.trackGlobal(cleanup)
+  defaultsScope.add(function() utils.untrackGlobal(cleanup) end)
+  defaultsScope.add(utils.observeConfig(function(changes)
+    if changes.UniversalSpeed ~= nil and not writing then
+      selected = true
     end
-  end)
-  speedValue = tonumber(Utils.getConfigValue("UniversalSpeed")) or CONFIG.defaults.UniversalSpeed
-  if Utils.getConfigValue("UniversalSpeedEnabled") == true then
-    return Speed.setEnabled(true)
+  end))
+  local function watch(character)
+    if characterScope then
+      characterScope.destroy()
+    end
+    characterScope = defaultsScope.child()
+    if not character then
+      return
+    end
+    local humanoid
+    local function attach()
+      local found = character:FindFirstChildOfClass("Humanoid")
+      if not found or found == humanoid then
+        return
+      end
+      humanoid = found
+      local function baseline()
+        if not selected and not utils.getConfigValue("UniversalSpeedEnabled") and humanoid.Parent then
+          writing = true
+          utils.setConfig({ UniversalSpeed = humanoid.WalkSpeed })
+          writing = false
+        end
+      end
+      characterScope.connect(humanoid:GetPropertyChangedSignal("WalkSpeed"), baseline)
+      baseline()
+    end
+    characterScope.connect(character.ChildAdded, attach)
+    attach()
   end
-  return true
+  local player = utils.getLocalPlayer()
+  if player then
+    defaultsScope.connect(player.CharacterAdded, watch)
+    defaultsScope.connect(player.CharacterRemoving, function() watch(nil) end)
+    watch(player.Character)
+  end
+  binding = deps.Properties.create(utils, function(humanoid)
+    local value = math.clamp(tonumber(utils.getConfigValue("UniversalSpeed")) or 16, 0, 200)
+    return { WalkSpeed = value }
+  end)
+  controller = deps.Controller.create(utils, deps.Lifetime, {
+    key = "UniversalSpeedEnabled",
+    valueKey = "UniversalSpeed",
+    min = 0,
+    max = 200,
+    start = function(scope) deps.Controller.connectPhysics(scope, binding.update) end,
+    stop = binding.restore,
+    update = binding.update,
+  })
+  return controller.sync()
 end
 Speed.__config = CONFIG
-
--- contract
 Speed.__contract = {
-  requires = { Utils = "utils", Lifetime = "lifetime" },
+  requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller", Properties = "characterproperties" },
   requiresMethods = {
-    Lifetime = { "connections" },
-    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" },
+    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
+    Lifetime = { "scope" },
+    Controller = { "create", "connectPhysics" },
+    Properties = { "create" },
   },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
-
 return Speed

@@ -15,6 +15,13 @@ function Controller.create(context)
   local Utils = context.deps.Utils
   local UIState = context.state
   local UIS = context.services.UIS
+  local inputDefinition = context.inputDefinition or {}
+  local primary = inputDefinition.primary
+  local function writePrimary(value)
+    if primary and context.deps.Controls[primary.write] then
+      context.deps.Controls[primary.write](value)
+    end
+  end
   local trackConn = context.trackConn
   local function inputBinding(input)
     if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType.Name:match("^Gamepad") then
@@ -54,19 +61,21 @@ function Controller.create(context)
         return
       end
       local config = Utils.getConfig() or {}
-      if context.combatUI ~= false and config.DynamicParry == true and isKey(input, config.DynamicParryKey) then
-        return
+      for _, reserved in ipairs(inputDefinition.reserved or {}) do
+        if config[reserved.enabledKey] == true and isKey(input, config[reserved.bindingKey]) then
+          return
+        end
       end
       if isKey(input, config.Keybind) then
         actions.triggerShortcut(inputBinding(input))
-      elseif context.combatUI ~= false and isKey(input, config.SpamKeybind) then
-        if config.ManualSpamMode == "Hold" then
+      elseif primary and isKey(input, config[primary.bindingKey]) then
+        if config[primary.modeKey] == "Hold" then
           if not UIState.manualHoldInput then
             UIState.manualHoldInput = input
-            context.floating.setSpam(true)
+            writePrimary(true)
           end
         else
-          context.floating.setSpam(not UIState.spamOn)
+          writePrimary(not context.deps.Controls[primary.read]())
         end
       else
         actions.triggerShortcut(inputBinding(input))
@@ -76,13 +85,13 @@ function Controller.create(context)
       local held = UIState.manualHoldInput
       if held and (held == input or (inputBinding(held) and inputBinding(held) == inputBinding(input))) then
         UIState.manualHoldInput = nil
-        context.floating.setSpam(false)
+        writePrimary(false)
       end
     end))
     trackConn(UIS.WindowFocusReleased:Connect(function()
       if UIState.manualHoldInput then
         UIState.manualHoldInput = nil
-        context.floating.setSpam(false)
+        writePrimary(false)
       end
     end))
   end

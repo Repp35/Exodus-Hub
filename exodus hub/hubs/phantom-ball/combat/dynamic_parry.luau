@@ -7,7 +7,8 @@ local utils
 local gameInfo
 local cooldownInfo
 local remote
-local connections, uiConnections = {}, {}
+local connections = {}
+local nativeAbility
 local binding
 local session
 local held
@@ -120,95 +121,37 @@ local function release(input)
   end
 end
 local function restore()
-  disconnect(uiConnections)
   if not binding then
     return
   end
   local old = binding
   binding = nil
-  if old.animations then
-    pcall(old.animations.Unbind, old.animations, old.button)
-  end
-  for key, value in pairs(old.references) do
-    if old.interface[key] == old.replacements[key] then
-      old.interface[key] = value
-    end
-  end
   if old.ability.OnKeyDown == old.hook then
     old.ability.OnKeyDown = old.keyDown
   end
-  if old.original.Parent then
-    old.original.Visible = old.visible
-  end
-  if old.clone then
-    old.clone:Destroy()
-  end
+  old.view.destroy()
 end
 local function attach(ability)
-  local interface = ability and ability.Interface
-  local original = interface and interface.MobileUIAbilityFrame
-  local sourceButton = interface and interface.MobileUIAbilityButton
-  local sourceImage = interface and interface.MobileUIAbilityImage
-  if
-    not original
-    or not original.Parent
-    or not sourceButton
-    or not sourceImage
-    or not sourceButton:IsA("ImageButton")
-    or not sourceButton:IsDescendantOf(original)
-    or not sourceImage:IsDescendantOf(original)
-    or type(ability.OnKeyDown) ~= "function"
-  then
+  if not ability or type(ability.OnKeyDown) ~= "function" then
     return
   end
+  local original = ability.Interface and ability.Interface.MobileUIAbilityFrame
   if binding and binding.ability == ability and binding.original == original and binding.clone.Parent then
     return
   end
   restore()
-  local clone = original:Clone()
-  clone.Name = "ExodusDynamicParry"
-  for _, item in ipairs(clone:GetDescendants()) do
-    if item:IsA("LuaSourceContainer") then
-      item:Destroy()
-    end
-  end
-  local function counterpart(item)
-    if item == original then
-      return clone
-    end
-    local path = {}
-    local node = item
-    while node and node ~= original do
-      table.insert(path, 1, node.Name)
-      node = node.Parent
-    end
-    if node ~= original then
-      return nil
-    end
-    local target = clone
-    for _, name in ipairs(path) do
-      target = target and target:FindFirstChild(name)
-    end
-    return target
-  end
-  local references, replacements = {}, {}
-  for key, value in pairs(interface) do
-    if typeof(value) == "Instance" and (value == original or value:IsDescendantOf(original)) then
-      local target = counterpart(value)
-      if target then
-        references[key], replacements[key], interface[key] = value, target, target
+  local view = nativeAbility.create(ability, {
+    name = "ExodusDynamicParry",
+    animations = gameInfo.getNativeButtonAnimations(),
+    onPress = function(input)
+      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        press(input)
       end
-    end
+    end,
+  })
+  if not view then
+    return
   end
-  local button, image = interface.MobileUIAbilityButton, interface.MobileUIAbilityImage
-  image.Image = ""
-  image.Visible = false
-  for _, item in ipairs(clone:GetDescendants()) do
-    if item:IsA("TextLabel") or item:IsA("TextButton") then
-      item.Text = ""
-    end
-  end
-  local animations = gameInfo.getNativeButtonAnimations()
   local oldKey = ability.OnKeyDown
   local function hook(self, input, processed)
     local service = game:GetService("UserInputService")
@@ -218,72 +161,8 @@ local function attach(ability)
     end
     return oldKey(self, input, processed)
   end
-  local visible = original.Visible
-  binding = {
-    ability = ability,
-    interface = interface,
-    original = original,
-    clone = clone,
-    visible = visible,
-    references = references,
-    replacements = replacements,
-    keyDown = oldKey,
-    hook = hook,
-    button = button,
-    image = image,
-    animations = animations,
-  }
-
+  binding = { ability = ability, original = view.original, clone = view.clone, view = view, hook = hook, keyDown = oldKey }
   ability.OnKeyDown = hook
-  local state = button:FindFirstChild("Label")
-  if not state or not state:IsA("TextLabel") then
-    state = Instance.new("TextLabel")
-    state.Font = Enum.Font.GothamBold
-    state.Parent = button
-  end
-  state.Name = "DynamicState"
-  state.BackgroundTransparency = 1
-  state.AnchorPoint = Vector2.new(0.5, 0.5)
-  state.Position = UDim2.fromScale(0.5, 0.5)
-  state.Size = UDim2.fromScale(0.8, 0.5)
-  state.TextScaled = true
-  state.TextColor3 = Color3.new(1, 1, 1)
-  state.Text = "OFF"
-  state.ZIndex = button.ZIndex + 5
-  state.Visible = true
-  binding.state = state
-  clone.Parent = original.Parent
-  original.Visible = false
-  if animations then
-    animations:Bind(button)
-  end
-  for _, property in ipairs({ "Size", "Position", "AnchorPoint", "Rotation", "LayoutOrder" }) do
-    connect(uiConnections, original:GetPropertyChangedSignal(property), function()
-      if clone.Parent then
-        clone[property] = original[property]
-      end
-    end)
-  end
-  for _, property in ipairs({ "Size", "Position", "AnchorPoint", "Rotation" }) do
-    local source = references.MobileUIAbilityButton
-    connect(uiConnections, source:GetPropertyChangedSignal(property), function()
-      if not clone.Parent then
-        return
-      end
-      if animations then
-        animations:Unbind(button)
-      end
-      button[property] = source[property]
-      if animations then
-        animations:Bind(button)
-      end
-    end)
-  end
-  connect(uiConnections, button.InputBegan, function(input)
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-      press(input)
-    end
-  end)
 end
 function Dynamic.canSend()
   if not active then
@@ -317,6 +196,7 @@ end
 function Dynamic.setup(deps)
   Dynamic.teardown()
   utils, gameInfo, cooldownInfo, remote = deps.Utils, deps.GameInfo, deps.Cooldown, deps.Remote
+  nativeAbility = deps.NativeAbility
   local input = game:GetService("UserInputService")
   connect(connections, input.InputBegan, function(event, processed)
     local desktop = input.KeyboardEnabled or input.MouseEnabled or not input.TouchEnabled or utils.getConfigValue("ForcePCUI") == true
@@ -332,11 +212,7 @@ function Dynamic.setup(deps)
       epoch += 1
       stop()
       restore()
-      local ability = gameInfo.getDeflectAbility()
-      local frame = ability and ability.Interface and ability.Interface.MobileUIAbilityFrame
-      if frame and frame.Parent then
-        frame.Visible = true
-      end
+      nativeAbility.reveal(gameInfo.getDeflectAbility())
     end
     editing = value
   end
@@ -393,35 +269,8 @@ function Dynamic.setup(deps)
       Dynamic.canSend()
     end
     if binding then
-      if binding.original.Visible then
-        binding.original.Visible = false
-      end
       local mobile = input.TouchEnabled and not input.KeyboardEnabled and not input.GamepadEnabled and utils.getConfigValue("ForcePCUI") ~= true
-      if binding.clone.Visible ~= mobile then
-        binding.clone.Visible = mobile
-      end
-      local on = active or held ~= nil or os.clock() < pulseUntil
-      local label = on and "ON" or "OFF"
-      if binding.state.Text ~= label then
-        binding.state.Text = label
-      end
-      local white = Color3.new(1, 1, 1)
-      if binding.state.TextColor3 ~= white then
-        binding.state.TextColor3 = white
-      end
-      if binding.image.Image ~= "" then
-        binding.image.Image = ""
-      end
-      if binding.image.Visible then
-        binding.image.Visible = false
-      end
-      local body = on and Color3.fromRGB(24, 157, 73) or Color3.fromRGB(180, 34, 46)
-      if binding.button.ImageColor3 ~= body then
-        binding.button.ImageColor3 = binding.button.ImageColor3:Lerp(body, 0.65)
-      end
-      if binding.button.BackgroundTransparency < 1 then
-        binding.button.BackgroundColor3 = binding.button.BackgroundColor3:Lerp(body, 0.65)
-      end
+      binding.view.setState(active or held ~= nil or os.clock() < pulseUntil, mobile)
     end
   end)
   if enabled() and not editing then
@@ -447,12 +296,14 @@ Dynamic.__contract = {
     GameInfo = "gameinfo",
     Cooldown = "cooldown",
     Remote = "remote",
+    NativeAbility = "uinativeability",
   },
   requiresMethods = {
     Utils = { "setDynamicSpamActive", "isDynamicSpamActive", "getConfigValue", "isActive", "getLocalPlayer", "getPlayers", "getRunService", "observeConfig" },
     GameInfo = { "getDeflectAbility", "getAveragePing", "getNativeButtonAnimations", "getSnapshotAt", "getBallSpeedLimits", "getPlayerMotion" },
     Cooldown = { "getDeflectCooldownState" },
     Remote = { "fireNativeParry" },
+    NativeAbility = { "create", "reveal" },
   },
   provides = { "setup", "teardown", "canSend", "getStatus" },
 }

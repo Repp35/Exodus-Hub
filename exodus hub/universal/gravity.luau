@@ -5,7 +5,7 @@
 local Gravity = {}
 
 local Utils
-local configObserver
+local controller
 
 -- configuration
 local CONFIG = {
@@ -13,17 +13,13 @@ local CONFIG = {
     UniversalGravityEnabled = "boolean",
     UniversalGravity = "rate",
   },
-  defaults = {
-    UniversalGravityEnabled = false,
-    UniversalGravity = 196.2,
-  },
+  defaults = { UniversalGravityEnabled = false },
+  resolveDefaults = function() return { UniversalGravity = game:GetService("Workspace").Gravity or 196.2 } end,
 }
 
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 local gravityValue
 local enabledState = false
-local connection
 local gravityRoot
 local attachment
 local force
@@ -70,110 +66,61 @@ local function updateGravity()
     force.Force = desired
   end
 end
-local function startGravity()
-  local signal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
-  if not signal then
-    return false
-  end
-  connection = signal:Connect(updateGravity)
-  Utils.trackGlobal(connection)
-  updateGravity()
-  return true
-end
-local function stopGravity()
-  if connection then
-    Utils.untrackGlobal(connection)
-    connection:Disconnect()
-    connection = nil
-  end
-  clearGravity()
-  return true
-end
-function Gravity.setEnabled(enabled)
-  if not Utils then
+function Gravity.setEnabled(value)
+  if not controller then
     return false, "recurso indisponível"
   end
-  local value = enabled == true
-  if not Utils.setConfig({ UniversalGravityEnabled = value }) then
-    return false, "configuração rejeitada"
-  end
-  if enabledState == value then
-    if value then
-      updateGravity()
-    end
-    return true
-  end
-  enabledState = value
-  local ok, result, detail = pcall(value and startGravity or stopGravity)
-  if not ok or result == false then
-    pcall(stopGravity)
-    enabledState = false
-    Utils.setConfig({ UniversalGravityEnabled = false })
-    return false, tostring(ok and (detail or "falha ao alterar recurso") or result)
-  end
-  return true
+  return controller.setEnabled(value)
 end
 function Gravity.setValue(value)
-  if not Utils then
-    return false, "controle inválido"
+  if not controller then
+    return false, "recurso indisponível"
   end
-  local number = tonumber(value)
-  if not number or number ~= number or math.abs(number) == math.huge then
-    return false, "valor inválido"
-  end
-  number = math.clamp(number, 0, 400)
-  if not Utils.setConfig({ UniversalGravity = number }) then
-    return false
-  end
-  gravityValue = number
-  if not enabledState then
-    return Gravity.setEnabled(true)
-  end
-  updateGravity()
-  return true
+  return controller.setValue(value)
 end
 function Gravity.teardown()
-  if configObserver then
-    configObserver:Disconnect()
-    configObserver = nil
+  if controller then
+    controller.destroy()
+    controller = nil
   end
-  stopGravity()
-  enabledState = false
-  Utils = nil
+  clearGravity()
+  enabledState, Utils = false, nil
   return true
 end
 function Gravity.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
-    return false, "dependência ausente: Utils"
-  end
   Gravity.teardown()
   Utils = deps.Utils
-  configObserver = Utils.observeConfig(function(changes)
-    if changes.UniversalGravity ~= nil then
-      local value = tonumber(changes.UniversalGravity)
-      if value and value == value and math.abs(value) < math.huge then
-        gravityValue = math.clamp(value, 0, 400)
-      end
-      if enabledState then
-        updateGravity()
-      end
-    end
-    if changes.UniversalGravityEnabled ~= nil then
-      Gravity.setEnabled(changes.UniversalGravityEnabled == true)
-    end
-  end)
   gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or Workspace.Gravity
-  if Utils.getConfigValue("UniversalGravityEnabled") == true then
-    return Gravity.setEnabled(true)
-  end
-  return true
+  controller = deps.Controller.create(Utils, deps.Lifetime, {
+    key = "UniversalGravityEnabled",
+    valueKey = "UniversalGravity",
+    min = 0,
+    max = 400,
+    start = function(scope)
+      enabledState = true
+      deps.Controller.connectPhysics(scope, updateGravity)
+    end,
+    stop = function()
+      enabledState = false
+      clearGravity()
+    end,
+    update = function()
+      gravityValue = math.clamp(tonumber(Utils.getConfigValue("UniversalGravity")) or Workspace.Gravity, 0, 400)
+      updateGravity()
+    end,
+  })
+  return controller.sync()
 end
 Gravity.__config = CONFIG
 
 -- contract
 Gravity.__contract = {
-  requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
+  requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller" },
+  requiresMethods = {
+    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
+    Lifetime = { "scope" },
+    Controller = { "create", "connectPhysics" },
+  },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
 

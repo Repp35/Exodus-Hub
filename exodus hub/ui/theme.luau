@@ -1,4 +1,4 @@
--- [[ uitheme ]]
+-- [[ theme ]]
 --!optimize 2
 -- @modules uitheme
 
@@ -38,11 +38,12 @@ local CONFIG = {
     Color3.fromRGB(150, 95, 130),
     Color3.fromRGB(95, 130, 165),
   },
-  ICON = nil, -- Image URI; nil uses the title initial.
+  ICON = nil,
   BTN_SIZE = 56,
   CLASH_SIZE = 64,
   MINI_W = 112,
   MINI_H = 96,
+  SINGLE_COLUMN_W = 360,
   PANEL_W = 540,
   PANEL_H = 380,
   TITLE_H = 50,

@@ -3,7 +3,74 @@
 
 -- code
 local GameUI = {}
+local function createActions(context)
+  local utils, controls, hub = context.utils, context.controls, context.hub
+  return {
+    callbacks = {
+      panic = function()
+        context.setSpam(false)
+        if controls.onPanic then
+          controls.onPanic()
+        end
+      end,
+      upDash = function()
+        local ok, reason = hub.getAbilityAvailability("dash")
+        if ok then
+          controls.onUpDash()
+        else
+          context.notify(reason)
+        end
+      end,
+      manualSpam = function(enabled)
+        if context.desktop then
+          if utils.getConfigValue("ManualSpamMode") ~= "Hold" then
+            context.setSpam(enabled)
+          end
+        else
+          context.showMini(enabled)
+        end
+        return true
+      end,
+    },
+    states = {
+      manualSpam = function() return context.desktop and utils.isManualSpamActive() or not context.desktop and utils.getConfigValue("MiniSpamVisible") == true end,
+    },
+    resolve = function(definition)
+      if definition.action == "manualSpam" and not context.desktop then
+        definition.key = "MiniSpamVisible"
+      end
+      if definition.action == "manualSpam" or definition.action == "upDash" then
+        definition.silentShortcut = true
+      end
+    end,
+  }
+end
+
 GameUI.definition = {
+  createActions = createActions,
+  input = {
+    primary = { visibleKey = "MiniSpamVisible", bindingKey = "SpamKeybind", modeKey = "ManualSpamMode", read = "isManualSpamActive", write = "setManualSpam" },
+    reserved = { { enabledKey = "DynamicParry", bindingKey = "DynamicParryKey" } },
+  },
+  miniBalls = {
+    { id = "parry", label = "PARRY", key = "AutoParry", visibleKey = "ParryBallVisible", xKey = "ParryBallX", yKey = "ParryBallY" },
+    { id = "clash", label = "CLASH", key = "AutoSpam", visibleKey = "ClashBallVisible", xKey = "ClashBallX", yKey = "ClashBallY" },
+    { id = "dark", label = "DARK", key = "AutoDark", visibleKey = "DarkBallVisible", xKey = "DarkBallX", yKey = "DarkBallY", ability = "dark" },
+    { id = "jump", label = "JUMP", key = "AutoJump", visibleKey = "JumpBallVisible", xKey = "JumpBallX", yKey = "JumpBallY" },
+    { id = "dash", label = "DASH", action = "onUpDash", visibleKey = "UpDashBallVisible", xKey = "UpDashBallX", yKey = "UpDashBallY", ability = "dash" },
+    {
+      id = "manual",
+      label = "SPAM",
+      action = "setManualSpam",
+      read = "isManualSpamActive",
+      modeKey = "ManualSpamMode",
+      visibleKey = "MiniSpamVisible",
+      xKey = "MiniX",
+      yKey = "MiniY",
+      scaleKey = "MiniSpamScale",
+      invisibleKey = "MiniSpamInvisible",
+    },
+  },
   combatUI = true,
   abilityKeys = { AutoDark = "dark", DarkBallVisible = "dark", AutoFierce = "fierce", AutoClashUpDash = "dash", UpDashBallVisible = "dash" },
   pageOrder = { "main", "settings", "utilities", "antilag", "automatic", "indeed", "assists", "config" },
@@ -75,28 +142,6 @@ GameUI.definition = {
               increment = 0.05,
               valueName = "x",
             },
-            {
-              kind = "slider",
-              title = "Manual Spam Width",
-              key = "MiniSpamWidth",
-              compact = true,
-              mobileOnly = true,
-              min = 0.5,
-              max = 2,
-              increment = 0.05,
-              valueName = "x",
-            },
-            {
-              kind = "slider",
-              title = "Manual Spam Height",
-              key = "MiniSpamHeight",
-              compact = true,
-              mobileOnly = true,
-              min = 0.5,
-              max = 2,
-              increment = 0.05,
-              valueName = "x",
-            },
           },
         },
         {
@@ -119,7 +164,7 @@ GameUI.definition = {
           column = 2,
           desktopOnly = true,
           components = {
-            { kind = "button", title = "Stop Functions", action = "panic", shortcutKey = "Keybind" },
+            { kind = "button", title = "Stop Functions", action = "panic", shortcutPriority = 0, shortcutKey = "Keybind" },
           },
         },
       },
@@ -128,11 +173,11 @@ GameUI.definition = {
       id = "settings",
       integrationOnly = true,
       title = "Settings",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "Clash Indicators",
-          column = 2,
+          column = 1,
           components = {
             { kind = "toggle", title = "Clash Distance", key = "ClashDistanceVisible", shortcutKey = "DistanceInfoKeybind" },
             { kind = "toggle", title = "Ball travel time", key = "ClashTravelTimeVisible", shortcutKey = "TravelInfoKeybind" },
@@ -146,7 +191,7 @@ GameUI.definition = {
       id = "utilities",
       integrationOnly = true,
       title = "Utilities",
-      columns = 2,
+      columns = 1,
       sections = {
         {
           title = "Utilities",
@@ -208,7 +253,7 @@ GameUI.definition = {
       integrationOnly = true,
       title = "Assistências",
       columns = 1,
-      width = 360,
+
       utility = true,
       sections = {
         {
@@ -352,6 +397,11 @@ for _, page in ipairs(GameUI.definition.pages) do
       end
     end
   end
+end
+for _, mini in ipairs(GameUI.definition.miniBalls) do
+  mini.mobileOnly = true
+  mini.scaleKey = mini.scaleKey or "MiniUIScale"
+  mini.squareKey = "MiniUISquare"
 end
 function GameUI.setup() return true end
 GameUI.__contract = { provides = { "setup" }, data = { "definition" }, requires = {} }

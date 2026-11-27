@@ -1,4 +1,4 @@
--- [[ spatial visual selection ]]
+-- [[ spatial ]]
 --!optimize 2
 --!native
 -- @modules renderspatial
@@ -286,7 +286,7 @@ local function createSpatialController(services, getOption, PROFILE)
     end
     local indexing = #stack > 0 or head <= tail
     local budget = indexing and 0.004 or option("CullBudgetMs", 0.8) / 1000
-    local deadline = os.clock() + budget
+    local deadline = os.clock() + budget / (services.PhasesPerFrame or 1)
     local count = 0
     if not camera then
       return
@@ -332,7 +332,6 @@ local function createSpatialController(services, getOption, PROFILE)
       end
       count += 1
     end
-    -- Revisit visible and hidden entries; moving cameras and objects can cross either boundary.
     local visited = 0
     while #chunkList > 0 and visited < #chunkList and os.clock() < deadline do
       if chunkIndex > #chunkList then
@@ -378,13 +377,14 @@ local function createSpatialController(services, getOption, PROFILE)
     if not active or not option("CullEnabled", true) then
       return
     end
-    driver = services.RunService.Heartbeat:Connect(function(dt)
-      elapsed += dt
+    local function update(dt)
+      elapsed += dt / (services.PhasesPerFrame or 1)
       if (#stack > 0 or head <= tail) or elapsed >= option("CullInterval", 0.1) then
         elapsed = 0
         controller:Tick(os.clock(), Workspace.CurrentCamera)
       end
-    end)
+    end
+    driver = services.ConnectPhysics and services.ConnectPhysics(update) or services.RunService.Heartbeat:Connect(update)
   end
   function controller:SetEnabled(value)
     if not alive then

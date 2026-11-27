@@ -1,10 +1,11 @@
--- [[ ui ]]
+-- [[ interface ]]
 --!optimize 2
 -- @modules ui
 
 -- module
 local ExodusUI = {}
 local active
+local configuredDependencies
 local configuredIcon, iconOverride
 
 -- configuration
@@ -12,6 +13,8 @@ local configuredIcon, iconOverride
 -- public-components
 local Components = {}
 for _, name in ipairs({
+  "mini",
+  "spam",
   "label",
   "button",
   "textInput",
@@ -61,15 +64,19 @@ function ExodusUI.setup(deps, preview)
       old:Destroy()
     end
   end
+  configuredDependencies = deps
   local context = deps.Context.create(deps, preview and preview.deviceDesktop)
+  context.brand = deps.Brand or { name = deps.Utils.name(), author = deps.Utils.author() }
   active = context
   context.hub = deps.GameContext.getProfile()
   local hubUI = deps.Hub.getUIConfig()
   context.combatUI = hubUI.combatUI == true
+  context.inputDefinition = hubUI.input or {}
   context.abilityKeys = hubUI.abilityKeys or {}
   context.miniBalls = hubUI.miniBalls or {}
   context.notifications = deps.Notifications.create(context)
   context.notifications.layer()
+  context.cornerNotifications = deps.CornerNotifications.create(context)
   context.floating = deps.Floating.create(context)
   context.window = deps.Window.create(context)
   if iconOverride then
@@ -114,6 +121,9 @@ function ExodusUI.setup(deps, preview)
   end
   context.actions = deps.UIActions.create({
     scope = context.kit.scope,
+    hub = deps.Hub,
+    utils = deps.Utils,
+    actionFactory = hubUI.createActions,
     controls = deps.Controls,
     desktop = context.state.desktop,
     notify = context.notifications.toast,
@@ -145,19 +155,24 @@ function ExodusUI.setup(deps, preview)
     context.pages.restore(preview.snapshot)
   end
   context.scope.add(deps.Utils.observeSpam(function()
-    local manual = deps.Utils.isManualSpamActive()
+    local primary = context.inputDefinition.primary
+    local manual = primary and deps.Controls[primary.read] and deps.Controls[primary.read]() or false
     if context.state.spamOn ~= manual then
       context.floating.setSpam(manual)
     end
-    context.actions.refreshManual()
+    context.actions.refreshStates()
   end))
   context.scope.add(deps.Utils.observeConfig(function(changes)
     context.floating.sync(changes)
-    context.actions.refreshManual()
+    context.actions.refreshStates()
     if changes.ForcePCUI ~= nil then
       rebuild()
     end
   end))
+  if not context.window.present(not preview and deps.BeforePresent or nil) then
+    return false, "UI initialization canceled"
+  end
+  context.floating.sync()
   if preview and preview.open then
     context.window.toggle()
   end
@@ -166,8 +181,99 @@ end
 
 function ExodusUI.notify(...)
   if active and active.scope.alive then
-    active.notifications.persistent(...)
+    return active.notifications.persistent(...)
   end
+  return false
+end
+
+function ExodusUI.notifyCorner(title, message, options)
+  if active and active.scope.alive then
+    return active.cornerNotifications.show(title, message, options)
+  end
+  return false
+end
+
+function ExodusUI.createMini(definition)
+  assert(active and active.scope.alive, "UI is not initialized")
+  return active.floating.add(definition)
+end
+
+function ExodusUI.create(options, dependencies)
+  options = options or {}
+  local deps = table.clone(dependencies or assert(configuredDependencies, "Initialize the UI modules before creating a menu"))
+  local values, observers = { MobileNotifications = true, DesktopNotifications = true, DesktopShortcutNotifications = true, ForcePCUI = false }, {}
+  for key, value in pairs(options.defaults or {}) do
+    values[key] = value
+  end
+  local utils = table.clone(deps.Utils)
+  utils.name = function() return options.name or "Exodus Hub" end
+  utils.author = function() return options.author or "" end
+  utils.getConfig = function() return table.clone(values) end
+  utils.getConfigValue = options.read or function(key) return values[key] end
+  utils.setConfig = function(patch)
+    if options.write and options.write(patch) == false then
+      return false
+    end
+    for key, value in pairs(patch) do
+      values[key] = value
+    end
+    for _, callback in pairs(observers) do
+      callback(patch)
+    end
+    return true
+  end
+  utils.observeConfig = options.observe
+    or function(callback)
+      local connection = {}
+      observers[connection] = callback
+      function connection:Disconnect() observers[self] = nil end
+      return connection
+    end
+  utils.isManualSpamActive = function() return false end
+  utils.setManualSpamActive = function() end
+  utils.observeSpam = function()
+    return { Disconnect = function() end }
+  end
+  utils.resetConfig = function() return utils.setConfig(table.clone(options.defaults or {})) end
+  utils.stop = function()
+    if active then
+      active.destroy()
+    end
+  end
+  local definition = options.definition or { pages = options.pages or {}, miniBalls = options.mini or {} }
+  local hub = table.clone(deps.Hub)
+  hub.getUIConfig = function() return definition end
+  hub.getReadouts = function() return options.readouts or {} end
+  hub.getChoices = function() return {} end
+  hub.createActions = function() return {} end
+  hub.getMiniVisibility = function() return {} end
+  hub.hasClashPrediction = function() return false end
+  hub.areAbilitiesEnabled = function() return false end
+  hub.getAbilityAvailability = function() return false end
+  hub.observeAbilityMode = function()
+    return { Disconnect = function() end }
+  end
+  deps.Utils, deps.Hub = utils, hub
+  deps.UIConfig = { pages = definition.pages, getPages = function() return definition.pages end }
+  deps.GameContext = { getProfile = function() return { id = "external", title = utils.name(), version = options.version } end }
+  deps.Controls = table.clone(options.controls or {})
+  deps.Controls.onClose = deps.Controls.onClose or utils.stop
+  deps.Brand = { name = utils.name(), author = utils.author() }
+  deps.BeforePresent = nil
+  local ok, reason = ExodusUI.setup(deps)
+  assert(ok, reason)
+  local owner = active
+  if options.icon then
+    ExodusUI.setIcon(options.icon)
+  end
+  return {
+    Components = owner.kit.Components,
+    notify = owner.notifications.persistent,
+    notifyCorner = owner.cornerNotifications.show,
+    createMini = owner.floating.add,
+    destroy = owner.destroy,
+    toggle = owner.window.toggle,
+  }
 end
 
 function ExodusUI.setIcon(image)
@@ -204,6 +310,8 @@ ExodusUI.__contract = {
     Header = "uiheader",
     Floating = "uifloating",
     Notifications = "uinotificationview",
+    Surface = "uisurface",
+    CornerNotifications = "uicornernotification",
     Telemetry = "uitelemetry",
     Input = "uiinput",
     Assists = "uiassists",
@@ -233,6 +341,7 @@ ExodusUI.__contract = {
     },
     Hub = {
       "getUIConfig",
+      "getChoices",
       "getReadouts",
       "hasClashPrediction",
       "getAbilityAvailability",
@@ -252,6 +361,8 @@ ExodusUI.__contract = {
     Header = { "create" },
     Floating = { "create" },
     Notifications = { "create" },
+    Surface = { "create" },
+    CornerNotifications = { "create" },
     Telemetry = { "create" },
     Input = { "create" },
     Assists = { "create" },
@@ -261,7 +372,7 @@ ExodusUI.__contract = {
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },
-  provides = { "setup", "notify", "setIcon" },
+  provides = { "setup", "create", "createMini", "notify", "notifyCorner", "setIcon" },
 }
 
 return ExodusUI

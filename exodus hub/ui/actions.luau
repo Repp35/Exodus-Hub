@@ -1,4 +1,4 @@
--- [[ uiactions ]]
+-- [[ actions ]]
 --!optimize 2
 -- @modules uiactions
 
@@ -10,7 +10,6 @@ local Dumper
 
 -- configuration
 local CONFIG = {
-  AFK_INTERVAL = 20,
   CONFIRM_SECONDS = 3,
 }
 
@@ -23,9 +22,9 @@ end
 -- actions
 function Actions.create(context)
   local scope, controls = context.scope, context.controls
+  local GameInfo = context.hub or GameInfo
   local shortcuts = {}
   local handles, callbacks, states = {}, {}, {}
-  local antiConnection, antiGeneration = nil, 0
   local resetPending, resetGeneration = false, 0
   local function notify(message, important)
     if scope.alive then
@@ -42,28 +41,12 @@ function Actions.create(context)
       return controls[name](...)
     end
   end
-  callbacks.panic = function()
-    context.setSpam(false)
-    invoke("onPanic")
-  end
-  callbacks.upDash = function()
-    local available, reason = GameInfo.getAbilityAvailability("dash")
-    if not available then
-      notify(reason)
-      return
-    end
-    invoke("onUpDash")
-  end
   callbacks.rejoin = function() invoke("onRejoin") end
   callbacks.serverHop = function() invoke("onServerHop") end
   callbacks.resetCharacter = function()
-    local player = Utils.getLocalPlayer()
-    local character = player and player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Health > 0 then
-      humanoid.Health = 0
-    else
-      notify("Personagem indisponível", true)
+    local ok, reason = invoke("onResetCharacter")
+    if ok == false then
+      notify(reason or "Personagem indisponível", true)
     end
   end
   callbacks.resetSettings = function()
@@ -118,56 +101,6 @@ function Actions.create(context)
       persistent("Dumper is already running.", "warning", 2)
     end
   end
-  states.antiAFK = function() return antiConnection ~= nil end
-  callbacks.antiAFK = function(enabled)
-    if enabled == (antiConnection ~= nil) then
-      return true
-    end
-    antiGeneration += 1
-    if antiConnection then
-      scope.remove(antiConnection)
-      antiConnection = nil
-    end
-    if not enabled then
-      return true
-    end
-    local player = Utils.getLocalPlayer()
-    local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
-    if not player then
-      Utils.recordError("AntiAFK", "Player unavailable")
-      return false
-    end
-    local function pulse()
-      local inputOk, err = pcall(function()
-        if not ok or not virtualUser then
-          error("VirtualUser unavailable")
-        end
-        virtualUser:CaptureController()
-        virtualUser:ClickButton2(Vector2.new(0, 0))
-      end)
-      if not inputOk then
-        local fallback, fallbackErr = pcall(function()
-          local vim = game:GetService("VirtualInputManager")
-          vim:SendMouseButtonEvent(0, 0, 1, true, game, 0)
-          vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
-        end)
-        if not fallback then
-          Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr))
-        end
-      end
-    end
-    antiConnection = scope.connect(player.Idled, pulse)
-    local generation = antiGeneration
-    task.spawn(function()
-      while scope.alive and generation == antiGeneration and Utils.isActive() do
-        task.wait(CONFIG.AFK_INTERVAL)
-        if scope.alive and generation == antiGeneration and Utils.isActive() then
-          pulse()
-        end
-      end
-    end)
-    return true
-  end
   local gameActions = GameInfo.createActions(context)
   for name, callback in pairs(gameActions.callbacks or {}) do
     assert(not callbacks[name], "Duplicate game action: " .. name)
@@ -176,27 +109,15 @@ function Actions.create(context)
   for name, read in pairs(gameActions.states or {}) do
     states[name] = read
   end
-  callbacks.manualSpam = function(enabled)
-    if context.desktop then
-      if Utils.getConfigValue("ManualSpamMode") ~= "Hold" then
-        context.setSpam(enabled)
-      end
-    else
-      context.showMini(enabled)
-    end
-    return true
+  local viewActions = context.actionFactory and context.actionFactory(context) or {}
+  for name, callback in pairs(viewActions.callbacks or {}) do
+    assert(not callbacks[name], "Duplicate UI action: " .. name)
+    callbacks[name] = callback
   end
-  states.manualSpam = function()
-    if context.desktop then
-      return Utils.isManualSpamActive()
-    end
-    return Utils.getConfigValue("MiniSpamVisible") == true
+  for name, read in pairs(viewActions.states or {}) do
+    states[name] = read
   end
-  local after = {
-    AutoDark = function() invoke("onAutoDarkChanged") end,
-    AutoJump = function() invoke("onAutoJumpChanged") end,
-    ForcePCUI = function() context.rebuild() end,
-  }
+  local after = { ForcePCUI = function() context.rebuild() end }
 
   local result = {}
   function result.resolve(definition)
@@ -208,14 +129,17 @@ function Actions.create(context)
     if definition.action == "notifications" then
       definition.key = context.desktop and "DesktopNotifications" or "MobileNotifications"
     end
-    if definition.action == "manualSpam" and not context.desktop then
-      definition.key = "MiniSpamVisible"
+    if viewActions.resolve then
+      viewActions.resolve(definition)
     end
     if definition.action then
-      assert(definition.action == "notifications" or callbacks[definition.action], "Unknown UI action: " .. tostring(definition.action))
-      definition.onClick = callbacks[definition.action]
-      definition.onChange = callbacks[definition.action]
-      definition.getState = states[definition.action]
+      assert(
+        definition.action == "notifications" or (callbacks[definition.action] or controls[definition.action]),
+        "Unknown UI action: " .. tostring(definition.action)
+      )
+      definition.onClick = callbacks[definition.action] or controls[definition.action]
+      definition.onChange = callbacks[definition.action] or controls[definition.action]
+      definition.getState = states[definition.action] or definition.getState
     end
     if definition.feature then
       definition.onChange = function(value) invoke(definition.kind == "toggle" and "onUniversalToggle" or "onUniversalValue", definition.feature, value) end
@@ -233,7 +157,7 @@ function Actions.create(context)
     end
     if definition.shortcutKey then
       local entry = { definition = definition, handle = handle }
-      if definition.action == "panic" then
+      if definition.shortcutPriority == 0 then
         table.insert(shortcuts, 1, entry)
       else
         shortcuts[#shortcuts + 1] = entry
@@ -265,9 +189,9 @@ function Actions.create(context)
         if not handle.activate or not handle.activate() then
           return false
         end
-        if definition.action ~= "manualSpam" and definition.action ~= "upDash" then
+        if not definition.silentShortcut then
           local message = definition.title
-          if definition.kind == "toggle" then
+          if definition.kind == "toggle" or definition.kind == "checkbox" then
             message = message .. (handle.getValue() and " On" or " Off")
           end
           context.notify(message, false, { category = "shortcut", topic = definition.action or definition.key })
@@ -277,21 +201,17 @@ function Actions.create(context)
     end
     return false
   end
-  function result.refreshManual()
-    if handles.manualSpam then
-      handles.manualSpam.setValue(states.manualSpam())
+  function result.refreshStates()
+    for name, read in pairs(states) do
+      local handle = handles[name]
+      if handle and handle.setValue then
+        handle.setValue(read())
+      end
     end
   end
   scope.add(function()
-    antiGeneration += 1
     resetGeneration += 1
   end)
-  scope.add(Utils.observeConfig(function(changes)
-    if changes.AntiAFK ~= nil then
-      callbacks.antiAFK(changes.AntiAFK == true)
-    end
-  end))
-  callbacks.antiAFK(Utils.getConfigValue("AntiAFK") == true)
   return result
 end
 
@@ -300,8 +220,8 @@ Actions.__contract = {
   provides = { "setup", "create" },
   requires = { Utils = "utils", Hub = "hubapi", Dumper = "dumper" },
   requiresMethods = {
-    Utils = { "getConfigValue", "getLocalPlayer", "isActive", "isManualSpamActive", "observeConfig", "resetConfig", "recordError" },
-    Hub = { "createActions", "getAbilityAvailability" },
+    Utils = { "getConfigValue", "isActive", "observeConfig", "resetConfig", "recordError" },
+    Hub = { "createActions" },
     Dumper = { "start", "isRunning" },
   },
 }

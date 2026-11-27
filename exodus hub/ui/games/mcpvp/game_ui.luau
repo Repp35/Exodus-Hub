@@ -20,6 +20,16 @@ local miniBalls = {
   },
   { title = "Stop PvP", label = "STOP\nPVP", action = "resetState", prefix = "MCStopPvPBall" },
 }
+for _, mini in ipairs(miniBalls) do
+  mini.mobileOnly = true
+  mini.id = mini.prefix
+  mini.visibleKey = mini.prefix .. "Visible"
+  mini.xKey, mini.yKey = mini.prefix .. "X", mini.prefix .. "Y"
+  mini.scaleKey, mini.squareKey = "MiniUIScale", "MiniUISquare"
+  if mini.action == "resetState" then
+    mini.action = "onStopPvP"
+  end
+end
 GameUI.definition = {
   miniBalls = miniBalls,
   pageOrder = { "mcpvp", "mcpvp-mini" },
@@ -144,7 +154,7 @@ end
 GameUI.definition.pages[#GameUI.definition.pages + 1] = {
   id = "mcpvp-mini",
   title = "Mini UI",
-  columns = 2,
+  columns = 1,
   sections = { { title = "Floating Buttons", components = miniComponents } },
 }
 function GameUI.setup() return true end

@@ -1,4 +1,4 @@
--- [[ uiconfig ]]
+-- [[ definitions ]]
 --!optimize 2
 -- @modules uiconfig
 
@@ -12,7 +12,7 @@ local CONFIG = {
       id = "information",
       title = "Informações",
       columns = 1,
-      width = 360,
+
       utility = true,
       sections = {
         { title = "Sessão", components = { { kind = "readout", info = "session" } } },
@@ -26,7 +26,7 @@ local CONFIG = {
       id = "antilag",
       title = "Anti Lag",
       columns = 1,
-      width = 360,
+
       sections = {
         {
           title = "Anti Lag",
@@ -52,7 +52,7 @@ local CONFIG = {
       id = "indeed",
       title = "Universals",
       columns = 1,
-      width = 360,
+
       sections = {
         {
           title = "Developer Tools",
@@ -70,7 +70,7 @@ local CONFIG = {
           components = {
             { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind" },
             { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
-            { kind = "toggle", title = "Anti AFK", key = "AntiAFK", action = "antiAFK", shortcutKey = "AntiAFKKeybind" },
+            { kind = "toggle", title = "Anti AFK", key = "AntiAFK", feature = "AntiAFK", shortcutKey = "AntiAFKKeybind" },
             {
               kind = "toggle",
               title = "Infinite Zoom",
@@ -122,6 +122,24 @@ local CONFIG = {
             },
             {
               kind = "toggle",
+              title = "Jump Power",
+              key = "UniversalJumpPowerEnabled",
+              feature = "JumpPower",
+              shortcutKey = "JumpPowerKeybind",
+              description = "Altera a força do pulo.",
+            },
+            {
+              kind = "scroll",
+              title = "Jump Power",
+              key = "UniversalJumpPower",
+              feature = "JumpPower",
+              parentKey = "UniversalJumpPowerEnabled",
+              min = 0,
+              max = 300,
+              increment = 1,
+            },
+            {
+              kind = "toggle",
               title = "Gravity",
               description = "Usa a gravidade definida abaixo.",
               key = "UniversalGravityEnabled",
@@ -143,7 +161,7 @@ local CONFIG = {
             {
               kind = "toggle",
               title = "Invisicam",
-              description = "Evita que o personagem cubra a câmera.",
+              description = "Torna transparentes os obstáculos entre a câmera e o personagem.",
               key = "UniversalInvisicam",
               shortcutKey = "InvisicamKeybind",
               feature = "Invisicam",
@@ -164,7 +182,7 @@ local CONFIG = {
       id = "config",
       title = "Config",
       columns = 1,
-      width = 300,
+
       utility = true,
       sections = {
         {
@@ -198,6 +216,8 @@ local CONFIG = {
             { kind = "button", title = "Resetar personagem", description = "Reinicia o personagem.", action = "resetCharacter" },
             { kind = "button", title = "Rejoin", description = "Volta ao mesmo servidor.", action = "rejoin" },
             { kind = "button", title = "Server Hop", description = "Busca outro servidor com ping até 100 ms.", action = "serverHop" },
+            { kind = "toggle", title = "Mini UI quadrada", key = "MiniUISquare", description = "Desative para usar o formato redondo." },
+            { kind = "slider", title = "Tamanho da Mini UI", key = "MiniUIScale", min = 0.5, max = 2, increment = 0.05, valueName = "x", compact = true },
             { kind = "button", title = "Reset settings", action = "resetSettings" },
           },
         },
@@ -209,10 +229,10 @@ local CONFIG = {
       MobileNotifications = "boolean",
       DesktopNotifications = "boolean",
       DesktopShortcutNotifications = "boolean",
+      MiniUISquare = "boolean",
+      MiniUIScale = "miniScale",
       ForcePCUI = "boolean",
       CameraSensitivity = "rate",
-      AntiAFK = "boolean",
-      AutoJump = "boolean",
       JumpKeybind = "keyCode",
       BtnX = "position",
       BtnY = "position",
@@ -223,10 +243,10 @@ local CONFIG = {
       MobileNotifications = true,
       DesktopNotifications = true,
       DesktopShortcutNotifications = true,
+      MiniUISquare = true,
+      MiniUIScale = 1,
       ForcePCUI = false,
-      CameraSensitivity = 1.5,
-      AntiAFK = true,
-      AutoJump = false,
+      CameraSensitivity = 1,
       JumpKeybind = Enum.KeyCode.J,
     },
   },
@@ -251,6 +271,7 @@ function UIConfig.getPages(definition)
   local pages, byId = {}, {}
   for _, source in ipairs(CONFIG.PAGES) do
     local page = table.clone(source)
+    page.title = (definition.pageTitles or {})[page.id] or page.title
     page.sections = {}
     for _, originalSection in ipairs(source.sections) do
       local section = table.clone(originalSection)

@@ -1,4 +1,4 @@
--- [[ reversible property optimization ]]
+-- [[ properties ]]
 --!optimize 2
 -- @modules renderproperties
 
@@ -11,6 +11,14 @@ local function createOptimizer(services, initialConfig)
   local roots = services.Roots or { Workspace, Lighting }
   local CollectionService = services.CollectionService
   local Heartbeat = services.RunService.Heartbeat
+  local phase = 0
+  local function waitPhase()
+    if services.PhasesPerFrame == 2 then
+      phase = 1 - phase(phase == 1 and services.RunService.PreSimulation or services.RunService.PostSimulation):Wait()
+    else
+      Heartbeat:Wait()
+    end
+  end
   local options = table.clone(initialConfig)
   local controller = {}
   local enabled, alive, destroying = false, true, false
@@ -355,9 +363,10 @@ local function createOptimizer(services, initialConfig)
     task.defer(function()
       while alive and workAvailable() do
         local bootstrap = #scan > 0 or not enabled
-        local deadline = os.clock() + (bootstrap and 6 or options.BudgetMs) / 1000
+        local phases = services.PhasesPerFrame or 1
+        local deadline = os.clock() + (bootstrap and 6 or options.BudgetMs) / (1000 * phases)
         local count = 0
-        local limit = bootstrap and 4096 or options.MaxItemsPerFrame
+        local limit = math.max(1, math.floor((bootstrap and 4096 or options.MaxItemsPerFrame) / phases))
         repeat
           if not enabled then
             local entry = records[#records]
@@ -384,7 +393,7 @@ local function createOptimizer(services, initialConfig)
           count += 1
         until count >= limit or os.clock() >= deadline or not workAvailable()
         if workAvailable() then
-          Heartbeat:Wait()
+          waitPhase()
         end
       end
       workerRunning = false

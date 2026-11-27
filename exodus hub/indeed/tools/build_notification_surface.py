@@ -3,8 +3,8 @@ from pathlib import Path
 import argparse
 
 ROOT = Path(__file__).resolve().parents[2]
-START = '-- BEGIN GENERATED NOTIFICATION SURFACE'
-END = '-- END GENERATED NOTIFICATION SURFACE'
+START = '-- generated-start'
+END = '-- generated-end'
 
 
 def main():
@@ -13,8 +13,9 @@ def main():
     args = parser.parse_args()
     path = ROOT / 'loader.luau'
     source = path.read_text()
-    body = (ROOT / 'ui/appearance.luau').read_text().replace('-- @modules uiappearance\n', '')
-    expected = START + '\nlocal Appearance = (function()\n' + body + '\nend)()\n' + END
+    appearance = (ROOT / 'ui/appearance.luau').read_text().replace('-- @modules uiappearance\n', '')
+    surface = (ROOT / 'ui/startup.luau').read_text().replace('-- @modules uisurface\n', '')
+    expected = START + '\nlocal Appearance = (function()\n' + appearance + '\nend)()\nlocal Surface = (function()\n' + surface + '\nend)()\n' + END
     start, end = source.index(START), source.index(END) + len(END)
     updated = source[:start] + expected + source[end:]
     # Format exactly as the rest of the project, including the embedded function.

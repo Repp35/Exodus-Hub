@@ -256,6 +256,7 @@ function Runtime.createAPI(loaded)
     getUIConfig = function() return loaded.gameui.definition end,
     resetState = Runtime.reset,
     controls = {
+      onStopPvP = Runtime.reset,
       onThrowPearl = function()
         local snap = loaded.utils.isActive() and loaded.mcpnative.snapshot()
         if not snap then

@@ -21,6 +21,7 @@ function Context.create(deps, deviceDesktop)
   local UIState = {
     connections = {},
     panelOpen = false,
+    initializing = true,
     spamOn = false,
     clashBallOn = false,
     btnIsDragging = function() return false end,
@@ -56,6 +57,7 @@ function Context.create(deps, deviceDesktop)
     local o = Instance.new(cls)
     if o:IsA("GuiObject") then
       o.BorderSizePixel = 0
+      o.AutoLocalize = false
     end
     if o:IsA("GuiButton") then
       o.AutoButtonColor = false
@@ -271,6 +273,7 @@ function Context.create(deps, deviceDesktop)
   context.playerGui = playerGui
   context.refs.screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
+    Enabled = false,
     DisplayOrder = CONFIG.DISPLAY_ORDER,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
@@ -284,6 +287,7 @@ function Context.create(deps, deviceDesktop)
     write = setConfigValue,
     observe = Utils.observeConfig,
     notify = function(...) return context.notifications.toast(...) end,
+    choices = deps.Hub.getChoices,
     validateShortcut = function(key, binding) return context.actions.validateShortcut(key, binding) end,
     onCapture = function(active) UIState.keyCapture = active end,
   })
@@ -292,7 +296,7 @@ function Context.create(deps, deviceDesktop)
     local size = viewport()
     context.refs.responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
     local scale = context.refs.responsiveScale.Scale
-    local names = { "configPanel", "floatingButton", "clashBall", "parryBall", "darkBall", "jumpBall", "upDashBall" }
+    local names = { "configPanel", "floatingButton" }
     for _, name in ipairs(context.miniBallRefs or {}) do
       names[#names + 1] = name
     end
@@ -309,9 +313,7 @@ function Context.create(deps, deviceDesktop)
         end
       end
     end
-    if context.floating and context.refs.miniGui and context.refs.miniGui.Visible then
-      context.floating.applyMiniScale(Utils.getConfigValue("MiniSpamScale"))
-    end
+
   end
   local cameraConnection
   local function bindCamera()
@@ -331,7 +333,10 @@ function Context.create(deps, deviceDesktop)
       return
     end
     if UIState.manualHoldInput then
-      Utils.setManualSpamActive(false)
+      local primary = context.inputDefinition.primary
+      if primary and deps.Controls[primary.write] then
+        deps.Controls[primary.write](false)
+      end
     end
     if context.pages then
       context.pages.destroy()

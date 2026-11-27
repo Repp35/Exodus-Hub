@@ -27,6 +27,7 @@ local __part_antilag = (function()
   local properties
   local adapter
   local spatial
+  local lifetime, scheduler
   local CONFIG = {
     schema = {
       AntiLagEnabled = "boolean",
@@ -150,6 +151,7 @@ local __part_antilag = (function()
       runService = runService,
       replicated = replicated,
       compatible = adapter.isAvailable(),
+      scope = lifetime.scope(),
     }
 
     session = owner
@@ -166,6 +168,7 @@ local __part_antilag = (function()
       Workspace = workspace,
       Lighting = lighting,
       RunService = runService,
+      PhasesPerFrame = 2,
       CollectionService = game:GetService("CollectionService"),
       GameSettings = gameSettings,
       Roots = optimizerRoots,
@@ -188,6 +191,12 @@ local __part_antilag = (function()
       Roots = visualRoots,
       Player = player,
       RunService = runService,
+      PhasesPerFrame = 2,
+      ConnectPhysics = function(callback)
+        local scope = owner.scope.child()
+        scheduler.connectPhysics(scope, callback)
+        return { Disconnect = scope.destroy }
+      end,
       GetFocusY = function()
         local character = viewedCharacter()
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -231,6 +240,7 @@ local __part_antilag = (function()
       return
     end
     owner.closed = true
+    owner.scope.destroy()
     if owner.spatial then
       owner.spatial:Destroy()
     end
@@ -342,6 +352,7 @@ local __part_antilag = (function()
     AntiLag.teardown()
     Utils = deps.Utils
     properties, adapter, spatial = deps.Properties, deps.Adapter, deps.Spatial
+    lifetime, scheduler = deps.Lifetime, deps.Controller
     observer = Utils.observeConfig(function(changes)
       for key in pairs(changes) do
         if CONFIG.schema[key] then
@@ -369,12 +380,16 @@ local __part_antilag = (function()
   AntiLag.__config = CONFIG
   AntiLag.__contract = {
     requires = {
+      Lifetime = "lifetime",
+      Controller = "universalcontroller",
       Properties = "renderproperties",
       Adapter = "renderadapter",
       Spatial = "renderspatial",
       Utils = "utils",
     },
     requiresMethods = {
+      Lifetime = { "scope" },
+      Controller = { "connectPhysics" },
       Properties = { "create" },
       Adapter = { "create", "apply", "isAvailable" },
       Spatial = { "create" },

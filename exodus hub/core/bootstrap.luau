@@ -1,4 +1,4 @@
--- [[ session bootstrap ]]
+-- [[ bootstrap ]]
 --!optimize 2
 -- @modules bootstrap
 
@@ -21,7 +21,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     end
   end
   utils.setConfigModule(loaded.config)
-  utils.setConfig(loaded.config.defaults())
+  utils.setConfig(loaded.config.defaults({ player = utils.getLocalPlayer(), profile = profile }))
   utils.loadConfig()
   utils.setModuleURLs(urls)
   local binds = {}
@@ -40,7 +40,6 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
       if name == "character" then
         deps.characterBinds = binds
       end
-      -- Register before setup so partial initialization is also cleaned up.
       if type(module.teardown) == "function" then
         local cleanup = { Connected = true }
         function cleanup:Disconnect()
@@ -65,6 +64,17 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     return utils.stop()
   end
   controls.onReload = transport.reload
+  controls.onResetCharacter = function()
+    local player = utils.getLocalPlayer()
+    local character = player and player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+      return false, "Personagem indisponível"
+    end
+    humanoid.Health = 0
+    return true
+  end
+
   controls.onUniversalToggle = function(feature, enabled)
     local module = loaded[string.lower(feature)]
     if module and module.setEnabled then
@@ -95,6 +105,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
   end
   local dependencies = loaded.permissions.resolve("ui", loaded)
   dependencies.Controls = controls
+  dependencies.BeforePresent = transport.present
   local ok, err = loaded.ui.setup(dependencies)
   assert(ok == true, tostring(err))
   loaded.updates.start(transport)

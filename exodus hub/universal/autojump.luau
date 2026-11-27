@@ -1,121 +1,47 @@
--- [[ auto jump ]]
+-- [[ autojump ]]
 --!optimize 2
 -- @modules autojump
 
--- module
 local AutoJump = {}
-local utils
-local jumpConnection
-local jumpCharacter
-local jumpHumanoid
-local configObserver
-local epoch = 0
-
--- configuration
-local CONFIG = {
-  AIR_MATERIAL = Enum.Material.Air,
-  JUMPING_STATE = Enum.HumanoidStateType.Jumping,
-}
-
--- jump-control
-local function stopJump()
-  epoch += 1
-  local connection = jumpConnection
-  jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
-  if not connection then
-    return
+local controller
+function AutoJump.sync() return controller and controller.sync() or false end
+function AutoJump.setEnabled(value) return controller and controller.setEnabled(value) or false end
+function AutoJump.teardown()
+  if controller then
+    controller.destroy()
+    controller = nil
   end
-  if utils then
-    utils.untrackGlobal(connection)
-  end
-  connection:Disconnect()
-end
-
--- jump-loop
-local function jumpStep(player)
-  local character = player.Character
-  if character ~= jumpCharacter then
-    jumpCharacter, jumpHumanoid = character, nil
-  end
-  if not character or not character.Parent then
-    return
-  end
-  local humanoid = jumpHumanoid
-  if not humanoid or humanoid.Parent ~= character then
-    humanoid = character:FindFirstChildOfClass("Humanoid")
-    jumpHumanoid = humanoid
-  end
-  if not humanoid or humanoid.Health <= 0 or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then
-    return
-  end
-  if humanoid:GetState() ~= CONFIG.JUMPING_STATE then
-    humanoid:ChangeState(CONFIG.JUMPING_STATE)
-  end
-end
-
--- synchronization
-function AutoJump.sync()
-  if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then
-    stopJump()
-    return true
-  end
-  if jumpConnection and jumpConnection.Connected ~= false then
-    return true
-  end
-  stopJump()
-  local player, runService = utils.getLocalPlayer(), utils.getRunService()
-  if not player or not runService or not runService.Heartbeat then
-    return false, "Jogador ou Heartbeat indisponível"
-  end
-  local token = epoch
-  jumpConnection = runService.Heartbeat:Connect(function()
-    if token ~= epoch then
-      return
-    end
-    if not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then
-      stopJump()
-      return
-    end
-    jumpStep(player)
-  end)
-  utils.trackGlobal(jumpConnection)
   return true
 end
-
--- setup
 function AutoJump.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
-    return false, "Utils ausente"
-  end
   AutoJump.teardown()
-  utils = deps.Utils
-  configObserver = utils.observeConfig(function(changes)
-    if changes.AutoJump ~= nil then
-      AutoJump.sync()
+  local utils = deps.Utils
+  local function jump()
+    local player = utils.getLocalPlayer()
+    local character = player and player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == Enum.Material.Air then
+      return
     end
-  end)
-  utils.trackGlobal(configObserver)
-  return AutoJump.sync()
-end
-function AutoJump.teardown()
-  if configObserver then
-    if utils then
-      utils.untrackGlobal(configObserver)
+    if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then
+      humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     end
-    configObserver:Disconnect()
-    configObserver = nil
   end
-  stopJump()
-  utils = nil
+  controller = deps.Controller.create(utils, deps.Lifetime, {
+    key = "AutoJump",
+    start = function(scope) deps.Controller.connectPhysics(scope, jump) end,
+    update = jump,
+  })
+  return controller.sync()
 end
-
--- contract
+AutoJump.__config = { schema = { AutoJump = "boolean" }, defaults = { AutoJump = false } }
 AutoJump.__contract = {
-  requires = { Utils = "utils" },
+  requires = { Utils = "utils", Lifetime = "lifetime", Controller = "universalcontroller" },
   requiresMethods = {
-    Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "isActive", "observeConfig" },
+    Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal", "recordError" },
+    Lifetime = { "scope" },
+    Controller = { "create", "connectPhysics" },
   },
-  provides = { "setup", "sync", "teardown" },
+  provides = { "setup", "teardown", "sync", "setEnabled" },
 }
-
 return AutoJump
