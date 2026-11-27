@@ -1,140 +1,111 @@
 -- [[ game runtime ]]
 --!optimize 2
 
+-- module
 local Runtime = {}
-local loaded, scope, character
-function Runtime.setup() return true end
+local Bridge, current, loaded
+
+-- setup
+function Runtime.setup(deps)
+  Bridge = deps.Bridge
+  return true
+end
 function Runtime.reset()
-  if not loaded then
+  if not current then
     return
   end
-  loaded.mm2movement.cancel()
-  loaded.mm2farm.reset()
-  loaded.mm2pickup.reset()
-  loaded.mm2weapons.reset()
-  loaded.mm2maptools.reset()
-  loaded.mm2alerts.reset()
+  current.features.AutoFarm:StopMotion()
+  current.features.MapTools:StopMovement()
+  loaded.mm2native.reset()
 end
 function Runtime.teardown()
-  Runtime.reset()
-  if scope then
-    scope.destroy()
+  if current then
+    current.destroy()
   end
-  scope, loaded, character = nil, nil, nil
+  current, loaded = nil, nil
 end
 function Runtime.bind(modules)
   Runtime.teardown()
-  loaded, scope = modules, modules.lifetime.scope()
-  local owner = scope
-  modules.mm2state.bind(scope)
-  modules.mm2world.bind(scope)
-  modules.mm2movement.bind(scope)
-  modules.mm2visuals.bind(scope)
-  modules.mm2alerts.bind(modules.ui.notifyCorner)
-  local elapsed, slow, errors = 0, 0, {}
-  local function run(name, callback, ...)
-    local ok, reason = pcall(callback, ...)
-    if not ok then
-      modules.mm2movement.cancel()
-      if os.clock() >= (errors[name] or 0) then
-        errors[name] = os.clock() + 5
-        modules.utils.recordError("mm2." .. name, tostring(reason))
-      end
-    end
-  end
-  scope.connect(game:GetService("RunService").Heartbeat, function(dt)
-    elapsed += dt
-    slow += dt
-    if elapsed < 0.1 then
-      return
-    end
-    elapsed = 0
-    if not modules.utils.isActive() then
-      Runtime.reset()
-      modules.mm2visuals.step()
-      return
-    end
-    local snap = modules.mm2state.live(modules.utils.getLocalPlayer(), true)
-    local nextCharacter = snap and snap.character
-    if nextCharacter ~= character then
-      Runtime.reset()
-      character = nextCharacter
-    end
-    run("world", modules.mm2world.refresh)
-    run("movement", modules.mm2movement.step)
-    run("weapons", modules.mm2weapons.step)
-    local collecting = false
-    run("pickup", function() collecting = modules.mm2pickup.step(snap) end)
-    if not collecting then
-      run("farm", modules.mm2farm.step, snap)
-    end
-    run("map", modules.mm2maptools.step)
-    if slow >= 0.25 then
-      slow = 0
-      run("visuals", modules.mm2visuals.step)
-      run("alerts", modules.mm2alerts.step)
-    end
-  end)
-  scope.add(modules.utils.observeConfig(function(changes)
-    if changes.MM2AutoFarm == false then
-      modules.mm2farm.reset()
-    end
-    if changes.MM2ESP == false then
-      modules.mm2visuals.step()
-    end
-  end))
-  owner.add(function()
-    modules.mm2movement.teardown()
-    modules.mm2world.teardown()
-    modules.mm2state.teardown()
-    modules.mm2visuals.teardown()
-  end)
+  loaded = modules
+  current = Bridge.create(modules)
   return { mode = "mm2" }
 end
+
+-- actions
 function Runtime.createAPI(modules)
+  local function feature(name) return current and current.features[name] end
+  local function shoot()
+    local object = feature("ShootMurder")
+    return object and object:TryShoot(false) or false
+  end
+  local function throw()
+    local object = feature("MurderCombat")
+    return object and object:TryThrowManual(modules.utils.getConfigValue("MM2ManualThrowTargets"), modules.utils.getConfigValue("MM2ManualThrowFOV")) or false
+  end
+  local function tools(method, ...)
+    local object = feature("MapTools")
+    if not object then
+      return false
+    end
+    return object[method](object, ...)
+  end
+  local function selectedPlayer() return game:GetService("Players"):FindFirstChild(modules.utils.getConfigValue("MM2TargetPlayer") or "None") end
   return {
     getUIConfig = function() return modules.gameui.definition end,
     resetState = Runtime.reset,
-    createActions = function(context)
-      local function checked(action)
-        return function()
-          modules.mm2movement.cancel()
-          local ok, reason = action()
-          if ok == false and reason then
-            context.notify(reason, true)
-          end
-          return ok
-        end
-      end
+    createActions = function()
       return {
         callbacks = {
-          mm2Shoot = function() return modules.mm2weapons.shoot(false) end,
-          mm2Throw = function() return modules.mm2weapons.throw(false) end,
-          mm2Map = checked(modules.mm2maptools.map),
-          mm2Lobby = checked(modules.mm2maptools.lobby),
-          mm2Murderer = checked(function() return modules.mm2maptools.role("Murderer") end),
-          mm2Gun = checked(modules.mm2maptools.gun),
-          mm2Holder = checked(modules.mm2maptools.holder),
-          mm2Player = checked(function() return modules.mm2maptools.player(false) end),
-          mm2Walk = checked(function() return modules.mm2maptools.player(true) end),
+          mm2Shoot = shoot,
+          mm2Throw = throw,
+          mm2Map = function() return tools("TeleportToMap") end,
+          mm2Lobby = function() return tools("TeleportToLobby") end,
+          mm2Murderer = function() return tools("TeleportToRole", "Murderer") end,
+          mm2Gun = function() return tools("TeleportToGun") end,
+          mm2Holder = function() return tools("TeleportToRole", "GunHolder") end,
+          mm2Player = function() return tools("TeleportToPlayer", selectedPlayer()) end,
+          mm2Walk = function() return tools("WalkToPlayer", selectedPlayer()) end,
         },
+        attach = function(definition, handle)
+          local esp = feature("ESP")
+          local categories = {
+            MM2ESPMurderer = "Murderer",
+            MM2ESPSheriff = "Sheriff",
+            MM2ESPInnocent = "Innocent",
+            MM2ESPCoins = "CandyCoin",
+            MM2ESPGun = "Gun",
+            MM2ESPSelf = "Self",
+          }
+          local category = categories[definition.key]
+          if esp and category and handle.setColor then
+            handle.setColor(esp.Colors[category])
+          end
+        end,
       }
     end,
-    controls = {
-      onMM2Shoot = function() return modules.mm2weapons.shoot(false) end,
-      onMM2Throw = function() return modules.mm2weapons.throw(false) end,
-    },
+    controls = { onMM2Shoot = shoot, onMM2Throw = throw },
     getChoices = function(name)
       if name == "mm2Players" then
-        return modules.mm2maptools.players()
+        return tools("GetPlayerOptions") or {}
       end
       if name == "mm2Maps" then
-        return modules.mm2maptools.maps()
+        return tools("GetFavoriteMapOptions") or {}
       end
       return {}
     end,
-    updateBlockers = { modules.mm2movement.busy },
+    updateBlockers = {
+      function()
+        local farm, pickup, map = feature("AutoFarm"), feature("AutoGunPickup"), feature("MapTools")
+        return farm and farm.Farming or pickup and pickup.Busy or map and map.IsWalking or modules.mm2native.busy()
+      end,
+    },
   }
 end
-Runtime.__contract = { provides = { "setup", "reset", "teardown", "bind", "createAPI" }, requires = {} }
+
+-- contract
+Runtime.__contract = {
+  provides = { "setup", "reset", "teardown", "bind", "createAPI" },
+  requires = { Bridge = "mm2bridge" },
+  requiresMethods = { Bridge = { "create" } },
+}
 return Runtime

@@ -1,159 +1,342 @@
 -- [[ mm2 weapons ]]
 --!optimize 2
 
+-- module
 local Weapons = {}
-local State, Targeting, Utils, Native
-local lastShot, lastStab, lastThrow, equipped, equippedAt = -math.huge, -math.huge, -math.huge, nil, 0
-local random = Random.new()
-function Weapons.setup(deps)
-  State, Targeting, Utils, Native = deps.State, deps.Targeting, deps.Utils, deps.Native
-  return true
-end
-function Weapons.reset()
-  Native.reset()
-  equipped, equippedAt = nil, 0
-  lastShot, lastStab, lastThrow = -math.huge, -math.huge, -math.huge
-end
-local function equip(snap, name)
-  local tool = State.tool(snap, name, true)
-  if tool ~= equipped then
-    equipped, equippedAt = tool, os.clock()
-    return
-  end
-  if not tool or tool.Parent ~= snap.character or os.clock() - equippedAt < 0.2 then
-    return
-  end
-  return tool
-end
-local function event(parent, name)
-  local object = parent and parent:FindFirstChild(name)
-  return object and object:IsA("RemoteEvent") and object
-end
-function Weapons.shoot(automatic)
-  local now = os.clock()
-  if not Utils.isActive() or now - lastShot < 3.1 then
-    return false
-  end
-  local snap = State.live(Utils.getLocalPlayer(), true)
-  local target = State.findRole("Murderer")
-  if not snap or not target or target.player == snap.player or snap.role == "Murderer" then
-    return false
-  end
-  if Utils.getConfigValue("MM2LegitSheriff") and not target.character:FindFirstChild("Knife") then
-    return false
-  end
-  local gun = equip(snap, "Gun")
-  if not gun then
-    return false
-  end
-  local shoot = event(gun, "Shoot")
-  if not shoot then
-    return false
-  end
-  local attachment = snap.root:FindFirstChild("GunRaycastAttachment") or gun:FindFirstChild("GunRaycastAttachment", true)
-  local handle = gun:FindFirstChild("Handle")
-  local origin = attachment and attachment:IsA("Attachment") and attachment.WorldPosition
-    or handle and handle:IsA("BasePart") and handle.Position
-    or snap.root.Position
-  local point = Targeting.predict(origin, target, 1200)
-  if not Targeting.clear(snap, target, origin, point) then
-    return false
-  end
-  local accuracy = math.clamp(tonumber(Utils.getConfigValue(automatic and "MM2AutoAccuracy" or "MM2ManualAccuracy")) or 100, 0, 100)
-  if random:NextNumber(0, 100) > accuracy then
-    point += Vector3.new(random:NextNumber(5, 9), random:NextNumber(4, 7), 0)
-  end
-  lastShot = now
-  shoot:FireServer(origin, CFrame.new(point))
-  return true
-end
-function Weapons.throw(automatic)
-  if not Utils.isActive() or Native.busy() then
-    return false
-  end
-  local snap = State.live(Utils.getLocalPlayer(), true)
-  if not snap or snap.role ~= "Murderer" or snap.character:GetAttribute("Zombie") == true then
-    return false
-  end
-  local knife = equip(snap, "Knife")
-  if not knife then
-    return false
-  end
-  local now = os.clock()
-  local charge = math.clamp(tonumber(knife:GetAttribute("ThrowSpeed")) or 0.5, 0.05, 3)
-  if now - lastThrow < charge * 2 or now - lastStab < 0.4 then
-    return false
-  end
-  local target = Targeting.select(snap, Utils.getConfigValue(automatic and "MM2ThrowTargets" or "MM2ManualThrowTargets") or "Aim", 250, Utils.getConfigValue(automatic and "MM2ThrowFOV" or "MM2ManualThrowFOV"))
-  local handle = knife:FindFirstChild("Handle")
-  if not target or not handle or not handle:IsA("BasePart") then
-    return false
-  end
-  local point = Targeting.predict(handle.Position, target, 100)
-  if not Targeting.clear(snap, target, handle.Position, point) then
-    return false
-  end
-  local accepted, reason = Native.throw(snap, knife, CFrame.new(point), function()
-    local live = State.live(target.player, true)
-    return (not automatic or Utils.getConfigValue("MM2AutoThrow")) and live ~= nil and live.character == target.character
-  end)
-  if accepted then
-    lastThrow = now
-  end
-  return accepted, reason
-end
-function Weapons.step()
-  Native.step()
-  if Native.busy() then
-    return
-  end
-  if Utils.getConfigValue("MM2ManualShoot") then
-    local snap = State.live(Utils.getLocalPlayer(), true)
-    if snap and snap.role ~= "Murderer" and State.tool(snap, "Gun", false) then
-      equip(snap, "Gun")
+function Weapons.setup() return true end
+
+-- implementation
+function Weapons.create(deps)
+  local Services = deps.services
+  local Players, Workspace = Services.Players, Services.Workspace
+  local ReplicatedStorage, RunService = Services.ReplicatedStorage, Services.RunService
+  local Player, Runtime, MatchService = deps.player, deps.runtime, deps.match
+  local CollectionService = Services.CollectionService
+  local CONFIG = {
+    MELEE_RANGE = 8,
+    THROW_MAX_RANGE = 240,
+    DEFAULT_KNIFE_SPEED = 96,
+  }
+
+  local MELEE_RANGE = CONFIG.MELEE_RANGE
+  local THROW_MAX_RANGE = CONFIG.THROW_MAX_RANGE
+  local DEFAULT_KNIFE_SPEED = CONFIG.DEFAULT_KNIFE_SPEED
+  local Combat = {
+    AutoAttack = false,
+    AutoThrow = false,
+    AttackTargets = "All",
+    ThrowTargets = "Auto",
+    Motion = setmetatable({}, { __mode = "k" }),
+    Destroyed = false,
+  }
+
+  local function characterInfo(target, profile)
+    if target == Player or type(profile) ~= "table" or profile.Dead or profile.Killed or target:GetAttribute("Alive") ~= true then
+      return nil
     end
+    local character = target.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not character or not character:IsDescendantOf(Workspace) or not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart") then
+      return nil
+    end
+    return character, humanoid, root
   end
-  if Utils.getConfigValue("MM2AutoShoot") then
-    Weapons.shoot(true)
+  local function getContext()
+    local active, character, humanoid, root = MatchService:GetContext()
+    if not active then
+      return nil
+    end
+    local profiles = MatchService:GetPlayerData()
+    local mine = profiles and profiles[Player.Name]
+    if type(mine) ~= "table" or mine.Role ~= "Murderer" or mine.Dead or mine.Killed then
+      return nil
+    end
+    local knife = character:FindFirstChild("Knife")
+    if not knife then
+      local backpack = Player:FindFirstChildOfClass("Backpack")
+      knife = backpack and backpack:FindFirstChild("Knife")
+      if knife and knife:IsA("Tool") then
+        humanoid:EquipTool(knife)
+      end
+      return nil
+    end
+    return character, humanoid, root, knife, profiles
   end
-  local snap = State.live(Utils.getLocalPlayer(), true)
-  if not snap or snap.role ~= "Murderer" then
-    return
+  local function acceptedRole(role, mode)
+    if mode == "All" or mode == "Nearest" or mode == "Auto" or mode == "Aim" or mode == "Random" then
+      return role == "Sheriff" or role == "Hero" or role == "Innocent"
+    end
+    if mode == "Sheriff/Hero" then
+      return role == "Sheriff" or role == "Hero"
+    end
+    if mode == "Innocent" then
+      return role == "Innocent"
+    end
+    return false
   end
-  if not Utils.getConfigValue("MM2AutoStab") and not Utils.getConfigValue("MM2AutoThrow") and not Utils.getConfigValue("MM2ManualThrow") then
-    return
+  local function getOrigin(character, root, knife)
+    local handle = knife:FindFirstChild("RightHandle") or knife:FindFirstChild("Handle")
+    if handle and handle:IsA("BasePart") then
+      return handle.Position
+    end
+    return root.Position + Vector3.new(0, 1.5, 0)
   end
-  local knife = equip(snap, "Knife")
-  if not knife then
-    return
+  local function raycast(origin, destination, localCharacter, mapContainer)
+    local ignores = { localCharacter }
+    if mapContainer then
+      table.insert(ignores, mapContainer)
+    end
+    for _, item in ipairs(CollectionService:GetTagged("WeaponPassthrough")) do
+      table.insert(ignores, item)
+    end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.IgnoreWater = true
+    for _ = 1, 12 do
+      params.FilterDescendantsInstances = ignores
+      local result = Workspace:Raycast(origin, destination - origin, params)
+      if not result or result.Instance.Transparency ~= 1 then
+        return result
+      end
+      table.insert(ignores, result.Instance)
+    end
+    return nil
   end
-  local now = os.clock()
-  local charge = math.clamp(tonumber(knife:GetAttribute("ThrowSpeed")) or 0.5, 0.05, 3)
-  if Utils.getConfigValue("MM2AutoStab") and now - lastStab >= 0.85 and now - lastThrow >= charge * 2 then
-    local target = Targeting.select(snap, Utils.getConfigValue("MM2StabTargets"), 6)
-    if target then
-      local accepted = Native.stab(snap, knife, function()
-        local live = State.live(target.player, true)
-        return Utils.getConfigValue("MM2AutoStab") and live ~= nil and live.character == target.character
-      end)
-      if accepted then
-        lastStab = now
-        return
+  local function visible(origin, part, targetCharacter, ownCharacter, coinContainer)
+    local result = raycast(origin, part.Position, ownCharacter, coinContainer)
+    return result == nil or result.Instance:IsDescendantOf(targetCharacter)
+  end
+  local function getMotion(target, root)
+    local now, pos = os.clock(), root.Position
+    local raw = root.AssemblyLinearVelocity
+    local state = Combat.Motion[target]
+    local velocity = raw
+    if state and state.Root == root then
+      local dt = now - state.At
+      if dt > 0.015 and dt < 0.5 then
+        local sampled = (pos - state.Position) / dt
+        if sampled.Magnitude < 120 then
+          velocity = raw * 0.65 + sampled * 0.35
+        end
+      end
+    end
+    Combat.Motion[target] = { Root = root, At = now, Position = pos }
+    return velocity
+  end
+  local function getPing()
+    local ok, ping = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
+    return ok and math.clamp(tonumber(ping) or 0, 0, 300) / 2000 or 0
+  end
+  local function predictPosition(root, humanoid, velocity, origin, speed, ownCharacter, coinContainer)
+    local t, ping = 0, getPing()
+    local targetPosition = root.Position
+    local jumping = humanoid.FloorMaterial == Enum.Material.Air
+    local floorY
+    if jumping then
+      local ground = raycast(root.Position, root.Position - Vector3.new(0, 25, 0), root.Parent, coinContainer)
+      if ground and ground.Instance:IsA("BasePart") then
+        floorY = ground.Position.Y + math.max(2.0, humanoid.HipHeight + root.Size.Y * 0.5)
+      end
+    end
+    for _ = 1, 4 do
+      t = math.clamp((targetPosition - origin).Magnitude / speed + ping, 0, 2.8)
+      local y = root.Position.Y
+      if jumping then
+        y += velocity.Y * t - 0.5 * Workspace.Gravity * t * t
+        if floorY then
+          y = math.max(y, floorY)
+        end
+      else
+        y += math.clamp(velocity.Y, -8, 8) * t
+      end
+      targetPosition = Vector3.new(root.Position.X + velocity.X * t, y, root.Position.Z + velocity.Z * t)
+    end
+    return targetPosition, t
+  end
+  local function getKnifeSpeed(knife)
+    local speed = tonumber(knife:GetAttribute("ThrowSpeed"))
+    if speed and speed > 0 then
+      return math.clamp(speed, 30, 400)
+    end
+    for _, projectile in ipairs(CollectionService:GetTagged("ThrowingKnife")) do
+      speed = tonumber(projectile:GetAttribute("ThrowSpeed"))
+      if speed and speed > 0 then
+        return math.clamp(speed, 30, 400)
+      end
+    end
+    return DEFAULT_KNIFE_SPEED
+  end
+  local function getTargets(root, profiles, mode)
+    local list = {}
+    for _, target in ipairs(Players:GetPlayers()) do
+      local profile = profiles[target.Name]
+      if type(profile) == "table" and acceptedRole(profile.Role, mode) then
+        local character, humanoid, targetRoot = characterInfo(target, profile)
+        if character then
+          local distance = (targetRoot.Position - root.Position).Magnitude
+          table.insert(list, {
+            Player = target,
+            Character = character,
+            Humanoid = humanoid,
+            Root = targetRoot,
+            Role = profile.Role,
+            Distance = distance,
+          })
+        end
+      end
+    end
+    return list
+  end
+  local function getMeleeRange(knife, targetRoot)
+    local configured = tonumber(knife:GetAttribute("StabRange") or knife:GetAttribute("KnifeReach"))
+    local radius = configured and math.clamp(configured, 4, 16) or MELEE_RANGE
+    return radius
+  end
+  local function chooseMelee(character, root, knife, profiles)
+    local nearest, shortest
+    local _, _, coinContainer = MatchService:GetRoundContext()
+    local origin = getOrigin(character, root, knife)
+    for _, entry in ipairs(getTargets(root, profiles, Combat.AttackTargets)) do
+      if entry.Distance <= getMeleeRange(knife, entry.Root) and (not shortest or entry.Distance < shortest) then
+        local part = entry.Character:FindFirstChild("UpperTorso") or entry.Character:FindFirstChild("Torso") or entry.Root
+        if visible(origin, part, entry.Character, character, coinContainer) then
+          nearest, shortest = entry, entry.Distance
+        end
+      end
+    end
+    return nearest
+  end
+  local function tryStab(knife, target)
+    local events = knife:FindFirstChild("Events")
+    local stabbed = events and events:FindFirstChild("KnifeStabbed")
+    local touched = events and events:FindFirstChild("HandleTouched")
+    local hitPart = target.Character:FindFirstChild("UpperTorso")
+      or target.Character:FindFirstChild("Torso")
+      or target.Character:FindFirstChild("Head")
+      or target.Root
+    if stabbed and stabbed:IsA("RemoteEvent") and touched and touched:IsA("RemoteEvent") then
+      stabbed:FireServer()
+      touched:FireServer(hitPart)
+      return true
+    end
+    local remote = ReplicatedStorage:FindFirstChild("Stab", true)
+    if remote and remote:IsA("RemoteEvent") then
+      remote:FireServer(hitPart)
+      return true
+    end
+    return false
+  end
+  local function chooseThrow(character, root, knife, profiles, mode, manual, angle)
+    mode = mode or Combat.ThrowTargets
+    local origin = getOrigin(character, root, knife)
+    local _, _, coinContainer = MatchService:GetRoundContext()
+    local speed = getKnifeSpeed(knife)
+    local preferred, bestScore
+    for _, entry in ipairs(getTargets(root, profiles, mode)) do
+      if entry.Distance <= THROW_MAX_RANGE and (manual or not Combat.AutoAttack or entry.Distance > getMeleeRange(knife, entry.Root)) then
+        if mode == "Aim" then
+          local camera = Workspace.CurrentCamera
+          local delta = camera and entry.Root.Position - camera.CFrame.Position
+          if not delta or delta.Magnitude < 0.001 or camera.CFrame.LookVector:Dot(delta.Unit) < math.cos(math.rad(angle or 60)) then
+            continue
+          end
+        end
+        local aimPart = entry.Character:FindFirstChild("UpperTorso") or entry.Character:FindFirstChild("Torso") or entry.Root
+        if visible(origin, aimPart, entry.Character, character, coinContainer) then
+          local velocity = getMotion(entry.Player, entry.Root)
+          local aim, flightTime = predictPosition(entry.Root, entry.Humanoid, velocity, origin, speed, character, coinContainer)
+          aim += aimPart.Position - entry.Root.Position
+          local blocked = raycast(origin, aim, character, coinContainer)
+          if not blocked or blocked.Instance:IsDescendantOf(entry.Character) then
+            local moving = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+            local score = entry.Distance * 0.045 + moving * 0.55 + math.abs(velocity.Y) * 0.25
+            if mode == "Nearest" then
+              score = entry.Distance
+            end
+            if mode == "Aim" then
+              local camera = Workspace.CurrentCamera
+              score = 1 - camera.CFrame.LookVector:Dot((entry.Root.Position - camera.CFrame.Position).Unit)
+            elseif mode == "Random" then
+              score = math.random()
+            end
+            if mode == "Auto" and (entry.Role == "Sheriff" or entry.Role == "Hero") then
+              score -= 10000
+            end
+            if not bestScore or score < bestScore then
+              bestScore = score
+              preferred = { Entry = entry, Aim = aim, Origin = origin, Speed = speed, TravelTime = flightTime }
+            end
+          end
+        end
+      end
+    end
+    return preferred
+  end
+  local function tryThrow(knife, data, character) return deps.throwKnife(knife, data, character) end
+  function Combat:Update()
+    if self.Destroyed or not self.AutoAttack and not self.AutoThrow then
+      return
+    end
+    local character, _, root, knife, profiles = getContext()
+    if not character or not knife or not profiles then
+      return
+    end
+    if self.AutoAttack then
+      local target = chooseMelee(character, root, knife, profiles)
+      if target then
+        tryStab(knife, target)
+      end
+    end
+    if self.AutoThrow then
+      local selected = chooseThrow(character, root, knife, profiles)
+      if selected then
+        tryThrow(knife, selected, character)
       end
     end
   end
-  if Utils.getConfigValue("MM2AutoThrow") then
-    Weapons.throw(true)
+  function Combat:TryThrowManual(mode, angle)
+    if self.Destroyed then
+      return false
+    end
+    local character, _, root, knife, profiles = getContext()
+    if not character or not knife or not profiles then
+      return false
+    end
+    local selected = chooseThrow(character, root, knife, profiles, mode or "Aim", true, math.clamp(tonumber(angle) or 60, 10, 90))
+    return selected and tryThrow(knife, selected, character) or false
   end
+  function Combat:SetAutoAttack(value) self.AutoAttack = value == true end
+  function Combat:SetAutoThrow(value) self.AutoThrow = value == true end
+  function Combat:SetAttackTargets(mode)
+    if mode == "All" or mode == "Sheriff/Hero" or mode == "Innocent" then
+      self.AttackTargets = mode
+    end
+  end
+  function Combat:SetThrowTargets(mode)
+    if mode == "Auto" or mode == "Sheriff/Hero" or mode == "Innocent" or mode == "Nearest" then
+      self.ThrowTargets = mode
+    end
+  end
+  function Combat:Destroy()
+    self.Destroyed = true
+    self.AutoAttack = false
+    self.AutoThrow = false
+    table.clear(self.Motion)
+  end
+  Runtime:Track(RunService.Heartbeat:Connect(function()
+    if Combat.Destroyed or Runtime.ShuttingDown then
+      return
+    end
+    local ok, err = pcall(function() Combat:Update() end)
+    if not ok then
+      warn("[Exodus MM2] Murder Combat: " .. tostring(err))
+    end
+  end))
+  Runtime:OnShutdown(function() Combat:Destroy() end)
+  return Combat
 end
-Weapons.__contract = {
-  provides = { "setup", "reset", "shoot", "throw", "step" },
-  requires = { State = "mm2state", Targeting = "mm2targeting", Utils = "utils", Native = "mm2native" },
-  requiresMethods = {
-    State = { "live", "findRole", "tool" },
-    Native = { "reset", "busy", "stab", "throw", "step" },
-    Targeting = { "clear", "select", "predict" },
-    Utils = { "isActive", "getConfigValue", "getLocalPlayer" },
-  },
-}
+
+-- contract
+Weapons.__contract = { provides = { "setup", "create" }, requires = {} }
 return Weapons

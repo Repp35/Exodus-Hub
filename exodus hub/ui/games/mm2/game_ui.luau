@@ -2,7 +2,16 @@
 --!optimize 2
 
 local GameUI = {}
+local espColors = {
+  Murderer = Color3.fromRGB(255, 65, 65),
+  Sheriff = Color3.fromRGB(70, 155, 255),
+  Innocent = Color3.fromRGB(70, 220, 120),
+  Player = Color3.fromRGB(235, 235, 235),
+  Coin = Color3.fromRGB(255, 185, 70),
+  Gun = Color3.fromRGB(70, 225, 255),
+}
 GameUI.definition = {
+  espColors = espColors,
   combatUI = false,
   pageOrder = { "mm2-farm", "mm2-combat", "mm2-map", "mm2-visuals", "indeed", "mm2-alerts", "config" },
   pageTitles = { indeed = "Player", config = "Settings" },
@@ -18,7 +27,13 @@ GameUI.definition = {
           components = {
             { kind = "toggle", key = "MM2AutoFarm", title = "Auto Farm" },
             { kind = "toggle", key = "MM2AvoidMurderer", title = "Avoid Coins Near Murderer", parentKey = "MM2AutoFarm" },
-            { kind = "toggle", key = "MM2ResetFull", title = "Reset When Full", description = "Reseta somente quando você é inocente.", parentKey = "MM2AutoFarm" },
+            {
+              kind = "toggle",
+              key = "MM2ResetFull",
+              title = "Reset When Full",
+              description = "Reseta somente quando você é inocente.",
+              parentKey = "MM2AutoFarm",
+            },
             { kind = "slider", key = "MM2FarmSpeed", title = "Speed", min = 5, max = 100, step = 1, parentKey = "MM2AutoFarm" },
           },
         },
@@ -41,7 +56,13 @@ GameUI.definition = {
             { kind = "button", title = "Shoot Murder", action = "mm2Shoot", parentKey = "MM2ManualShoot" },
             { kind = "toggle", key = "MM2AutoShoot", title = "Auto Shoot Murder" },
             { kind = "slider", key = "MM2AutoAccuracy", title = "Accuracy", min = 0, max = 100, step = 1, parentKey = "MM2AutoShoot" },
-            { kind = "toggle", key = "MM2LegitSheriff", title = "Wait for Knife", description = "Também se aplica aos disparos manuais.", parentKey = "MM2AutoShoot" },
+            {
+              kind = "toggle",
+              key = "MM2LegitSheriff",
+              title = "Wait for Knife",
+              description = "Também se aplica aos disparos manuais.",
+              parentKey = "MM2AutoShoot",
+            },
           },
         },
         {
@@ -59,7 +80,13 @@ GameUI.definition = {
             { kind = "toggle", key = "MM2ManualThrow", title = "Manual Throw Knife" },
             { kind = "slider", key = "MM2ThrowMiniScale", title = "Size", min = 0.5, max = 2, step = 0.05, parentKey = "MM2ManualThrow" },
             { kind = "toggle", key = "MM2ThrowMiniSquare", title = "Rounded Square", parentKey = "MM2ManualThrow" },
-            { kind = "dropdown", key = "MM2ManualThrowTargets", title = "Targets", options = { "Aim", "Auto", "Sheriff/Hero", "Innocent", "Nearest", "Random" }, parentKey = "MM2ManualThrow" },
+            {
+              kind = "dropdown",
+              key = "MM2ManualThrowTargets",
+              title = "Targets",
+              options = { "Aim", "Auto", "Sheriff/Hero", "Innocent", "Nearest", "Random" },
+              parentKey = "MM2ManualThrow",
+            },
             { kind = "slider", key = "MM2ManualThrowFOV", title = "Aim Margin", min = 10, max = 90, step = 1, parentKey = "MM2ManualThrowTargets" },
             { kind = "toggle", key = "MM2InvisibleThrow", title = "Invisible Button", parentKey = "MM2ManualThrow" },
             { kind = "button", title = "Throw Knife", action = "mm2Throw", parentKey = "MM2ManualThrow" },
@@ -69,9 +96,8 @@ GameUI.definition = {
               key = "MM2ThrowTargets",
               title = "Targets",
               parentKey = "MM2AutoThrow",
-              options = { "Aim", "Auto", "Sheriff/Hero", "Innocent", "Nearest", "Random" },
+              options = { "Auto", "Sheriff/Hero", "Innocent", "Nearest" },
             },
-            { kind = "slider", key = "MM2ThrowFOV", title = "Aim Margin", min = 10, max = 90, step = 1, parentKey = "MM2ThrowTargets" },
           },
         },
         {
@@ -123,13 +149,13 @@ GameUI.definition = {
             { kind = "checkbox", key = "MM2ESP", title = "ESP" },
             { kind = "checkbox", key = "MM2ESPIdentity", title = "Role", parentKey = "MM2ESP" },
             { kind = "checkbox", key = "MM2ESPUsername", title = "Username", parentKey = "MM2ESP" },
-            { kind = "checkbox", key = "MM2ESPSelf", title = "Show Self", parentKey = "MM2ESP" },
+            { kind = "checkbox", key = "MM2ESPSelf", color = espColors.Player, title = "Show Self", parentKey = "MM2ESP" },
             { kind = "checkbox", key = "MM2ESPDistance", title = "Show Distance", parentKey = "MM2ESP" },
-            { kind = "checkbox", key = "MM2ESPMurderer", color = Color3.fromRGB(239, 68, 68), title = "Murderer", parentKey = "MM2ESP" },
-            { kind = "checkbox", key = "MM2ESPSheriff", color = Color3.fromRGB(59, 130, 246), title = "Sheriff + Hero", parentKey = "MM2ESP" },
-            { kind = "checkbox", key = "MM2ESPInnocent", color = Color3.fromRGB(34, 197, 94), title = "Innocents", parentKey = "MM2ESP" },
-            { kind = "checkbox", key = "MM2ESPCoins", color = Color3.fromRGB(236, 72, 153), title = "Candy / Coin", parentKey = "MM2ESP" },
-            { kind = "checkbox", key = "MM2ESPGun", color = Color3.fromRGB(250, 204, 21), title = "Dropped Gun", parentKey = "MM2ESP" },
+            { kind = "checkbox", key = "MM2ESPMurderer", color = espColors.Murderer, title = "Murderer", parentKey = "MM2ESP" },
+            { kind = "checkbox", key = "MM2ESPSheriff", color = espColors.Sheriff, title = "Sheriff + Hero", parentKey = "MM2ESP" },
+            { kind = "checkbox", key = "MM2ESPInnocent", color = espColors.Innocent, title = "Innocents", parentKey = "MM2ESP" },
+            { kind = "checkbox", key = "MM2ESPCoins", color = espColors.Coin, title = "Candy / Coin", parentKey = "MM2ESP" },
+            { kind = "checkbox", key = "MM2ESPGun", color = espColors.Gun, title = "Dropped Gun", parentKey = "MM2ESP" },
           },
         },
       },
@@ -163,6 +189,7 @@ GameUI.definition = {
       squareKey = "MM2MiniSquare",
       action = "onMM2Shoot",
     },
+
     {
       name = "ExodusThrowKnife",
       title = "Throw Knife",
@@ -248,7 +275,7 @@ GameUI.__config = {
     MM2InvisibleThrow = false,
     MM2ThrowY = 100,
     MM2AutoThrow = false,
-    MM2ThrowTargets = "Aim",
+    MM2ThrowTargets = "Auto",
     MM2AutoPickup = true,
     MM2PickupSafety = false,
     MM2TeleportGun = false,
