@@ -64,7 +64,7 @@ return {
   { name = "characterproperties", path = "universal/character_properties.luau", hash = "c17ccb15a2188d953fdc789fc0050916a90f369178a9670b780cffac9c7d45e2" },
   { name = "universalcontroller", path = "universal/controller.luau", hash = "fd104dd1e91f4c1e9eee144648c9e4816561004f2c55b0cab907a81477e084ce" },
   { name = "dumpdiscovery", path = "universal/dump/discovery.luau", hash = "2a237846cb38ef580fbad4311d87ff8c355908610b0446adb73c905de5dcbc97" },
-  { name = "dumper", path = "universal/dumper.luau", hash = "3de6adab779ba82bc1031e9c0219a72de2176f1fcc45fd2bc1e9976bbe857b52" },
+  { name = "dumper", path = "universal/dumper.luau", hash = "8c9ad8b43a787ded85001248379143f69343ae173950db587b78df1f87f89711" },
   { name = "fly", path = "universal/fly.luau", hash = "fe7a11043daf23b52d3d25aa44a2304d7404db5231ee91897f91315c9232fac0" },
   { name = "gravity", path = "universal/gravity.luau", hash = "f5fd8027eea981a39ae0b9b5ae5fa5611a768e9112e268485c8a5e4963f63d76" },
   { name = "infinitezoom", path = "universal/infinite_zoom.luau", hash = "f3750ec57ad7b58a42fbf122be4331598254c786fef76d73f61bd09a7942a444" },
