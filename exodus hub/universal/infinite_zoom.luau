@@ -10,15 +10,22 @@ local function restore()
       player.CameraMinZoomDistance = math.min(originalMin, originalMax)
     end
   end
-  if binding then binding.restore() end
+  if binding then
+    binding.restore()
+  end
   player, originalMin, originalMax = nil, nil, nil
 end
 function InfiniteZoom.setEnabled(value)
-  if not controller then return false, "recurso indisponível" end
+  if not controller then
+    return false, "recurso indisponível"
+  end
   return controller.setEnabled(value)
 end
 function InfiniteZoom.teardown()
-  if controller then controller.destroy(); controller = nil end
+  if controller then
+    controller.destroy()
+    controller = nil
+  end
   restore()
   binding = nil
   return true

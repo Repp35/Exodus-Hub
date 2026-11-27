@@ -57,7 +57,9 @@ end
 
 local function matchesFingerprint(profile: HubProfile, getService: (string) -> any): boolean
   local fingerprint = profile.fingerprint
-  if not fingerprint or type(fingerprint.all) ~= "table" or #fingerprint.all < 3 then return false end
+  if not fingerprint or type(fingerprint.all) ~= "table" or #fingerprint.all < 3 then
+    return false
+  end
   local function exists(probe: any): boolean
     local ok, result = pcall(function()
       local parent = getService(probe.service)
@@ -69,10 +71,14 @@ local function matchesFingerprint(profile: HubProfile, getService: (string) -> a
     return ok and result == true
   end
   for _, probe in ipairs(fingerprint.all) do
-    if not exists(probe) then return false end
+    if not exists(probe) then
+      return false
+    end
   end
   for _, probe in ipairs(fingerprint.any or {}) do
-    if exists(probe) then return true end
+    if exists(probe) then
+      return true
+    end
   end
   return #(fingerprint.any or {}) == 0
 end
@@ -90,7 +96,9 @@ function Registry.select(profiles: { HubProfile }, placeId: number, universeId: 
     end
   end
   for _, profile in ipairs(profiles) do
-    if getService and matchesFingerprint(profile, getService) then return table.clone(profile) end
+    if getService and matchesFingerprint(profile, getService) then
+      return table.clone(profile)
+    end
   end
   return {
     id = "universal",
@@ -99,7 +107,14 @@ function Registry.select(profiles: { HubProfile }, placeId: number, universeId: 
     notification = "Universal carregado.",
   }
 end
-function Registry.resolve(profiles: { HubProfile }, placeId: number, universeId: number?, identity: Identity, access: AccessPolicy?, getService: ((string) -> any)?): (HubProfile?, string?)
+function Registry.resolve(
+  profiles: { HubProfile },
+  placeId: number,
+  universeId: number?,
+  identity: Identity,
+  access: AccessPolicy?,
+  getService: ((string) -> any)?
+): (HubProfile?, string?)
   local policy: AccessPolicy = access or { exodus = nil, games = nil }
   if not allowed(policy.exodus, identity) then
     return nil, "Conta sem acesso ao Exodus Hub"

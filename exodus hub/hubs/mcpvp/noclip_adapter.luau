@@ -12,16 +12,19 @@ end
 function Adapter.setup(deps)
   Adapter.teardown()
   local source = game:GetService("ReplicatedStorage"):FindFirstChild("VoxelBlockCollision")
-  if not source then return true end
+  if not source then
+    return true
+  end
   local ok, module = pcall(require, source)
-  if not ok or type(module) ~= "table" or type(module.Resolve) ~= "function" then return true end
+  if not ok or type(module) ~= "table" or type(module.Resolve) ~= "function" then
+    return true
+  end
   local player = game:GetService("Players").LocalPlayer
   native, original = module, module.Resolve
   replacement = function(position, movement, ...)
     local model = player and player.Character
     local root = model and model:FindFirstChild("HumanoidRootPart")
-    if deps.Noclip.isEnabled() and root and typeof(position) == "Vector3" and typeof(movement) == "Vector3"
-      and (position - root.Position).Magnitude < 1 then
+    if deps.Noclip.isEnabled() and root and typeof(position) == "Vector3" and typeof(movement) == "Vector3" and (position - root.Position).Magnitude < 1 then
       return movement, { x = false, y = false, z = false, grounded = false }
     end
     return original(position, movement, ...)

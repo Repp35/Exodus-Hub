@@ -5,7 +5,10 @@
 -- code
 local Properties = {}
 local shared
-function Properties.setup(deps) shared = deps.Binding; return true end
+function Properties.setup(deps)
+  shared = deps.Binding
+  return true
+end
 local function createOptimizer(services, initialConfig)
   local Workspace = services.Workspace
   local Lighting = services.Lighting
@@ -183,7 +186,9 @@ local function createOptimizer(services, initialConfig)
     records[#records] = nil
   end
   local function restoreProperty(object, property, saved)
-    if not shared.release(saved, object, property) then restoreFailures += 1 end
+    if not shared.release(saved, object, property) then
+      restoreFailures += 1
+    end
   end
   local function restoreEntry(entry)
     removeEntry(entry)
@@ -355,48 +360,50 @@ local function createOptimizer(services, initialConfig)
     workerRunning = true
     task.defer(function()
       local ok, reason = pcall(function()
-      while alive and workAvailable() do
-        local bootstrap = #scan > 0 or not enabled
-        local phases = services.PhasesPerFrame or 1
-        local deadline = os.clock() + (bootstrap and 6 or options.BudgetMs) / (1000 * phases)
-        local count = 0
-        local limit = math.max(1, math.floor((bootstrap and 4096 or options.MaxItemsPerFrame) / phases))
-        repeat
-          if not enabled then
-            local entry = records[#records]
-            if entry then
-              restoreEntry(entry)
-            end
-          else
-            local object
-            if count % 2 == 0 then
-              object = popPending() or nextScan()
+        while alive and workAvailable() do
+          local bootstrap = #scan > 0 or not enabled
+          local phases = services.PhasesPerFrame or 1
+          local deadline = os.clock() + (bootstrap and 6 or options.BudgetMs) / (1000 * phases)
+          local count = 0
+          local limit = math.max(1, math.floor((bootstrap and 4096 or options.MaxItemsPerFrame) / phases))
+          repeat
+            if not enabled then
+              local entry = records[#records]
+              if entry then
+                restoreEntry(entry)
+              end
             else
-              object = nextScan() or popPending()
-            end
-            if object then
-              local ok, message = pcall(process, object)
-              if not ok then
-                runtimeFailures += 1
-                if runtimeFailures <= 3 then
-                  warn("[AntiLag] " .. tostring(message))
+              local object
+              if count % 2 == 0 then
+                object = popPending() or nextScan()
+              else
+                object = nextScan() or popPending()
+              end
+              if object then
+                local ok, message = pcall(process, object)
+                if not ok then
+                  runtimeFailures += 1
+                  if runtimeFailures <= 3 then
+                    warn("[AntiLag] " .. tostring(message))
+                  end
                 end
               end
             end
+            count += 1
+          until count >= limit or os.clock() >= deadline or not workAvailable()
+          if workAvailable() then
+            waitPhase()
           end
-          count += 1
-        until count >= limit or os.clock() >= deadline or not workAvailable()
-        if workAvailable() then
-          waitPhase()
         end
-      end
       end)
       workerRunning = false
       if not ok then
         runtimeFailures += 1
         enabled = false
         pending, queued, scan, dirty, head, tail = {}, {}, {}, {}, 1, 0
-        while #records > 0 do restoreEntry(records[#records]) end
+        while #records > 0 do
+          restoreEntry(records[#records])
+        end
         warn("[Exodus AntiLag] Restored after worker failure: " .. tostring(reason))
       end
       if destroying and not enabled and #records == 0 then

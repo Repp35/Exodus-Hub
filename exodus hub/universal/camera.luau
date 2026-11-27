@@ -25,7 +25,10 @@ local function normalizeSensitivity(value)
 end
 local function stopCamera()
   cameraEpoch += 1
-  if cameraThread then pcall(task.cancel, cameraThread); cameraThread = nil end
+  if cameraThread then
+    pcall(task.cancel, cameraThread)
+    cameraThread = nil
+  end
   if cameraInput and cameraInput.getRotation == cameraWrapped then
     cameraInput.getRotation = cameraOriginal
   end
@@ -76,7 +79,9 @@ function Camera.setup(deps)
   Camera.teardown()
   utils = deps.Utils
   sensitivity = normalizeSensitivity(utils.getConfigValue("CameraSensitivity"))
-  if sensitivity ~= CONFIG.DEFAULT_SENSITIVITY then startCamera() end
+  if sensitivity ~= CONFIG.DEFAULT_SENSITIVITY then
+    startCamera()
+  end
   configConnection = utils.observeConfig(function(changes)
     if changes.CameraSensitivity ~= nil then
       sensitivity = normalizeSensitivity(changes.CameraSensitivity)

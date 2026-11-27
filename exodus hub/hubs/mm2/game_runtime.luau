@@ -4,8 +4,12 @@ local Runtime = {}
 local api, owner, scope, modules
 function Runtime.setup() return true end
 function Runtime.teardown()
-  if owner then owner.ShuttingDown = true end
-  if scope then scope.destroy() end
+  if owner then
+    owner.ShuttingDown = true
+  end
+  if scope then
+    scope.destroy()
+  end
   api, owner, scope, modules = nil, nil, nil, nil
   return true
 end
@@ -14,27 +18,47 @@ function Runtime.bind(loaded)
   modules, scope = loaded, loaded.lifetime.scope()
   owner = { ShuttingDown = false, Tasks = {}, Connections = {} }
   function owner:Track(connection)
-    if not connection then return nil end
+    if not connection then
+      return nil
+    end
     self.Connections[connection] = true
     scope.add(connection)
     return connection
   end
   function owner:TrackTask(thread)
-    if not thread then return nil end
+    if not thread then
+      return nil
+    end
     self.Tasks[thread] = true
-    scope.add(thread, function() if coroutine.status(thread) ~= "dead" then pcall(task.cancel, thread) end end)
+    scope.add(thread, function()
+      if coroutine.status(thread) ~= "dead" then
+        pcall(task.cancel, thread)
+      end
+    end)
     return thread
   end
   function owner:OnShutdown(callback) scope.add(callback) end
   local services = {}
-  for _, name in ipairs({ "Players", "RunService", "UserInputService", "Workspace", "TweenService", "PathfindingService", "ReplicatedStorage", "CollectionService", "HttpService" }) do
+  for _, name in ipairs({
+    "Players",
+    "RunService",
+    "UserInputService",
+    "Workspace",
+    "TweenService",
+    "PathfindingService",
+    "ReplicatedStorage",
+    "CollectionService",
+    "HttpService",
+  }) do
     services[name] = game:GetService(name)
   end
   local pending = {}
   local function notify(title, message, options)
     options = options or { duration = 5 }
     if not loaded.ui.notifyCorner(title, message, options) then
-      if #pending >= 6 then table.remove(pending, 1) end
+      if #pending >= 6 then
+        table.remove(pending, 1)
+      end
       pending[#pending + 1] = { title, message, options, os.clock() }
     end
   end
@@ -50,10 +74,19 @@ function Runtime.bind(loaded)
     Get = loaded.utils.getConfigValue,
     Util = {
       FormatError = function(message) return debug.traceback(tostring(message), 2) end,
-      DestroySafely = function(instance) if instance then pcall(function() instance:Destroy() end) end end,
+      DestroySafely = function(instance)
+        if instance then
+          pcall(function() instance:Destroy() end)
+        end
+      end,
       IsFiniteVector3 = function(v)
-        return typeof(v) == "Vector3" and v.X == v.X and v.Y == v.Y and v.Z == v.Z
-          and math.abs(v.X) < 1000000 and math.abs(v.Y) < 1000000 and math.abs(v.Z) < 1000000
+        return typeof(v) == "Vector3"
+          and v.X == v.X
+          and v.Y == v.Y
+          and v.Z == v.Z
+          and math.abs(v.X) < 1000000
+          and math.abs(v.Y) < 1000000
+          and math.abs(v.Z) < 1000000
       end,
     },
   }
@@ -66,15 +99,32 @@ function Runtime.bind(loaded)
     api.Services[entry[1]] = loaded[entry[2]].create(api)
   end
   for _, entry in ipairs({
-    { "ESP", "mm2esp" }, { "AutoFarm", "mm2farm" }, { "AutoGunPickup", "mm2pickup" },
-    { "MapTools", "mm2maptools" }, { "MurderCombat", "mm2combat" }, { "ShootMurder", "mm2shoot" }, { "Alerts", "mm2alerts" },
+    { "ESP", "mm2esp" },
+    { "AutoFarm", "mm2farm" },
+    { "AutoGunPickup", "mm2pickup" },
+    { "MapTools", "mm2maptools" },
+    { "MurderCombat", "mm2combat" },
+    { "ShootMurder", "mm2shoot" },
+    { "Alerts", "mm2alerts" },
   }) do
     api.Features[entry[1]] = loaded[entry[2]].create(api)
   end
   local f = api.Features
-  local function toggle(target, value) if value then target:Start() else target:Stop() end end
+  local function toggle(target, value)
+    if value then
+      target:Start()
+    else
+      target:Stop()
+    end
+  end
   local bindings = {
-    AutoFarm = function(v) if v then f.AutoFarm:Start() else f.AutoFarm:Stop(true) end end,
+    AutoFarm = function(v)
+      if v then
+        f.AutoFarm:Start()
+      else
+        f.AutoFarm:Stop(true)
+      end
+    end,
     AvoidMurdererCoins = function(v) f.AutoFarm.AvoidMurderer = v == true end,
     ResetWhenBagFull = function(v) f.AutoFarm:SetResetWhenBagFull(v) end,
     FarmSpeed = function(v) f.AutoFarm.Speed = math.clamp(tonumber(v) or 40, 5, 100) end,
@@ -103,31 +153,51 @@ function Runtime.bind(loaded)
     bindings["ESP" .. filter] = function(value) f.ESP:SetFilter(filter, value) end
   end
   local function apply(key, value)
-    if not bindings[key] then return end
+    if not bindings[key] then
+      return
+    end
     local ok, err = pcall(bindings[key], value)
-    if not ok then loaded.utils.recordError("MM2." .. key, tostring(err)) end
+    if not ok then
+      loaded.utils.recordError("MM2." .. key, tostring(err))
+    end
   end
   for key in pairs(bindings) do
-    if key ~= "AutoFarm" and key ~= "ESPEnabled" and key ~= "AutoGunPickup" then apply(key, loaded.utils.getConfigValue(key)) end
+    if key ~= "AutoFarm" and key ~= "ESPEnabled" and key ~= "AutoGunPickup" then
+      apply(key, loaded.utils.getConfigValue(key))
+    end
   end
-  for _, key in ipairs({ "ESPEnabled", "AutoGunPickup", "AutoFarm" }) do apply(key, loaded.utils.getConfigValue(key)) end
+  for _, key in ipairs({ "ESPEnabled", "AutoGunPickup", "AutoFarm" }) do
+    apply(key, loaded.utils.getConfigValue(key))
+  end
   scope.add(loaded.utils.observeConfig(function(changes)
-    for key, value in pairs(changes) do apply(key, value) end
+    for key, value in pairs(changes) do
+      apply(key, value)
+    end
   end))
   local elapsed = 0
   scope.connect(services.RunService.Heartbeat, function(dt)
     elapsed += dt
-    if elapsed < 1 then return end
+    if elapsed < 1 then
+      return
+    end
     elapsed = 0
     for connection in pairs(owner.Connections) do
-      if connection.Connected == false then owner.Connections[connection] = nil; scope.forget(connection) end
+      if connection.Connected == false then
+        owner.Connections[connection] = nil
+        scope.forget(connection)
+      end
     end
     for thread in pairs(owner.Tasks) do
-      if coroutine.status(thread) == "dead" then owner.Tasks[thread] = nil; scope.forget(thread) end
+      if coroutine.status(thread) == "dead" then
+        owner.Tasks[thread] = nil
+        scope.forget(thread)
+      end
     end
     for i = #pending, 1, -1 do
       local notice = pending[i]
-      if os.clock() - notice[4] > 8 or loaded.ui.notifyCorner(notice[1], notice[2], notice[3]) then table.remove(pending, i) end
+      if os.clock() - notice[4] > 8 or loaded.ui.notifyCorner(notice[1], notice[2], notice[3]) then
+        table.remove(pending, i)
+      end
     end
   end)
   return { mode = "mm2" }
@@ -136,57 +206,89 @@ function Runtime.createAPI(loaded)
   local function feature(name) return api and api.Features[name] end
   local function shoot()
     local f = feature("ShootMurder")
-    if not f then return false, "Combate ainda não carregou." end
-    if f:TryShoot(false) then return true end
+    if not f then
+      return false, "Combate ainda não carregou."
+    end
+    if f:TryShoot(false) then
+      return true
+    end
     return false, "Nenhum disparo disponível: confira o papel, a visibilidade do alvo e o intervalo da arma."
   end
   local function throw()
     local f = feature("MurderCombat")
-    if not f then return false, "Combate ainda não carregou." end
-    if f:ThrowManual() then return true end
+    if not f then
+      return false, "Combate ainda não carregou."
+    end
+    if f:ThrowManual() then
+      return true
+    end
     return false, "Nenhum alvo disponível na mira, ou a faca ainda está no intervalo de lançamento."
   end
   return {
     getUIConfig = function() return loaded.gameui.definition end,
     getChoices = function(name)
       local map = feature("MapTools")
-      if not map then return { "None" } end
-      if name == "mm2Players" then return map:GetPlayerOptions() end
-      if name == "mm2Maps" then return map:GetFavoriteMapOptions() end
+      if not map then
+        return { "None" }
+      end
+      if name == "mm2Players" then
+        return map:GetPlayerOptions()
+      end
+      if name == "mm2Maps" then
+        return map:GetFavoriteMapOptions()
+      end
       return {}
     end,
     getAbilityAvailability = function(name)
-      if not api then return false end
+      if not api then
+        return false
+      end
       local match = api.Services.Match
       local data = match:GetPlayerData()
       local mine = data and data[api.Player.Name]
-      if not match:IsAlive(api.Player, mine) or not match:GetRoundContext() then return false end
-      if name == "mm2Shoot" then return mine.Role == "Sheriff" or mine.Role == "Hero" end
-      if name == "mm2Throw" then return mine.Role == "Murderer" end
+      if not match:IsAlive(api.Player, mine) or not match:GetRoundContext() then
+        return false
+      end
+      if name == "mm2Shoot" then
+        return mine.Role == "Sheriff" or mine.Role == "Hero"
+      end
+      if name == "mm2Throw" then
+        return mine.Role == "Murderer"
+      end
       return false
     end,
     controls = { onMM2Shoot = shoot, onMM2Throw = throw },
     createActions = function()
       local function mapCall(method, ...)
         local map = feature("MapTools")
-        if map then return map[method](map, ...) end
+        if map then
+          return map[method](map, ...)
+        end
       end
       local function selected() return game:GetService("Players"):FindFirstChild(loaded.utils.getConfigValue("MapTargetPlayer") or "") end
-      return { callbacks = {
-        mm2Shoot = shoot,
-        mm2Throw = throw,
-        mm2Map = function() return mapCall("TeleportToMap") end,
-        mm2Lobby = function() return mapCall("TeleportToLobby") end,
-        mm2Murderer = function() return mapCall("TeleportToRole", "Murderer") end,
-        mm2Gun = function() return mapCall("TeleportToGun") end,
-        mm2GunHolder = function() return mapCall("TeleportToRole", "GunHolder") end,
-        mm2Player = function() return mapCall("TeleportToPlayer", selected()) end,
-        mm2Walk = function() return mapCall("WalkToPlayer", selected()) end,
-      } }
+      return {
+        callbacks = {
+          mm2Shoot = shoot,
+          mm2Throw = throw,
+          mm2Map = function() return mapCall("TeleportToMap") end,
+          mm2Lobby = function() return mapCall("TeleportToLobby") end,
+          mm2Murderer = function() return mapCall("TeleportToRole", "Murderer") end,
+          mm2Gun = function() return mapCall("TeleportToGun") end,
+          mm2GunHolder = function() return mapCall("TeleportToRole", "GunHolder") end,
+          mm2Player = function() return mapCall("TeleportToPlayer", selected()) end,
+          mm2Walk = function() return mapCall("WalkToPlayer", selected()) end,
+        },
+      }
     end,
     updateBlockers = {
-      function() local f = feature("AutoFarm"); return f and f.Farming end,
-      function() local f = feature("AutoGunPickup"); return f and f.Busy end,
+      function()
+        local f = feature("AutoFarm")
+        return f and f.Farming
+      end,
+      function()
+        local f = feature("AutoGunPickup")
+        return f and f.Busy
+      end,
     },
   }
 end

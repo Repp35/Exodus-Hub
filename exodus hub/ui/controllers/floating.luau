@@ -184,7 +184,9 @@ function Controller.create(context)
   end
   function controller.refreshAbilities()
     for _, entry in ipairs(order) do
-      if entry.definition.ability then refresh(entry) end
+      if entry.definition.ability then
+        refresh(entry)
+      end
     end
   end
   function controller.setSpam(value)
