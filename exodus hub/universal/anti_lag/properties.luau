@@ -4,7 +4,8 @@
 
 -- code
 local Properties = {}
-function Properties.setup() return true end
+local shared
+function Properties.setup(deps) shared = deps.Binding; return true end
 local function createOptimizer(services, initialConfig)
   local Workspace = services.Workspace
   local Lighting = services.Lighting
@@ -14,7 +15,9 @@ local function createOptimizer(services, initialConfig)
   local phase = 0
   local function waitPhase()
     if services.PhasesPerFrame == 2 then
-      phase = 1 - phase(phase == 1 and services.RunService.PreSimulation or services.RunService.PostSimulation):Wait()
+      phase = 1 - phase
+      local signal = phase == 1 and services.RunService.PreSimulation or services.RunService.PostSimulation
+      signal:Wait()
     else
       Heartbeat:Wait()
     end
@@ -40,9 +43,6 @@ local function createOptimizer(services, initialConfig)
   local skyProperties = { "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp" }
   local function read(object, property)
     return pcall(function() return object[property] end)
-  end
-  local function write(object, property, value)
-    return pcall(function() object[property] = value end)
   end
   local function reportUnavailable(key)
     if not unsupported[key] then
@@ -183,16 +183,7 @@ local function createOptimizer(services, initialConfig)
     records[#records] = nil
   end
   local function restoreProperty(object, property, saved)
-    local ok, current = read(object, property)
-    if options.RestoreLatest and ok and current ~= saved.applied then
-      saved.original = current
-    end
-    if ok and current == saved.original then
-      return
-    end
-    if not write(object, property, saved.original) then
-      restoreFailures += 1
-    end
+    if not shared.release(saved, object, property) then restoreFailures += 1 end
   end
   local function restoreEntry(entry)
     removeEntry(entry)
@@ -297,15 +288,17 @@ local function createOptimizer(services, initialConfig)
       if current ~= value then
         local previous = saved.applied
         saved.applied = value
-        if not write(object, property, value) then
+        if not shared.apply(saved, object, property, value, 0) then
           saved.applied = previous
           unavailable(object, property)
           if saved.original == current then
+            shared.release(saved, object, property)
             entry.properties[property] = nil
             changedProperties -= 1
           end
         end
       else
+        shared.apply(saved, object, property, value, 0)
         saved.applied = value
       end
     end
@@ -361,6 +354,7 @@ local function createOptimizer(services, initialConfig)
     end
     workerRunning = true
     task.defer(function()
+      local ok, reason = pcall(function()
       while alive and workAvailable() do
         local bootstrap = #scan > 0 or not enabled
         local phases = services.PhasesPerFrame or 1
@@ -396,7 +390,15 @@ local function createOptimizer(services, initialConfig)
           waitPhase()
         end
       end
+      end)
       workerRunning = false
+      if not ok then
+        runtimeFailures += 1
+        enabled = false
+        pending, queued, scan, dirty, head, tail = {}, {}, {}, {}, 1, 0
+        while #records > 0 do restoreEntry(records[#records]) end
+        warn("[Exodus AntiLag] Restored after worker failure: " .. tostring(reason))
+      end
       if destroying and not enabled and #records == 0 then
         finishDestroy()
       end
@@ -572,7 +574,8 @@ end
 Properties.create = createOptimizer
 Properties.__contract = {
   access = { default = "render.write" },
-  requires = {},
+  requires = { Binding = "propertybinding" },
+  requiresMethods = { Binding = { "apply", "release" } },
   provides = { "setup", "create" },
 }
 

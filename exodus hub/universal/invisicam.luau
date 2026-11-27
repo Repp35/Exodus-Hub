@@ -292,6 +292,7 @@ function Invisicam.setEnabled(value)
   if not controller then
     return false, "recurso indisponível"
   end
+  if value ~= true and assist then table.clear(assist.Sources) end
   return controller.setEnabled(value)
 end
 function Invisicam.setSource(source, enabled)

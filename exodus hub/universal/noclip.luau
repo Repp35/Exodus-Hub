@@ -84,6 +84,7 @@ function Noclip.release(owner)
   return true
 end
 function Noclip.setEnabled(value)
+  if value ~= true then table.clear(owners); stopPhysics() end
   if not controller then return false, "recurso indisponível" end
   return controller.setEnabled(value)
 end
@@ -114,7 +115,7 @@ function Noclip.setup(deps)
   controller = scheduler.create(utils, lifetime, {
     key = "UniversalNoclip",
     start = function() return Noclip.acquire(Noclip) end,
-    stop = function() Noclip.release(Noclip) end,
+    stop = function() table.clear(owners); stopPhysics() end,
   })
   return controller.sync()
 end

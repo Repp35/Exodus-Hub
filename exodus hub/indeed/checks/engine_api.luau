@@ -55,7 +55,7 @@ services.Players.PlayerRemoving = signal()
 function services.Players:GetPlayers() return { player } end
 function services.Players:GetPlayerByUserId(id) return id == player.UserId and player or nil end
 services.RunService = node("RunService")
-for _, name in ipairs({ "Heartbeat", "PostSimulation", "PreSimulation", "RenderStepped", "Stepped" }) do
+for _, name in ipairs({ "Heartbeat", "PostSimulation", "PreSimulation", "PreRender", "RenderStepped", "Stepped" }) do
   services.RunService[name] = signal()
 end
 local game = { PlaceId = 0 }

@@ -9,6 +9,7 @@ local cameraInput
 local cameraOriginal
 local cameraWrapped
 local configConnection
+local cameraThread
 local sensitivity = 1
 local CONFIG = {
   DEFAULT_SENSITIVITY = 1,
@@ -24,22 +25,16 @@ local function normalizeSensitivity(value)
 end
 local function stopCamera()
   cameraEpoch += 1
+  if cameraThread then pcall(task.cancel, cameraThread); cameraThread = nil end
   if cameraInput and cameraInput.getRotation == cameraWrapped then
     cameraInput.getRotation = cameraOriginal
-  end
-  if configConnection then
-    if utils then
-      utils.untrackGlobal(configConnection)
-    end
-    configConnection:Disconnect()
-    configConnection = nil
   end
   cameraInput, cameraOriginal, cameraWrapped = nil, nil, nil
 end
 local function startCamera()
   stopCamera()
   local token = cameraEpoch
-  task.spawn(function()
+  cameraThread = task.spawn(function()
     while token == cameraEpoch and utils and utils.isActive() do
       local player = utils.getLocalPlayer()
       local scripts = player and player:FindFirstChild("PlayerScripts")
@@ -81,16 +76,28 @@ function Camera.setup(deps)
   Camera.teardown()
   utils = deps.Utils
   sensitivity = normalizeSensitivity(utils.getConfigValue("CameraSensitivity"))
-  startCamera()
+  if sensitivity ~= CONFIG.DEFAULT_SENSITIVITY then startCamera() end
   configConnection = utils.observeConfig(function(changes)
     if changes.CameraSensitivity ~= nil then
       sensitivity = normalizeSensitivity(changes.CameraSensitivity)
+      if sensitivity == CONFIG.DEFAULT_SENSITIVITY then
+        stopCamera()
+      elseif not cameraWrapped then
+        startCamera()
+      end
     end
   end)
   utils.trackGlobal(configConnection)
   return true
 end
 function Camera.teardown()
+  if configConnection then
+    if utils then
+      utils.untrackGlobal(configConnection)
+    end
+    configConnection:Disconnect()
+    configConnection = nil
+  end
   stopCamera()
   utils = nil
 end

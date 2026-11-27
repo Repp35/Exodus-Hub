@@ -94,8 +94,21 @@ assert(original.Value == 70 and original.Flag == true and target.Value == 90)
 target.Value = 85
 binding.update()
 binding.restore()
-assert(target.Value == 85)
+assert(target.Value == 80)
 binding.restore()
+local sharedTarget = { Value = 12, Flag = true }
+local low, high = {}, {}
+assert(loaded.propertybinding.apply(low, sharedTarget, "Value", 20, 0))
+assert(loaded.propertybinding.apply(high, sharedTarget, "Value", 40, 20))
+assert(sharedTarget.Value == 40)
+assert(loaded.propertybinding.release(low, sharedTarget, "Value"))
+assert(sharedTarget.Value == 40)
+assert(loaded.propertybinding.release(high, sharedTarget, "Value"))
+assert(sharedTarget.Value == 12)
+assert(loaded.propertybinding.apply(low, sharedTarget, "Flag", false))
+assert(sharedTarget.Flag == false)
+assert(loaded.propertybinding.release(low, sharedTarget, "Flag"))
+assert(sharedTarget.Flag == true)
 local scope = loaded.lifetime.scope()
 local calls = 0
 loaded.universalcontroller.connectPhysics(scope, function() calls += 1 end)
@@ -106,6 +119,90 @@ scope.destroy()
 services.RunService.PreSimulation:Fire(1 / 60)
 services.RunService.PostSimulation:Fire(1 / 60)
 assert(calls == 2)
+""")
+
+
+    def test_universal_cleanup_api(self):
+        binary = self.binary('LUAU_BIN', 'luau')
+        spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        helper.smoke(binary, assertions="""
+local player = services.Players.LocalPlayer
+player.CameraMinZoomDistance, player.CameraMaxZoomDistance = 0.5, 18
+assert(loaded.infinitezoom.setEnabled(true))
+player.CameraMaxZoomDistance = 600000
+services.RunService.PreSimulation:Fire(1 / 60)
+assert(loaded.infinitezoom.setEnabled(false))
+assert(player.CameraMaxZoomDistance == 18)
+services.RunService.PreSimulation:Fire(1 / 60)
+services.RunService.PostSimulation:Fire(1 / 60)
+assert(player.CameraMaxZoomDistance == 18)
+player.CameraMaxZoomDistance = 32
+assert(loaded.infinitezoom.setEnabled(true))
+assert(loaded.infinitezoom.setEnabled(false))
+assert(player.CameraMaxZoomDistance == 32)
+
+local stored = { Limit = 24 }
+local coerced = setmetatable({}, {
+  __index = function(_, key) return stored[key] end,
+  __newindex = function(_, key, value) stored[key] = math.min(value, 1000) end,
+})
+local binding = loaded.propertybinding.create(function() return coerced end, function() return { Limit = 1000000 } end)
+binding.update(); binding.update()
+assert(stored.Limit == 1000)
+binding.restore()
+assert(stored.Limit == 24)
+
+local world = services.Workspace
+world.CurrentCamera = { FieldOfView = 76 }
+assert(loaded.fov.setValue(100))
+assert(loaded.fov.setEnabled(true))
+assert(world.CurrentCamera.FieldOfView == 100)
+world.CurrentCamera.FieldOfView = 84
+services.RunService.PostSimulation:Fire(1 / 60)
+assert(loaded.fov.setEnabled(false))
+assert(world.CurrentCamera.FieldOfView == 76)
+world.Gravity = 165
+assert(loaded.gravity.setValue(80))
+assert(loaded.gravity.setEnabled(true))
+assert(world.Gravity == 80)
+assert(loaded.gravity.setEnabled(false))
+assert(world.Gravity == 165)
+
+local lighting = game:GetService("Lighting")
+lighting.Brightness, lighting.ClockTime, lighting.GlobalShadows = 0.6, 7, true
+assert(loaded.fullbright.setEnabled(true))
+assert(lighting.GlobalShadows == false)
+assert(loaded.fullbright.setEnabled(false))
+assert(lighting.Brightness == 0.6 and lighting.ClockTime == 7 and lighting.GlobalShadows == true)
+lighting.FogStart, lighting.FogEnd = 15, 280
+assert(loaded.nofog.setEnabled(true))
+local atmosphere = { Parent = lighting, Density = 0.35, Haze = 1.2, IsA = function(_, name) return name == "Atmosphere" end }
+lighting.ChildAdded:Fire(atmosphere)
+assert(atmosphere.Density == 0 and atmosphere.Haze == 0)
+assert(loaded.nofog.setEnabled(false))
+assert(lighting.FogStart == 15 and lighting.FogEnd == 280)
+assert(atmosphere.Density == 0.35 and atmosphere.Haze == 1.2)
+
+local humanoid = { Parent = true, Health = 100, WalkSpeed = 16, JumpPower = 50, UseJumpPower = true, JumpHeight = 7 }
+local character = { FindFirstChildOfClass = function(_, name) return name == "Humanoid" and humanoid or nil end }
+player.Character = character
+assert(loaded.speed.setValue(30))
+assert(loaded.speed.setEnabled(true))
+assert(humanoid.WalkSpeed == 30)
+assert(loaded.speed.setEnabled(false))
+assert(humanoid.WalkSpeed == 16)
+assert(loaded.jumppower.setValue(100))
+assert(loaded.jumppower.setEnabled(true))
+assert(humanoid.JumpPower == 100)
+assert(loaded.jumppower.setEnabled(false))
+assert(humanoid.JumpPower == 50 and humanoid.UseJumpPower == true)
+player.Character = nil
+services.RunService.PreSimulation:Fire(1 / 60)
+services.RunService.PostSimulation:Fire(1 / 60)
+assert(world.CurrentCamera.FieldOfView == 76 and world.Gravity == 165)
+assert(lighting.FogEnd == 280 and player.CameraMaxZoomDistance == 32)
 """)
 
 if __name__ == '__main__': unittest.main()

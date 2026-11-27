@@ -69,6 +69,7 @@ local function attachJumpButton()
   end
 end
 local function startInfiniteJump()
+  requested = false
   lastJump = 0
   connect("InfiniteJump", UIS.JumpRequest, requestJump)
   local player = Utils.getLocalPlayer()
