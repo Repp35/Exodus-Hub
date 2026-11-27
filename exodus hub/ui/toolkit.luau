@@ -13,6 +13,7 @@ local Inputs
 local Selection
 local Dropdown
 local Appearance
+local Mini
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
@@ -21,6 +22,7 @@ local RunService = game:GetService("RunService")
 -- setup
 function UIKit.setup(deps)
   Theme, Runtime, Icons, Appearance = deps.Theme.tokens, deps.Runtime, deps.Icons, deps.Appearance
+  Mini = deps.Mini
   Display, ControlComponents, Inputs, Selection, Dropdown = deps.Display, deps.ControlComponents, deps.Inputs, deps.Selection, deps.Dropdown
   return true
 end
@@ -562,6 +564,7 @@ function UIKit.create(options)
   Inputs.install(context)
   Selection.install(context)
   Dropdown.install(context)
+  Mini.install(context)
   components.tabs = components.segmented
   components.click = components.button
   components.scroll = components.slider
@@ -586,6 +589,7 @@ UIKit.__contract = {
     Inputs = "uiinputs",
     Selection = "uiselection",
     Dropdown = "uidropdown",
+    Mini = "uimini",
   },
   requiresData = { Theme = { "tokens" } },
   requiresMethods = {
@@ -597,6 +601,7 @@ UIKit.__contract = {
     Inputs = { "install" },
     Selection = { "install" },
     Dropdown = { "install" },
+    Mini = { "install" },
   },
 }
 

@@ -484,86 +484,18 @@ function Controller.create(context)
   paintJumpBall(config.AutoJump == true)
   local _, miniY, miniWidth, miniHeight, miniScreenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
   local MINI_OFF_X = miniScreenWidth + 30
-  context.refs.miniGui = inst("CanvasGroup", {
-    Name = "ExodusSpamMini",
-    Visible = false,
-    GroupTransparency = 1,
-    Size = UDim2.fromOffset(miniWidth, miniHeight),
-    BackgroundColor3 = C.header,
-    BorderSizePixel = 0,
-    ZIndex = 15,
-    Parent = context.refs.screenGui,
+  local miniComponent = context.kit.Components.mini(context.refs.screenGui, {
+    name = "ExodusSpamMini",
+    title = "Spam",
+    size = UDim2.fromOffset(miniWidth, miniHeight),
+    visible = false,
+    buttonName = "SpamButton",
+    draggable = false,
   })
-  corner(context.refs.miniGui, 14)
-  corner(
-    inst("Frame", {
-      Size = UDim2.new(1, 8, 1, 8),
-      Position = UDim2.new(0, -4, 0, -4),
-      BackgroundColor3 = C.accent,
-      BackgroundTransparency = 0.92,
-      BorderSizePixel = 0,
-      ZIndex = 14,
-      Parent = context.refs.miniGui,
-    }),
-    18
-  )
-  stroke(context.refs.miniGui, nil, 1.5)
-  local miniTitleBar = inst("Frame", {
-    Size = UDim2.new(1, 0, 0.22, 0),
-    BackgroundColor3 = Color3.fromRGB(20, 20, 46),
-    BackgroundTransparency = 0.05,
-    BorderSizePixel = 0,
-    ZIndex = 16,
-    Parent = context.refs.miniGui,
-  })
-  corner(miniTitleBar, 14)
-  inst("Frame", {
-    Size = UDim2.new(1, 0, 0, 12),
-    Position = UDim2.new(0, 0, 1, -12),
-    BackgroundColor3 = Color3.fromRGB(20, 20, 46),
-    BackgroundTransparency = 0.05,
-    BorderSizePixel = 0,
-    ZIndex = 16,
-    Parent = miniTitleBar,
-  })
-  corner(
-    inst("Frame", {
-      Size = UDim2.new(0.5, 0, 0, 2),
-      Position = UDim2.new(0.25, 0, 0, 0),
-      BackgroundColor3 = C.accentPink,
-      BorderSizePixel = 0,
-      ZIndex = 17,
-      Parent = miniTitleBar,
-    }),
-    1
-  )
-  inst("TextLabel", {
-    Size = UDim2.new(1, -16, 1, 0),
-    Position = UDim2.new(0, 8, 0, 0),
-    BackgroundTransparency = 1,
-    Text = "Spam",
-    TextColor3 = C.subtext,
-    TextScaled = true,
-    TextXAlignment = Enum.TextXAlignment.Center,
-    Font = Enum.Font.GothamBold,
-    ZIndex = 17,
-    Parent = miniTitleBar,
-  })
-  local spamButton = inst("TextButton", {
-    Name = "SpamButton",
-    Size = UDim2.new(1, -12, 0.78, -8),
-    Position = UDim2.new(0, 6, 0.22, 3),
-    BackgroundColor3 = UIState.spamOn and C.green or C.red,
-    BorderSizePixel = 0,
-    Text = UIState.spamOn and "ON" or "OFF",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextScaled = true,
-    Font = Enum.Font.GothamBold,
-    ZIndex = 16,
-    Parent = context.refs.miniGui,
-  })
-  corner(spamButton, 10)
-  inst("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 12 }, spamButton)
+  context.refs.miniGui = miniComponent.Root
+  context.refs.miniGui.GroupTransparency = 1
+  local miniTitleBar, spamButton = miniComponent.Header, miniComponent.Button
+  miniComponent.setValue(UIState.spamOn)
   trackConn(spamButton.Activated:Connect(function()
     if Utils.getConfigValue("ManualSpamMode") ~= "Hold" then
       setSpam(not UIState.spamOn)

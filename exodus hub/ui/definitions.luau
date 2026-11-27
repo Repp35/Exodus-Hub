@@ -268,6 +268,7 @@ function UIConfig.getPages(definition)
   local pages, byId = {}, {}
   for _, source in ipairs(CONFIG.PAGES) do
     local page = table.clone(source)
+    page.title = (definition.pageTitles or {})[page.id] or page.title
     page.sections = {}
     for _, originalSection in ipairs(source.sections) do
       local section = table.clone(originalSection)

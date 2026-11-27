@@ -19,6 +19,12 @@ class AccessAPI(unittest.TestCase):
         source = f'local registry = (function()\n{registry}\nend)()\n'
         source += f'local access = (function()\n{access}\nend)()\n'
         source += f'local linker = (function()\n{linker}\nend)()\n'
+        common_catalog = (ROOT / 'core/catalog.luau').read_text()
+        hub_catalog = (ROOT / 'hubs/catalog.luau').read_text()
+        source += f'local shared = (function()\n{common_catalog}\nend)()\n'
+        source += f'local catalog = (function()\n{hub_catalog}\nend)()\n'
+        source += 'for _, profile in ipairs(catalog) do assert(#registry.manifest(shared, profile) > #shared) end\n'
+        source += 'assert(not pcall(registry.merge, {}, {{name="invalid",path="ui/games/mm2/../core.luau"}}))\n'
         source += '''
 local profiles = {
   { id = "mcpvp", title = "MCPvP", placeIds = { 10 }, universeIds = { 20 } },

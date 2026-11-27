@@ -107,7 +107,7 @@ function Registry.merge(common: { ModuleEntry }, profile: { ModuleEntry }?): { M
   local seen: { [string]: boolean } = {}
   for _, entry in ipairs(profile or {}) do
     assert(type(entry.name) == "string" and type(entry.path) == "string" and not seen[entry.name], "Invalid or duplicate hub module")
-    assert(entry.path:match("^hubs/[%w%-]+/") and not entry.path:find("..", 1, true), "Invalid hub path")
+    assert((entry.path:match("^hubs/[%w%-]+/") or entry.path:match("^ui/games/[%w%-]+/")) and not entry.path:find("..", 1, true), "Invalid hub path")
     assert(entry.name ~= "permissions" and entry.name ~= "gamecontext" and entry.name ~= "hubapi", "Reserved base module")
     assert(not positions[entry.name], "Game module duplicates shared module: " .. entry.name)
     seen[entry.name] = true

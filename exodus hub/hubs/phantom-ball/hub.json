@@ -55,6 +55,11 @@
       ],
       "tools": [
         "tooling.execute"
+      ],
+      "interactiveCombat": [
+        "combat.execute",
+        "combat.runtime",
+        "ui.write"
       ]
     },
     "rules": [
@@ -103,7 +108,8 @@
       "remote": "combat",
       "movement": "combat",
       "cooldown": "combat",
-      "gameui": "presentation"
+      "gameui": "presentation",
+      "dynamicparry": "interactiveCombat"
     },
     "defaults": {
       "infrastructure": "infrastructure.write",
@@ -114,7 +120,8 @@
       "universal": "world.write",
       "render": "render.write",
       "view": "ui.write",
-      "tools": "tooling.execute"
+      "tools": "tooling.execute",
+      "interactiveCombat": "combat.execute"
     }
   },
   "dataFolder": "Exodus Hub",

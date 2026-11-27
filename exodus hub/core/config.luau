@@ -43,6 +43,7 @@ local function validKeyCode(value)
 end
 local validationErrors = CONFIG.ERRORS
 local validators = {
+  text = function(value) return type(value) == "string" and #value <= 256 end,
   boolean = function(value) return type(value) == "boolean" end,
   rate = function(value) return isFiniteNumber(value) and value >= CONFIG.RATE_MIN end,
   delay = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MAX end,

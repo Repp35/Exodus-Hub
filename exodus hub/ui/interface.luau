@@ -12,6 +12,7 @@ local configuredIcon, iconOverride
 -- public-components
 local Components = {}
 for _, name in ipairs({
+  "mini",
   "label",
   "button",
   "textInput",
@@ -70,7 +71,9 @@ function ExodusUI.setup(deps, preview)
   context.miniBalls = hubUI.miniBalls or {}
   context.notifications = deps.Notifications.create(context)
   context.notifications.layer()
+  context.cornerNotifications = deps.CornerNotifications.create(context)
   context.floating = deps.Floating.create(context)
+  deps.MiniPanels.create(context, hubUI.miniPanels)
   context.window = deps.Window.create(context)
   if iconOverride then
     context.window.setIcon(configuredIcon)
@@ -170,6 +173,13 @@ function ExodusUI.notify(...)
   end
 end
 
+function ExodusUI.notifyCorner(title, message, options)
+  if active and active.scope.alive then
+    return active.cornerNotifications.show(title, message, options)
+  end
+  return false
+end
+
 function ExodusUI.setIcon(image)
   assert(image == nil or type(image) == "string" or type(image) == "number", "Icon must be an asset id or image URI")
   if type(image) == "number" or (type(image) == "string" and image:match("^%d+$")) then
@@ -203,7 +213,9 @@ ExodusUI.__contract = {
     Window = "uiwindow",
     Header = "uiheader",
     Floating = "uifloating",
+    MiniPanels = "uiminipanels",
     Notifications = "uinotificationview",
+    CornerNotifications = "uicornernotification",
     Telemetry = "uitelemetry",
     Input = "uiinput",
     Assists = "uiassists",
@@ -233,6 +245,7 @@ ExodusUI.__contract = {
     },
     Hub = {
       "getUIConfig",
+      "getChoices",
       "getReadouts",
       "hasClashPrediction",
       "getAbilityAvailability",
@@ -251,7 +264,9 @@ ExodusUI.__contract = {
     Window = { "create" },
     Header = { "create" },
     Floating = { "create" },
+    MiniPanels = { "create" },
     Notifications = { "create" },
+    CornerNotifications = { "create" },
     Telemetry = { "create" },
     Input = { "create" },
     Assists = { "create" },
@@ -261,7 +276,7 @@ ExodusUI.__contract = {
   },
   requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },
-  provides = { "setup", "notify", "setIcon" },
+  provides = { "setup", "notify", "notifyCorner", "setIcon" },
 }
 
 return ExodusUI

@@ -284,6 +284,7 @@ function Context.create(deps, deviceDesktop)
     write = setConfigValue,
     observe = Utils.observeConfig,
     notify = function(...) return context.notifications.toast(...) end,
+    choices = deps.Hub.getChoices,
     validateShortcut = function(key, binding) return context.actions.validateShortcut(key, binding) end,
     onCapture = function(active) UIState.keyCapture = active end,
   })
