@@ -3,6 +3,8 @@
 -- @modules modulelinker
 
 local Linker = {}
+local paths = {}
+function Linker.getPath(name) return paths[name] end
 function Linker.setup() return true end
 function Linker.order(manifest, loaded)
   local MODULE_ORDER = {}
@@ -53,7 +55,7 @@ function Linker.order(manifest, loaded)
   end
   return MODULE_ORDER
 end
-function Linker.validate(name, module)
+function Linker.validate(name, module, path)
   assert(type(module.__contract) == "table", name .. ": missing API contract")
   for _, method in ipairs(module.__contract.provides or {}) do
     assert(type(module[method]) == "function", name .. ": missing " .. method)
@@ -61,6 +63,7 @@ function Linker.validate(name, module)
   for _, field in ipairs(module.__contract.data or {}) do
     assert(module[field] ~= nil, name .. ": missing data " .. field)
   end
+  paths[name] = path
   return true
 end
 function Linker.resolve(name, loaded)
@@ -78,5 +81,5 @@ function Linker.resolve(name, loaded)
   return dependencies
 end
 
-Linker.__contract = { provides = { "setup", "order", "validate", "resolve" }, requires = {} }
+Linker.__contract = { provides = { "setup", "order", "validate", "resolve", "getPath" }, requires = {} }
 return Linker

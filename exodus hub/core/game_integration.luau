@@ -20,14 +20,16 @@ local __part_hubapi = (function()
   local HubAPI = {}
   local api = {}
   local migrateUI
+  local boundary
   function HubAPI.setup() return true end
-  function HubAPI.configure(loaded)
-    api = loaded.gameruntime and loaded.gameruntime.createAPI(loaded) or {}
+  function HubAPI.configure(loaded, scope)
+    boundary = scope or loaded.gamescope.create(loaded, loaded.gamecontext.getProfile())
+    api = loaded.gameruntime and loaded.gameruntime.createAPI(boundary.modules) or {}
     migrateUI = loaded.uiconfig and loaded.uiconfig.migrateConfig
     return true
   end
   function HubAPI.teardown()
-    api, migrateUI = {}, nil
+    api, migrateUI, boundary = {}, nil, nil
     return true
   end
   function HubAPI.areAbilitiesEnabled() return api.areAbilitiesEnabled and api.areAbilitiesEnabled() or false end
@@ -38,7 +40,7 @@ local __part_hubapi = (function()
     return false, "Recurso indisponível neste jogo"
   end
   function HubAPI.getChoices(name) return api.getChoices and api.getChoices(name) or {} end
-  function HubAPI.getUIConfig() return api.getUIConfig and api.getUIConfig() or {} end
+  function HubAPI.getUIConfig() return boundary.definition(api.getUIConfig and api.getUIConfig() or {}, api.controls) end
   function HubAPI.getGameContext() return api.getGameContext and api.getGameContext() or {} end
   function HubAPI.observeAbilityMode(callback)
     if api.observeAbilityMode then
@@ -63,8 +65,10 @@ local __part_hubapi = (function()
   function HubAPI.createVisualAdapter(...) return api.createVisualAdapter and api.createVisualAdapter(...) end
   function HubAPI.getReadouts() return api.readouts or {} end
   function HubAPI.getJumpButton() return api.getJumpButton and api.getJumpButton() end
-  function HubAPI.createActions(context) return api.createActions and api.createActions(context) or {} end
-  function HubAPI.getControls() return api.controls or {} end
+  function HubAPI.createActions(context)
+    return boundary.actions(api.createActions and api.createActions(boundary.context(context, api.controls)) or {}, api.controls)
+  end
+  function HubAPI.getControls() return table.clone(api.controls or {}) end
   function HubAPI.canUpdate()
     for _, blocked in ipairs(api.updateBlockers or {}) do
       local ok, value = pcall(blocked)
@@ -90,7 +94,7 @@ local __part_hubapi = (function()
   function HubAPI.migrateConfig(data)
     local changed = migrateUI and migrateUI(data) or false
     if api.migrateConfig then
-      return api.migrateConfig(data) or changed
+      return boundary.migrate(data, api.migrateConfig) or changed
     end
     return changed
   end
@@ -137,7 +141,8 @@ local __part_runtime = (function()
   function Runtime.setup() return true end
   function Runtime.bind(loaded, ...)
     if loaded.gameruntime then
-      return loaded.gameruntime.bind(loaded, ...)
+      local boundary = loaded.gamescope.create(loaded, loaded.gamecontext.getProfile())
+      return loaded.gameruntime.bind(boundary.modules, ...)
     end
     return {
       mode = loaded.gamecontext.getProfile().id,

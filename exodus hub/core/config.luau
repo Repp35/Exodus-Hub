@@ -81,11 +81,18 @@ function Config.register(name, definition)
   if definition.resolveDefaults ~= nil and type(definition.resolveDefaults) ~= "function" then
     return false
   end
-  if definition.persistent ~= nil and type(definition.persistent) ~= "boolean" then
+  if definition.persistent ~= nil and type(definition.persistent) ~= "boolean" and type(definition.persistent) ~= "table" then
     return false
   end
   local schema = type(definition.schema) == "table" and definition.schema or {}
   local defaults = type(definition.defaults) == "table" and definition.defaults or {}
+  if type(definition.persistent) == "table" then
+    for key, value in pairs(definition.persistent) do
+      if not schema[key] or type(value) ~= "boolean" then
+        return false
+      end
+    end
+  end
   for key, kind in pairs(schema) do
     if type(key) ~= "string" or not validators[kind] or Keys[key] then
       return false
@@ -99,14 +106,14 @@ function Config.register(name, definition)
   end
   for key, kind in pairs(schema) do
     Keys[key] = kind
-    SessionOnly[key] = definition.persistent == false
+    SessionOnly[key] = definition.persistent == false or type(definition.persistent) == "table" and definition.persistent[key] == false
   end
   ResolvedDefaults = nil
   Registry[name] = {
     schema = copy(schema),
     defaults = copy(defaults),
     resolveDefaults = definition.resolveDefaults,
-    persistent = definition.persistent ~= false,
+    persistent = type(definition.persistent) == "table" and copy(definition.persistent) or definition.persistent ~= false,
   }
   return true
 end
@@ -177,7 +184,11 @@ function Config.isPersistentKey(key) return Keys[key] ~= nil and not SessionOnly
 function Config.getRegistry()
   local result = {}
   for name, definition in pairs(Registry) do
-    result[name] = { schema = copy(definition.schema), defaults = copy(definition.defaults), persistent = definition.persistent }
+    result[name] = {
+      schema = copy(definition.schema),
+      defaults = copy(definition.defaults),
+      persistent = type(definition.persistent) == "table" and copy(definition.persistent) or definition.persistent,
+    }
   end
   return result
 end

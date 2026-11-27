@@ -6,7 +6,9 @@ local Bootstrap = {}
 function Bootstrap.setup() return true end
 function Bootstrap.start(loaded, order, urls, profile, transport)
   loaded.gamecontext.configure(profile)
-  loaded.hubapi.configure(loaded)
+  local boundary = loaded.gamescope.create(loaded, profile)
+  boundary.validateDefaults(profile.defaults)
+  loaded.hubapi.configure(loaded, boundary)
   local utils = loaded.utils
   utils.configure(loaded.permissions.resolve("utils", loaded))
   utils.start()
@@ -21,7 +23,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     end
   end
   utils.setConfigModule(loaded.config)
-  utils.setConfig(loaded.config.defaults({ player = utils.getLocalPlayer(), profile = profile }))
+  utils.setConfig(loaded.config.defaults({ player = utils.getLocalPlayer(), profile = boundary.profile }))
   utils.loadConfig()
   utils.setModuleURLs(urls)
   local binds = {}
@@ -37,6 +39,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     local module = loaded[name]
     if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
       local deps = loaded.permissions.resolve(name, loaded)
+      deps = boundary.dependencies(name, deps)
       if name == "character" then
         deps.characterBinds = binds
       end

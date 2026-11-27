@@ -2,6 +2,7 @@
 --!optimize 2
 local Options = {}
 Options.__config = {
+  legacy = { "MCAimStrength" },
   defaults = {
     MCAimLock = true,
     MCAimAssist = true,

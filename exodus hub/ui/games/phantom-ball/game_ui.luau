@@ -380,6 +380,16 @@ GameUI.definition = {
   },
 }
 GameUI.__config = {
+  legacy = {
+    "AutoClash",
+    "AutoClashActivationMs",
+    "AutoClashDeactivationMs",
+    "ClashMaxDistance",
+    "AutoSpamClashPrediction",
+    "AutoSpamPredictionMargin",
+    "ClashGrace",
+    "ClashMaxAge",
+  },
   schema = {
     AutoParry = "boolean",
     AutoParryWindowFactor = "rate",

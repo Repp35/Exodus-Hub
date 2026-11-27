@@ -366,10 +366,11 @@ Permissions.validate = validate
 Permissions.wrap = wrap
 Permissions.resolve = resolve
 Permissions.policy = policy
+function Permissions.getPath(name) return registry[name] and registry[name].path end
 
 -- contract
 Permissions.__contract = {
-  provides = { "configure", "validate", "wrap", "resolve", "policy" },
+  provides = { "configure", "validate", "wrap", "resolve", "policy", "getPath" },
   requires = {},
 }
 

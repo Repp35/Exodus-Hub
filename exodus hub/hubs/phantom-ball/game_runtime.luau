@@ -235,7 +235,6 @@ function Runtime.createAPI(loaded)
       setManualSpam = utils.setManualSpamActive,
       isManualSpamActive = utils.isManualSpamActive,
       onAutoDarkChanged = loaded.autodark.sync,
-      onAutoJumpChanged = loaded.autojump.sync,
       onUpDash = function()
         local ok, err = loaded.movement.upDash()
         if not ok then
