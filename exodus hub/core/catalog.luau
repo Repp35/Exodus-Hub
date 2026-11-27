@@ -43,7 +43,7 @@ return {
   { name = "uinotifications", path = "ui/controllers/notifications.luau", hash = "9931bdf64a08f8cd4e5ec1cf778d3ddc0f1341dacaea87f0ad9720e49f37b278" },
   { name = "uinotificationview", path = "ui/controllers/notifications.luau", hash = "9931bdf64a08f8cd4e5ec1cf778d3ddc0f1341dacaea87f0ad9720e49f37b278" },
   { name = "uiwindow", path = "ui/controllers/window.luau", hash = "6c82c6d727d4a5f7e5560b05190ee8106b6737e9e8c76a2ba7a46bed667f553a" },
-  { name = "uiconfig", path = "ui/definitions.luau", hash = "e34b52c7eb4ec885a73f854940e6e5ec81fd97cd56c192ec3e323bd59de82f50" },
+  { name = "uiconfig", path = "ui/definitions.luau", hash = "1bff8328de45ad89fc1b41dd470d1429da05534dee446ea54db20fac18f1a0e0" },
   { name = "uiheader", path = "ui/header.luau", hash = "f685b07ac4ccddb6a559992121e1e9600e4bde99198cc91ffac946b092d9eb32" },
   { name = "uiicons", path = "ui/icons.luau", hash = "d391a379e0f347fe1c0c43d5dfbb34c76037f7c2b73842f89fc69be6bea8398f" },
   { name = "ui", path = "ui/interface.luau", hash = "16fb26f3df659f1ee6ea87720f2ec5a1bfa47648ff3f27d4c68893574f3a244b" },
