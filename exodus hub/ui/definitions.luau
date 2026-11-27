@@ -303,6 +303,10 @@ function UIConfig.getPages(definition)
   for _, source in ipairs(CONFIG.PAGES) do
     local page = table.clone(source)
     page.title = (definition.pageTitles or {})[page.id] or page.title
+    local options = (definition.pageOptions or {})[page.id]
+    if options and type(options.utility) == "boolean" then
+      page.utility = options.utility
+    end
     page.sections = {}
     for _, originalSection in ipairs(source.sections) do
       local section = table.clone(originalSection)
@@ -319,7 +323,13 @@ function UIConfig.getPages(definition)
   end
   for _, addition in ipairs(definition.additions or {}) do
     local page = assert(byId[addition.page], "Unknown UI page")
-    local section = assert(page.sections[addition.section or 1], "Unknown UI section")
+    local section
+    if addition.sectionTitle then
+      section = { title = addition.sectionTitle, column = addition.column, components = {} }
+      page.sections[#page.sections + 1] = section
+    else
+      section = assert(page.sections[addition.section or 1], "Unknown UI section")
+    end
     for _, component in ipairs(addition.components or {}) do
       section.components[#section.components + 1] = component
     end

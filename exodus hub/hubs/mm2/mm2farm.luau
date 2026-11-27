@@ -115,7 +115,7 @@ local function create(API)
         local character = target and target.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
-        if target and target:GetAttribute("Alive") == true and humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
+        if MatchService:IsAlive(target, profile) and humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
           self.ThreatRoot = root
           return root
         end
@@ -179,7 +179,7 @@ local function create(API)
         and Player.Character == character
         and humanoid.Parent ~= nil
         and humanoid.Health > 0
-        and Player:GetAttribute("Alive") == true
+        and Player:GetAttribute("Alive") ~= false
       if canReset and MatchService:GetLocalRole() == "Innocent" then
         local resetOk, resetError = pcall(function() humanoid.Health = 0 end)
         if not resetOk then
@@ -494,7 +494,7 @@ local function create(API)
         self.Enabled
         and self.Farming
         and Player.Character == character
-        and Player:GetAttribute("Alive") == true
+        and Player:GetAttribute("Alive") ~= false
         and humanoid.Health > 0
         and root.Parent
         and os.clock() < deadline

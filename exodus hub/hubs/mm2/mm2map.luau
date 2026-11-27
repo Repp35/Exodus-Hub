@@ -85,6 +85,10 @@ local function create(API)
 
   -- mapscan
   function MapService:GetCoinContainer()
+    local active, _, roundContainer = API.Services.Match:GetRoundContext()
+    if not active or not roundContainer then
+      return nil
+    end
     local now = os.clock()
     if now < self.NextScan and isMapCoinContainer(self.CachedContainer) then
       return self.CachedContainer

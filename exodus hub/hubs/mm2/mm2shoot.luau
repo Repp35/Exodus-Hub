@@ -12,7 +12,6 @@ local function create(API)
   local Runtime = API.Runtime
   local MatchService = API.Services.Match
   local Randomizer = Random.new()
-  local ROLE_REFRESH_INTERVAL = 0.45
   local ShootMurder = {
     ManualEnabled = false,
     AutoEnabled = false,
@@ -39,20 +38,9 @@ local function create(API)
     return character, humanoid, root
   end
   local function notify(content) API.Notify("Shoot Murder", content) end
-  function ShootMurder:RefreshRoleData(force)
-    local now = os.clock()
-    if not force and now < self.NextRoleRefreshAt then
-      return self.RoleData
-    end
-    self.NextRoleRefreshAt = now + ROLE_REFRESH_INTERVAL
-    local ok, roleData = pcall(MatchService.GetPlayerData, MatchService)
-    if ok and type(roleData) == "table" and next(roleData) ~= nil then
-      self.RoleData = roleData
-      self.RoleDataAt = now
-    elseif not self.RoleData or now - self.RoleDataAt > 2 then
-      self.RoleData = nil
-      self.RoleDataAt = 0
-    end
+  function ShootMurder:RefreshRoleData()
+    self.RoleData = MatchService:GetPlayerData()
+    self.RoleDataAt = os.clock()
     return self.RoleData
   end
   function ShootMurder:HasSheriffRole()
@@ -114,7 +102,7 @@ local function create(API)
   end
   function ShootMurder:FindGun(character, humanoid)
     local gun = character:FindFirstChild("Gun")
-    if gun then
+    if gun and gun:IsA("Tool") then
       return gun
     end
     local backpack = Player:FindFirstChildOfClass("Backpack")
@@ -226,7 +214,7 @@ local function create(API)
       return false
     end
     local gun = self:FindGun(localCharacter, humanoid)
-    if not gun or gun.Parent ~= localCharacter then
+    if not gun or gun.Parent ~= localCharacter or gun:GetAttribute("Disabled") == true then
       return false
     end
     local shootRemote = gun:FindFirstChild("Shoot")

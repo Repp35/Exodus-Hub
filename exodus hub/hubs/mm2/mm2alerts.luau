@@ -85,7 +85,7 @@ local function create(API)
         return
       end
       local inRound, map = MatchService:GetRoundContext()
-      if inRound and map and instance:IsDescendantOf(map) then
+      if inRound and map then
         notify("Arma caiu", "Uma arma foi derrubada no mapa.")
       end
     end)
@@ -96,11 +96,10 @@ local function create(API)
     end
     self.Running = true
     table.clear(self.SeenGuns)
-    for _, gun in ipairs(Services.CollectionService:GetTagged("GunDrop")) do
+    for _, gun in ipairs(API.Services.Drops:GetAll()) do
       self.SeenGuns[gun] = true
     end
-    self.Connections.GunAdded =
-      Runtime:Track(Services.CollectionService:GetInstanceAddedSignal("GunDrop"):Connect(function(instance) self:OnGunDropped(instance) end))
+    self.Connections.GunAdded = Runtime:Track(API.Services.Drops:ObserveAdded(function(instance) self:OnGunDropped(instance) end))
     local thread
     thread = task.spawn(function()
       while self.Running and not Runtime.ShuttingDown do

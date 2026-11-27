@@ -38,9 +38,6 @@ local function create(API)
     end
   end
   local function getRoleData()
-    if os.clock() - Combat.RoleDataAt < 0.55 then
-      return Combat.RoleData
-    end
     Combat.RoleDataAt = os.clock()
     Combat.RoleData = MatchService:GetPlayerData()
     return Combat.RoleData
@@ -64,7 +61,7 @@ local function create(API)
     end
     local profiles = getRoleData()
     local mine = profiles and profiles[Player.Name]
-    if type(mine) ~= "table" or mine.Role ~= "Murderer" or mine.Dead or mine.Killed then
+    if type(mine) ~= "table" or mine.Role ~= "Murderer" or mine.Dead or mine.Killed or character:GetAttribute("Zombie") == true then
       return nil
     end
     local knife = character:FindFirstChild("Knife")
@@ -77,6 +74,9 @@ local function create(API)
       if not knife or knife.Parent ~= character then
         return nil
       end
+    end
+    if not knife:IsA("Tool") or knife:GetAttribute("Disabled") == true then
+      return nil
     end
     return character, humanoid, root, knife, profiles
   end
@@ -172,16 +172,18 @@ local function create(API)
     return targetPosition, t
   end
   local function getKnifeSpeed(knife)
-    local speed = tonumber(knife:GetAttribute("ThrowSpeed"))
-    if speed and speed > 0 then
+    local speed = tonumber(knife:GetAttribute("ProjectileSpeed"))
+    if speed and speed >= 10 then
       return math.clamp(speed, 30, 400)
     end
     for _, projectile in ipairs(CollectionService:GetTagged("ThrowingKnife")) do
       speed = tonumber(projectile:GetAttribute("ThrowSpeed"))
-      if speed and speed > 0 then
+      if speed and speed >= 10 then
         return math.clamp(speed, 30, 400)
       end
     end
+    -- Knife.ThrowSpeed is the charge duration in the native KnifeClient.
+    -- Only projectile ThrowSpeed (or an explicit ProjectileSpeed) is velocity.
     return DEFAULT_KNIFE_SPEED
   end
   local function getTargets(root, profiles, mode)
@@ -317,7 +319,9 @@ local function create(API)
     local events = knife:FindFirstChild("Events")
     local legacy = events and events:FindFirstChild("KnifeThrown")
     if legacy and legacy:IsA("RemoteEvent") then
-      legacy:FireServer(CFrame.new(data.Origin), CFrame.new(data.Aim))
+      local handle = knife:FindFirstChild("Handle") or knife:FindFirstChild("RightHandle")
+      local origin = handle and handle:IsA("BasePart") and handle.CFrame or CFrame.new(data.Origin)
+      legacy:FireServer(origin, CFrame.new(data.Aim))
       return true
     end
     local direct = knife:FindFirstChild("Throw")
@@ -336,8 +340,8 @@ local function create(API)
       local character, _, root, knife, profiles = getContext()
       if character and knife and profiles then
         local target = chooseMelee(character, root, knife, profiles)
-        if target and os.clock() >= (self.NextStabAt or 0) and tryStab(knife, target) then
-          self.NextStabAt = os.clock() + 0.18
+        if target and os.clock() >= (self.NextKnifeAt or 0) and tryStab(knife, target) then
+          self.NextKnifeAt = os.clock() + 0.85
         end
       end
     end
@@ -346,7 +350,7 @@ local function create(API)
     end
   end
   function Combat:ThrowManual()
-    if self.Destroyed or Runtime.ShuttingDown or not API.IsActive() or os.clock() < (self.NextThrowAt or 0) then
+    if self.Destroyed or Runtime.ShuttingDown or not API.IsActive() or os.clock() < (self.NextKnifeAt or 0) then
       return false
     end
     local character, _, root, knife, profiles = getContext()
@@ -360,7 +364,9 @@ local function create(API)
     if not tryThrow(knife, selected, character) then
       return false
     end
-    self.NextThrowAt = os.clock() + math.clamp(tonumber(knife:GetAttribute("ThrowCooldown")) or 0.85, 0.1, 5)
+    local charge = tonumber(knife:GetAttribute("ThrowSpeed"))
+    local fallback = charge and charge > 0 and charge < 5 and charge * 2 or 0.85
+    self.NextKnifeAt = os.clock() + math.clamp(tonumber(knife:GetAttribute("ThrowCooldown")) or fallback, 0.1, 5)
     return true
   end
   function Combat:SetAutoAttack(value) self.AutoAttack = value == true end

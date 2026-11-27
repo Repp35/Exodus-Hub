@@ -217,7 +217,7 @@ local function create(API)
     if self.RoleChangedConnection then
       return
     end
-    local remote = Services.ReplicatedStorage:FindFirstChild("PlayerDataChanged", true)
+    local remote = MatchService:GetRemote({ "PlayerDataChanged" }, "RemoteEvent")
     if not remote or not remote:IsA("RemoteEvent") then
       return
     end
@@ -409,6 +409,9 @@ local function create(API)
     end
   end
   function ESP:RefreshPlayers(roleData, inMatch)
+    if not inMatch then
+      table.clear(self.LastKnownRoles)
+    end
     local keepWorld = {}
     local localCharacter = Player.Character
     local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
@@ -428,7 +431,7 @@ local function create(API)
         self.LastKnownRoles[target] = nil
         continue
       end
-      local roleActive = inMatch == true and aliveAttribute == true and not profileSaysDead
+      local roleActive = inMatch == true and aliveAttribute ~= false and not profileSaysDead
       if profileSaysDead then
         self.LastKnownRoles[target] = nil
       end
@@ -599,7 +602,7 @@ local function create(API)
           heldRoots[backpack] = true
         end
       end
-      for _, gun in ipairs(Services.CollectionService:GetTagged("GunDrop")) do
+      for _, gun in ipairs(API.Services.Drops:GetAll()) do
         addGunPart(gunParts, gun, heldRoots)
       end
     end

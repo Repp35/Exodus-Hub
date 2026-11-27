@@ -62,11 +62,16 @@ local function matchesFingerprint(profile: HubProfile, getService: (string) -> a
   end
   local function exists(probe: any): boolean
     local ok, result = pcall(function()
-      local parent = getService(probe.service)
-      for index, name in ipairs(probe.path) do
-        parent = parent and parent:FindFirstChild(name, index == 1 and probe.recursive == true)
+      for _, path in ipairs(probe.paths or { probe.path }) do
+        local parent = getService(probe.service)
+        for index, name in ipairs(path) do
+          parent = parent and parent:FindFirstChild(name, index == 1 and probe.recursive == true)
+        end
+        if parent ~= nil and (not probe.class or parent:IsA(probe.class)) then
+          return true
+        end
       end
-      return parent ~= nil and (not probe.class or parent:IsA(probe.class))
+      return false
     end)
     return ok and result == true
   end

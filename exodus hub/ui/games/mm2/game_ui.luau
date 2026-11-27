@@ -4,6 +4,7 @@ local GameUI = {}
 GameUI.definition = {
   pageOrder = { "mm2-farm", "mm2-combat", "mm2-map", "mm2-visuals", "mm2-player", "mm2-alerts", "config", "indeed", "antilag", "information" },
   pageTitles = { config = "Settings" },
+  pageOptions = { config = { utility = false } },
   pages = {
     {
       id = "mm2-farm",
@@ -211,7 +212,7 @@ GameUI.definition = {
   additions = {
     {
       page = "config",
-      section = 1,
+      sectionTitle = "Mini UIs de combate",
       components = {
         { kind = "toggle", title = "Shoot Murder · formato quadrado", key = "ShootMiniSquare", description = "Desative para usar o formato redondo." },
         { kind = "slider", title = "Shoot Murder · tamanho", key = "ShootMiniScale", min = 0.5, max = 2, increment = 0.05, valueName = "x" },

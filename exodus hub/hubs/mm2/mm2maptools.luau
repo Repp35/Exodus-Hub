@@ -63,7 +63,7 @@ local function create(API)
     return type(profile) == "table"
       and profile.Dead ~= true
       and profile.Killed ~= true
-      and target:GetAttribute("Alive") == true
+      and MatchService:IsAlive(target, profile)
       and getLiveTarget(target, true) ~= nil
   end
   function MapTools:GetPlayerOptions()
@@ -231,11 +231,12 @@ local function create(API)
     end
     local root = character:FindFirstChild("HumanoidRootPart")
     local nearest, distance
-    for _, gun in ipairs(Services.CollectionService:GetTagged("GunDrop")) do
-      if gun:IsA("BasePart") and gun:IsDescendantOf(map) then
-        local gap = (root.Position - gun.Position).Magnitude
+    for _, gun in ipairs(API.Services.Drops:GetAll()) do
+      local part = API.Services.Drops:GetPart(gun)
+      if part then
+        local gap = (root.Position - part.Position).Magnitude
         if not distance or gap < distance then
-          nearest, distance = gun, gap
+          nearest, distance = part, gap
         end
       end
     end
@@ -262,9 +263,10 @@ local function create(API)
         local _, map = MatchService:GetRoundContext()
         local gun
         if map and map.Parent then
-          for _, candidate in ipairs(Services.CollectionService:GetTagged("GunDrop")) do
-            if candidate:IsA("BasePart") and candidate:IsDescendantOf(map) then
-              gun = candidate
+          for _, candidate in ipairs(API.Services.Drops:GetAll()) do
+            local part = API.Services.Drops:GetPart(candidate)
+            if part then
+              gun = part
               break
             end
           end
@@ -388,7 +390,7 @@ local function create(API)
             and (root.Position - waypoint.Position).Magnitude > 3
             and os.clock() < deadline
             and startedInRound == (MatchService:GetRoundContext() == true)
-            and (not startedInRound or Player:GetAttribute("Alive") == true)
+            and (not startedInRound or Player:GetAttribute("Alive") ~= false)
             and (not isTargetValid or isTargetValid())
           do
             Services.RunService.Heartbeat:Wait()

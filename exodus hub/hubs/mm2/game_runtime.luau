@@ -95,7 +95,7 @@ function Runtime.bind(loaded)
     Release = function(_, lease) return loaded.noclip.release(lease) end,
   }
   api.Features.Invisicam = { SetSource = function(_, source, value) return loaded.invisicam.setSource("mm2." .. source, value) end }
-  for _, entry in ipairs({ { "Coin", "mm2coin" }, { "Match", "mm2match" }, { "Map", "mm2map" } }) do
+  for _, entry in ipairs({ { "Coin", "mm2coin" }, { "Match", "mm2match" }, { "Drops", "mm2drops" }, { "Map", "mm2map" } }) do
     api.Services[entry[1]] = loaded[entry[2]].create(api)
   end
   for _, entry in ipairs({

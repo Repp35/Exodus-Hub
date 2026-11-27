@@ -19,8 +19,12 @@ local definition = loaded.hubapi.getUIConfig()
 assert(definition.pageOrder[1] == "mm2-farm")
 assert(type(loaded.hubapi.getControls().onMM2Shoot) == "function")
 assert(type(loaded.hubapi.getControls().onMM2Throw) == "function")
-for _, name in ipairs({ "mm2coin", "mm2map", "mm2match", "mm2farm", "mm2pickup", "mm2maptools", "mm2combat", "mm2shoot", "mm2alerts", "mm2esp" }) do
+for _, name in ipairs({ "mm2coin", "mm2map", "mm2match", "mm2drops", "mm2farm", "mm2pickup", "mm2maptools", "mm2combat", "mm2shoot", "mm2alerts", "mm2esp" }) do
   assert(type(loaded[name].create) == "function", name)
+end
+local configured = loaded.uiconfig.getPages(definition)
+for _, page in ipairs(configured) do
+  if page.id == "config" then assert(page.title == "Settings" and page.utility == false) end
 end
 local defaults = loaded.config.defaults()
 assert(defaults.ShootMiniSquare == true and defaults.KnifeMiniSquare == true)

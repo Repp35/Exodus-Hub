@@ -11,7 +11,6 @@ local function create(API)
   local Workspace = Services.Workspace
   local ReplicatedStorage = Services.ReplicatedStorage
   local PathfindingService = Services.PathfindingService
-  local GUN_DROP_TAG = "GunDrop"
   local SCAN_INTERVAL = 0.12
   local ROLE_REFRESH_INTERVAL = 0.75
   local RETRY_DELAY = 0.8
@@ -114,7 +113,6 @@ local function create(API)
     if
       not active
       or not map
-      or not container
       or not character
       or not humanoid
       or humanoid.Health <= 0
@@ -173,7 +171,7 @@ local function create(API)
   local function gunStillThere(gun) return gun ~= nil and gun.Parent ~= nil and gun:IsDescendantOf(Workspace) end
   function Pickup:GetNearestDroppedGun(root)
     local nearest, nearestPart, nearestDistance
-    for _, gun in ipairs(Services.CollectionService:GetTagged(GUN_DROP_TAG)) do
+    for _, gun in ipairs(API.Services.Drops:GetAll()) do
       local part = getGunPart(gun)
       if part then
         local distance = (root.Position - part.Position).Magnitude
@@ -474,9 +472,9 @@ local function create(API)
       or not root.Parent
       or Player:GetAttribute("Alive") == false
       or self:HasGun(character)
-      or container.Parent ~= map
+      or container and container.Parent ~= map
       or map.Parent ~= Workspace
-      or map:GetAttribute("MapID") == nil
+      or select(2, MatchService:GetRoundContext()) ~= map
       or pointInModel(map, root.Position, 20) ~= true
       or isInLobby(root.Position)
       or requireGun and not gunStillThere(gun)
@@ -606,7 +604,7 @@ local function create(API)
     if self.Busy or not self.Enabled or Runtime.ShuttingDown or os.clock() < self.NextAttemptAt then
       return
     end
-    local ready, character, humanoid, root = self:GetActiveContext()
+    local ready, character, humanoid, root, _, map, roleData = self:GetActiveContext()
     if not ready or self:HasGun(character) then
       return
     end
@@ -622,14 +620,28 @@ local function create(API)
     end
     self.Busy = true
     local ok, err = pcall(function()
+      if self.SafetyEnabled and not self:IsSafeToApproach(root, humanoid, gun, part, map, roleData) then
+        return
+      end
+      if not self.Enabled or not gunStillThere(gun) then
+        return
+      end
+      self.Touching = { touch = touch, root = root, part = part }
       touch(root, part, 0)
       Services.RunService.Heartbeat:Wait()
-      touch(root, part, 1)
     end)
+    self:ReleaseTouch()
     self.Busy = false
     self.NextAttemptAt = os.clock() + (ok and 0.4 or 1)
     if not ok then
       self:ReportError("coleta", err)
+    end
+  end
+  function Pickup:ReleaseTouch()
+    local active = self.Touching
+    self.Touching = nil
+    if type(active) == "table" then
+      pcall(active.touch, active.root, active.part, 1)
     end
   end
 
@@ -684,7 +696,7 @@ local function create(API)
     end
   end
   local function connectPlayerDataChanges()
-    local remote = ReplicatedStorage:FindFirstChild("PlayerDataChanged", true)
+    local remote = MatchService:GetRemote({ "PlayerDataChanged" }, "RemoteEvent")
     if not remote or not remote:IsA("RemoteEvent") then
       return
     end
@@ -747,6 +759,13 @@ local function create(API)
     self.Enabled = false
     self.Generation += 1
     self.NextAttemptAt = 0
+    self:ReleaseTouch()
+    local thread = self.Thread
+    self.Thread = nil
+    if thread then
+      pcall(task.cancel, thread)
+    end
+    self.Busy = false
     if self.KnifeThrownConnection then
       pcall(function() self.KnifeThrownConnection:Disconnect() end)
       self.KnifeThrownConnection = nil
