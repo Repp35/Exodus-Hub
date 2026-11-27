@@ -99,7 +99,11 @@ function Actions.create(context)
       onStatus = function(message) persistent(tostring(message), "info") end,
       onProgress = function(processed, total) persistent(("Dumping... %d/%d"):format(processed, total), "info") end,
       onComplete = function(result)
-        persistent(("Dump completed: %d saved, %d failed."):format(result.saved, result.failed), result.failed > 0 and "warning" or "success", 5)
+        persistent(
+          ("Dump completed: %d saved, %d failed, %d source warnings."):format(result.saved, result.failed, result.syntaxWarnings or 0),
+          (result.failed > 0 or (result.syntaxWarnings or 0) > 0) and "warning" or "success",
+          5
+        )
       end,
       onCanceled = function() persistent("Dumping canceled.", "warning", 1.5) end,
       onError = function(message)
