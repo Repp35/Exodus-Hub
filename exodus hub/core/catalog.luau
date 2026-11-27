@@ -71,7 +71,7 @@ return {
   { name = "invisicam", path = "universal/invisicam.luau", hash = "3e4e21bf3c71b3fa8f4cfc07e5a393e4ebe42349b6bcb7349512396c29faa153" },
   { name = "jumppower", path = "universal/jump_power.luau", hash = "d41e78e0e4c3a4abb4db96dde1fc4af326cb8059487737026a4af80ed4c2861b" },
   { name = "nofog", path = "universal/no_fog.luau", hash = "08d6fefd30dd53cef9cb35688f50f0182f0ea8bad7ed8e2110cc491c9cce8429" },
-  { name = "noclip", path = "universal/noclip.luau", hash = "93b3ec1f23fc0dcf5cb5c219e8ff020435ed6b5bafff177845815b249b2b82a3" },
+  { name = "noclip", path = "universal/noclip.luau", hash = "8a1b75e25e7619aa8ed864f06b7243193213a8af2f5a3daf144c4eaeb4703978" },
   { name = "propertybinding", path = "universal/property_binding.luau", hash = "ebf4bb8b0025108c3c7fff4427e1f6833844569c51b86acf14774057a5354698" },
   { name = "servers", path = "universal/servers.luau", hash = "fb653e37b346bec3b2a6b9de0e8bba8cbc08061e0eafcf011f0f7c16e80d25f4" },
   { name = "speed", path = "universal/speed.luau", hash = "918a1f5d2cb9f734253a6f949f996fd552d58cd9374dfda4c4d64739c491810f" },

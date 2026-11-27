@@ -3,221 +3,118 @@
 -- @modules noclip
 
 local Noclip = {}
-local controller, state, scope
+local controller, rootScope, physicsScope, bindingScope
+local utils, lifetime, scheduler, player, character
+local owners, parts = {}, {}
 local CONFIG = { schema = { UniversalNoclip = "boolean" }, defaults = { UniversalNoclip = false } }
-local function create(utils, resources, connectPhysics)
-  local Player = utils.getLocalPlayer()
-  local Runtime = {
-    ShuttingDown = false,
-    ConnectPhysics = function(_, callback)
-      local physics = resources.child()
-      connectPhysics(physics, callback)
-      return { Disconnect = physics.destroy }
-    end,
-    Track = function(_, connection) return resources.add(connection) end,
-    OnShutdown = function(_, cleanup) resources.add(cleanup) end,
-  }
-  local State = {
-    Enabled = false,
-    Owners = {},
-    Character = nil,
-    SteppedConnection = nil,
-    DescendantConnection = nil,
-    RemovingConnection = nil,
-    OriginalCanCollide = {},
-    BindGeneration = 0,
-    BindThread = nil,
-  }
 
-  local function hasOwners() return next(State.Owners) ~= nil end
-  local function disconnect(connection)
-    if connection then
-      pcall(function() connection:Disconnect() end)
-    end
+local function restorePart(part)
+  local entry = parts[part]
+  if not entry then return end
+  parts[part] = nil
+  entry.scope.destroy()
+  if part.Parent then
+    pcall(function() part.CanCollide = entry.original end)
   end
-  local function cancelPendingBind()
-    local thread = State.BindThread
-    State.BindThread = nil
-    if thread then
-      pcall(task.cancel, thread)
-    end
+end
+local function restoreCharacter()
+  if bindingScope then
+    bindingScope.destroy()
+    bindingScope = nil
   end
-  local function disablePart(part)
-    if not part:IsA("BasePart") then
-      return
-    end
-    local readOk, canCollide = pcall(function() return part.CanCollide end)
-    if not readOk then
-      return
-    end
-    if State.OriginalCanCollide[part] == nil then
-      State.OriginalCanCollide[part] = canCollide
-    end
-    pcall(function() part.CanCollide = false end)
-  end
-  function State:_RestoreBinding()
-    cancelPendingBind()
-    disconnect(self.SteppedConnection)
-    self.SteppedConnection = nil
-    disconnect(self.DescendantConnection)
-    self.DescendantConnection = nil
-    disconnect(self.RemovingConnection)
-    self.RemovingConnection = nil
-    for part, canCollide in pairs(self.OriginalCanCollide) do
-      if part.Parent then
-        pcall(function() part.CanCollide = canCollide end)
-      end
-    end
-    table.clear(self.OriginalCanCollide)
-    self.Character = nil
-  end
-  function State:_BindCharacter(character)
-    self.BindGeneration += 1
-    local generation = self.BindGeneration
-    if character and self.Character == character then
-      return
-    end
-    self:_RestoreBinding()
-    if not character or not hasOwners() then
-      return
-    end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-      local thread
-      thread = task.defer(function()
-        local candidate = character:WaitForChild("Humanoid", 10)
-        if self.BindThread == thread then
-          self.BindThread = nil
-        end
-        if candidate and candidate:IsA("Humanoid") and self.BindGeneration == generation and hasOwners() and Player.Character == character then
-          self:_BindCharacter(character)
-        end
-      end)
-      self.BindThread = thread
-      return
-    end
-    if humanoid.Health <= 0 then
-      return
-    end
-    self.Character = character
-    for _, descendant in ipairs(character:GetDescendants()) do
-      disablePart(descendant)
-    end
-    self.DescendantConnection = character.DescendantAdded:Connect(function(descendant)
-      if self.Character == character and hasOwners() then
-        disablePart(descendant)
-      end
-    end)
-    self.RemovingConnection = character.DescendantRemoving:Connect(function(part)
-      local previous = self.OriginalCanCollide[part]
-      if previous ~= nil then
-        self.OriginalCanCollide[part] = nil
-        pcall(function() part.CanCollide = previous end)
-      end
-    end)
-    self.SteppedConnection = Runtime:ConnectPhysics(function()
-      if self.Character ~= character or not hasOwners() then
-        self:_RestoreBinding()
-        return
-      end
-      if Player.Character ~= character then
-        return
-      end
-      for part in pairs(self.OriginalCanCollide) do
-        if part.Parent then
-          pcall(function() part.CanCollide = false end)
-        else
-          self.OriginalCanCollide[part] = nil
-        end
-      end
-    end)
-  end
-  function State:Acquire(owner)
-    if owner == nil then
-      return false
-    end
-    self.Owners[owner] = true
-    self:_BindCharacter(Player.Character)
-    return true
-  end
-  function State:Release(owner)
-    if owner ~= nil then
-      self.Owners[owner] = nil
-    end
-    if not hasOwners() then
-      self:_RestoreBinding()
-    elseif not self.Character then
-      self:_BindCharacter(Player.Character)
-    end
-  end
-  function State:Start()
-    if self.Enabled or Runtime.ShuttingDown then
-      return
-    end
-    self.Enabled = true
-    self:Acquire(self)
-  end
-  function State:Stop()
-    self.Enabled = false
-    self:Release(self)
-  end
-  Runtime:Track(Player.CharacterAdded:Connect(function(character)
-    if hasOwners() then
-      State:_BindCharacter(character)
-    end
-  end))
-  Runtime:Track(Player.CharacterRemoving:Connect(function(character)
-    if State.Character == character or State.BindThread then
-      State:_BindCharacter(nil)
-    end
-  end))
-  Runtime:OnShutdown(function() State:Stop() end)
-
-  resources.add(function()
-    Runtime.ShuttingDown = true
-    table.clear(State.Owners)
-    State:_BindCharacter(nil)
+  character = nil
+  for part in pairs(parts) do restorePart(part) end
+end
+local function enforce(part, entry)
+  if parts[part] ~= entry or not character or not part:IsDescendantOf(character) then return end
+  if part.CanCollide then part.CanCollide = false end
+end
+local function watchPart(part)
+  if not part:IsA("BasePart") or parts[part] then return end
+  local entry = { original = part.CanCollide, scope = bindingScope.child() }
+  parts[part] = entry
+  entry.scope.connect(part:GetPropertyChangedSignal("CanCollide"), function()
+    enforce(part, entry)
   end)
-  return State
+  enforce(part, entry)
 end
-function Noclip.setEnabled(value)
-  if not controller then
-    return false, "recurso indisponível"
-  end
-  return controller.setEnabled(value)
+local function bindCharacter(nextCharacter)
+  if character == nextCharacter then return end
+  restoreCharacter()
+  if not nextCharacter then return end
+  character, bindingScope = nextCharacter, rootScope.child()
+  bindingScope.connect(character.DescendantAdded, watchPart)
+  bindingScope.connect(character.DescendantRemoving, restorePart)
+  for _, part in ipairs(character:GetDescendants()) do watchPart(part) end
 end
-function Noclip.acquire(owner) return state and state:Acquire(owner) or false end
-function Noclip.release(owner)
-  if not state then
-    return false
+local function step()
+  if not next(owners) then return end
+  local current = player and player.Character
+  if current and not current.Parent then current = nil end
+  bindCharacter(current)
+  for part, entry in pairs(parts) do
+    if not part.Parent or not character or not part:IsDescendantOf(character) then
+      restorePart(part)
+    else
+      enforce(part, entry)
+    end
   end
-  state:Release(owner)
+end
+local function stopPhysics()
+  if physicsScope then
+    physicsScope.destroy()
+    physicsScope = nil
+  end
+  restoreCharacter()
+end
+function Noclip.isEnabled() return next(owners) ~= nil end
+function Noclip.acquire(owner)
+  if owner == nil or not rootScope or not rootScope.alive then return false end
+  owners[owner] = true
+  if not physicsScope then
+    physicsScope = rootScope.child()
+    scheduler.connectPhysics(physicsScope, step)
+  end
+  step()
   return true
 end
+function Noclip.release(owner)
+  if owner ~= nil then owners[owner] = nil end
+  if not next(owners) then stopPhysics() end
+  return true
+end
+function Noclip.setEnabled(value)
+  if not controller then return false, "recurso indisponível" end
+  return controller.setEnabled(value)
+end
 function Noclip.teardown()
-  if controller then
-    controller.destroy()
-    controller = nil
-  end
-  if scope then
-    scope.destroy()
-    scope = nil
-  end
-  state = nil
+  if controller then controller.destroy(); controller = nil end
+  table.clear(owners)
+  stopPhysics()
+  if rootScope then rootScope.destroy(); rootScope = nil end
+  utils, lifetime, scheduler, player = nil, nil, nil, nil
   return true
 end
 function Noclip.setup(deps)
   Noclip.teardown()
-  local utils = deps.Utils
-  scope = deps.Lifetime.scope()
-  state = create(utils, scope, deps.Controller.connectPhysics)
-  local cleanup = { Disconnect = scope.destroy }
+  utils, lifetime, scheduler = deps.Utils, deps.Lifetime, deps.Controller
+  player, rootScope = utils.getLocalPlayer(), lifetime.scope()
+  local cleanup = { Disconnect = rootScope.destroy }
   utils.trackGlobal(cleanup)
-  scope.add(function() utils.untrackGlobal(cleanup) end)
-  controller = deps.Controller.create(utils, deps.Lifetime, {
+  rootScope.add(function() utils.untrackGlobal(cleanup) end)
+  rootScope.add(function() table.clear(owners); stopPhysics() end)
+  if player then
+    rootScope.connect(player.CharacterAdded, function(current)
+      if next(owners) then bindCharacter(current); step() end
+    end)
+    rootScope.connect(player.CharacterRemoving, function(current)
+      if character == current then restoreCharacter() end
+    end)
+  end
+  controller = scheduler.create(utils, lifetime, {
     key = "UniversalNoclip",
-    start = function() state:Start() end,
-    stop = function() state:Stop() end,
+    start = function() return Noclip.acquire(Noclip) end,
+    stop = function() Noclip.release(Noclip) end,
   })
   return controller.sync()
 end
@@ -230,6 +127,6 @@ Noclip.__contract = {
     Lifetime = { "scope" },
     Controller = { "create", "connectPhysics" },
   },
-  provides = { "setup", "teardown", "setEnabled", "acquire", "release" },
+  provides = { "setup", "teardown", "setEnabled", "isEnabled", "acquire", "release" },
 }
 return Noclip
