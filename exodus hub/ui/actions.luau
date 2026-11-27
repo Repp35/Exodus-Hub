@@ -166,7 +166,7 @@ function Actions.create(context)
       definition.getState = states[definition.action]
     end
     if definition.feature then
-      definition.onChange = function(value) invoke(definition.kind == "toggle" and "onUniversalToggle" or "onUniversalValue", definition.feature, value) end
+      definition.onChange = function(value) invoke((definition.kind == "toggle" or definition.kind == "checkbox") and "onUniversalToggle" or "onUniversalValue", definition.feature, value) end
     elseif after[definition.key] then
       definition.onChange = after[definition.key]
     end
@@ -215,7 +215,7 @@ function Actions.create(context)
         end
         if definition.action ~= "manualSpam" and definition.action ~= "upDash" then
           local message = definition.title
-          if definition.kind == "toggle" then
+          if (definition.kind == "toggle" or definition.kind == "checkbox") then
             message = message .. (handle.getValue() and " On" or " Off")
           end
           context.notify(message, false, { category = "shortcut", topic = definition.action or definition.key })

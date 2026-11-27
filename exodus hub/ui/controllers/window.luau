@@ -270,7 +270,8 @@ function Controller.create(context)
     Position = UDim2.new(1, -PAD - 102, 0.5, -15),
     BackgroundColor3 = C.btnDark,
     BackgroundTransparency = 0.3,
-    Text = "i",
+    Text = "",
+    AutoLocalize = false,
     Font = Enum.Font.GothamBold,
     TextColor3 = C.text,
     TextSize = 16,
@@ -280,6 +281,7 @@ function Controller.create(context)
   infoButton.LayoutOrder = 2
   corner(infoButton, 8)
   stroke(infoButton, nil, 1)
+  context.kit.icon(infoButton, "information")
   trackConn(infoButton.Activated:Connect(function() context.pages.toggle("information") end))
   local assistsButton = inst("TextButton", {
     Name = "HubAssistsButton",

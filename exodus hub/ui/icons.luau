@@ -86,6 +86,42 @@ end
 
 -- public-api
 function Icons.create(parent, name, properties)
+  if name == "information" then
+    local icon = Instance.new("Frame")
+    icon.Name = "Icon_information"
+    icon.BackgroundTransparency = 1
+    icon.BorderSizePixel = 0
+    icon.Active = false
+    icon.AnchorPoint = Vector2.new(0.5, 0.5)
+    icon.Position = UDim2.fromScale(0.5, 0.5)
+    icon.Size = UDim2.fromOffset(18, 18)
+    icon.ZIndex = parent.ZIndex + 1
+    for key, value in pairs(properties or {}) do
+      icon[key] = value
+    end
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0.5, 0)
+    corner.Parent = icon
+    local outline = Instance.new("UIStroke")
+    outline.Color = Theme.COLORS.text
+    outline.Thickness = 1.5
+    outline.Parent = icon
+    for _, shape in ipairs({ { 3, 3, 0.28 }, { 2, 6, 0.62 } }) do
+      local mark = Instance.new("Frame")
+      mark.AnchorPoint = Vector2.new(0.5, 0.5)
+      mark.Position = UDim2.fromScale(0.5, shape[3])
+      mark.Size = UDim2.fromOffset(shape[1], shape[2])
+      mark.BackgroundColor3 = Theme.COLORS.text
+      mark.BorderSizePixel = 0
+      mark.ZIndex = icon.ZIndex
+      local radius = Instance.new("UICorner")
+      radius.CornerRadius = UDim.new(0.5, 0)
+      radius.Parent = mark
+      mark.Parent = icon
+    end
+    icon.Parent = parent
+    return icon
+  end
   local icon = Instance.new("ImageLabel")
   icon.Name = "Icon_" .. name
   icon.BackgroundTransparency = 1
