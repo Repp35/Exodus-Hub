@@ -183,7 +183,7 @@ return {
     notification = "Exodus Hub · Prison Life carregado.",
     modules = {
       { name = "gameruntime", path = "hubs/prison-life/game_runtime.luau", hash = "3521aaa5e221addf11206984e5ed00ecc80e6ea21f9f7be92f39540c863190d9" },
-      { name = "gameui", path = "ui/games/prison-life/game_ui.luau", hash = "07336fcf3f98537d5ce2e5004b6fdb9a3ec37fe778a2c0e530df45d11d224db0" },
+      { name = "gameui", path = "ui/games/prison-life/game_ui.luau", hash = "9188e89401c53ac11398e8c23012bb4c33891ab6e423ae9cd3fd0cb53f2035a0" },
     },
   },
 }

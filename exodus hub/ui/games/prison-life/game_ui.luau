@@ -6,7 +6,11 @@ local function formatTime(value)
   return string.format("%02d:%02d", math.floor(minutes / 60), minutes % 60)
 end
 local function parseTime(text)
-  local hour, minute = tostring(text):match("^%s*(%d%d?):(%d%d)%s*$")
+  local input = tostring(text):match("^%s*(.-)%s*$")
+  local hour, minute = input:match("^(%d%d?):(%d%d?)$")
+  if not hour then
+    hour, minute = input:match("^(%d%d?)$"), "0"
+  end
   hour, minute = tonumber(hour), tonumber(minute)
   if hour == 24 and minute == 0 then
     return 0
@@ -38,7 +42,8 @@ GameUI.definition = {
               title = "Time (24h)",
               key = "UniversalPrisonTimeMinutes",
               parentKey = "UniversalPrisonTimeEnabled",
-              placeholder = "18:30",
+              placeholder = "15 ou 15:30",
+              description = "Aceita só a hora: 07 vira 07:00.",
               format = formatTime,
               parse = parseTime,
             },
