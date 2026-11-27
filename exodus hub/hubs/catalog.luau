@@ -138,11 +138,7 @@ return {
       { name = "autofierce", path = "hubs/phantom-ball/combat/auto_fierce.luau", hash = "9378d305f05691621a61f5c3a9c47e6559927c4ae5b9e09baba4987a90b6d0e0" },
       { name = "autoparry", path = "hubs/phantom-ball/combat/auto_parry.luau", hash = "9eedd40365e4333f1e7a9794885e02d7d2fce6a5e39499e90882284be3a1c678" },
       { name = "autospam", path = "hubs/phantom-ball/combat/auto_spam.luau", hash = "fa60352958aeaa2c1f36093bd8de3970e204d86c63b607008cfb50ec5c64a846" },
-      {
-        name = "dynamicparry",
-        path = "hubs/phantom-ball/combat/dynamic_parry.luau",
-        hash = "2861847009d1bf3fc0a955c39d52f953a8d9e83111d1d72bf342298828a055b9",
-      },
+      { name = "dynamicparry", path = "hubs/phantom-ball/combat/dynamic_parry.luau", hash = "2861847009d1bf3fc0a955c39d52f953a8d9e83111d1d72bf342298828a055b9" },
       { name = "spam", path = "hubs/phantom-ball/combat/spam.luau", hash = "16bcd4871c00e52de1f16a4f310305cec9fac9a6e40e8c2125bd57db9bbf4044" },
       { name = "combatloop", path = "hubs/phantom-ball/combat_loop.luau", hash = "5628bc647b74f0b70cbb6d078e1f4bc186bda5a7e3f03a81d0406634dbd9ec88" },
       { name = "ballsync", path = "hubs/phantom-ball/game/ball_sync.luau", hash = "8b325649cd9d533e202cd63e1aaee27022e22fab79ac133d056227514192ea6b" },
@@ -154,11 +150,7 @@ return {
         hash = "c27caffef801eebec5cb4efbc0fa5b9a1facad02c3f03a1b2f39d1512b1fbb45",
       },
       { name = "movement", path = "hubs/phantom-ball/game/movement.luau", hash = "c1cdc7d9e4630944081ae268878b8355aadccb73db77a4973e7cf171b45f28cc" },
-      {
-        name = "nativevisuals",
-        path = "hubs/phantom-ball/game/native_visuals.luau",
-        hash = "96598bf0ec850a4c08638e8f5b9f47879278fa98bf687a59736b8d27d347c284",
-      },
+      { name = "nativevisuals", path = "hubs/phantom-ball/game/native_visuals.luau", hash = "96598bf0ec850a4c08638e8f5b9f47879278fa98bf687a59736b8d27d347c284" },
       {
         name = "playerregistry",
         path = "hubs/phantom-ball/game/player_registry.luau",
@@ -170,11 +162,7 @@ return {
       { name = "targeting", path = "hubs/phantom-ball/game/targeting.luau", hash = "2901a56c8ff24f7531df12a307fbcf3e9088b7b072faf3a6d7c3eadd7016b14d" },
       { name = "telemetry", path = "hubs/phantom-ball/game/telemetry.luau", hash = "d07c2ff8a0066a749198b673ede601f9e9031554cca402222526bae54779f4d0" },
       { name = "gameruntime", path = "hubs/phantom-ball/game_runtime.luau", hash = "adff6c12893f6d0b09d249d6757cb91449529944efdad17de994efffa058e2a5" },
-      {
-        name = "clashstats",
-        path = "hubs/phantom-ball/prediction/clash_stats.luau",
-        hash = "b28f8b196defa69f6d83d7ba5c9da74649ca8d444c715ba99fa9f84bf9dfa42a",
-      },
+      { name = "clashstats", path = "hubs/phantom-ball/prediction/clash_stats.luau", hash = "b28f8b196defa69f6d83d7ba5c9da74649ca8d444c715ba99fa9f84bf9dfa42a" },
       { name = "dash", path = "hubs/phantom-ball/prediction/dash.luau", hash = "88db232b270fad844da81b099f1b452bbdb0c28e7ccd3bcc60dbac87b536e176" },
       {
         name = "deflectgeometry",
@@ -182,6 +170,20 @@ return {
         hash = "62b858c9cea530b04a0dac4a6c2a88b906ad3df19614b38c8199ecc34fe9e841",
       },
       { name = "gameui", path = "ui/games/phantom-ball/game_ui.luau", hash = "3c1f216493c541bd77abd3d0bd07be6a9c982e1d8d13a43c1671be3669d3d2c6" },
+    },
+  },
+  {
+    id = "prison-life",
+    title = "Prison Life",
+    placeIds = { 155615604 },
+    universeIds = { 73885730 },
+    permissions = false,
+    version = "1.0.0",
+    author = "deltapolinha_2915",
+    notification = "Exodus Hub · Prison Life carregado.",
+    modules = {
+      { name = "gameruntime", path = "hubs/prison-life/game_runtime.luau", hash = "3521aaa5e221addf11206984e5ed00ecc80e6ea21f9f7be92f39540c863190d9" },
+      { name = "gameui", path = "ui/games/prison-life/game_ui.luau", hash = "07336fcf3f98537d5ce2e5004b6fdb9a3ec37fe778a2c0e530df45d11d224db0" },
     },
   },
 }
