@@ -9,7 +9,7 @@ return {
     title = "MCPvP",
     placeIds = { 75260404327641 },
     universeIds = { 10774244015 },
-    version = "0.0.0",
+    version = "2.3.3",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · MCPvP carregado.",
     modules = {
@@ -37,7 +37,7 @@ return {
     title = "Murder Mystery 2 / MMV",
     placeIds = { 142823291, 115744583613781, 89259651049585, 131563127340874, 137173049886119, 127066479584274, 12928877533 },
     universeIds = { 66654135 },
-    version = "0.0.0",
+    version = "1.1.0",
     fingerprint = {
       all = {
         {
@@ -140,7 +140,7 @@ return {
     title = "Prison Life",
     placeIds = { 155615604 },
     universeIds = { 73885730 },
-    version = "0.0.0",
+    version = "1.0.0",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · Prison Life carregado.",
     modules = {},
