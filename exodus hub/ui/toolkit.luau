@@ -393,13 +393,14 @@ function UIKit.create(options)
   local function title(handle, definition, rightSpace, height)
     local root = handle.Root
     local hasDescription = definition.description and definition.description ~= ""
-    text(root, definition.title or definition.text, {
+    local caption = text(root, definition.title or definition.text, {
       Name = "Title",
       Position = UDim2.fromOffset(14, hasDescription and 5 or 0),
       Size = UDim2.new(1, -(28 + (rightSpace or 0)), 0, hasDescription and 18 or height),
     })
+    local description
     if hasDescription then
-      text(root, definition.description, {
+      description = text(root, definition.description, {
         Name = "Description",
         Position = UDim2.fromOffset(14, definition.expandedDescription and 42 or 26),
         Size = UDim2.new(1, -(28 + (definition.expandedDescription and 0 or (rightSpace or 0))), 0, height - (definition.expandedDescription and 48 or 30)),
@@ -411,6 +412,7 @@ function UIKit.create(options)
         TextYAlignment = Enum.TextYAlignment.Top,
       })
     end
+    return caption, description
   end
   local function button(parent, label, properties)
     local props = {

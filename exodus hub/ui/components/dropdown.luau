@@ -37,8 +37,20 @@ function Components.install(context)
     definition = definition or {}
     local choices = definition.options or definition.choices or {}
     local handle = control(parent, definition, Theme.RATE_CARD_H)
-    title(handle, definition, 0, 24)
+    local hasDescription = type(definition.description) == "string" and definition.description ~= ""
+    local _, description = title(handle, definition, 0, hasDescription and Theme.RATE_CARD_H or 24)
     local trigger = button(handle.Root, "", { Name = "Select", Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 29) })
+    if description then
+      description.AutomaticSize = Enum.AutomaticSize.Y
+      description.Size = UDim2.new(1, -28, 0, 0)
+      local function layout()
+        local y = description.Position.Y.Offset + description.AbsoluteSize.Y + 8
+        trigger.Position = UDim2.fromOffset(10, y)
+        handle.Root.Size = UDim2.new(handle.Root.Size.X.Scale, handle.Root.Size.X.Offset, 0, y + 28 + 8)
+      end
+      handle.scope.connect(description:GetPropertyChangedSignal("AbsoluteSize"), layout)
+      layout()
+    end
     local selectedLabel = text(trigger, "", {
       Name = "Selected",
       Position = UDim2.fromOffset(10, 0),
