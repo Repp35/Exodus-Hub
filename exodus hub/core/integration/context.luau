@@ -6,6 +6,9 @@ local profile = { id = "universal", title = "Universal", author = "deltapolinha_
 function GameContext.setup() return true end
 function GameContext.configure(value)
   profile = table.clone(value)
+  if profile.id ~= "universal" then
+    profile.version = profile.version or "0.0.0"
+  end
   return true
 end
 function GameContext.getProfile() return table.clone(profile) end

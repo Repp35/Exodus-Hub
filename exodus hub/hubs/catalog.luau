@@ -9,7 +9,7 @@ return {
     title = "MCPvP",
     placeIds = { 75260404327641 },
     universeIds = { 10774244015 },
-    version = "2.3.3",
+    version = "0.0.0",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · MCPvP carregado.",
     modules = {
@@ -37,7 +37,7 @@ return {
     title = "Murder Mystery 2 / MMV",
     placeIds = { 142823291, 115744583613781, 89259651049585, 131563127340874, 137173049886119, 127066479584274, 12928877533 },
     universeIds = { 66654135 },
-    version = "1.1.0",
+    version = "0.0.0",
     fingerprint = {
       all = {
         {
@@ -79,7 +79,7 @@ return {
     placeIds = { 12979690461 },
     universeIds = { 4538598064 },
     notification = "Phantom Ball carregado.",
-    version = "3.3.0",
+    version = "3.5.0",
     developers = { "deltapolinha_2915" },
     modules = {
       { name = "autodark", path = "hubs/phantom-ball/combat/auto_dark.luau", hash = "a7f016ffd1e29127967c77184933a20bb855f6f0b72a65013f88148e7cb2a2a4" },
@@ -140,7 +140,7 @@ return {
     title = "Prison Life",
     placeIds = { 155615604 },
     universeIds = { 73885730 },
-    version = "1.0.0",
+    version = "0.0.0",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · Prison Life carregado.",
     modules = {},

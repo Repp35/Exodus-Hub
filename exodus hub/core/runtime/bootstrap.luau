@@ -6,6 +6,7 @@ local Bootstrap = {}
 function Bootstrap.setup() return true end
 function Bootstrap.start(loaded, order, urls, profile, transport)
   loaded.gamecontext.configure(profile)
+  profile = loaded.gamecontext.getProfile()
   local utils = loaded.utils
   local miniScale = {
     read = function() return utils.getConfigValue("MiniUIScale") end,
@@ -147,7 +148,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
   view = loaded.ui.create({
     name = utils.name(),
     author = utils.author(),
-    version = utils.version(),
+    version = profile.id == "universal" and utils.version() or profile.version,
     state = utils,
     miniScale = miniScale,
     effectsEnabled = function() return utils.getConfigValue("AntiLagEnabled") ~= true end,

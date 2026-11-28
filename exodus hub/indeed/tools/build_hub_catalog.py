@@ -36,7 +36,7 @@ def discover(root=ROOT):
         ids.add(ident)
         if not isinstance(profile.get('title'), str) or not profile['title'].strip():
             raise ValueError(f'{info}: title required')
-        for field in ['author', 'notification']:
+        for field in ['author', 'notification', 'version']:
             if field in profile and (not isinstance(profile[field], str) or not profile[field].strip()):
                 raise ValueError(f'{info}: {field} must be a nonempty string')
         for field, used in [('placeIds', places), ('universeIds', universes)]:

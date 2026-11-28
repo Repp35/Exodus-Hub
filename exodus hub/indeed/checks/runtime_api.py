@@ -51,6 +51,7 @@ loaded.ui.setup = function() return true end
 loaded.ui.create = function(options)
   assert(type(options.controls.onReload) == "function")
   assert(type(options.definition.pages) == "table")
+  assert(options.version == (profile.id == "universal" and loaded.utils.version() or profile.version or "0.0.0"))
   assert(type(options.miniScale.read) == "function" and type(options.miniScale.observe) == "function")
   return { fade = function() end, destroy = function() end }
 end
