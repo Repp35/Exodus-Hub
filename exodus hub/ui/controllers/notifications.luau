@@ -15,6 +15,9 @@ local __part_uinotifications = (function()
     if event.topic and CONFIG.SILENT_TOPICS[event.topic] then
       return false
     end
+    if event.channel == "corner" then
+      return config.CornerNotifications == true
+    end
     local enabled = config[desktop and "DesktopNotifications" or "MobileNotifications"] == true
     if not enabled then
       return false

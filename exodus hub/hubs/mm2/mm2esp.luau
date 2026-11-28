@@ -73,9 +73,30 @@ local function create(API)
     local progress = math.clamp((distance - esp.NameScaleNearDistance) / math.max(esp.NameScaleFarDistance - esp.NameScaleNearDistance, 1), 0, 1)
     return math.floor(esp.NameTextSizeNear + (esp.NameTextSizeFar - esp.NameTextSizeNear) * progress + 0.5)
   end
-  local function getDistance(fromPart, toPart, fallback)
-    if fromPart and fromPart:IsA("BasePart") and toPart and toPart:IsA("BasePart") then
-      return (fromPart.Position - toPart.Position).Magnitude
+  local function getPerspectivePosition()
+    local camera = Workspace.CurrentCamera
+    local subject = camera and camera.CameraSubject
+    if subject and camera.CameraType ~= Enum.CameraType.Scriptable then
+      local root
+      if subject:IsA("Humanoid") then
+        root = subject.RootPart or (subject.Parent and subject.Parent:FindFirstChild("HumanoidRootPart"))
+      elseif subject:IsA("BasePart") then
+        root = subject.Parent and subject.Parent:FindFirstChild("HumanoidRootPart") or subject
+      end
+      if root and root:IsA("BasePart") and root:IsDescendantOf(Workspace) then
+        return root.Position
+      end
+    end
+    if camera and camera.CFrame then
+      return camera.CFrame.Position
+    end
+    local character = Player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    return root and root.Position or nil
+  end
+  local function getDistance(perspective, toPart, fallback)
+    if perspective and toPart and toPart:IsA("BasePart") then
+      return (perspective - toPart.Position).Magnitude
     end
     return fallback
   end
@@ -216,7 +237,7 @@ local function create(API)
   function ESP:UpdatePlayerLabels(marker, username, identity, color, distance)
     local categoryEnabled = marker.Category ~= nil and self.Filters[marker.Category] == true
     local showIdentity = self.ShowIdentity == true and categoryEnabled
-    local showDistance = self.ShowDistance == true and marker.IsSelf ~= true and categoryEnabled
+    local showDistance = self.ShowDistance == true and categoryEnabled
     local showUsername = self.ShowUsername == true and categoryEnabled
     local identitySize = getNameTextSize(self, distance)
     local usernameSize = math.max(self.UsernameTextSizeMin, identitySize - 3)
@@ -321,15 +342,13 @@ local function create(API)
     if not self.Enabled or not self.ShowDistance then
       return
     end
-    local localCharacter = Player.Character
-    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-    if not localRoot or not localRoot:IsA("BasePart") then
+    local perspective = getPerspectivePosition()
+    if not perspective then
       return
     end
     for target, marker in pairs(self.PlayerMarkers) do
       if
-        target == Player
-        or not marker.Root
+        not marker.Root
         or not marker.Root.Parent
         or not marker.Gui
         or not marker.Gui.Parent
@@ -344,7 +363,7 @@ local function create(API)
       end
       local color = self.Colors[marker.ColorCategory or marker.Category]
       if color then
-        self:UpdatePlayerLabels(marker, marker.UsernameLabel.Text, marker.IdentityLabel.Text, color, getDistance(localRoot, marker.Root))
+        self:UpdatePlayerLabels(marker, marker.UsernameLabel.Text, marker.IdentityLabel.Text, color, getDistance(perspective, marker.Root))
       end
     end
   end
@@ -353,8 +372,7 @@ local function create(API)
       table.clear(self.LastKnownRoles)
     end
     local keepWorld = {}
-    local localCharacter = Player.Character
-    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    local perspective = getPerspectivePosition()
     for _, target in ipairs(Services.Players:GetPlayers()) do
       local isSelf = target == Player
       if isSelf and not self.ShowSelf then
@@ -387,7 +405,7 @@ local function create(API)
         keepWorld[target] = true
         local colorCategory = isSelf and (roleCategory or "Player") or category
         local color = self.Colors[colorCategory]
-        local distance = getDistance(localRoot, root)
+        local distance = getDistance(perspective, root)
         local marker = self.PlayerMarkers[target]
         local head = character:FindFirstChild("Head")
         local nameAdornee = head and head:IsA("BasePart") and head or root
@@ -445,8 +463,7 @@ local function create(API)
   end
   function ESP:RefreshCoins(container)
     local keep = {}
-    local localCharacter = Player.Character
-    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    local perspective = getPerspectivePosition()
     for _, part in ipairs(CoinService:GetCollectableParts(container)) do
       local kind = CoinService:GetKind(part)
       local adornee = getCoinVisualAdornee(part)
@@ -468,7 +485,7 @@ local function create(API)
           self.CoinMarkers[part] = marker
         end
         local label = kind == "candy" and "Candy" or "Coin"
-        local distance = getDistance(localRoot, part, self.NameScaleFarDistance)
+        local distance = getDistance(perspective, part, self.NameScaleFarDistance)
         local textSize = getNameTextSize(self, distance)
         marker.IdentityLabel.Text = label
         marker.IdentityLabel.TextColor3 = getLabelColor(self.Colors.CandyCoin)
@@ -546,8 +563,7 @@ local function create(API)
         addGunPart(gunParts, gun, heldRoots)
       end
     end
-    local localCharacter = Player.Character
-    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    local perspective = getPerspectivePosition()
     for part in pairs(gunParts) do
       if not isGunStationary(self, part, os.clock()) then
         continue
@@ -568,7 +584,7 @@ local function create(API)
 
         self.GunMarkers[part] = marker
       end
-      local distance = getDistance(localRoot, part, self.NameScaleFarDistance)
+      local distance = getDistance(perspective, part, self.NameScaleFarDistance)
       local textSize = getNameTextSize(self, distance)
       marker.IdentityLabel.Text = "Arma"
       marker.IdentityLabel.TextColor3 = getLabelColor(self.Colors.Gun)
@@ -667,8 +683,7 @@ local function create(API)
       return
     end
     local needsRepair = false
-    local localCharacter = Player.Character
-    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    local perspective = getPerspectivePosition()
     for target, marker in pairs(self.PlayerMarkers) do
       if not marker.Category or self.Filters[marker.Category] ~= true then
         destroyMarker(marker)
@@ -727,7 +742,7 @@ local function create(API)
       gui.LightInfluence = 0
       gui.MaxDistance = 0
       gui.StudsOffset = Vector3.new(0, marker.NameAdornee.Size.Y * 0.5 + 0.55, 0)
-      self:UpdatePlayerLabels(marker, marker.UsernameLabel.Text, marker.IdentityLabel.Text, color, getDistance(localRoot, marker.Root))
+      self:UpdatePlayerLabels(marker, marker.UsernameLabel.Text, marker.IdentityLabel.Text, color, getDistance(perspective, marker.Root))
       reapplyLabel(marker.IdentityLabel)
       reapplyLabel(marker.UsernameLabel)
       reapplyLabel(marker.DistanceLabel)

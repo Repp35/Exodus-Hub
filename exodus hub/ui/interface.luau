@@ -192,7 +192,7 @@ local function pageBuilder(definition, changed, state)
 end
 function ExodusUI.create(options)
   options = options or {}
-  local values, observers = { MobileNotifications = true, DesktopNotifications = true, DesktopShortcutNotifications = true }, {}
+  local values, observers = { MobileNotifications = true, DesktopNotifications = true, DesktopShortcutNotifications = true, CornerNotifications = true }, {}
   for key, value in pairs(options.defaults or {}) do
     values[key] = value
   end
@@ -203,7 +203,17 @@ function ExodusUI.create(options)
     or function()
       local result = table.clone(values)
       if options.read then
-        for _, key in ipairs({ "MobileNotifications", "DesktopNotifications", "DesktopShortcutNotifications", "BtnX", "BtnY", "PanelX", "PanelY", "ForcePCUI" }) do
+        for _, key in ipairs({
+          "MobileNotifications",
+          "DesktopNotifications",
+          "DesktopShortcutNotifications",
+          "CornerNotifications",
+          "BtnX",
+          "BtnY",
+          "PanelX",
+          "PanelY",
+          "ForcePCUI",
+        }) do
           local value = options.read(key)
           if value ~= nil then
             result[key] = value

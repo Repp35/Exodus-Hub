@@ -35,15 +35,17 @@ UIPage.definition = {
           increment = 0.05,
           valueName = "x",
           description = "Aumenta ou diminui todas, mantendo o tamanho individual de cada uma. 1x mantém os tamanhos configurados.",
+          mobileOnly = true,
         },
       },
     },
     {
       title = "Notificações",
       components = {
-        { kind = "toggle", title = "Notificações do sistema", key = "DesktopNotifications", desktopOnly = true },
+        { kind = "toggle", title = "Notificações em balão", key = "DesktopNotifications", desktopOnly = true },
         { kind = "toggle", title = "Avisos de atalhos", key = "DesktopShortcutNotifications", parentKey = "DesktopNotifications", desktopOnly = true },
-        { kind = "toggle", title = "Notificações do sistema", key = "MobileNotifications", mobileOnly = true },
+        { kind = "toggle", title = "Notificações em balão", key = "MobileNotifications", mobileOnly = true },
+        { kind = "toggle", title = "Avisos no canto inferior direito", key = "CornerNotifications" },
       },
     },
     {

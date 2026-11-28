@@ -28,6 +28,22 @@ for _, page in ipairs(configured) do
 end
 local defaults = loaded.config.defaults()
 assert(defaults.ShootMiniSquare == true and defaults.KnifeMiniSquare == true)
+assert(defaults.ShootKeybind == Enum.KeyCode.Q and defaults.KnifeThrowKeybind == Enum.KeyCode.E)
+assert(loaded.config.validatePatch({ ShootKeybind = Enum.KeyCode.R, KnifeThrowKeybind = Enum.KeyCode.T, MM2AutoFarmKeybind = Enum.KeyCode.F }))
+for _, mini in ipairs(definition.miniBalls) do assert(mini.mobileOnly == true) end
+for _, page in ipairs(definition.pages) do
+  for _, section in ipairs(page.sections) do
+    for _, component in ipairs(section.components) do
+      if component.action == "mm2Shoot" or component.action == "mm2Throw" then
+        assert(component.kind == "keybind" and component.desktopOnly == true)
+        assert(component.shortcutKey == component.key)
+      end
+      if not component.mobileOnly and (component.kind == "toggle" or component.kind == "checkbox" or component.kind == "button") then
+        assert(component.shortcutKey and loaded.config.validatePatch({ [component.shortcutKey] = Enum.KeyCode.Unknown }))
+      end
+    end
+  end
+end
 assert(loaded.config.validatePatch({ AutoKnifeThrow = true, KnifeCone = 35, ShootMiniScale = 1.25 }))
 local boundary = loaded.gamescope.create(loaded, loaded.gamecontext.getProfile())
 local page = boundary.modules.ui.addPage({ id = "api-contract", title = "API", columns = 1, sections = {} })

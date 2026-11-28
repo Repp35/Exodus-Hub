@@ -26,6 +26,12 @@ function Components.install(context)
     local handle = control(parent, definition, height)
     title(handle, definition, 64, height)
     shortcut(handle, definition.key, -64)
+    function handle.activate()
+      if not handle.enabled or kit.suspended or not definition.onClick then
+        return false
+      end
+      return definition.onClick() ~= false
+    end
     return handle
   end
   function components.button(parent, definition)

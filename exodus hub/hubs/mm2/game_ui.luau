@@ -37,8 +37,13 @@ GameUI.definition = {
         {
           title = "Shoot Murder",
           components = {
-            { kind = "toggle", title = "Manual Shoot Murder", key = "ManualShootMurder" },
-            { kind = "toggle", title = "Botão de Shoot invisível", key = "ManualShootMurderInvisible", parentKey = "ManualShootMurder" },
+            {
+              kind = "toggle",
+              title = "Shoot Murder manual",
+              key = "ManualShootMurder",
+              description = "Use a Mini UI no celular ou a tecla configurada no PC.",
+            },
+            { kind = "toggle", title = "Botão de Shoot invisível", key = "ManualShootMurderInvisible", mobileOnly = true, parentKey = "ManualShootMurder" },
             {
               kind = "slider",
               title = "Precisão do Shoot manual",
@@ -49,18 +54,28 @@ GameUI.definition = {
               increment = 5,
               valueName = "%",
             },
-            { kind = "toggle", title = "Botão de Shoot quadrado", key = "ShootMiniSquare", parentKey = "ManualShootMurder" },
+            { kind = "toggle", title = "Botão de Shoot quadrado", key = "ShootMiniSquare", mobileOnly = true, parentKey = "ManualShootMurder" },
             {
               kind = "slider",
               title = "Tamanho do botão de Shoot",
               key = "ShootMiniScale",
+              mobileOnly = true,
               parentKey = "ManualShootMurder",
               min = 0.5,
               max = 2,
               increment = 0.05,
               valueName = "x",
             },
-            { kind = "button", title = "Shoot Murder", action = "mm2Shoot", parentKey = "ManualShootMurder" },
+            {
+              kind = "keybind",
+              title = "Tecla para Shoot Murder",
+              key = "ShootKeybind",
+              shortcutKey = "ShootKeybind",
+              action = "mm2Shoot",
+              parentKey = "ManualShootMurder",
+              desktopOnly = true,
+              silentShortcut = true,
+            },
             { kind = "toggle", title = "Auto Shoot Murder", key = "AutoShootMurder" },
             {
               kind = "slider",
@@ -95,21 +110,31 @@ GameUI.definition = {
               kind = "toggle",
               title = "Manual Lançar Faca",
               key = "ManualKnifeThrow",
-              description = "Mostra a Mini UI para lançar na direção da mira, priorizando o xerife visível.",
+              description = "Use a Mini UI no celular ou a tecla configurada no PC. Prioriza o xerife visível.",
             },
-            { kind = "toggle", title = "Botão de faca invisível", key = "ManualKnifeInvisible", parentKey = "ManualKnifeThrow" },
-            { kind = "toggle", title = "Botão de faca quadrado", key = "KnifeMiniSquare", parentKey = "ManualKnifeThrow" },
+            { kind = "toggle", title = "Botão de faca invisível", key = "ManualKnifeInvisible", mobileOnly = true, parentKey = "ManualKnifeThrow" },
+            { kind = "toggle", title = "Botão de faca quadrado", key = "KnifeMiniSquare", mobileOnly = true, parentKey = "ManualKnifeThrow" },
             {
               kind = "slider",
               title = "Tamanho do botão de faca",
               key = "KnifeMiniScale",
+              mobileOnly = true,
               parentKey = "ManualKnifeThrow",
               min = 0.5,
               max = 2,
               increment = 0.05,
               valueName = "x",
             },
-            { kind = "button", title = "Lançar Faca", action = "mm2Throw", parentKey = "ManualKnifeThrow" },
+            {
+              kind = "keybind",
+              title = "Tecla para lançar faca",
+              key = "KnifeThrowKeybind",
+              shortcutKey = "KnifeThrowKeybind",
+              action = "mm2Throw",
+              parentKey = "ManualKnifeThrow",
+              desktopOnly = true,
+              silentShortcut = true,
+            },
             { kind = "toggle", title = "Auto Lançar Faca", key = "AutoKnifeThrow" },
             {
               kind = "dropdown",
@@ -227,6 +252,7 @@ GameUI.definition = {
       shape = "square",
       color = "accent",
       ability = "mm2Shoot",
+      mobileOnly = true,
     },
     {
       id = "MM2Knife",
@@ -241,6 +267,7 @@ GameUI.definition = {
       shape = "square",
       color = "red",
       ability = "mm2Throw",
+      mobileOnly = true,
     },
   },
 
@@ -291,6 +318,8 @@ GameUI.__config = {
     KnifeMiniY = "position",
   },
   defaults = {
+    ShootKeybind = Enum.KeyCode.Q,
+    KnifeThrowKeybind = Enum.KeyCode.E,
     AutoFarm = false,
     AvoidMurdererCoins = false,
     ResetWhenBagFull = false,
@@ -334,6 +363,16 @@ GameUI.__config = {
 for _, page in ipairs(GameUI.definition.pages) do
   for _, section in ipairs(page.sections) do
     for _, component in ipairs(section.components) do
+      if not component.mobileOnly and (component.kind == "toggle" or component.kind == "checkbox" or component.kind == "button") then
+        component.shortcutKey = component.shortcutKey or ("MM2" .. (component.key or component.action) .. "Keybind")
+      end
+      if component.shortcutKey then
+        local key = component.shortcutKey
+        GameUI.__config.schema[key] = "keyCode"
+        if GameUI.__config.defaults[key] == nil then
+          GameUI.__config.defaults[key] = Enum.KeyCode.Unknown
+        end
+      end
       if component.tint then
         component.color = Color3.fromRGB(table.unpack(component.tint))
         component.tint = nil

@@ -70,7 +70,7 @@ function Notification.create(context)
       not context.deps.NotificationPolicy.shouldShow(
         context.deps.State.getConfig(),
         context.state.desktop,
-        { category = options.important and "critical" or "system", topic = options.id }
+        { category = options.important and "critical" or "system", topic = options.id, channel = "corner" }
       )
     then
       return false

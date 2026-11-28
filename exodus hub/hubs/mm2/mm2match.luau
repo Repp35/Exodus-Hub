@@ -44,9 +44,12 @@ local function create(API)
     end
     return profiles
   end
-  function Match:Invalidate(ended)
+  function Match:Invalidate(ended, preserveData)
     self.Generation += 1
-    self.Data, self.DataAt, self.NextPoll, self.Polling = nil, 0, 0, false
+    self.NextPoll, self.Polling = 0, false
+    if not preserveData then
+      self.Data, self.DataAt, self.DataMap = nil, 0, nil
+    end
     if ended ~= nil then
       self.RoundEnded = ended
     end
@@ -93,6 +96,8 @@ local function create(API)
       end
       if ok and type(data) == "table" then
         self.Data, self.DataAt = normalize(data), os.clock()
+        local _, map = self:GetRoundContext()
+        self.DataMap = map
       end
       self.Polling = false
       if requestTimer then
@@ -104,17 +109,22 @@ local function create(API)
       requestTimer = runtime:TrackTask(task.delay(4, function()
         requestTimer = nil
         if self.Generation == generation and self.Polling then
-          self:Invalidate()
+          self:Invalidate(nil, true)
         end
       end))
     end
   end
   function Match:GetPlayerData()
     self:Poll()
-    if os.clock() - self.DataAt <= 3 then
-      return self.Data
+    local _, map = self:GetRoundContext()
+    if self.DataMap and self.DataMap ~= map then
+      self:Invalidate()
+      return nil
     end
-    return nil
+    if self.Data and map then
+      self.DataMap = map
+    end
+    return self.Data
   end
   function Match:IsAlive(target, profile)
     if not target or target:GetAttribute("Alive") == false or type(profile) ~= "table" or profile.Dead == true or profile.Killed == true then
@@ -161,7 +171,12 @@ local function create(API)
     while not runtime.ShuttingDown do
       Match:Poll()
       bind("RoundEndFade", function() Match:Invalidate(true) end)
-      bind("RoundStart", function() Match:Invalidate(false) end)
+      bind("RoundStart", function()
+        local _, map = Match:GetRoundContext()
+        -- Roles can arrive before RoundStart. Keep the snapshot for this map.
+        local preserve = not Match.RoundEnded and map ~= nil and Match.DataMap == map
+        Match:Invalidate(false, preserve)
+      end)
       bind("PlayerDataChanged", function(patch)
         if Match.RoundEnded then
           return
@@ -178,7 +193,11 @@ local function create(API)
           end
           data = merged
         end
+        -- A pushed snapshot supersedes any older, still-yielding poll.
+        Match:Invalidate()
         Match.Data, Match.DataAt = data, os.clock()
+        local _, map = Match:GetRoundContext()
+        Match.DataMap = map
       end)
       task.wait(0.5)
     end

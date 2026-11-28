@@ -174,13 +174,13 @@ function Runtime.bind(loaded)
     for key, value in pairs(changes) do
       apply(key, value)
       if value == true and key == "ManualShootMurder" then
-        notify("Shoot Murder manual", "A Mini UI só aparece durante a partida quando você for Xerife ou Herói.", {
+        notify("Shoot Murder manual", "Disponível na partida como Xerife ou Herói: tecla no PC ou Mini UI no celular.", {
           id = "mm2.manual-shoot-role",
           duration = 5,
           color = Color3.fromRGB(70, 155, 255),
         })
       elseif value == true and key == "ManualKnifeThrow" then
-        notify("Lançamento manual", "A Mini UI só aparece durante a partida quando você for Assassino.", {
+        notify("Lançamento manual", "Disponível na partida como Assassino: tecla no PC ou Mini UI no celular.", {
           id = "mm2.manual-knife-role",
           duration = 5,
           color = Color3.fromRGB(255, 65, 65),
@@ -219,6 +219,9 @@ end
 function Runtime.createAPI(loaded)
   local function feature(name) return api and api.Features[name] end
   local function shoot()
+    if loaded.utils.getConfigValue("ManualShootMurder") ~= true then
+      return false
+    end
     local f = feature("ShootMurder")
     if not f then
       return false
@@ -229,6 +232,9 @@ function Runtime.createAPI(loaded)
     return false
   end
   local function throw()
+    if loaded.utils.getConfigValue("ManualKnifeThrow") ~= true then
+      return false
+    end
     local f = feature("MurderCombat")
     if not f then
       return false
