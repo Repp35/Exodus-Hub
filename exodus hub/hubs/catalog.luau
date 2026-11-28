@@ -143,6 +143,10 @@ return {
     version = "1.0.0",
     author = "deltapolinha_2915",
     notification = "Exodus Hub · Prison Life carregado.",
-    modules = {},
+    modules = {
+      { name = "gameruntime", path = "hubs/prison-life/game_runtime.luau", hash = "9344a3f8285f06edccdfd5353520d27cab1fc7e00bcc0c5092a9f95f246f6fb5" },
+      { name = "gameui", path = "hubs/prison-life/game_ui.luau", hash = "9315caaa129bc0b15a3cb83e2834df64a4c4a68c98bb5399eacaeb2931a94c45" },
+      { name = "localclock", path = "hubs/prison-life/local_clock.luau", hash = "6c7509b4531fb53c0d85cc14359ba9d95710b70bae6b954037432fd4f2785d13" },
+    },
   },
 }
