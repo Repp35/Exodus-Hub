@@ -61,7 +61,7 @@ return {
       { name = "gameui", path = "hubs/mm2/game_ui.luau", hash = "32f62a3e41ce606b72a2d2f6371778829fa22c4e3fa158cfc4fda5303b0f5378" },
       { name = "mm2alerts", path = "hubs/mm2/mm2alerts.luau", hash = "74b5902769cfe8cdd7f62fa705c999841e5b96ab065e166d56cda25302ed4e64" },
       { name = "mm2coin", path = "hubs/mm2/mm2coin.luau", hash = "e5e15da18dd9dd6c6cac7410307f545e19ae032e92576cf0527a4df1a0f3b59e" },
-      { name = "mm2combat", path = "hubs/mm2/mm2combat.luau", hash = "b74bfa9c95324f06007269ec9e30f8121be8911a2a4a2a4fee8e71c541333429" },
+      { name = "mm2combat", path = "hubs/mm2/mm2combat.luau", hash = "a9d4524301b18041012c4d8d9daa006383b60cfba25b6995f18fd446cae64265" },
       { name = "mm2drops", path = "hubs/mm2/mm2drops.luau", hash = "0e58242b9fc1d6b8e313d234364a029d0d95e2e7856568275d67fef9e13aac9b" },
       { name = "mm2esp", path = "hubs/mm2/mm2esp.luau", hash = "608a088492baedaa59098e72bfccd6e81521d700783537ff24dedd17bedad419" },
       { name = "mm2farm", path = "hubs/mm2/mm2farm.luau", hash = "6d0402b49c66dcb254b5ca351069d6ed355cb5360befc4d4f0aa5d4e71a8ed9d" },

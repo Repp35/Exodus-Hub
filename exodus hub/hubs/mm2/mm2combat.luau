@@ -86,7 +86,7 @@ local function create(API)
     return false
   end
   local function getOrigin(character, root, knife)
-    local handle = knife:FindFirstChild("RightHandle") or knife:FindFirstChild("Handle")
+    local handle = knife:FindFirstChild("Handle")
     if handle and handle:IsA("BasePart") then
       return handle.Position
     end
@@ -281,48 +281,20 @@ local function create(API)
     end
     return preferred
   end
-  local function simulateProjectile(origin, direction, speed, character, hitRemote)
-    local _, _, coinContainer = MatchService:GetRoundContext()
-    local traveled, last = 0, origin
-    while traveled < THROW_MAX_RANGE and character.Parent and hitRemote.Parent and not Runtime.ShuttingDown do
-      local dt = math.clamp(RunService.Heartbeat:Wait(), 0.001, 0.3)
-      local nextPosition = last + direction * (dt * speed)
-      local hit = raycast(last, nextPosition, character, coinContainer)
-      if hit then
-        hitRemote:FireServer(hit.Instance, hit.Position)
-        return
-      end
-      traveled += (nextPosition - last).Magnitude
-      last = nextPosition
-    end
-  end
-  local function tryThrow(knife, data, character)
-    local direction = data.Aim - data.Origin
-    if direction.Magnitude < 1 then
+  local function tryThrow(knife, data)
+    local events = knife:FindFirstChild("Events")
+    local remote = events and events:FindFirstChild("KnifeThrown")
+    local handle = knife:FindFirstChild("Handle")
+    if not remote or not remote:IsA("RemoteEvent") or not handle or not handle:IsA("BasePart") then
       return false
     end
-    direction = direction.Unit
-    local throwStart = ReplicatedStorage:FindFirstChild("ThrowStart", true)
-    local throwHit = ReplicatedStorage:FindFirstChild("ThrowHit", true)
-    if throwStart and throwStart:IsA("RemoteEvent") and throwHit and throwHit:IsA("RemoteEvent") then
-      throwStart:FireServer(data.Origin, direction)
-      Runtime:TrackTask(task.spawn(simulateProjectile, data.Origin, direction, data.Speed, character, throwHit))
-      return true
+    if (data.Aim - handle.Position).Magnitude < 1 then
+      return false
     end
-    local events = knife:FindFirstChild("Events")
-    local legacy = events and events:FindFirstChild("KnifeThrown")
-    if legacy and legacy:IsA("RemoteEvent") then
-      local handle = knife:FindFirstChild("Handle") or knife:FindFirstChild("RightHandle")
-      local origin = handle and handle:IsA("BasePart") and handle.CFrame or CFrame.new(data.Origin)
-      legacy:FireServer(origin, CFrame.new(data.Aim))
-      return true
-    end
-    local direct = knife:FindFirstChild("Throw")
-    if direct and direct:IsA("RemoteEvent") then
-      direct:FireServer(CFrame.new(data.Origin), data.Aim)
-      return true
-    end
-    return false
+    -- Native KnifeClient sends the equipped Handle CFrame and a target CFrame.
+    -- The server owns the projectile and its hits; no separate hit remote is sent.
+    remote:FireServer(handle.CFrame, CFrame.new(data.Aim))
+    return true
   end
   function Combat:Update()
     if self.Destroyed or not API.IsActive() or not self.AutoAttack and not self.AutoThrow then
@@ -353,7 +325,7 @@ local function create(API)
     if not selected then
       return false
     end
-    if not tryThrow(knife, selected, character) then
+    if not tryThrow(knife, selected) then
       return false
     end
     local charge = tonumber(knife:GetAttribute("ThrowSpeed"))
