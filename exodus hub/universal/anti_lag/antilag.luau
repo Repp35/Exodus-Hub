@@ -25,7 +25,7 @@ local CONFIG = {
     AntiLagSimplifyFar = true,
     AntiLagRemoveEffects = true,
     AntiLagRemoveTextures = false,
-    AntiLagFlatMaterials = true,
+    AntiLagFlatMaterials = false,
     AntiLagLowestGraphics = true,
   },
   constraints = { AntiLagRenderDistance = { min = 300, max = 6000 }, AntiLagKeepNear = { min = 64, max = 512 } },
@@ -61,9 +61,9 @@ local function profile()
     MaintainEffects = true,
     RestoreLatest = false,
     FlatSkyTexture = "",
-    BudgetMs = 1.2,
-    MaxItemsPerFrame = 120,
-    ReapplyInterval = 0.2,
+    BudgetMs = 0.4,
+    MaxItemsPerFrame = 32,
+    ReapplyInterval = 0.5,
   }
 end
 local function stop()
@@ -108,7 +108,10 @@ local function start()
       if state == "hidden" then
         target.LocalTransparencyModifier = 1
       elseif state == "simple" then
-        target.Material, target.MaterialVariant, target.Reflectance = Enum.Material.SmoothPlastic, "", 0
+        target.Reflectance = 0
+        if object:IsA("MeshPart") then
+          target.RenderFidelity = Enum.RenderFidelity.Performance
+        end
       end
       return target, watch
     end,
@@ -131,7 +134,7 @@ local function start()
     end,
   }, function(key) return owner.engine:GetOption(key) end)
   owner.engine:SetEnabled(true)
-  owner.spatial:SetEnabled(true)
+  owner.spatial:SetEnabled(owner.profile.CullEnabled or owner.profile.SimplifyFar)
 end
 local function reconcile()
   revision += 1
@@ -151,6 +154,7 @@ local function reconcile()
             local requested = profile()
             session.engine:SetOptions(requested)
             session.profile = requested
+            session.spatial:SetEnabled(requested.CullEnabled or requested.SimplifyFar)
             session.spatial:Refresh()
           end
         else

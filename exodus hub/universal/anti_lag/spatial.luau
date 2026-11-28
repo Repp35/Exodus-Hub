@@ -23,6 +23,7 @@ function Spatial.create(services, option)
   local active, alive, driver = false, true, nil
   local records, byObject, scan, pending = {}, {}, {}, {}
   local head, tail, cursor, hidden, simple = 1, 0, 1, 0, 0
+  local nextTick = 0
   local function state(entry, value)
     if entry.state == value then
       return
@@ -107,8 +108,8 @@ function Spatial.create(services, option)
     local near = math.max(64, option("CullKeepNear") or 128)
     local limit = math.max(near * 2, option("CullDistance") or 1200)
     -- One fixed budget per phase, including indexing. No expensive bootstrap mode.
-    local deadline, count = os.clock() + 0.0004, 0
-    while count < 40 and os.clock() < deadline do
+    local deadline, count = os.clock() + 0.0003, 0
+    while count < 24 and os.clock() < deadline do
       local object, descend = nextObject()
       if not object then
         break
@@ -124,8 +125,13 @@ function Spatial.create(services, option)
       end
       count += 1
     end
+    local now = os.clock()
+    if now < nextTick then
+      return
+    end
+    nextTick = now + 0.05
     count = 0
-    while count < math.min(#records, 100) and os.clock() < deadline do
+    while count < math.min(#records, 64) and os.clock() < deadline do
       if cursor > #records then
         cursor = 1
       end
@@ -170,6 +176,7 @@ function Spatial.create(services, option)
       return
     end
     active = value
+    nextTick = 0
     if driver then
       driver:Disconnect()
       driver = nil

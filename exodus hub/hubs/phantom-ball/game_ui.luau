@@ -292,12 +292,17 @@ GameUI.definition = {
     {
       id = "utilities",
       title = "Utilities",
-      columns = 1,
+      columns = 2,
       sections = {
         {
-          title = "Utilities",
+          title = "Sword",
+          column = 1,
+          components = { { kind = "toggle", title = "Sword", action = "spinSword", shortcutKey = "SwordKeybind" } },
+        },
+        {
+          title = "Cosmetics",
+          column = 2,
           components = {
-            { kind = "toggle", title = "Sword", action = "spinSword", shortcutKey = "SwordKeybind" },
             { kind = "toggle", title = "Emote", action = "spinEmote", shortcutKey = "EmoteKeybind" },
             { kind = "toggle", title = "Explosion", action = "spinExplosion", shortcutKey = "ExplosionKeybind" },
           },
@@ -547,8 +552,11 @@ for _, mini in ipairs(GameUI.definition.miniBalls) do
   }
   miniComponents[#miniComponents + 1] = { kind = "toggle", title = (mini.label or mini.id) .. " · formato quadrado", key = mini.squareKey, mobileOnly = true }
 end
-GameUI.definition.pages[#GameUI.definition.pages + 1] =
-  { id = "phantom-mini", title = "Mini UI", columns = 1, sections = { { title = "Tamanho e formato por botão", components = miniComponents } } }
+local miniSections = {}
+for index = 1, #miniComponents, 2 do
+  miniSections[#miniSections + 1] = { column = (#miniSections % 2) + 1, components = { miniComponents[index], miniComponents[index + 1] } }
+end
+GameUI.definition.pages[#GameUI.definition.pages + 1] = { id = "phantom-mini", title = "Mini UI", columns = 2, sections = miniSections }
 function GameUI.setup() return true end
 GameUI.__contract = { provides = { "setup" }, data = { "definition" }, requires = {} }
 

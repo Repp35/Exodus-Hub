@@ -22,7 +22,7 @@ return {
       { name = "mcpmotion", path = "hubs/mcpvp/game/mcp_motion.luau", hash = "1a128fad60ddc883b90cd8b0afb7b81eec1f9851a071555d74ed208c60e3a9cc" },
       { name = "mcpunits", path = "hubs/mcpvp/game/mcp_units.luau", hash = "75eeebf07c1cd2a304832018c0da12cdbc2ca04fb2bfe25455513f336a4d18ba" },
       { name = "gameruntime", path = "hubs/mcpvp/game_runtime.luau", hash = "710b2f0e1e7c48babfab82cd4c6b4e3819e3faa7ba0cf6832674e68dfa291679" },
-      { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "cc630ffd56bec14b0a77cd4d3b3ba87c7039be78b154f3c52861414604c47641" },
+      { name = "gameui", path = "hubs/mcpvp/game_ui.luau", hash = "7779877d085c71b71aba96e740851e46c9cf2c23845dad747b84735b6173ad45" },
       { name = "mcpbridge", path = "hubs/mcpvp/input/mcp_bridge.luau", hash = "44b2fab642bf263f9cf9943ea9cf31eb316fd96b77774a4ef639aee0a909025f" },
       { name = "mcpnative", path = "hubs/mcpvp/input/mcp_native.luau", hash = "5d62b2b42f0fcc6f585dd988033b26d61cb660825c13d08668a715413511615d" },
       { name = "mcpinventory", path = "hubs/mcpvp/inventory/mcp_inventory.luau", hash = "19689b834667a19460666dc3f07beaa1703b62cb543ec984d2b1cd9e70cb94d4" },
@@ -58,7 +58,7 @@ return {
     notification = "Exodus Hub · Murder Mystery 2 / MMV carregado.",
     modules = {
       { name = "gameruntime", path = "hubs/mm2/game_runtime.luau", hash = "a6ae470304ae069759b4576b3dda7812b09f3bc5af5ce0ea1ea0881c23593e22" },
-      { name = "gameui", path = "hubs/mm2/game_ui.luau", hash = "7826ef0053cba575259add1be4325c098c2194d43a4551cdc54dbe9a022501f9" },
+      { name = "gameui", path = "hubs/mm2/game_ui.luau", hash = "32f62a3e41ce606b72a2d2f6371778829fa22c4e3fa158cfc4fda5303b0f5378" },
       { name = "mm2alerts", path = "hubs/mm2/mm2alerts.luau", hash = "74b5902769cfe8cdd7f62fa705c999841e5b96ab065e166d56cda25302ed4e64" },
       { name = "mm2coin", path = "hubs/mm2/mm2coin.luau", hash = "e5e15da18dd9dd6c6cac7410307f545e19ae032e92576cf0527a4df1a0f3b59e" },
       { name = "mm2combat", path = "hubs/mm2/mm2combat.luau", hash = "cb9e89953bfb284f96aa39e2f3383c56aec7b86354649213c3151cc25b24d5b5" },
@@ -121,7 +121,7 @@ return {
       { name = "targeting", path = "hubs/phantom-ball/game/targeting.luau", hash = "2901a56c8ff24f7531df12a307fbcf3e9088b7b072faf3a6d7c3eadd7016b14d" },
       { name = "telemetry", path = "hubs/phantom-ball/game/telemetry.luau", hash = "d07c2ff8a0066a749198b673ede601f9e9031554cca402222526bae54779f4d0" },
       { name = "gameruntime", path = "hubs/phantom-ball/game_runtime.luau", hash = "8a932d608685327c1122c5c25e1ecabab852bc56a026b8cb1f4987af88d7ccf9" },
-      { name = "gameui", path = "hubs/phantom-ball/game_ui.luau", hash = "78fe7860484a74ff7ccf55403979694e675a21a8a2b7e04af028c6efac72cd66" },
+      { name = "gameui", path = "hubs/phantom-ball/game_ui.luau", hash = "3a8806f11e3a2fa6d3e320510197aa4b27927909dbc44d5b0c91cd6cd1f33477" },
       {
         name = "clashstats",
         path = "hubs/phantom-ball/prediction/clash_stats.luau",

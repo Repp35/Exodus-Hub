@@ -131,7 +131,7 @@ end
 function Runtime.motion(scope, reducedMotion)
   local owners, active = setmetatable({}, { __mode = "k" }), {}
   local motion = {}
-  local paused = false
+  local paused, applyingFade = false, false
   local function release(tween)
     local entry = active[tween]
     if not entry then
@@ -174,6 +174,13 @@ function Runtime.motion(scope, reducedMotion)
   function motion.play(object, preset, goals, onComplete)
     if paused or not scope.alive or not object or not object.Parent then
       return nil
+    end
+    if not applyingFade and faded[object] then
+      for key, value in pairs(goals) do
+        if faded[object][key] ~= nil then
+          faded[object][key] = value
+        end
+      end
     end
     local profile = Theme.MOTION[type(preset) == "string" and preset or CONFIG.DEFAULT_MOTION]
     assert(profile, "Unknown motion preset: " .. tostring(preset))
@@ -244,7 +251,9 @@ function Runtime.motion(scope, reducedMotion)
         goals[field] = saved[field] + (1 - saved[field]) * (1 - opacity)
       end
       if next(goals) then
+        applyingFade = true
         local tween = motion.play(object, preset, goals, object == root and onComplete or nil)
+        applyingFade = false
         if object == root then
           rootTween = tween
         end

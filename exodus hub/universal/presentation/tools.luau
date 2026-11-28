@@ -3,6 +3,7 @@
 -- @modules sectiontools
 local Section = {}
 Section.definition = {
+  column = 1,
   title = "Ferramentas",
   components = {
     {

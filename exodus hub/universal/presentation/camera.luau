@@ -3,6 +3,7 @@
 -- @modules sectioncamera
 local Section = {}
 Section.definition = {
+  column = 1,
   title = "Câmera",
   components = {
     { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },

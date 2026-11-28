@@ -85,9 +85,24 @@ function Components.install(context)
       kit.corner(thumb, Theme.RADIUS.pill)
     end
     local checkScale = checkbox and inst("UIScale", { Scale = 0.8 }, track) or nil
-    local value = false
+    local value
     function handle.setValue(nextValue)
-      value = nextValue == true
+      nextValue = nextValue == true
+      if value == nextValue then
+        return
+      end
+      local first = value == nil
+      value = nextValue
+      if first then
+        track.BackgroundColor3 = value and tint or C.toggleOff
+        if checkbox then
+          thumb.TextTransparency = value and 0 or 1
+          checkScale.Scale = value and 1 or 0.9
+        else
+          thumb.Position = UDim2.new(0, value and 24 or 4, 0.5, -10)
+        end
+        return
+      end
       handle.motion.play(track, "control", { BackgroundColor3 = value and tint or C.toggleOff })
       if checkbox then
         handle.motion.play(thumb, "control", { TextTransparency = value and 0 or 1 })

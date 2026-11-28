@@ -3,6 +3,7 @@
 -- @modules sectionvisual
 local Section = {}
 Section.definition = {
+  column = 2,
   title = "Visual",
   components = {
     { kind = "toggle", title = "Fullbright", key = "UniversalFullbright" },

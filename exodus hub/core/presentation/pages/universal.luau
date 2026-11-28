@@ -5,7 +5,7 @@ local UIPage = {}
 UIPage.definition = {
   id = "indeed",
   title = "Universal",
-  columns = 1,
+  columns = 2,
 
   sections = {},
 }

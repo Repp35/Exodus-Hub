@@ -142,8 +142,10 @@ local function createOptimizer(services, initialConfig)
     elseif object:IsA("Sky") then
       if options.FlatSky then
         target.CelestialBodiesShown, target.StarCount = false, 0
-        for _, property in ipairs(skyProperties) do
-          target[property] = options.FlatSkyTexture
+        if options.RemoveTextures then
+          for _, property in ipairs(skyProperties) do
+            target[property] = options.FlatSkyTexture
+          end
         end
       end
     elseif object:IsA("Decal") or object:IsA("Texture") then
@@ -161,7 +163,6 @@ local function createOptimizer(services, initialConfig)
     elseif object:IsA("BasePart") then
       watch = false
       if object:IsA("MeshPart") then
-        target.RenderFidelity = Enum.RenderFidelity.Performance
         if options.RemoveTextures then
           target.TextureID = ""
         end

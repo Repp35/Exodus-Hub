@@ -3,6 +3,7 @@
 -- @modules sectionantilag
 local Section = {}
 Section.definition = {
+  column = 1,
   title = "Anti Lag",
   components = {
     { kind = "toggle", title = "Ativar Anti Lag", key = "AntiLagEnabled", description = "Gráfico mínimo, sem luzes, sombras ou pós-processamento." },
@@ -42,7 +43,13 @@ Section.definition = {
       parentKey = "AntiLagEnabled",
       description = "Opcional. Desativado por padrão.",
     },
-    { kind = "toggle", title = "Materiais simples", key = "AntiLagFlatMaterials", parentKey = "AntiLagEnabled" },
+    {
+      kind = "toggle",
+      title = "Materiais simples",
+      key = "AntiLagFlatMaterials",
+      parentKey = "AntiLagEnabled",
+      description = "Troca materiais e suas texturas por plástico liso. Desativado por padrão.",
+    },
     { kind = "toggle", title = "Qualidade gráfica mínima", key = "AntiLagLowestGraphics", parentKey = "AntiLagEnabled" },
   },
 }

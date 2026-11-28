@@ -3,6 +3,7 @@
 -- @modules sectionsystem
 local Section = {}
 Section.definition = {
+  column = 2,
   title = "Sistema",
   components = {
     { kind = "toggle", title = "Anti AFK", key = "AntiAFK", shortcutKey = "AntiAFKKeybind" },

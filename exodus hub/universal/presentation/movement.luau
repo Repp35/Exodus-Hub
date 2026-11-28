@@ -3,6 +3,7 @@
 -- @modules sectionmovement
 local Section = {}
 Section.definition = {
+  column = 2,
   title = "Movimento",
   components = {
     { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind" },

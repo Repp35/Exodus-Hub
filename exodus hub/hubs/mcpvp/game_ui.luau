@@ -173,11 +173,16 @@ for _, ball in ipairs(miniBalls) do
     { kind = "toggle", title = ball.title .. " · formato quadrado", key = ball.squareKey, parentKey = visibleKey, mobileOnly = true }
 
 end
+local miniSections = {}
+for index = 1, #miniComponents, 3 do
+  miniSections[#miniSections + 1] =
+    { column = (#miniSections % 2) + 1, components = { miniComponents[index], miniComponents[index + 1], miniComponents[index + 2] } }
+end
 GameUI.definition.pages[#GameUI.definition.pages + 1] = {
   id = "mcpvp-mini",
   title = "Mini UI",
-  columns = 1,
-  sections = { { title = "Floating Buttons", components = miniComponents } },
+  columns = 2,
+  sections = miniSections,
 }
 function GameUI.setup() return true end
 GameUI.__contract = { provides = { "setup" }, data = { "definition" }, requires = {} }

@@ -49,7 +49,7 @@ function UIConfig.getPages(definition)
   for _, addition in ipairs(definition.additions or {}) do
     assert(addition.page == "indeed" and addition.sectionTitle, "Only named universal extensions are supported")
     local page = assert(byId[addition.page], "Unknown extension page")
-    page.sections[#page.sections + 1] = { title = addition.sectionTitle, components = copy(addition.components or {}) }
+    page.sections[#page.sections + 1] = { title = addition.sectionTitle, column = 2, components = copy(addition.components or {}) }
   end
   return result
 end

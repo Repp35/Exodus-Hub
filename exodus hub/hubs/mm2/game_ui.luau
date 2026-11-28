@@ -2,7 +2,7 @@
 --!optimize 2
 local GameUI = {}
 GameUI.definition = {
-  pageOrder = { "mm2-farm", "mm2-combat", "mm2-map", "mm2-visuals", "mm2-player", "mm2-alerts" },
+  pageOrder = { "mm2-farm", "mm2-combat", "mm2-map", "mm2-visuals", "mm2-alerts" },
   pages = {
     {
       id = "mm2-farm",
@@ -32,7 +32,7 @@ GameUI.definition = {
     {
       id = "mm2-combat",
       title = "Combat",
-      columns = 1,
+      columns = 2,
       sections = {
         {
           title = "Shoot Murder",
@@ -77,6 +77,7 @@ GameUI.definition = {
         },
         {
           title = "Combate com faca",
+          column = 2,
           components = {
             { kind = "toggle", title = "Auto Attack (faca)", key = "AutoKnifeAttack" },
             {
@@ -152,7 +153,7 @@ GameUI.definition = {
     {
       id = "mm2-map",
       title = "Map",
-      columns = 1,
+      columns = 2,
       sections = {
         {
           title = "Teleporte e jogadores",
@@ -170,6 +171,7 @@ GameUI.definition = {
         },
         {
           title = "Votação de mapas",
+          column = 2,
           components = { { kind = "dropdown", title = "Mapa preferido para votar", key = "FavoriteMap", choiceSource = "mm2Maps", options = { "None" } } },
         },
       },
@@ -195,12 +197,6 @@ GameUI.definition = {
           },
         },
       },
-    },
-    {
-      id = "mm2-player",
-      title = "Player",
-      columns = 1,
-      sections = { { title = "Ações", components = { { kind = "button", title = "Reset Player", action = "resetCharacter" } } } },
     },
     {
       id = "mm2-alerts",
