@@ -85,6 +85,11 @@ assert(loaded.hubapi.migrateConfig(saved))
 assert(saved.MiniUIScale == 1.5 and saved.AntiLagFloorCull == nil)
 assert(type(loaded.options.observe("AntiLagEnabled", function() end).Disconnect) == "function")
 assert(not pcall(loaded.options.get, "unknown"))
+loaded.config.reset()
+assert(loaded.config.register("empty", { schema = {}, defaults = {} }))
+assert(not loaded.config.register("empty", { schema = {}, defaults = {} }))
+loaded.config.reset()
+assert(loaded.config.register("empty", { schema = {}, defaults = {} }))
 """)
 
     def test_universal_property_and_scheduler_api(self):

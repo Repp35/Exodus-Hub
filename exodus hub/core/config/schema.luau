@@ -80,9 +80,21 @@ local function copy(source)
 end
 
 -- registration
+function Config.reset()
+  table.clear(Registry)
+  table.clear(Keys)
+  table.clear(SessionOnly)
+  table.clear(Owners)
+  table.clear(Scopes)
+  table.clear(Constraints)
+  ResolvedDefaults = nil
+end
 function Config.register(name, definition, scope)
-  if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then
-    return false
+  if Registry[name] then
+    return false, "configuration already registered: " .. tostring(name)
+  end
+  if type(name) ~= "string" or type(definition) ~= "table" then
+    return false, "invalid configuration definition"
   end
   if definition.resolveDefaults ~= nil and type(definition.resolveDefaults) ~= "function" then
     return false
@@ -269,9 +281,9 @@ end
 Config.__contract = {
   access = {
     default = "internal.read",
-    methods = { register = "infrastructure.write" },
+    methods = { register = "infrastructure.write", reset = "infrastructure.write" },
   },
-  provides = { "register", "defaults", "validate", "validatePatch", "normalizePatch", "getRegistry", "isPersistentKey", "describe", "hasKey" },
+  provides = { "reset", "register", "defaults", "validate", "validatePatch", "normalizePatch", "getRegistry", "isPersistentKey", "describe", "hasKey" },
   requires = {},
 }
 

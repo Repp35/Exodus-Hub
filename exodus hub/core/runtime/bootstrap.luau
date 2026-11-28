@@ -54,9 +54,11 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     universal[#universal + 1] = section.definition
   end
   loaded.uiconfig.configure(definitions, universal)
+  loaded.config.reset()
   for name, module in pairs(loaded) do
     if module.__config then
-      assert(loaded.config.register(name, module.__config, boundary.configScope(name)), "Invalid configuration schema: " .. name)
+      local accepted, reason = loaded.config.register(name, module.__config, boundary.configScope(name))
+      assert(accepted, "Invalid configuration schema: " .. name .. " (" .. tostring(reason or "invalid fields, keys or defaults") .. ")")
     end
   end
   utils.setConfigModule(loaded.config)

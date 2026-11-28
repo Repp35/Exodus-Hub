@@ -6,7 +6,7 @@
 return {
   { name = "options", path = "core/config/options.luau", hash = "e196168e689293446eefdd32db015dbc5e6191ea3123be7b97aa3e08851a619b" },
   { name = "persistence", path = "core/config/persistence.luau", hash = "1a0acbac28f1429c52088d213eb51cd037bd686dfe1248188995c4f329eb639e" },
-  { name = "config", path = "core/config/schema.luau", hash = "40e0aefaa32f55e47f8a2879e4d5c743681efb33a3382fa762469a5f2fcda03a" },
+  { name = "config", path = "core/config/schema.luau", hash = "f7ad73992cfdb057125a0ff01858193fa9cdffe4b769ba28b4ab4ee5d4890651" },
   { name = "diagnostics", path = "core/diagnostics/collector.luau", hash = "f2667beea981b20fea0c40fbdb810009d6b0d2dcdc2662cfea73e6f57c39617f" },
   { name = "profiler", path = "core/diagnostics/profiler.luau", hash = "a88b8483522ab81cef03af9402b5497730d5a0a5802556fc7dd68fdda82ef602" },
   { name = "status", path = "core/diagnostics/status.luau", hash = "cb3fbd74dd12aaee1cb0748d3eb55e09c9ca97abc623370c1c2ba2113b677045" },
@@ -19,7 +19,7 @@ return {
   { name = "pagesettings", path = "core/presentation/pages/settings.luau", hash = "a4e6fb86dada1d1f9b131fd0ae955c81ae6a751d4b47034011180c21673419ce" },
   { name = "pageuniversal", path = "core/presentation/pages/universal.luau", hash = "db6b545e8809c728a3e9ce81df4093ad5a874e3acb334d6d056023ef7b7493dd" },
   { name = "uiconfig", path = "core/presentation/pages.luau", hash = "f13f550d895fb4901ee03f90ef4dad11b178ed2eda8235938ee65bba0337ec68" },
-  { name = "bootstrap", path = "core/runtime/bootstrap.luau", hash = "9789241e8c252cfebb4e0a73bc09e13f615685ea4baebbfb8edcfc4fa699f7ff" },
+  { name = "bootstrap", path = "core/runtime/bootstrap.luau", hash = "d397d32f1ec76c9fcddce1007fa9f5e9643bd61a708e6c0c7a1fc995492f32e8" },
   { name = "character", path = "core/runtime/character.luau", hash = "c36ab76503c04fe9961a0df8ae87b5258d9126a44295147a0a8eb6a79cd7fa7e" },
   { name = "characterproperties", path = "core/runtime/character_properties.luau", hash = "7259a05af30d2a669840ae53e891e186cb10ffc23e08d93b8a1176cbed20bd47" },
   { name = "lifetime", path = "core/runtime/lifetime.luau", hash = "68653c397d6c1b7854659f2d6db7c36d950762cb2da9c0e7a830dc9b24ed7ecd" },
