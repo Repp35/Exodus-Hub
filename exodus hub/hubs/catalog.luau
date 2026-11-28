@@ -79,7 +79,7 @@ return {
     placeIds = { 12979690461 },
     universeIds = { 4538598064 },
     notification = "Phantom Ball carregado.",
-    version = "3.5.0",
+    version = "3.3.0",
     developers = { "deltapolinha_2915" },
     modules = {
       { name = "autodark", path = "hubs/phantom-ball/combat/auto_dark.luau", hash = "a7f016ffd1e29127967c77184933a20bb855f6f0b72a65013f88148e7cb2a2a4" },
