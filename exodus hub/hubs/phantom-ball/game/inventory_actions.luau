@@ -30,11 +30,14 @@ function Actions.create(loaded, context)
       end
       local generation = spinGeneration
       task.spawn(function()
-        local network = info.createCrateNetwork()
+        local network
         while scope.alive and generation == spinGeneration and spinActive == crate and Utils.isActive() do
-          local sent = info.spinCrate(network, crate, function() return scope.alive and generation == spinGeneration and spinActive == crate end)
-          if not sent then
-            break
+          network = network or info.createCrateNetwork()
+          if network and scope.alive and generation == spinGeneration and spinActive == crate and Utils.isActive() then
+            local sent = info.spinCrate(network, crate, function() return scope.alive and generation == spinGeneration and spinActive == crate end)
+            if not sent then
+              break
+            end
           end
           task.wait(CONFIG.SPIN_INTERVAL)
         end

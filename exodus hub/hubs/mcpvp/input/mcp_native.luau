@@ -7,7 +7,7 @@ local lastAttack, lastUse, nextHook = -math.huge, {}, 0
 local observed, heldTool, equippedAt = nil, nil, -math.huge
 local preferred, expected, holdingUse
 local sprintOwner, sprintWasOn, sprintAt
-local missingInput = false
+local nextLibraryScan = 0
 local dispatchUntil = 0
 local function releaseStaleInput()
   if dispatching and os.clock() >= dispatchUntil then
@@ -27,10 +27,18 @@ function Native.setup(deps)
   utils, bridge, geometry, inventory = deps.Utils, deps.Bridge, deps.Geometry, deps.Inventory
   player, storage = utils.getLocalPlayer(), game:GetService("ReplicatedStorage")
   controller, charge = library("ControllerInput"), library("HeldItemFov")
+  nextLibraryScan = 0
   return true
 end
 function Native.snapshot()
   releaseStaleInput()
+  if os.clock() >= nextLibraryScan then
+    nextLibraryScan = os.clock() + 0.5
+    controller, charge = controller or library("ControllerInput"), charge or library("HeldItemFov")
+  end
+  if not geometry.ready() then
+    return nil
+  end
   local character = player.Character
   local root = character and character:FindFirstChild("HumanoidRootPart")
   local human = character and character:FindFirstChildOfClass("Humanoid")
@@ -53,7 +61,7 @@ end
 function Native.blocked(snap)
   releaseStaleInput()
   return dispatching == true
-    or (controller and controller.IsBlocked())
+    or (controller and type(controller.IsBlocked) == "function" and controller.IsBlocked())
     or player:GetAttribute("MenuOpen") == true
     or snap.character:GetAttribute("EatingApple") == true
     or snap.character:GetAttribute("DrinkingPotion") == true
@@ -246,10 +254,6 @@ local function call(action, snap, direction)
       return fn(direction) ~= false
     end
     if not controller or type(controller.BeginTouch) ~= "function" or type(controller.EndTouch) ~= "function" then
-      if not missingInput then
-        utils.recordError("mcpvp.input", "Ataque/uso nativo e ControllerInput indisponíveis.")
-        missingInput = true
-      end
       return false
     end
     if not controller.BeginTouch(action) then
@@ -270,7 +274,7 @@ local function call(action, snap, direction)
   if action == "Use" and fn then
     local class = snap.tool and snap.tool:GetAttribute("ClassItem")
     local config = library("GameConfig")
-    local item = config and config.Items[class]
+    local item = config and config.Items and config.Items[class]
     local drinking = class == "InvisPotion" or item and item.effect and not item.splash
     -- ItemClient returns nil for both rejection and success. Non-drinking uses
     -- advance LocalAttackSwing only when the native function actually submits Use.
@@ -314,7 +318,7 @@ function Native.use(snap, tool, direction)
     return false
   end
   local config = library("GameConfig")
-  local cooldown = config and config.Items[class] and config.Items[class].cooldown or 0.36
+  local cooldown = config and config.Items and config.Items[class] and config.Items[class].cooldown or 0.36
   if snap.now - (lastUse[class] or -math.huge) < cooldown then
     return false
   end
@@ -370,8 +374,11 @@ function Native.gate(fn)
   nextHook = os.clock() + 1
   local env = type(getgenv) == "function" and getgenv() or _G
   local attack = bridge.get("attack")
-  if not attack or type(env.hookfunction) ~= "function" then
+  if not attack then
     return false
+  end
+  if type(env.hookfunction) ~= "function" then
+    return false, "O executor não permite adiar o clique nativo para o crítico manual."
   end
   local previous
   local ok, value = pcall(env.hookfunction, attack, function(direction)
@@ -393,6 +400,9 @@ function Native.gate(fn)
   end)
   if ok and type(value) == "function" then
     previous, original, hooked, hooker = value, value, attack, env.hookfunction
+  end
+  if not ok then
+    return false, tostring(value)
   end
   return hooked ~= nil
 end
@@ -448,7 +458,7 @@ Native.__contract = {
   requiresMethods = {
     Utils = { "getLocalPlayer", "recordError" },
     Bridge = { "get" },
-    Geometry = { "allowed", "eye", "stats", "direction", "melee", "blocking" },
+    Geometry = { "ready", "allowed", "eye", "stats", "direction", "melee", "blocking" },
     Inventory = { "slots", "select" },
   },
 }

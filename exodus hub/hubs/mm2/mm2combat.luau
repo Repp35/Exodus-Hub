@@ -27,16 +27,9 @@ local function create(API)
     RoleData = nil,
     RoleDataAt = 0,
     Motion = setmetatable({}, { __mode = "k" }),
-    LastRemoteWarning = 0,
     Destroyed = false,
   }
 
-  local function warnRemote()
-    if os.clock() - Combat.LastRemoteWarning > 8 then
-      Combat.LastRemoteWarning = os.clock()
-      warn("[Exodus MM2] Não encontrei um remote compatível de lançamento de faca.")
-    end
-  end
   local function getRoleData()
     Combat.RoleDataAt = os.clock()
     Combat.RoleData = MatchService:GetPlayerData()
@@ -329,7 +322,6 @@ local function create(API)
       direct:FireServer(CFrame.new(data.Origin), data.Aim)
       return true
     end
-    warnRemote()
     return false
   end
   function Combat:Update()

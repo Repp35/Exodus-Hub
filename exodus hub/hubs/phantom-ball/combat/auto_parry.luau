@@ -462,7 +462,7 @@ function AutoParry.bindCharacter(character)
   local root = character and character:FindFirstChild("HumanoidRootPart")
   local humanoid = character and character:FindFirstChildOfClass("Humanoid")
   if not root or not humanoid or not character.Parent or humanoid.Health <= 0 then
-    return false, "personagem incompleto"
+    return nil, "personagem incompleto"
   end
   state.character, state.root, state.humanoid, state.player, state.bound = character, root, humanoid, utils.getLocalPlayer(), true
   state.ball, state.mode, state.round, state.visualFrame = nil, nil, nil, 0

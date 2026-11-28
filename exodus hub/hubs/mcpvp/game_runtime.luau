@@ -86,11 +86,8 @@ function Runtime.bind(loaded)
     end
     return snap
   end
-  local source = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
-  local ok, controller = pcall(function() return source and require(source) end)
-  if not ok then
-    controller = nil
-  end
+  local controller, inputScope
+  local nextInputScan = 0
   local input = game:GetService("UserInputService")
   local function gate(snap, direction)
     if not loaded.utils.isActive() then
@@ -116,28 +113,8 @@ function Runtime.bind(loaded)
     end
     return not melee.request(snap, chosen)
   end
-  if controller and type(controller.BeginTouch) == "function" then
-    local original, lifetime = controller.BeginTouch, scope
-    local function begin(action)
-      if lifetime.alive and action == "Attack" and not native.isDispatching() then
-        run("input", function()
-          local snap = snapshot()
-          if snap then
-            target.manual(snap)
-          end
-        end)
-      end
-      return original(action)
-    end
-    controller.BeginTouch = begin
-    scope.add(function()
-      if controller.BeginTouch == begin then
-        controller.BeginTouch = original
-      end
-    end)
-  end
   local warned = false
-  scope.connect(controller and controller.InputBegan or input.InputBegan, function(event, processed)
+  local function onInput(event, processed)
     run("input", function()
       if processed or native.isDispatching() or input:GetFocusedTextBox() then
         return
@@ -151,12 +128,62 @@ function Runtime.bind(loaded)
         return
       end
       target.manual(snap)
-      if loaded.utils.getConfigValue("MCAutoCrit") and not native.gate(gate) and not warned then
-        warned = true
-        loaded.utils.recordError("mcpvp.manual", "O executor não permite adiar o clique nativo para o crítico manual.")
+      if loaded.utils.getConfigValue("MCAutoCrit") and not warned then
+        local ready, reason = native.gate(gate)
+        if not ready and reason then
+          warned = true
+          loaded.utils.recordError("mcpvp.manual", reason)
+        end
       end
     end)
-  end)
+  end
+  local function synchronizeInput()
+    if os.clock() < nextInputScan then
+      return
+    end
+    nextInputScan = os.clock() + 0.5
+    local source = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
+    local value = source and require(source)
+    if
+      type(value) ~= "table"
+      or not value.InputBegan
+      or type(value.BeginTouch) ~= "function"
+      or type(value.Matches) ~= "function"
+      or type(value.IsHeld) ~= "function"
+    then
+      value = nil
+    end
+    if inputScope and controller == value then
+      return
+    end
+    if inputScope then
+      inputScope.destroy()
+    end
+    controller, inputScope = value, scope.child()
+    if controller then
+      local current, lifetime = controller, inputScope
+      local original = current.BeginTouch
+      local function begin(action)
+        if lifetime.alive and action == "Attack" and not native.isDispatching() then
+          run("input", function()
+            local snap = snapshot()
+            if snap then
+              target.manual(snap)
+            end
+          end)
+        end
+        return original(action)
+      end
+      current.BeginTouch = begin
+      lifetime.add(function()
+        if current.BeginTouch == begin then
+          current.BeginTouch = original
+        end
+      end)
+    end
+    inputScope.connect(controller and controller.InputBegan or input.InputBegan, onInput)
+  end
+  run("input", synchronizeInput)
   local remotes, scanAt = {}, 0
   local function bindRemote(folderName, name, callback)
     local folder = game:GetService("ReplicatedStorage"):FindFirstChild(folderName)
@@ -177,6 +204,7 @@ function Runtime.bind(loaded)
   local service = game:GetService("RunService")
   scope.connect(service.PreSimulation, function()
     run("frame", function()
+      synchronizeInput()
       local snap = snapshot()
       if not snap then
         if owner then
@@ -260,10 +288,10 @@ function Runtime.createAPI(loaded)
       onThrowPearl = function()
         local snap = loaded.utils.isActive() and loaded.mcpnative.snapshot()
         if not snap then
-          return false, "Personagem indisponível."
+          return false
         end
         if loaded.mcpsupplies.busy() or loaded.mcpsurvival.busy() or loaded.mcpnative.blocked(snap) then
-          return false, "Aguarde a ação atual terminar."
+          return false
         end
         return loaded.autopearl.throw(snap)
       end,

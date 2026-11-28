@@ -2,29 +2,52 @@
 --!optimize 2
 local Geometry = {}
 local units, world, players, weapons, boxes, shields, rules
+local storage, nextScan = nil, 0
+local function library(name, methods)
+  local source = storage:FindFirstChild(name)
+  if not source then
+    return nil
+  end
+  local value = require(source)
+  if type(value) ~= "table" then
+    error("MCPvP: API inválida: " .. name)
+  end
+  for _, method in ipairs(methods) do
+    if value[method] == nil then
+      return nil
+    end
+    if type(value[method]) ~= "function" then
+      error("MCPvP: API inválida: " .. name .. "." .. method)
+    end
+  end
+  return value
+end
+function Geometry.ready()
+  local now = os.clock()
+  if now >= nextScan then
+    nextScan = now + 0.5
+    weapons = weapons or library("VoxelWeapons", { "Stats" })
+    boxes = boxes or library("VoxelMeleeGeometry", { "Hit", "Box", "Eye" })
+    shields = shields or library("ShieldRules", { "IsBlocking" })
+    rules = rules or library("SpawnBowRules", { "CanShoot" })
+  end
+  return weapons ~= nil and boxes ~= nil
+end
 function Geometry.setup(deps)
   units, world, players = deps.Units, deps.Utils.getWorkspace(), game:GetService("Players")
-  local storage = game:GetService("ReplicatedStorage")
-  local function library(name)
-    local source = storage:FindFirstChild(name)
-    local ok, value = pcall(function() return source and require(source) end)
-    return ok and type(value) == "table" and value or nil
-  end
-  weapons, boxes, shields, rules = library("VoxelWeapons"), library("VoxelMeleeGeometry"), library("ShieldRules"), library("SpawnBowRules")
-  if
-    not weapons
-    or type(weapons.Stats) ~= "function"
-    or not boxes
-    or type(boxes.Hit) ~= "function"
-    or type(boxes.Box) ~= "function"
-    or type(boxes.Eye) ~= "function"
-  then
-    error("MCPvP: VoxelWeapons/VoxelMeleeGeometry indisponíveis ou incompatíveis com o dump.")
-  end
+  storage, nextScan = game:GetService("ReplicatedStorage"), 0
+  weapons, boxes, shields, rules = nil, nil, nil, nil
+  Geometry.ready()
   return true
 end
 function Geometry.stats(tool)
+  if not tool or not Geometry.ready() then
+    return {}
+  end
   local value = weapons.Stats(tool)
+  if value == nil then
+    return {}
+  end
   return { type = value.type, speed = value.speed, reach = value.reachBlocks or units.toBlocks(value.reach), damage = value.damage }
 end
 function Geometry.melee(tool)
@@ -280,6 +303,7 @@ end
 Geometry.__contract = {
   provides = {
     "setup",
+    "ready",
     "stats",
     "allowed",
     "eye",

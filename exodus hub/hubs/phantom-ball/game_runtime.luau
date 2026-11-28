@@ -235,9 +235,9 @@ function Runtime.createAPI(loaded)
       isManualSpamActive = loaded.inputstate.isManualSpamActive,
       onAutoDarkChanged = loaded.autodark.sync,
       onUpDash = function()
-        local ok, err = loaded.movement.upDash()
+        local ok, result = pcall(loaded.movement.upDash)
         if not ok then
-          utils.recordError("UpDash", err or "Dash indisponível")
+          utils.recordError("UpDash", result)
         end
       end,
       onPanic = function()

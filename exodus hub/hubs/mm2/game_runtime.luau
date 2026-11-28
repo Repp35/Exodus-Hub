@@ -221,22 +221,22 @@ function Runtime.createAPI(loaded)
   local function shoot()
     local f = feature("ShootMurder")
     if not f then
-      return false, "Combate ainda não carregou."
+      return false
     end
     if f:TryShoot(false) then
       return true
     end
-    return false, "Nenhum disparo disponível: confira o papel, a visibilidade do alvo e o intervalo da arma."
+    return false
   end
   local function throw()
     local f = feature("MurderCombat")
     if not f then
-      return false, "Combate ainda não carregou."
+      return false
     end
     if f:ThrowManual() then
       return true
     end
-    return false, "Nenhum alvo disponível na mira, ou a faca ainda está no intervalo de lançamento."
+    return false
   end
   return {
     getUIConfig = function() return loaded.gameui.definition end,

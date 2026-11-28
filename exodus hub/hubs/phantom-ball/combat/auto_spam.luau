@@ -597,7 +597,7 @@ function AutoSpam.bindCharacter(character)
   detach("rebind")
   local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root or not root:IsA("BasePart") then
-    return false, "HumanoidRootPart indisponível"
+    return nil, "HumanoidRootPart indisponível"
   end
   local state = {
     character = character,

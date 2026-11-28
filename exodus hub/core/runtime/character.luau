@@ -75,15 +75,17 @@ local function bindLife(life)
   end
   setPhase("binding", "character_bind_start")
   local root = life.character:FindFirstChild("HumanoidRootPart")
+  local humanoid = life.character:FindFirstChildOfClass("Humanoid")
   local deadline = os.clock() + CONFIG.BIND_TIMEOUT
-  while valid(life) and (not root or not root:IsA("BasePart") or not root.Parent) and os.clock() < deadline do
+  while valid(life) and (not root or not root:IsA("BasePart") or not root.Parent or not humanoid) and os.clock() < deadline do
     task.wait(CONFIG.ROOT_POLL_INTERVAL)
     root = life.character:FindFirstChild("HumanoidRootPart")
+    humanoid = life.character:FindFirstChildOfClass("Humanoid")
   end
   if not valid(life) then
     return
   end
-  if not root or not root:IsA("BasePart") or not root.Parent then
+  if not root or not root:IsA("BasePart") or not root.Parent or not humanoid then
     life.attempted = false
     setPhase("waiting", "root_unavailable")
     return
@@ -101,14 +103,16 @@ local function bindLife(life)
       return
     end
     if result ~= true then
-      utils.recordError("Character", ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result)))
+      if not ok or result ~= nil then
+        utils.recordError("Character", ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result)))
+      end
       detach(entry)
       for i = #life.bound, 1, -1 do
         detach(life.bound[i])
         life.bound[i] = nil
       end
       life.attempted = false
-      setPhase("waiting", "bind_failed")
+      setPhase("waiting", ok and result == nil and "bind_pending" or "bind_failed")
       return
     end
     life.bound[#life.bound + 1] = entry

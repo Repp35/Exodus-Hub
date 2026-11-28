@@ -331,7 +331,7 @@ function Pearl.throw(snap)
   end
   local route = { direction = snap.camera.CFrame.LookVector, origin = units.toBlocks(snap.eye), duration = 0 }
   if not Pearl.launch(snap, route) then
-    return false, "Pearl indisponível ou em uso."
+    return false
   end
   shot.manual, shot.aimedAt, follow = true, snap.now, nil
   advance(snap)

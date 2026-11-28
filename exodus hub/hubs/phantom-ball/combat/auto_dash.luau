@@ -170,7 +170,7 @@ function AutoDash.bindCharacter(character)
   AutoDash.detachCharacter()
   local newRoot = character and character:FindFirstChild("HumanoidRootPart")
   if not newRoot or not newRoot:IsA("BasePart") or not newRoot.Parent then
-    return false, "HumanoidRootPart indisponível"
+    return nil, "HumanoidRootPart indisponível"
   end
   root, lastTickAt = newRoot, -math.huge
   heartbeat = runService.Heartbeat:Connect(function()

@@ -21,7 +21,6 @@ local function create(API)
     RoleData = nil,
     RoleDataAt = 0,
     NextRoleRefreshAt = 0,
-    NextRoleWarningAt = 0,
     Destroyed = false,
   }
 
@@ -37,7 +36,6 @@ local function create(API)
     end
     return character, humanoid, root
   end
-  local function notify(content) API.Notify("Shoot Murder", content) end
   function ShootMurder:RefreshRoleData()
     self.RoleData = MatchService:GetPlayerData()
     self.RoleDataAt = os.clock()
@@ -50,14 +48,6 @@ local function create(API)
   function ShootMurder:IsLocalMurderer()
     local profile = self.RoleData and self.RoleData[Player.Name]
     return type(profile) == "table" and profile.Role == "Murderer"
-  end
-  function ShootMurder:WarnRoleRequired()
-    local now = os.clock()
-    if now < self.NextRoleWarningAt then
-      return
-    end
-    self.NextRoleWarningAt = now + 10
-    notify("Você precisa ser Xerife ou Herói para atirar.")
   end
   function ShootMurder:GetLocalContext()
     local inRound = MatchService:GetRoundContext()
@@ -197,9 +187,6 @@ local function create(API)
       self:RefreshRoleData(true)
     end
     if not self:HasSheriffRole() then
-      if not automatic then
-        self:WarnRoleRequired()
-      end
       return false
     end
     local localCharacter, humanoid, localRoot = self:GetLocalContext()

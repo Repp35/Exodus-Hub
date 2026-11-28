@@ -14,8 +14,6 @@ local trainingRemote
 local cooldown
 local signalAt
 local heldAt
-local missingAt
-local warningAt
 local deflectAttempt
 local observedAbility
 local blockingSince
@@ -78,11 +76,6 @@ local function disconnect(connection)
     utils.untrackGlobal(connection)
   end
   connection:Disconnect()
-end
-local function report(name, message)
-  if utils then
-    utils.recordError("Cooldown", name .. ": " .. tostring(message))
-  end
 end
 local function generatedRemote(id)
   local storage = utils and utils.getReplicatedStorage()
@@ -270,13 +263,6 @@ function Cooldown.getDeflectCooldownState()
         notify()
       end)
       utils.trackGlobal(cooldownConnection)
-      missingAt = nil
-    elseif not signal then
-      missingAt = missingAt or time
-      if time - missingAt >= 3 and time >= warningAt then
-        warningAt = time + 10
-        report("DeflectCooldown", "evento de cooldown do servidor indisponível")
-      end
     end
   end
   if time >= nextParriedAt then
@@ -478,7 +464,7 @@ function Cooldown.setup(deps)
   Cooldown.teardown()
   utils, gameInfo = deps.Utils, deps.GameInfo
   cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge, lastParriedAt = -math.huge }
-  signalAt, heldAt, missingAt, warningAt, nextTrainingAt = 0, 0, nil, 0, 0
+  signalAt, heldAt, nextTrainingAt = 0, 0, 0
   deflectAttempt, observedAbility, blockingSince, previousBlocking, cooldownEpisode = nil, nil, nil, nil, 0
   nextParriedAt = 0
   trainingSharedModule, trainingShared, trainingLockoutUntil, trainingAttemptUntil = nil, nil, nil, nil

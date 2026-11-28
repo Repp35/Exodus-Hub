@@ -4,11 +4,10 @@ local Inventory = {}
 local utils, bridge, cachedFn, values, lease, pending
 local retryAt, nextToggle = 0, 0
 local controller
+local nextControllerScan = 0
 function Inventory.setup(deps)
   utils, bridge = deps.Utils, deps.Bridge
-  local source = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
-  local ok, value = pcall(function() return source and require(source) end)
-  controller = ok and value or nil
+  controller, nextControllerScan = nil, 0
   return true
 end
 local function owned(tool)
@@ -99,6 +98,12 @@ local function visible()
   return ancestor == gui
 end
 local function setOpen(value)
+  if not controller and os.clock() >= nextControllerScan then
+    nextControllerScan = os.clock() + 0.5
+    local source = game:GetService("ReplicatedStorage"):FindFirstChild("ControllerInput")
+    local ok, loaded = pcall(function() return source and require(source) end)
+    controller = ok and type(loaded) == "table" and loaded or nil
+  end
   local function matches() return visible() == value and (utils.getLocalPlayer():GetAttribute("MenuOpen") == true) == value end
   if matches() then
     return true

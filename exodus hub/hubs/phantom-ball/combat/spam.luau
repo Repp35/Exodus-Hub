@@ -167,7 +167,7 @@ local function run(token, mode, rate, U, R, G, A, D)
           accepted += 1
         end
         status.lastError = nil
-      elseif detail == "Deflect recusado" or detail == "Deflect recusado pelo cliente" or detail == "Deflect cancelado" then
+      elseif result == false then
         status.lastError = nil
       else
         reportError(U, detail or "Remote.fireParry indisponível")

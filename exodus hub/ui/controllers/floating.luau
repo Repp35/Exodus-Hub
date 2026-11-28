@@ -12,8 +12,14 @@ function Controller.create(context)
     local callback = type(name) == "function" and name or name and controls[name]
     if callback then
       local ok, accepted, reason = pcall(callback, ...)
-      if not ok or accepted == false then
-        context.notifications.toast(tostring(ok and reason or accepted), true)
+      if not ok then
+        context.notifications.toast(tostring(accepted), true)
+        return false
+      end
+      if accepted == false then
+        if reason ~= nil then
+          context.notifications.toast(tostring(reason), true)
+        end
         return false
       end
     end

@@ -206,6 +206,9 @@ local function getAbilities()
   end
   if not abilities then
     local value = load(module, "ClientAbilities")
+    if value.Abilities == nil then
+      return nil
+    end
     if type(value.Abilities) ~= "table" then
       error("API externa ausente: TS.ClientAbilities.Abilities", 2)
     end
@@ -217,6 +220,9 @@ local function getAbility(index, method)
   local list = getAbilities()
   local ability = list and list[index]
   if ability == nil then
+    return nil
+  end
+  if type(ability) == "table" and ability[method] == nil then
     return nil
   end
   if type(ability) ~= "table" or type(ability[method]) ~= "function" then
@@ -1359,10 +1365,16 @@ function GameInfo.getBallSpeedLimits()
   if not gameBall then
     gameBall = load(module, "GameBall").GameBall
   end
+  if gameBall == nil or type(gameBall) == "table" and (gameBall.GetBaseSpeed == nil or gameBall.GetMaxSpeed == nil) then
+    return minimumSpeed, maximumSpeed
+  end
   if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
     error("API externa ausente: TS.Gameplay.GameBall.GetBaseSpeed/GetMaxSpeed", 2)
   end
   local low, high = gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed()
+  if low == nil or high == nil or low == 0 or high == 0 then
+    return minimumSpeed, maximumSpeed
+  end
   if not finite(low) or not finite(high) or low <= 0 or high <= low then
     error("API externa inválida: GameBall retornou limites de velocidade inválidos", 2)
   end
@@ -1371,6 +1383,9 @@ function GameInfo.getBallSpeedLimits()
 end
 function GameInfo.getDefenseSource()
   GameInfo.getBallSpeedLimits()
+  if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
+    return nil
+  end
   return gameBall
 end
 function GameInfo.usesSharedLayout() return sharedLayout() end
@@ -1387,14 +1402,18 @@ function GameInfo.getDarkSealEventId() return CONFIG.GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
   local root = ts()
   if not root then
-    error("API externa ausente: Shared ou TS", 2)
+    return nil
   end
-  local folder = root:FindFirstChild("Network") or root:WaitForChild("Network", 10)
-  local network = folder and (folder:FindFirstChild("Network") or folder:WaitForChild("Network", 10))
-  if not network or not network:IsA("ModuleScript") then
-    error("API externa ausente: Network.Network", 2)
+  local folder = root:FindFirstChild("Network")
+  local network = folder and folder:FindFirstChild("Network")
+  if not network then
+    return nil
   end
-  return require(network).Network.new()
+  local source = load(network, "Network.Network").Network
+  if source == nil then
+    return nil
+  end
+  return source.new()
 end
 function GameInfo.spinCrate(network, crate, guard)
   local owned = network:CSendFunction(CONFIG.GAME_IDS.CRATE_CHECK, crate)
