@@ -68,7 +68,8 @@ Consulte [docs/architecture.md](docs/architecture.md). Estas regras correspondem
   Indexação e manutenção respeitam orçamento; não crie workers duplicados.
 - Adicionar um componente ou módulo usa descoberta e contratos, sem registros
   manuais no loader. Catálogos e arquivos distribuídos são gerados e validados.
-- Cada Mini UI tem tamanho independente. Não reintroduza escala global. Ícones
+- Cada Mini UI tem tamanho independente. A escala geral da Config multiplica esses
+  tamanhos sem sobrescrever os ajustes individuais. Ícones
   internos usam a máscara gerada e a cor única do tema `#DCE6FF`.
 - Localização distingue metadados do servidor da aproximação do endpoint. País do
   jogador e ping baixo não são evidência do país do servidor.

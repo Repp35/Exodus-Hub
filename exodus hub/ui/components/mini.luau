@@ -114,9 +114,29 @@ function Mini.install(context)
     local motion = context.Runtime.motion(scope)
     local root, button, header, radius, outline = surface(context, parent, definition)
     local handle = { Root = root, Header = header, Button = button, scope = scope, enabled = true }
+    local groupScale = context.inst("UIScale", { Name = "MiniScale", Scale = 1 }, root)
+    local groupFactor = 1
+    function handle.getScale() return groupFactor end
+    local function refreshScale()
+      local source = context.options.miniScale
+      local scale = source and source.read and context.finite(source.read()) or 1
+      scale = math.clamp(scale or 1, 0.5, 2)
+      if groupFactor ~= scale then
+        groupFactor = scale
+        motion.play(groupScale, "control", { Scale = scale })
+        if definition.onScaleChanged then
+          definition.onScaleChanged()
+        end
+      end
+    end
+    local source = context.options.miniScale
+    if source and source.observe then
+      scope.add(source.observe(refreshScale))
+    end
+    refreshScale()
     local clickScale
     if actionButton then
-      clickScale = context.inst("UIScale", { Scale = 1 }, button)
+      clickScale = button == root and groupScale or context.inst("UIScale", { Scale = 1 }, button)
     end
     local current, shown, invisible, revision = nil, false, false, 0
     local shape
@@ -153,8 +173,9 @@ function Mini.install(context)
       if not clickScale then
         return
       end
-      motion.play(clickScale, "press", { Scale = 0.9 }, function()
-        motion.play(clickScale, "feedback", { Scale = 1.04 }, function() motion.play(clickScale, "control", { Scale = 1 }) end)
+      local factor = clickScale == groupScale and groupFactor or 1
+      motion.play(clickScale, "press", { Scale = 0.9 * factor }, function()
+        motion.play(clickScale, "feedback", { Scale = 1.04 * factor }, function() motion.play(clickScale, "control", { Scale = factor }) end)
       end)
     end
     function handle.setValue(value)

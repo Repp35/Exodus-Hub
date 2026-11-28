@@ -26,6 +26,16 @@ UIPage.definition = {
       title = "Interface",
       components = {
         { kind = "toggle", title = "Modo PC", key = "ForcePCUI", description = "Usa os controles de desktop.", desktopExpanded = true },
+        {
+          kind = "slider",
+          title = "Tamanho geral das Mini UIs",
+          key = "MiniUIScale",
+          min = 0.5,
+          max = 2,
+          increment = 0.05,
+          valueName = "x",
+          description = "Aumenta ou diminui todas, mantendo o tamanho individual de cada uma. 1x mantém os tamanhos configurados.",
+        },
       },
     },
     {

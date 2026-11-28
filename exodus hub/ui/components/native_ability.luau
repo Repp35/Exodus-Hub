@@ -19,6 +19,7 @@ function Ability.create(ability, options)
     parent = original.Parent,
     read = options.read,
     observe = options.observe,
+    miniScale = options.miniScale,
   })
   local view = kit.Components.mini(original.Parent, {
     scaleKey = options.scaleKey,

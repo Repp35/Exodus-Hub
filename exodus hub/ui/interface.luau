@@ -20,6 +20,7 @@ local function mount(options, preview)
   local deps = table.clone(assert(configuredDependencies, "UI library is not initialized"))
   deps.State, deps.Model, deps.Controls = options.state, options.model, options.controls
   deps.BeforePresent, deps.Information = options.beforePresent, options.information
+  deps.MiniScale = options.miniScale
   if active then
     active.destroy()
     active = nil

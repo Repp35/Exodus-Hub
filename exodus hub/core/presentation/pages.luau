@@ -55,7 +55,7 @@ function UIConfig.getPages(definition)
 end
 function UIConfig.migrateConfig(data)
   local changed = false
-  for _, key in ipairs({ "MiniUIScale", "MiniUISquare", "MiniUIRoundDefaultRestored", "AntiLagFloorCull", "AntiLagRemoveSwordSounds" }) do
+  for _, key in ipairs({ "MiniUISquare", "MiniUIRoundDefaultRestored", "AntiLagFloorCull", "AntiLagRemoveSwordSounds" }) do
     if data[key] ~= nil then
       data[key], changed = nil, true
     end
@@ -69,13 +69,21 @@ UIConfig.__config = {
     DesktopNotifications = "boolean",
     DesktopShortcutNotifications = "boolean",
     ForcePCUI = "boolean",
+    MiniUIScale = "miniScale",
     CameraSensitivity = "rate",
     BtnX = "position",
     BtnY = "position",
     PanelX = "position",
     PanelY = "position",
   },
-  defaults = { MobileNotifications = true, DesktopNotifications = true, DesktopShortcutNotifications = true, ForcePCUI = false, CameraSensitivity = 1 },
+  defaults = {
+    MobileNotifications = true,
+    DesktopNotifications = true,
+    DesktopShortcutNotifications = true,
+    ForcePCUI = false,
+    MiniUIScale = 1,
+    CameraSensitivity = 1,
+  },
   constraints = { CameraSensitivity = { min = 0, max = 10 } },
 }
 UIConfig.__contract =

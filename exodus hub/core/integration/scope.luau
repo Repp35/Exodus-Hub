@@ -74,7 +74,7 @@ local function copy(value, freeze, seen, blockCommands)
   return freeze and table.freeze(result) or result
 end
 function GameScope.setup() return true end
-function GameScope.create(loaded, profile)
+function GameScope.create(loaded, profile, bindings)
   local owned, keys, protected, legacy, views = {}, {}, {}, {}, {}
   local root = "hubs/" .. profile.id .. "/"
   for name, module in pairs(loaded) do
@@ -175,6 +175,12 @@ function GameScope.create(loaded, profile)
                 })
               end,
             }
+          end
+        elseif source == "uinativeability" and method == "create" then
+          result[method] = function(ability, options)
+            options = table.clone(options or {})
+            options.miniScale = bindings and bindings.miniScale or options.miniScale
+            return callback(ability, options)
           end
         elseif source == "ui" and method == "createMini" then
           result[method] = function(definition)

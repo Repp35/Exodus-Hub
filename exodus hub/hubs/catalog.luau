@@ -58,7 +58,7 @@ return {
     notification = "Exodus Hub · Murder Mystery 2 / MMV carregado.",
     modules = {
       { name = "gameruntime", path = "hubs/mm2/game_runtime.luau", hash = "a6ae470304ae069759b4576b3dda7812b09f3bc5af5ce0ea1ea0881c23593e22" },
-      { name = "gameui", path = "hubs/mm2/game_ui.luau", hash = "5799c02bbcd6610c44499c7d0b81ab9b0f26e0e2f6972e55fdfd74f4bdf033cd" },
+      { name = "gameui", path = "hubs/mm2/game_ui.luau", hash = "7826ef0053cba575259add1be4325c098c2194d43a4551cdc54dbe9a022501f9" },
       { name = "mm2alerts", path = "hubs/mm2/mm2alerts.luau", hash = "74b5902769cfe8cdd7f62fa705c999841e5b96ab065e166d56cda25302ed4e64" },
       { name = "mm2coin", path = "hubs/mm2/mm2coin.luau", hash = "e5e15da18dd9dd6c6cac7410307f545e19ae032e92576cf0527a4df1a0f3b59e" },
       { name = "mm2combat", path = "hubs/mm2/mm2combat.luau", hash = "cb9e89953bfb284f96aa39e2f3383c56aec7b86354649213c3151cc25b24d5b5" },

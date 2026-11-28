@@ -35,6 +35,7 @@ local section = page.addSection({ title = "Own controls" })
 assert(type(section.toggle({ title = "Shoot", key = "ManualShootMurder" }).setValue) == "function")
 assert(not pcall(section.toggle, { title = "Foreign", key = "UniversalFly" }))
 assert(not pcall(boundary.modules.utils.setConfig, { UniversalFly = true }))
+assert(not pcall(boundary.modules.utils.setConfig, { MiniUIScale = 1.5 }))
 
 """)
 

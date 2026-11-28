@@ -140,8 +140,11 @@ um componente existente. Definições de páginas têm componentes registrados,
 IDs únicos e relações `parentKey` válidas, sem ciclos.
 
 Mini UIs usam `ui/components/mini.luau`. Cada definição tem seu `scaleKey` e, quando
-configurável, `squareKey`, além de coordenadas próprias. Não há `MiniUIScale`
-global. No MM2, tamanho e formato ficam junto de Shoot e Throw. O handle também
+configurável, `squareKey`, além de coordenadas próprias. A Config oferece
+`MiniUIScale`, um multiplicador geral que preserva os tamanhos individuais.
+A composição fornece esse valor à UI por um binding de leitura e observação;
+a biblioteca não conhece a chave de configuração. No MM2, tamanho e formato
+individuais ficam junto de Shoot e Lançar Faca. O handle também
 oferece `setSize`, `setDimensions`, `setShape` e `setColor`. Destruir o handle libera
 seu input, drag e animações. A propriedade declarativa `option` permite um botão
 operado pelo usuário consumir uma opção universal existente; isso não concede ao

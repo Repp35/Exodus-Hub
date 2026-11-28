@@ -6,10 +6,20 @@ local Bootstrap = {}
 function Bootstrap.setup() return true end
 function Bootstrap.start(loaded, order, urls, profile, transport)
   loaded.gamecontext.configure(profile)
-  local boundary = loaded.gamescope.create(loaded, profile)
+  local utils = loaded.utils
+  local miniScale = {
+    read = function() return utils.getConfigValue("MiniUIScale") end,
+    observe = function(callback)
+      return utils.observeConfig(function(changes)
+        if changes.MiniUIScale ~= nil then
+          callback()
+        end
+      end)
+    end,
+  }
+  local boundary = loaded.gamescope.create(loaded, profile, { miniScale = miniScale })
   boundary.validateDefaults(profile.defaults)
   loaded.hubapi.configure(loaded, boundary)
-  local utils = loaded.utils
   utils.configure(loaded.permissions.resolve("utils", loaded))
   utils.start()
   if type(_G.Exodus) == "table" then
@@ -136,6 +146,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
     name = utils.name(),
     author = utils.author(),
     state = utils,
+    miniScale = miniScale,
     effectsEnabled = function() return utils.getConfigValue("AntiLagEnabled") ~= true end,
     headerButtons = { { id = "information", page = "information", icon = "information" }, { id = "config", page = "config", icon = "settings" } },
     controls = controls,

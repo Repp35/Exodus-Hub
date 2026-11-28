@@ -280,6 +280,7 @@ function Context.create(deps, deviceDesktop)
     read = Utils.getConfigValue,
     write = setConfigValue,
     observe = Utils.observeConfig,
+    miniScale = deps.MiniScale,
     notify = function(...) return context.notifications.toast(...) end,
     choices = deps.Model.getChoices,
     validateShortcut = function(key, binding) return context.actions.validateShortcut(key, binding) end,

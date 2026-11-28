@@ -52,7 +52,7 @@ function Controller.create(context)
     local function color(value) return type(value) == "string" and context.theme.COLORS[value] or value end
     local caption = d.text or d.label or d.title
     local action = d.action and not d.key and not d.read
-    local handle
+    local handle, entry
     handle = context.kit.Components.mini(context.refs.screenGui, {
       name = "Mini_" .. id,
       text = d.text or d.label or d.title,
@@ -73,6 +73,11 @@ function Controller.create(context)
       size = d.size,
       shape = d.shape,
       visible = false,
+      onScaleChanged = function()
+        if entry then
+          entry.layout()
+        end
+      end,
       onActivate = function()
         if d.modeKey and utils.getConfigValue(d.modeKey) == "Hold" then
           return
@@ -116,7 +121,7 @@ function Controller.create(context)
         end
       end,
     })
-    local entry = { definition = d, handle = handle }
+    entry = { definition = d, handle = handle }
     entries[id], order[#order + 1] = entry, entry
     handle.scope.add(function()
       entries[id] = nil
@@ -139,7 +144,8 @@ function Controller.create(context)
     end, false, nil, nil, handle.scope)
     function entry.layout()
       local factor = math.clamp(d.scaleKey and tonumber(utils.getConfigValue(d.scaleKey)) or 1, 0.5, 2)
-      local size = (d.size or context.theme.CLASH_SIZE) * factor
+      local multiplier = handle.getScale()
+      local size = math.clamp((d.size or context.theme.CLASH_SIZE) * factor, 28, 384) * multiplier
       local scale = math.max(0.01, context.refs.responsiveScale.Scale)
       local raw = context.viewport()
       local view = raw / scale
@@ -149,10 +155,10 @@ function Controller.create(context)
       local width, height = size, size
       local defaultX, defaultY, offscreen = 14, 0, -size - 40
       if d.panel then
-        width = math.min(context.theme.MINI_W * factor * (d.widthKey and utils.getConfigValue(d.widthKey) or 1), view.X)
-        height = math.min(context.theme.MINI_H * factor * (d.heightKey and utils.getConfigValue(d.heightKey) or 1), view.Y)
+        width = math.min(context.theme.MINI_W * factor * multiplier * (d.widthKey and utils.getConfigValue(d.widthKey) or 1), view.X)
+        height = math.min(context.theme.MINI_H * factor * multiplier * (d.heightKey and utils.getConfigValue(d.heightKey) or 1), view.Y)
         defaultX, defaultY, offscreen = view.X - width - 14, view.Y / 2 - height / 2, view.X + 30
-        handle.setDimensions(width, height)
+        handle.setDimensions(width / multiplier, height / multiplier)
       elseif d.defaultX then
         defaultX, defaultY = d.defaultX, view.Y / 2 + (d.offsetY or 0)
       else
