@@ -147,6 +147,7 @@ function Bootstrap.start(loaded, order, urls, profile, transport)
   view = loaded.ui.create({
     name = utils.name(),
     author = utils.author(),
+    version = utils.version(),
     state = utils,
     miniScale = miniScale,
     effectsEnabled = function() return utils.getConfigValue("AntiLagEnabled") ~= true end,

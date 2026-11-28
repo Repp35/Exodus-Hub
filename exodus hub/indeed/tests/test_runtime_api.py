@@ -59,7 +59,25 @@ class RuntimeAPI(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('runtime_api', CHECKS / 'runtime_api.py')
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
-        helper.smoke(binary, universal=True)
+        helper.smoke(binary, universal=True, assertions="""
+local originalOffset = UDim2.fromOffset
+UDim2.fromOffset = function(x, y) return { X = { Offset = x }, Y = { Offset = y } } end
+local textService = game:GetService("TextService")
+function textService:GetTextSize() return { X = 100 } end
+local headerScope = loaded.lifetime.scope()
+local function instance(_, properties)
+  properties.GetChildren = function() return {} end
+  properties.GetPropertyChangedSignal = function() return services.RunService.Heartbeat end
+  properties.ChildAdded, properties.ChildRemoved = services.RunService.Heartbeat, services.RunService.Heartbeat
+  return properties
+end
+for _, brand in ipairs({ { name = "Standalone", author = "" }, { name = "Exodus", author = "Author", version = "3.0.0" } }) do
+  local header = loaded.uiheader.create({ theme = loaded.uitheme.tokens, inst = instance, brand = brand, scope = headerScope }, {})
+  assert(type(header.refresh) == "function" and type(header.setIcon) == "function")
+end
+headerScope.destroy()
+UDim2.fromOffset = originalOffset
+""")
         for info in sorted((ROOT / 'hubs').glob('*/hub.json')):
             with self.subTest(hub=info.parent.name):
                 helper.smoke(binary, hub_id=info.parent.name)

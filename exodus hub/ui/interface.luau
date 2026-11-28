@@ -33,7 +33,7 @@ local function mount(options, preview)
       return active.kit.Components[name](parent, options)
     end
   end
-  context.brand = { name = options.name or "Exodus", author = options.author or "" }
+  context.brand = { name = options.name or "Exodus", author = options.author or "", version = options.version }
   active = context
   local hubUI = options.definition
   context.hasConditions = options.conditionsEnabled ~= false

@@ -21,7 +21,7 @@ function Header.create(context, parent)
   local brand = inst("TextLabel", {
     Name = "Brand",
     BackgroundTransparency = 1,
-    Text = context.brand.name .. (context.hub.version and (" | v" .. context.hub.version) or ""),
+    Text = context.brand.name .. (context.brand.version and (" | v" .. context.brand.version) or ""),
     RichText = false,
     TextColor3 = T.COLORS.text,
     TextSize = T.TITLE_TEXT_SIZE,
@@ -83,7 +83,7 @@ function Header.create(context, parent)
     local left = T.PAD + (icon.Visible and 28 + gap or 0)
     local width = math.max(0, T.PANEL_W - T.PAD - controlsWidth - gap - left)
     title.Position, title.Size = UDim2.fromOffset(left, 0), UDim2.fromOffset(width, T.TITLE_H)
-    local plain = context.brand.name .. (context.hub.version and (" | v" .. context.hub.version) or "")
+    local plain = context.brand.name .. (context.brand.version and (" | v" .. context.brand.version) or "")
     local bounds = game:GetService("TextService"):GetTextSize(plain, T.TITLE_TEXT_SIZE, Enum.Font.GothamBlack, Vector2.new(10000, T.TITLE_H))
     local brandWidth = math.min(width, math.ceil(bounds.X) + 2)
     brand.Size = UDim2.fromOffset(brandWidth, T.TITLE_H)
